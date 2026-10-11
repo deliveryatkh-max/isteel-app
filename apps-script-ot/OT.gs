@@ -193,7 +193,7 @@ function publicConfig_() {
   return {
     reasons, maxHours: s.maxHours, maxPast: s.maxPast, maxFuture: s.maxFuture, overnight: s.overnight,
     needGps: !!s.site, radius: s.site ? s.site.radius : null, today: todayYmd_(), holidays: holidays_(),
-    needDept: Object.keys(depts_()).length > 0,
+    needDept: Object.keys(depts_()).length > 0, deptKeys: deptKeys_(),
     timeMode: s.timeMode, serverNow: now_().getTime(), maxAutoHours: AUTO_MAX_HOURS,
     shifts: shifts_().map(x => ({ name: x.name, time: x.time, otStart: hhmm24_(x.end) })),
   };
@@ -508,6 +508,18 @@ function depts_() {
     }
   }
   try { cache.put('depts', JSON.stringify(out), 120); } catch (e) { /* small list */ }
+  return out;
+}
+
+// Fingerprints of the active department codes (SHA-256 → name), so the phone can check a scan at once
+// without a server round trip. The codes themselves are never sent; submit_ checks the real code again.
+function deptKeys_() {
+  const out = {};
+  const list = depts_();
+  Object.keys(list).forEach(code => {
+    out[Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, code, Utilities.Charset.UTF_8)
+      .map(b => ((b + 256) % 256).toString(16).padStart(2, '0')).join('')] = list[code];
+  });
   return out;
 }
 
