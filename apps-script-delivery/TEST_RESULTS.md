@@ -49,7 +49,7 @@ Numbers refer to the test items in the brief.
 - ✅ English switch and dark mode render
 - ✅ No sideways scrolling at 360 px
 
-Screenshots of each step (Khmer, English, dark mode, desktop) are in the Drive folder shared in the Transport thread.
+Screenshots of the steps (phone size; Khmer, English and dark mode) are in `docs/delivery-screens/`.
 
 ## Still to test after deployment (needs the live sheet)
 
