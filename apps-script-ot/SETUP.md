@@ -200,12 +200,12 @@ There are two modes. You switch between them in the sheet menu **OT App → ⏱ 
 
 - **Auto (default):**
   - The date is today.
-  - **Start** is the end of the employee's shift, taken from **Shift Working Time** in Employee & Approver (for example "7:00 AM to 4:00 PM" gives a 4:00 PM start).
+  - **Start** is the end of the shift the employee picks on the form (the **To Time** in the Working Shift tab, see section 15). For example Shift 1, 7:00 AM to 4:00 PM, gives a 4:00 PM start.
   - **End** is the time the request is sent.
   - None of these can be changed on the form. The server works them out again from its own clock, so changing the phone's clock has no effect.
-  - OT that runs past midnight belongs to the day the shift ended. Night shifts such as "12:00 PM to 4:00 AM" work the same way, with OT starting at 4:00 AM.
+  - OT that runs past midnight belongs to the day the shift ended. Night shifts work the same way: a shift ending at 8:00 AM gives OT from 8:00 AM.
   - Sending before the shift has ended is refused with a message giving the shift end time.
-  - An employee with no Shift Working Time gets a message asking them to contact their manager or HR. **Fill this column for everyone before using Auto**, or switch to Manual until it is filled. OT App → ✅ Check data counts the missing rows.
+  - Nobody can send without picking a shift.
 - **Manual:** staff choose the date (up to 7 days back) and type the start and end times.
 
 The menu appears the next time the sheet is opened after you paste the new script. The first time you use it, Google asks you to authorize it once.
@@ -216,6 +216,17 @@ The My requests tab shows the employee's **total OT hours** between a **From** d
 
 - The total counts every OT row for that Employee ID in OT Data, including rows from before the app, which are shown as "Earlier record". It is split into Approved, Pending and Earlier records. Rejected requests are shown but not counted.
 - **Privacy:** the summary opens only for an Employee ID that already has one of its Request IDs saved on the phone, either from sending a request or from "Check a request". Nobody can see a colleague's OT by typing their ID alone.
+
+## 15. Working Shift (staff pick their own shift)
+
+Staff rotate between shifts from month to month, so the shift is no longer read from Employee & Approver. Each request now carries the shift the employee picks on the form.
+
+- The **Working Shift** tab lists the shifts: **Shift ID**, **From Time**, **To Time** (and Break, which the app does not use). setup() creates the tab with these headers if it is missing. Add, rename or remove rows at any time; the form shows the change within 2 minutes.
+- Times can be typed as `4:00 PM`, `16:00` or as time cells. **Midnight must be 0:00 (12:00 AM)**. A cell showing 12:00 is read as 12:00 PM, noon.
+- On the form, section 2 shows one button per shift. The employee taps theirs; it is required in both Auto and Manual mode. The phone remembers each Employee ID's last pick, so most people just check it is still right.
+- The server checks the shift is in the tab, uses its To Time as the OT start in Auto mode, and saves the shift name in a new **Shift** column at the end of OT Data. The manager's Telegram message shows it too.
+- The Shift and Shift Working Time columns in Employee & Approver can be deleted. They are used only while the Working Shift tab has no rows.
+- OT App → ✅ Check data lists the shifts it can read.
 
 ## User guide: employees
 

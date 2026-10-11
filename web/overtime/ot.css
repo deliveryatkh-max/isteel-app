@@ -199,3 +199,11 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .sumcard input[type=date] { min-width: 0; width: 100%; font-size: 16px; padding: 10px 8px; }
 .sumtotal b small { display: inline; color: inherit; opacity: .9; }
 .sumtotal .sp { width: 26px; height: 26px; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; }
+
+/* Working shift: one button per row of the Working Shift tab */
+.shifts { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.shiftbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.shiftbtn b { font-size: 15px; }
+.shiftbtn small { display: block; color: var(--muted); font-size: 12.5px; }
+.shiftbtn.on { border-color: var(--accent); background: var(--soft); color: var(--brand); box-shadow: 0 0 0 3px rgba(11, 118, 160, .18); }
+.shiftbtn.on small { color: var(--brand); }

@@ -6,6 +6,7 @@
  *   - "OT Data"              one row per OT request (existing columns A–L are kept; status columns are added after them)
  *   - "Employee & Approver"  ID No. → Name, Khmer Name, Direct Manager (Approver), Telegram (@username)
  *   - "OT Reason"            preset reasons shown as quick picks on the form
+ *   - "Working Shift"        Shift ID, From Time, To Time; staff pick their shift on the form (it can change every month)
  * Tabs this script adds (nothing existing is moved or overwritten):
  *   - "OT Approvers"         each manager's verified Telegram chat, saved when they press Start on the bot
  *   - "OT Log"               audit trail of every submission, notification and decision
@@ -27,6 +28,7 @@ const OT = {
   LOG: 'OT Log',
   SETTINGS: 'OT App Settings',
   DEPTS: 'OT Departments',
+  SHIFTS: 'Working Shift',
   FORM_URL: 'https://isteel-app.pages.dev/overtime/',
   RELAY_URL: 'https://isteel-app.pages.dev/tg/ot',
 };
@@ -34,9 +36,12 @@ const OT = {
 const STATUS = { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', FOLLOW: 'Requires Follow-up' };
 
 // Columns added to "OT Data" after the existing ones (in this order, only if missing).
-const NEW_DATA_COLS = ['Request ID', 'Status', 'Approver', 'Decision Time', 'Rejection Reason', 'Telegram Ref', 'Note', 'Department'];
+const NEW_DATA_COLS = ['Request ID', 'Status', 'Approver', 'Decision Time', 'Rejection Reason', 'Telegram Ref', 'Note', 'Department', 'Shift'];
 
 // Department QR codes: the form opens only after one of these is scanned.
+// Shifts staff choose from on the form. Staff rotate between shifts, so the shift is picked per request.
+const SHIFT_COLS = ['Shift ID', 'From Time', 'To Time', 'Break'];
+
 const DEPT_COLS = ['Department', 'Department ID', 'QR Link', 'Print QR', 'QR Code', 'Active'];
 
 const APPROVER_COLS = ['Telegram Username', 'Manager Name', 'Chat ID', 'Telegram Name', 'Registered At', 'Active'];
@@ -44,7 +49,7 @@ const LOG_COLS = ['Time', 'Request ID', 'Event', 'By', 'Detail', 'Key'];
 const TIME_MODES = ['Auto', 'Manual'];
 const SETTING_ROWS = [
   ['Setting', 'Value', 'What it does'],
-  ['DATE_TIME_MODE', 'Auto', 'Auto = date is today, Start = end of the employee\'s shift (Shift Working Time in Employee & Approver), End = the time the request is sent; staff cannot change them. Manual = staff type the date and times. Also in the sheet menu OT App → Date & time.'],
+  ['DATE_TIME_MODE', 'Auto', 'Auto = date is today, Start = end of the shift the employee picks on the form (To Time in Working Shift), End = the time the request is sent; staff cannot change them. Manual = staff type the date and times. Also in the sheet menu OT App → Date & time.'],
   ['MAX_HOURS_PER_REQUEST', '', 'Largest OT hours one request may have. Blank = no limit.'],
   ['MAX_DAYS_IN_PAST', '7', 'How many days back an OT date may be (today counts as 0). Blank = 7.'],
   ['MAX_DAYS_IN_FUTURE', '', 'How many days ahead an OT date may be. Blank = no limit.'],
@@ -59,7 +64,7 @@ const DATA_FIELDS = {
   kh: ['khmername'], from: ['from', 'start', 'starttime'], to: ['to', 'end', 'endtime'], hours: ['othr', 'othours', 'hours'],
   reason: ['reasonofot', 'reason', 'otreason'], record: ['datetimerecord', 'submitted'], latlong: ['latlong'],
   reviewed: ['reviewedby'], reqId: ['requestid'], status: ['status'], approver: ['approver'], decided: ['decisiontime'],
-  rejectReason: ['rejectionreason'], tgRef: ['telegramref'], note: ['note'], dept: ['department'],
+  rejectReason: ['rejectionreason'], tgRef: ['telegramref'], note: ['note'], dept: ['department'], shift: ['shift'],
 };
 const REQUIRED_DATA = ['date', 'id', 'name', 'from', 'to', 'hours'];
 
@@ -190,6 +195,7 @@ function publicConfig_() {
     needGps: !!s.site, radius: s.site ? s.site.radius : null, today: todayYmd_(), holidays: holidays_(),
     needDept: Object.keys(depts_()).length > 0,
     timeMode: s.timeMode, serverNow: now_().getTime(), maxAutoHours: AUTO_MAX_HOURS,
+    shifts: shifts_().map(x => ({ name: x.name, time: x.time, otStart: hhmm24_(x.end) })),
   };
 }
 
@@ -418,10 +424,62 @@ function parseShift_(text) {
 const hhmm24_ = m => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 function shiftEndHHMM_(text) { const p = parseShift_(text); return p ? hhmm24_(p.end) : ''; }
 
-// The OT date and times for "now", from the employee's shift. Refused before the shift has ended.
-function autoTimes_(emp, now) {
-  const sh = parseShift_(emp && emp.shiftTime);
-  if (!sh) fail_('NOSHIFT', 'Your shift working time is not set in the employee list. Please ask your manager or HR to add it.');
+// One time cell from "Working Shift": "16:00", "4:00 PM", "16:00:00" or a time value.
+function parseTime_(v, shown) {
+  const m = String(shown == null ? '' : shown).trim().match(/^(\d{1,2})(?:[:.](\d{2}))?(?:[:.]\d{2})?\s*(am|pm)?$/i);
+  if (m) {
+    let h = +m[1]; const mm = +(m[2] || 0), ap = (m[3] || '').toLowerCase();
+    if (h > 23 || mm > 59) return null;
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + mm;
+  }
+  if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+  if (typeof v === 'number' && v >= 0 && v < 1) return Math.round(v * 1440) % 1440;
+  return null;
+}
+
+// "Working Shift": [{ name, start, end, time }] in sheet order; rows without a name or readable times are skipped.
+function shifts_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('shifts');
+  if (hit) return JSON.parse(hit);
+  const out = [];
+  const sh = ss_().getSheetByName(OT.SHIFTS);
+  if (sh && sh.getLastRow() > 1) {
+    const w = sh.getLastColumn();
+    const head = sh.getRange(1, 1, 1, w).getValues()[0].map(norm_);
+    const col = (...names) => head.findIndex(k => names.indexOf(k) >= 0);
+    const cn = col('shiftid', 'shift', 'shiftname', 'name'), cf = col('fromtime', 'from', 'start', 'starttime'), ct = col('totime', 'to', 'end', 'endtime');
+    if (cn >= 0 && cf >= 0 && ct >= 0) {
+      const rng = sh.getRange(2, 1, sh.getLastRow() - 1, w);
+      const v = rng.getValues(), d = rng.getDisplayValues();
+      for (let r = 0; r < v.length; r++) {
+        const name = String(d[r][cn] || '').replace(/\s+/g, ' ').trim();
+        const start = parseTime_(v[r][cf], d[r][cf]), end = parseTime_(v[r][ct], d[r][ct]);
+        if (!name || start == null || end == null || out.some(x => x.name.toLowerCase() === name.toLowerCase())) continue;
+        out.push({ name, start, end, time: hhmm12_(start) + ' – ' + hhmm12_(end) });
+      }
+    }
+  }
+  try { cache.put('shifts', JSON.stringify(out), 120); } catch (e) { /* small list; read again next time */ }
+  return out;
+}
+
+// The shift the employee picked on the form, checked against "Working Shift". Required once that tab has rows.
+function pickedShift_(name) {
+  const list = shifts_();
+  if (!list.length) return null;
+  const want = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const hit = list.filter(x => x.name.toLowerCase() === want)[0];
+  if (!hit) fail_('NOSHIFT', want ? 'That shift is no longer in the list. Please reload the page and pick your shift again.' : 'Please choose your shift.');
+  return hit;
+}
+
+// The OT date and times for "now": OT starts when the shift ends. Refused before the shift has ended.
+function autoTimes_(shift, now) {
+  const sh = shift && shift.end != null ? shift : null;
+  if (!sh) fail_('NOSHIFT', 'Please choose your shift.');
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const elapsed = (nowMin - sh.end + 1440) % 1440;
   if (elapsed < 1 || elapsed > AUTO_MAX_HOURS * 60) fail_('EARLY', 'Your shift ends at ' + hhmm12_(sh.end) + '. OT can be requested only after that time.');
@@ -501,6 +559,7 @@ function readRow_(ds, row) {
     approver: String(g('approver') || ''), reviewed: String(g('reviewed') || ''),
     decided: gd('decided'), rejectReason: String(g('rejectReason') || ''), tgRef: String(g('tgRef') || ''),
     submitted: gd('record'), note: String(g('note') || ''), dept: String(g('dept') || ''),
+    shift: String(g('shift') || ''),
   };
 }
 
@@ -601,7 +660,13 @@ function submit_(p) {
     const one = employeesCached_()[id];
     if (!one) fail_('NOTFOUND', 'Employee ID not found.');
     if (one.length > 1) fail_('DUPLICATE', 'This Employee ID is listed more than once. Please contact HR.');
-    p = Object.assign({}, p, autoTimes_(one[0], now_()));
+  }
+  // Staff rotate between shifts, so the shift comes from the form, checked against "Working Shift".
+  // Before that tab has rows, the old Shift Working Time column in the employee list is still used.
+  const shift = pickedShift_(p.shift);
+  if (cfg.timeMode === 'auto') {
+    const own = shift || parseShift_(employeesCached_()[id][0].shiftTime);
+    p = Object.assign({}, p, autoTimes_(own, now_()));
   }
   const v = validate_(p, cfg);
   const deptList = depts_();
@@ -649,6 +714,7 @@ function submit_(p) {
     put('approver', emp.manager);
     put('note', route.ok ? '' : route.msg);
     put('dept', dept);
+    put('shift', shift ? shift.name : '');
 
     ensureRows_(ds.sh, row);
     if (last >= 2) ds.sh.getRange(last, 1, 1, ds.width).copyTo(ds.sh.getRange(row, 1, 1, ds.width), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
@@ -799,7 +865,7 @@ function requestText_(rec, header) {
     '• Employee ID: ' + esc_(rec.id),
     '• Employee Name: ' + esc_(rec.en),
     '• Khmer Name: ' + esc_(rec.kh || '-'),
-  ].concat(rec.dept ? ['• Department: ' + esc_(rec.dept)] : []).concat([
+  ].concat(rec.dept ? ['• Department: ' + esc_(rec.dept)] : []).concat(rec.shift ? ['• Shift: ' + esc_(rec.shift)] : []).concat([
     '• OT Date: ' + esc_(rec.dateText || rec.date),
     '• OT Time: ' + esc_(rec.from) + ' – ' + esc_(rec.to),
     '• Total OT Hours: <b>' + esc_(rec.hours) + '</b>',
@@ -1046,6 +1112,8 @@ function setup() {
     s.setColumnWidth(1, 210); s.setColumnWidth(2, 180); s.setColumnWidth(3, 520);
   }
   ensureSettingRows_();
+  if (!ss.getSheetByName(OT.SHIFTS)) ensureSheet_(OT.SHIFTS, SHIFT_COLS);
+  CacheService.getScriptCache().remove('shifts');
   makeDepartmentQR();
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('OT_WEBHOOK_SECRET')) props.setProperty('OT_WEBHOOK_SECRET', Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''));
@@ -1173,7 +1241,8 @@ function checkData() {
   const noKh = one.filter(e => !e.kh && !kh[e.id]).map(e => e.id);
   const noMgr = one.filter(e => !e.manager).map(e => e.id);
   const noTg = one.filter(e => e.manager && !normUser_(e.telegram)).map(e => e.id);
-  const noShift = one.filter(e => !parseShift_(e.shiftTime)).map(e => e.id);
+  CacheService.getScriptCache().remove('shifts');
+  const shifts = shifts_();
   const users = Array.from(new Set(one.map(e => normUser_(e.telegram)).filter(Boolean)));
   const unreg = users.filter(u => !approvers.some(a => a.username === u && a.active && a.chatId));
   const lines = [
@@ -1183,7 +1252,7 @@ function checkData() {
     'Missing Khmer name (none in old OT rows either): ' + noKh.length,
     'Missing line manager: ' + (noMgr.join(', ') || 'none'),
     'Missing manager Telegram: ' + (noTg.join(', ') || 'none'),
-    'Missing or unreadable Shift Working Time (needed for Auto date & time): ' + noShift.length + (noShift.length ? ' (e.g. ' + noShift.slice(0, 10).join(', ') + ')' : ''),
+    'Working Shift (staff pick one on the form): ' + (shifts.map(x => x.name + ' ' + x.time).join(', ') || 'none — add rows to the Working Shift tab'),
     'Approver Telegram accounts: ' + users.map(u => '@' + u).join(', '),
     'Not yet registered on the bot: ' + (unreg.map(u => '@' + u).join(', ') || 'none'),
   ];
