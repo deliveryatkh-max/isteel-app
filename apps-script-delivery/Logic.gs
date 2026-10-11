@@ -68,8 +68,9 @@ const LEG = {
   delivered: { kh: 'បានប្រគល់', en: 'Delivered' },
   failed: { kh: 'ប្រគល់មិនបាន', en: 'Failed' },
   canceled: { kh: 'បានលុបចោល', en: 'Canceled' },
+  moved: { kh: 'ប្រគល់តាមជើងផ្សេង', en: 'Delivered on another trip' },
 };
-const LEG_DONE = { delivered: 1, failed: 1, canceled: 1 };
+const LEG_DONE = { delivered: 1, failed: 1, canceled: 1, moved: 1 };
 
 const ROUND_WORD = 'ជើងទី​ ';   // as in Delivery Plan and Time Log: "ជើងទី​ 1"
 const roundText = n => ROUND_WORD + n;
@@ -81,8 +82,11 @@ const normPlate = v => String(v == null ? '' : v).trim().toUpperCase().replace(/
 /**
  * Builds the state of one trip from its Time Log rows.
  * row = { key, code, dn, cust, time (ms), kg, mode ('Final'|'Partial'|''), plate, driver }
+ * doneElsewhere = { dn: true } for DNs already fully delivered (on any trip): a DN still open on this trip
+ * but delivered by another truck or round shows as "Delivered on another trip", so this trip can finish
+ * without ever saying the DN was delivered here.
  */
-function tripState(rows) {
+function tripState(rows, doneElsewhere) {
   rows = rows.slice().sort((a, b) => a.time - b.time || a.seq - b.seq);
   const out = { gateIn: null, gateOut: null, canceled: false, dns: {}, last: null, lastProgress: 0, events: rows.length };
   rows.forEach(r => {
@@ -102,6 +106,7 @@ function tripState(rows) {
     out.last = r;
   });
   const dnList = Object.keys(out.dns).map(k => out.dns[k]);
+  dnList.forEach(d => { if (!LEG_DONE[d.leg] && doneElsewhere && doneElsewhere[d.dn]) d.leg = 'moved'; });
   const open = dnList.filter(d => !LEG_DONE[d.leg]);
   let stage;
   if (out.canceled) stage = 'canceled';
