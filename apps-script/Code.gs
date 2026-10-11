@@ -121,7 +121,7 @@ function homeApps_(p, user) {
   ensureRecapTrigger_();
   ensureTelegramSettings_();
   const out = {
-    user: { name: user.name, role: user.role },
+    user: { name: user.name, role: user.role, employeeId: user.employeeId || '' },
     apps: HOME_APPS.map(a => a.key).filter(k => canUse_(user, k)),
   };
   // Reviewers see how many entries wait for them on the Fuel Refill tile.
@@ -203,7 +203,8 @@ function authenticate_(token) {
   if (!user) throw new Error('NOACCESS: ' + email + ' is not allowed to use this app. Ask the admin to add you to the Users sheet.');
   const apps = {};
   HOME_APPS.forEach(a => { if (a.col in user) apps[a.key] = isYes_(user[a.col]); });
-  return { email: email, name: user['Name'] || '', role: String(user['Role'] || 'user').toLowerCase(), apps: apps, session: session };
+  return { email: email, name: user['Name'] || '', role: String(user['Role'] || 'user').toLowerCase(), apps: apps, session: session,
+    employeeId: String(user['Employee ID'] || '').trim() };
 }
 
 // ---------- Sessions: stay signed in ----------

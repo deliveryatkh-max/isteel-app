@@ -223,3 +223,5 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .bar .lang-btn { width: auto; padding: 0 5px; gap: 3px; }
 .bar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
 .bar-right { gap: 5px; }
+/* Every app header is the same height, with the same logo and buttons (Kim, 2026-10-11). */
+.bar { min-height: calc(54px + env(safe-area-inset-top)); padding-bottom: 0; padding-top: env(safe-area-inset-top); }
