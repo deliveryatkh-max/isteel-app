@@ -384,3 +384,10 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .tab-badge { position: absolute; top: 3px; left: calc(50% + 6px); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
   background: #d93025; color: #fff; font: 700 12px/20px system-ui, sans-serif; font-style: normal; text-align: center; }
 .rv-head h2 { margin-right: auto; }
+
+/* ISI STEEL banner: navy chevron pattern with the white ISI circle and STEEL */
+.topbar { background: #091f3f url(../icons/banner-pattern.png) left center / auto 120px repeat-x; }
+.isi-logo { display: flex; align-items: center; gap: 8px; flex: none; }
+.isi-logo img { display: block; border-radius: 50%; }
+.isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
+.brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }

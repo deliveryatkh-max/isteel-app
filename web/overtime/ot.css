@@ -207,3 +207,10 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .shiftbtn small { display: block; color: var(--muted); font-size: 12.5px; }
 .shiftbtn.on { border-color: var(--accent); background: var(--soft); color: var(--brand); box-shadow: 0 0 0 3px rgba(11, 118, 160, .18); }
 .shiftbtn.on small { color: var(--brand); }
+
+/* ISI STEEL banner: navy chevron pattern with the white ISI circle and STEEL */
+.bar { background: #091f3f url(../icons/banner-pattern.png) left center / auto 120px repeat-x; }
+.isi-logo { display: flex; align-items: center; gap: 8px; flex: none; }
+.isi-logo img { display: block; border-radius: 50%; }
+.isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
+.brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
