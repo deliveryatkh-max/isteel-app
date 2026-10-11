@@ -214,3 +214,5 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .isi-logo img { display: block; border-radius: 50%; }
 .isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
 .brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
+.brand b, .brand small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand > div:last-child { min-width: 0; }

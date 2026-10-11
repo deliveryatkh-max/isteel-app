@@ -448,12 +448,8 @@
 
   function showRole() {
     const u = state.config.user;
-    $('#who').innerHTML = `${esc(u.name || u.email)}<br><button id="signOut">${L('ចាកចេញ', 'Sign out')}</button>`;
-    $('#signOut').onclick = () => {
-      const n = outbox.mine().length;
-      if (n && !confirm(L(`មាន ${n} មិនទាន់បញ្ជូន។ វានឹងបញ្ជូនពេលអ្នកចូលម្តងទៀត។ ចាកចេញឬ?`, `${n} entry not sent yet. It will be sent when you sign in again. Sign out anyway?`))) return;
-      signOut(false);
-    };
+    // No name or Sign out in the bar (Kim, 2026-10-11): signing out is done from the home menu.
+    $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
     reviewBadge();
   }

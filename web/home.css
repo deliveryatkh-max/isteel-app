@@ -138,3 +138,8 @@ main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 32px; }
 .isi-logo img { display: block; border-radius: 50%; }
 .isi-logo .word { font: 800 21px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
 .brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
+/* Offline status sits under the logo; the user name is not shown in the bar (Kim, 2026-10-11). */
+.logo-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.logo-col .net { font-size: 11px; line-height: 1.2; }
+.bar .who { display: none; }
+.bar .isi-logo .word { font-size: 19px; }

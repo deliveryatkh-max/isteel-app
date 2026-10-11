@@ -391,3 +391,6 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .isi-logo img { display: block; border-radius: 50%; }
 .isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
 .brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
+.topbar .who:empty { display: none; }
+.brand { min-width: 0; }
+.brand b, .brand small { white-space: nowrap; }
