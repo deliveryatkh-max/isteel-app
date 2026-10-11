@@ -216,3 +216,10 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
 .brand b, .brand small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand > div:last-child { min-width: 0; }
+
+/* Header buttons a little smaller than the ISI STEEL logo (Kim, 2026-10-11). */
+.bar .icon-btn { width: 30px; height: 28px; border-radius: 8px; font-size: 14px; }
+.bar .icon-btn svg { width: 16px; height: 16px; }
+.bar .lang-btn { width: auto; padding: 0 5px; gap: 3px; }
+.bar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
+.bar-right { gap: 5px; }
