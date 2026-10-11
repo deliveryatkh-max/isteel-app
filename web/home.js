@@ -195,9 +195,10 @@
     const el = $('#net');
     const off = navigator.onLine === false;
     const ready = 'serviceWorker' in navigator && !!navigator.serviceWorker.controller;
-    el.hidden = !off && !ready;
+    // Only a real loss of internet is shown; the "works offline" note was removed (Kim, 2026-10-11).
+    el.hidden = !off;
     el.classList.toggle('off', off);
-    el.textContent = off ? t('គ្មានអ៊ីនធឺណិត', 'Offline') : t('អាចប្រើក្រៅបណ្ដាញ', 'Works offline');
+    el.textContent = off ? t('គ្មានអ៊ីនធឺណិត', 'Offline') : '';
   }
   function paintInstall() {
     const box = $('#install');

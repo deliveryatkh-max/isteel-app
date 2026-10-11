@@ -143,3 +143,10 @@ main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 32px; }
 .logo-col .net { font-size: 11px; line-height: 1.2; }
 .bar .who { display: none; }
 .bar .isi-logo .word { font-size: 19px; }
+
+/* Header buttons a little smaller than the ISI STEEL logo (Kim, 2026-10-11). */
+.bar .icon-btn { width: 30px; height: 28px; border-radius: 8px; font-size: 14px; }
+.bar .icon-btn svg { width: 16px; height: 16px; }
+.bar .lang-btn { width: auto; padding: 0 5px; gap: 3px; }
+.bar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
+.bar-right { gap: 5px; }
