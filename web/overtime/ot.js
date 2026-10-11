@@ -517,6 +517,7 @@
       state.draft = {};                   // a fresh key, and today's date, for the next request
       saveDraft();
       setDept(null);                      // the next request needs a new scan
+      setTimeout(preloadSummary, 300);
     } catch (e) {
       if (e.code === 'BAD_QR') { setDept(null); state.deptErr = niceError(e); state.sending = false; renderNew(); return; }
       // The same key is kept, so trying again can never save the request twice.
@@ -564,6 +565,26 @@
   // The summary covers every OT row of the employee in the sheet (old ones too), opened with their Employee ID
   // plus one of their Request IDs saved on this phone. The last result is shown at once while it refreshes.
   const monthStart = ymd => ymd.slice(0, 8) + '01';
+  const sumKey = (id, from, to) => 'ot_sum_' + id + '_' + from + '_' + to;
+  const inflight = {};
+  // Fetches (once at a time) and saves the summary; also used to preload it so the tab opens at once.
+  function fetchSummary(id, from, to) {
+    const key = sumKey(id, from, to);
+    if (inflight[key]) return inflight[key];
+    const proof = (getJ(K.mine, []).find(m => m.id === id) || {}).reqId;
+    if (!proof) return Promise.resolve(null);
+    inflight[key] = api('summary', { id, proof, from, to })
+      .then(res => { set(key, JSON.stringify(res)); return res; })
+      .finally(() => { delete inflight[key]; });
+    return inflight[key];
+  }
+  function preloadSummary() {
+    const me = (state.emp && state.emp.id) || get(K.id) || '';
+    if (!me) return;
+    const today = (cfg && cfg.today) || localYmd();
+    const f = state.sumF || { from: monthStart(today), to: today };
+    fetchSummary(me, f.from, f.to).catch(() => { /* shown when the tab opens */ });
+  }
   async function renderMine() {
     scanner.stop();
     state.tab = 'mine'; paintTabs();
@@ -574,7 +595,7 @@
     const ids = me && mine.some(m => m.id === me) ? [me] : [];
     const today = (cfg && cfg.today) || localYmd();
     const f = state.sumF = Object.assign({ from: monthStart(today), to: today }, state.sumF || {}, { id: me });
-    const cacheKey = () => 'ot_sum_' + f.id + '_' + f.from + '_' + f.to;
+    const cacheKey = () => sumKey(f.id, f.from, f.to);
     const nameOf = id => { const p = people().find(x => x.id === id); return p ? p.en + (p.kh ? ' · ' + p.kh : '') : ''; };
     const draw = (res, loading, err) => {
       const tt = res && res.totals;
@@ -590,7 +611,7 @@
           </div>
           <div class="sumtotal">
             <span>${t('ម៉ោងថែមសរុប', 'Total OT')}</span>
-            <b id="sumTotal">${tt ? esc(hoursText(tt.total)) : (loading ? '<span class="sp"></span>' : '—')} <small>${t('ម៉ោង', 'h')}</small></b>
+            <b id="sumTotal">${tt ? esc(hoursText(tt.total)) + ` <small>${t('ម៉ោង', 'h')}</small>` : (loading ? `<span class="sp"></span>` : '—')}</b>
             <em>${tt ? esc(tt.count) + ' ' + t('ដង', tt.count === 1 ? 'request' : 'requests') : ''}</em>
           </div>
           ${tt ? `<div class="sumparts">
@@ -628,11 +649,9 @@
     if (!ids.length) return draw(null, false);
     const cached = getJ(cacheKey(), null);
     draw(cached, true);
-    const proof = (mine.find(m => m.id === f.id) || {}).reqId;
     const key = cacheKey();
     try {
-      const res = await api('summary', { id: f.id, proof, from: f.from, to: f.to });
-      set(key, JSON.stringify(res));
+      const res = await fetchSummary(f.id, f.from, f.to);
       if (state.tab === 'mine' && key === cacheKey()) draw(res, false);
     } catch (e) {
       if (state.tab === 'mine' && key === cacheKey()) draw(cached, false, niceError(e));
@@ -732,4 +751,5 @@
   loadConfig();
   loadPeople();
   if (get(K.id) && !state.emp) pick(get(K.id));
+  setTimeout(preloadSummary, 1500);   // My requests then opens with fresh numbers
 })();
