@@ -1,5 +1,4 @@
-// Delivery app settings. Paste the Delivery Apps Script web app URL (ends with /exec) after deploying it
-// (see apps-script-delivery/SETUP.md). The Google Client ID comes from ../config.js, shared by every app.
+// Delivery Apps Script web app (ends with /exec). Kept here so every build writes it into web/delivery/config.js.
 window.DELIVERY_CONFIG = {
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxzTlo54t4ByYPx0XpHu1VM2Z6oefc5hFxgjFf6OGJxRWO-xW0VlBdJrGEv8JULRm3ntA/exec',
 };
