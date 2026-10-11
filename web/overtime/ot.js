@@ -311,7 +311,22 @@
     return !!state.dept;
   }
   function setDept(d) { state.dept = d; set(K.dept, d ? JSON.stringify(d) : null); }
+  // Same reading of the scan as the server: the bare ID or the whole link with ?d=.
+  const deptCodeOf = raw => { const s = String(raw || '').trim(), m = s.match(/[?&]d=([A-Za-z0-9-]+)/); return (m ? m[1] : s).toUpperCase().slice(0, 30); };
+  async function sha256hex(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
   async function checkDept(text) {
+    // Instant: the code is matched against the department fingerprints saved with the settings.
+    // Only a code not found there (e.g. a department added a minute ago) asks the server.
+    const keys = cfg && cfg.deptKeys, code = deptCodeOf(text);
+    if (keys && code && window.crypto && crypto.subtle) {
+      try {
+        const name = keys[await sha256hex(code)];
+        if (name) { setDept({ code, name, at: Date.now() }); state.deptErr = ''; toast('✅ ' + name); if (state.tab === 'new' && !state.result) renderNew(); return; }
+      } catch (e) { /* fall back to the server */ }
+    }
     state.deptChecking = true; state.deptErr = ''; if (state.tab === 'new') renderNew();
     try {
       const d = await api('dept', { code: String(text || '').slice(0, 300) });
