@@ -10,6 +10,7 @@ const SHELL = [
   'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg',
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
+  'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css',
   'dashboard/vendor/react.production.min.js', 'dashboard/vendor/react-dom.production.min.js',
   'dashboard/vendor/prop-types.min.js', 'dashboard/vendor/Recharts.js',

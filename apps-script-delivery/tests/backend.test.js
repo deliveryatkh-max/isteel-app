@@ -365,3 +365,13 @@ test('Users screen: Admin adds and changes roles, with audit', () => {
   const r = e.call('setUser', { email: 'admin@test.kh', role: 'Security' }, ADMIN);
   assert.ok(!r.ok);
 });
+
+test('plan weight known but no kg typed: the "whole DN" tick finishes the DN', () => {
+  const e = env(); e.run('setup()');
+  const t1 = gateIn(e, 'TEST-0001').tripId;
+  loadAndOut(e, t1, ['9000000001']);
+  step(e, 30); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '9000000001', final: true }] }));
+  const d = ok(e.call('trip', { tripId: t1 }, ADMIN));
+  assert.strictEqual(d.dnInfo['9000000001'].status, 'delivered');
+  assert.strictEqual(d.stage, 'completed');
+});

@@ -12,7 +12,7 @@ export default defineConfig({
     target: 'es2019',
     rollupOptions: {
       input: 'index.html',
-      output: { entryFileNames: 'delivery.js', chunkFileNames: '[name]-[hash].js', assetFileNames: 'delivery[extname]' },
+      output: { entryFileNames: 'delivery.js', chunkFileNames: 'delivery-[name]-[hash].js', assetFileNames: 'delivery[extname]' },
     },
   },
   server: { port: 5174 },

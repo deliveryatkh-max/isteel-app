@@ -33,10 +33,10 @@ body {
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-/* ISI STEEL banner, shared look with every iSteel app */
+/* ISI STEEL banner: same height, logo and buttons as every iSteel app (Kim, 2026-10-11) */
 .bar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); color: #fff;
+  padding: 0 16px; padding-top: env(safe-area-inset-top); min-height: calc(54px + env(safe-area-inset-top)); color: #fff;
   background: #091f3f url(../icons/banner-pattern.png) left center / auto 120px repeat-x;
 }
 .brand { display: flex; align-items: center; gap: 10px; line-height: 1.15; min-width: 0; }

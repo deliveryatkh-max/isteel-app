@@ -124,7 +124,7 @@ function tripState(rows, doneElsewhere) {
 /**
  * Overall status of one DN from every trip it rode on.
  * legs = [{ tripId, leg, kg, final, time }], planKg = weight in Delivery Plan (0 = unknown).
- * Delivered when the delivered kg reach the plan weight; with no plan weight, when a Delivered step was marked
+ * Delivered when the delivered kg reach the plan weight, or when a Delivered step without a weight was marked
  * "the whole DN / last part" (Form Mode = Final). Anything less is Partially Delivered.
  */
 function dnStatus(legs, planKg) {
@@ -135,7 +135,10 @@ function dnStatus(legs, planKg) {
   const openTrips = legs.filter(l => !LEG_DONE[l.leg]).map(l => l.tripId);
   let status;
   if (delivered.length) {
-    const full = planKg > 0 ? kg >= planKg * 0.995 : delivered.some(l => l.final);
+    // Weight decides when it is known (plan weight and delivered kg typed); a "whole DN / last part" tick
+    // without a weight finishes the DN on its own (Kim's answer C).
+    const tickOnly = delivered.some(l => l.final && !(planKg > 0 && Number(l.kg) > 0));
+    const full = tickOnly || (planKg > 0 ? kg >= planKg * 0.995 : false);
     status = full ? 'delivered' : 'partial';
   } else if (openTrips.length) status = 'in_progress';
   else {

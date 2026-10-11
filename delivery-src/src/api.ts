@@ -64,7 +64,14 @@ const outSubs = new Set<() => void>();
 export const outbox = {
   list: (): OutItem[] => store.json<OutItem[]>(OUT_KEY) || [],
   save(items: OutItem[]) { store.set(OUT_KEY, JSON.stringify(items)); outSubs.forEach(f => f()); },
-  add(item: OutItem) { outbox.save(outbox.list().filter(x => x.ref !== item.ref).concat(item)); },
+  add(item: OutItem) {
+    outbox.save(outbox.list().filter(x => x.ref !== item.ref).concat(item));
+    // Phone storage full (photos are big): keep the step without its photo rather than lose it.
+    if (!outbox.list().some(x => x.ref === item.ref)) {
+      const payload = Object.assign({}, item.payload); delete payload.photo;
+      outbox.save(outbox.list().concat(Object.assign({}, item, { payload, label: item.label + ' (no photo)' })));
+    }
+  },
   remove(ref: string) { outbox.save(outbox.list().filter(x => x.ref !== ref)); },
   subscribe(f: () => void) { outSubs.add(f); return () => { outSubs.delete(f); }; },
 };
