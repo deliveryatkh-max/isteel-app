@@ -14,6 +14,9 @@
   const getJ = (k, d) => { try { return JSON.parse(get(k)) || d; } catch (e) { return d; } };
 
   const K = { dept: 'ot_dept', cfg: 'ot_cfg', id: 'ot_last_id', mine: 'ot_mine', items: 'ot_items', draft: 'ot_draft', people: 'ot_people', shift: 'ot_shift' };
+  // The home menu saves the signed-in person's Employee ID; the form starts on it, not on the last ID typed on this phone (Kim, 2026-10-11).
+  const me0 = getJ('steel_me', null);
+  if (me0) set(K.id, me0.id || null);
 
   // ---------- server ----------
   const ERR_KM = {

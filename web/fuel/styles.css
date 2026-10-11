@@ -400,3 +400,8 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .topbar .lang-btn { height: 28px; padding: 0 6px; gap: 3px; border-radius: 8px; }
 .topbar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
 .top-right { gap: 5px; }
+/* Every app header is the same height, with the same logo and buttons (Kim, 2026-10-11). */
+.topbar { min-height: 54px; padding-top: 0; padding-bottom: 0; }
+.topbar .theme-btn, .topbar .lang-btn { border: 1px solid rgba(255,255,255,.25); background: transparent; color: #fff; }
+.topbar .theme-btn:hover, .topbar .lang-btn:hover { background: rgba(255,255,255,.1); }
+.topbar .lang-btn { padding: 0 5px; }

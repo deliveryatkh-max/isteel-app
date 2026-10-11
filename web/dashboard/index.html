@@ -19,6 +19,10 @@
     .isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
     .isi-sep { width: 1px; height: 28px; background: rgba(255,255,255,.3); flex: none; }
     header.bg-head .btn-sm { height: 28px; min-height: 28px; padding: 0 8px; font-size: 13px; }
+    /* Same header height and day/night button as the other apps (Kim, 2026-10-11). */
+    header.bg-head > div { height: 54px; }
+    header.bg-head .btn-sm[aria-label] { width: 30px; padding: 0; justify-content: center; border-radius: 8px; font-size: 14px; background: transparent; border-color: rgba(255,255,255,.25); }
+    header.bg-head .btn-sm[aria-label]:hover { background: rgba(255,255,255,.1); }
   </style>
   <script>
     // Same theme choice as the Fuel Refill app; set before paint so there is no flash.
