@@ -198,3 +198,4 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .sumcard .row2 > div { min-width: 0; }
 .sumcard input[type=date] { min-width: 0; width: 100%; font-size: 16px; padding: 10px 8px; }
 .sumtotal b small { display: inline; color: inherit; opacity: .9; }
+.sumtotal .sp { width: 26px; height: 26px; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; }

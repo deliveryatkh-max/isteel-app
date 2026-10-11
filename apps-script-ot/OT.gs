@@ -720,17 +720,20 @@ function summary_(p) {
   if (!id || !/^OT-\d{6}-[A-Z0-9]{5}$/.test(proof)) fail_('INVALID', 'Please check one of your requests first.');
   if (!ymd.test(from) || !ymd.test(to) || from > to) fail_('INVALID', 'Please choose a valid date range.');
   if (serialOf_(to) - serialOf_(from) > 366) fail_('INVALID', 'Please choose at most one year.');
+  // One read of the sheet (values only, no display text) keeps this quick even with thousands of rows.
   const ds = dataSheet_();
-  const pr = findRequestRow_(ds, proof);
-  if (!pr || readRow_(ds, pr).id !== id) fail_('NOTFOUND', 'No request with that ID for this Employee ID.');
   const last = ds.sh.getLastRow();
+  if (last < 2) fail_('NOTFOUND', 'No request with that ID for this Employee ID.');
   const v = ds.sh.getRange(2, 1, last - 1, ds.width).getValues();
-  const d = ds.sh.getRange(2, 1, last - 1, ds.width).getDisplayValues();
   const m = ds.map, g = (row, f) => (m[f] == null ? '' : row[m[f]]);
+  const time = x => (x instanceof Date ? hhmm12_(x.getHours() * 60 + x.getMinutes()) : String(x || ''));
+  const stamp = x => (x instanceof Date ? fmt_(x, 'yyyy-MM-dd') + ' ' + hhmm12_(x.getHours() * 60 + x.getMinutes()) : String(x || ''));
   const totals = { approved: 0, pending: 0, rejected: 0, recorded: 0, total: 0, count: 0 };
   const items = [];
+  let proven = false;
   for (let i = 0; i < v.length; i++) {
     if (idText_(g(v[i], 'id')) !== id) continue;
+    if (String(g(v[i], 'reqId')) === proof) proven = true;
     const dt = g(v[i], 'date');
     const date = dt instanceof Date ? fmt_(dt, 'yyyy-MM-dd') : '';
     if (!date || date < from || date > to) continue;
@@ -740,11 +743,12 @@ function summary_(p) {
     totals[key] += hours;
     if (key !== 'rejected') { totals.total += hours; totals.count++; }
     items.push({
-      reqId: String(g(v[i], 'reqId') || ''), status, date, dateText: g(d[i], 'date'), from: g(d[i], 'from'), to: g(d[i], 'to'), hours,
+      reqId: String(g(v[i], 'reqId') || ''), status, date, dateText: dmyOf_(date), from: time(g(v[i], 'from')), to: time(g(v[i], 'to')), hours,
       reason: String(g(v[i], 'reason') || ''), manager: String(g(v[i], 'approver') || ''), reviewed: String(g(v[i], 'reviewed') || ''),
-      decided: g(d[i], 'decided'), rejectReason: String(g(v[i], 'rejectReason') || ''),
+      decided: stamp(g(v[i], 'decided')), rejectReason: String(g(v[i], 'rejectReason') || ''),
     });
   }
+  if (!proven) fail_('NOTFOUND', 'No request with that ID for this Employee ID.');
   Object.keys(totals).forEach(k => { totals[k] = Math.round(totals[k] * 100) / 100; });
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   return { id, from, to, totals, items: items.slice(0, 300), more: items.length > 300 };
