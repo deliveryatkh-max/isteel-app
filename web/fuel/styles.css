@@ -394,3 +394,9 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .topbar .who:empty { display: none; }
 .brand { min-width: 0; }
 .brand b, .brand small { white-space: nowrap; }
+
+/* Header buttons a little smaller than the ISI STEEL logo (Kim, 2026-10-11). */
+.topbar .theme-btn { width: 30px; height: 28px; border-radius: 8px; font-size: 14px; }
+.topbar .lang-btn { height: 28px; padding: 0 6px; gap: 3px; border-radius: 8px; }
+.topbar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
+.top-right { gap: 5px; }
