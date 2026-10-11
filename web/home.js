@@ -61,6 +61,8 @@
     $('#outBtn').hidden = false;
     const name = (d.user && d.user.name) || email();
     $('#who').textContent = name;
+    // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
+    if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '' }));
     const mine = APPS.filter(a => d.apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
@@ -137,6 +139,7 @@
 
   function signOut() {
     set(CACHE_KEY + email(), null);
+    set('steel_me', null);
     set(TOKEN_KEY, null);
     if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
     renderLogin();

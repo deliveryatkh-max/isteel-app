@@ -136,13 +136,12 @@ main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 32px; }
 .bar { background: #091f3f url(icons/banner-pattern.png) left center / auto 120px repeat-x; }
 .isi-logo { display: flex; align-items: center; gap: 8px; flex: none; }
 .isi-logo img { display: block; border-radius: 50%; }
-.isi-logo .word { font: 800 21px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
+.isi-logo .word { font: 800 17px/1 "Noto Sans", "Noto Sans Khmer", system-ui, sans-serif; letter-spacing: .5px; color: #fff; }
 .brand .sep { width: 1px; align-self: stretch; margin: 2px 0; background: rgba(255,255,255,.3); flex: none; }
 /* Offline status sits under the logo; the user name is not shown in the bar (Kim, 2026-10-11). */
 .logo-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .logo-col .net { font-size: 11px; line-height: 1.2; }
 .bar .who { display: none; }
-.bar .isi-logo .word { font-size: 19px; }
 
 /* Header buttons a little smaller than the ISI STEEL logo (Kim, 2026-10-11). */
 .bar .icon-btn { width: 30px; height: 28px; border-radius: 8px; font-size: 14px; }
@@ -150,3 +149,5 @@ main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 32px; }
 .bar .lang-btn { width: auto; padding: 0 5px; gap: 3px; }
 .bar .lang-btn img { width: 17px; height: 12px; border-radius: 2px; }
 .bar-right { gap: 5px; }
+/* Every app header is the same height, with the same logo and buttons (Kim, 2026-10-11). */
+.bar { min-height: calc(54px + env(safe-area-inset-top)); padding-bottom: 0; padding-top: env(safe-area-inset-top); }

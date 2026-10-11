@@ -682,6 +682,9 @@
   }
 
   const plateBroken = plate => (state.config.brokenPlates || []).includes(plate);
+  // Meter broken can only be ticked for trucks marked "Odometer Broken? = Yes" in Driver & Truck (Kim, 2026-10-11),
+  // and not once a km number is typed. An old entry that was ticked stays unlockable so it can be unticked.
+  const brokenLocked = (f, km) => !f.meterBroken && (!plateBroken(f.plate) || toNum(km == null ? f.km : km) > 0);
 
   function typeInfo(name) {
     return (state.config.types || []).find(t => t.name === name) || null;
@@ -722,9 +725,10 @@
     if (t.meter === 'km') {
       if (t.required && !f.meterBroken && !f.odoPhoto && !(editing && state.editing.odoPhoto)) errors.push(L('រូបថតកុងទ័រឡាន', 'Odometer photo'));
       const km = f.meterBroken ? 0 : toNum(f.km);
-      if (t.required && !f.meterBroken && !(km > 0)) errors.push(L('លេខកុងទ័រ (Km) ឬ ធីក កុងទ័រខូច', 'Odometer, or tick Meter broken'));
+      const canBreak = plateBroken(f.plate) || f.meterBroken;
+      if (t.required && !f.meterBroken && !(km > 0)) errors.push(canBreak ? L('លេខកុងទ័រ (Km) ឬ ធីក កុងទ័រខូច', 'Odometer, or tick Meter broken') : L('លេខកុងទ័រ (Km)', 'Odometer (Km)'));
       // 0, 1, 100… are typed when the meter can't be read: the tick box is the right answer. New trucks (last reading under 1,000) are fine.
-      else if (km > 0 && km < MIN_KM && !(last && last.km && last.km < MIN_KM)) errors.push(L(`Km ${fmtNum(km)} មិនត្រឹមត្រូវ (តិចជាង ${fmtNum(MIN_KM)}) បើកុងទ័រខូច សូមធីក កុងទ័រខូច`, `Km ${fmtNum(km)} looks wrong (under ${fmtNum(MIN_KM)}). If the meter is broken, tick Meter broken`));
+      else if (km > 0 && km < MIN_KM && !(last && last.km && last.km < MIN_KM)) errors.push(L(`Km ${fmtNum(km)} មិនត្រឹមត្រូវ (តិចជាង ${fmtNum(MIN_KM)}) បើកុងទ័រខូច សូមប្រាប់ Admin ឲ្យកំណត់ឡាននេះថាកុងទ័រខូច`, `Km ${fmtNum(km)} looks wrong (under ${fmtNum(MIN_KM)}). If the meter is broken, ask the admin to mark this truck as Odometer broken`));
       else if (!editing && km > 0 && last && last.km && km <= last.km) warnings.push(L(`Km (${fmtNum(km)}) មិនលើសលើកមុន (${fmtNum(last.km)})`, `Km (${fmtNum(km)}) is not higher than the last reading (${fmtNum(last.km)})`));
       else if (!editing && km > 0 && last && last.km && km - last.km > MAX_JUMP_KM) warnings.push(L(`Km លើសលើកមុន ${fmtNum(km - last.km)} km (លើកមុន ${fmtNum(last.km)})`, `Km is ${fmtNum(km - last.km)} km more than the last reading (${fmtNum(last.km)}), over ${fmtNum(MAX_JUMP_KM)} km`));
     }
@@ -801,8 +805,8 @@
           <div class="label"><span>${L('លេខកុងទ័រ (Km)', 'Odometer (Km)')}${f.meterBroken ? '' : req}</span></div>
           <div class="km-row">
             <input type="text" inputmode="decimal" id="km" class="big-input" value="${f.meterBroken ? '' : esc(f.km)}" placeholder="${f.meterBroken ? '—' : '0'}" autocomplete="off" ${f.meterBroken ? 'disabled' : ''}>
-            <label class="broken ${toNum(f.km) > 0 && !f.meterBroken ? 'off' : ''}"><span>${L('កុងទ័រខូច', 'Meter broken')}</span>
-              <input type="checkbox" id="meterBroken" ${f.meterBroken ? 'checked' : ''} ${toNum(f.km) > 0 && !f.meterBroken ? 'disabled' : ''}></label>
+            <label class="broken ${brokenLocked(f) ? 'off' : ''}"><span>${L('កុងទ័រខូច', 'Meter broken')}</span>
+              <input type="checkbox" id="meterBroken" ${f.meterBroken ? 'checked' : ''} ${brokenLocked(f) ? 'disabled' : ''}></label>
           </div>
           ${plateBroken(f.plate) ? `<div class="hint">🔧 ${L('ឡាននេះកុងទ័រខូច (Driver &amp; Truck)', 'This truck\'s odometer is marked broken (Driver &amp; Truck)')}</div>` : ''}
           ${last && last.km ? `<div class="hint">${L('លើកមុន', 'Last')}: <b>${fmtNum(last.km)} km</b> · ${fmtDate(last.kmAt)}</div>` : ''}
@@ -922,8 +926,7 @@
     if (broken) {
       const kmEl = $('#km');
       const sync = () => {
-        const hasKm = toNum(kmEl.value) > 0;
-        broken.disabled = hasKm && !f.meterBroken;
+        broken.disabled = brokenLocked(f, kmEl.value);
         broken.closest('.broken').classList.toggle('off', broken.disabled);
       };
       kmEl.addEventListener('input', sync);
