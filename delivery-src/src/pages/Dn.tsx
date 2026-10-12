@@ -169,7 +169,7 @@ export function DnPage(p: { dn: string }) {
           {d.rows.map(r => (
             <div key={r.row} className="py-1.5 border-b border-line last:border-0 text-[14px]">
               <div className="flex justify-between gap-2"><b>{eventLabel(boot, r)}</b><span className="whitespace-nowrap">{fmtDateTime(r.time)}</span></div>
-              <div className="muted text-[13px]">{[r.plate, r.trip, r.kg ? fmtKg(r.kg) : '', r.user].filter(Boolean).join(' · ')}{r.remark ? ' · 💬 ' + r.remark : ''}</div>
+              <div className="muted text-[13px]">{[r.plate, r.trip, r.kg ? fmtKg(r.kg) : ''].filter(Boolean).join(' · ')}{r.remark ? ' · 💬 ' + r.remark : ''}</div>
             </div>
           ))}
         </section>

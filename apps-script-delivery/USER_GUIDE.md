@@ -18,7 +18,7 @@ Bottom bar: ទំព័រដើម (Home), ផ្ទុកថ្មី (Refres
 
 ប្រសិនបើកម្មវិធីបង្ហាញ ⚠️ "សូមពិនិត្យ" អានហើយជ្រើស **បាទ/ចាស កត់ត្រា** ឬ **ទេ ត្រលប់**។
 គ្មានអ៊ីនធឺណិត: ជំហានរក្សាទុកក្នុងទូរស័ព្ទ (⏳ នៅខាងលើ) ហើយផ្ញើដោយខ្លួនឯងពេលមានសេវា។
-**Supervisor/Admin:** កែម៉ោងពីទំព័រជើងដឹក (✎ កែម៉ោង + មូលហេតុ → Audit Log), ពិនិត្យគុណភាពទិន្នន័យ, Admin កំណត់តួនាទីអ្នកប្រើ។
+**Supervisor/Admin:** លុបការកត់ត្រាពីទំព័រជើងដឹក (🗑 លុប + មូលហេតុ → Deleted Records និង Audit Log; មិនអាចកែម៉ោងទេ), ពិនិត្យគុណភាពទិន្នន័យ, Admin កំណត់តួនាទីអ្នកប្រើ។
 
 ## English
 
@@ -35,7 +35,7 @@ A trip can carry many DNs and one DN can be split over several trips. Each step 
 
 A ⚠️ "Please check" box explains anything unusual (wrong order, DN still open on another trip …): choose **Yes, record** or **No, go back**.
 No signal: the step is kept on the phone (⏳ in the header) and sent by itself with the real time.
-**Supervisor/Admin:** correct a time on the trip screen (✎ Correct time + reason, written to Audit Log), Data quality check;
+**Supervisor/Admin:** delete an entry on the trip screen (🗑 Delete + reason, kept in Deleted Records and Audit Log; times cannot be changed), Data quality check;
 Admin sets user roles (More → Users and roles).
 
 **Summary** shows today's trips, active trips, trucks inside the site, out on delivery, completed and canceled, and DN counts.
@@ -52,3 +52,13 @@ Admin sets user roles (More → Users and roles).
 DN screen: 📣 add and resolve complaints, confirm a customer delay (left out of OTIF). Rented truck Gate In asks for the 3PL company.
 More → Dashboard (OTIF, turnaround, 3PL scorecard; Supervisor, Admin, Logistics) and Customer complaints.
 A delivery recorded more than 1 km from the customer site is flagged on the trip; Logistics can set the customer site from a trip.
+
+## ថ្មី (12 Oct 2026, ទី២) · New
+
+**ខ្មែរ.** ជំហានជាបញ្ជីទម្លាក់ចុះ មានពណ៌ និងរូប។ គ្រប់ចន្លោះត្រូវបំពេញ (លើកលែងតែកំណត់សំគាល់) ចន្លោះខ្វះប្តូរពណ៌ក្រហម។
+ផ្លាកលេខ: ស្វែងរកតាមលេខ (ឧ. 1234)។ ឡានថ្មី: ➕ បន្ថែមឡានថ្មី។ រូបថតឡាន ១–៥។ ការរក្សាទុកលឿន: រូបថតផ្ញើបន្ទាប់ (⏳ នៅលើក្បាល)។
+
+**English.** The step is a coloured dropdown. Every field is required except the remark; what is missing turns red.
+Plate search is by number (e.g. 1234); a new truck is added with ➕ Add new truck; 1–5 truck photos.
+Saving is fast: the step is saved first, its photos follow in the background (⏳ in the header until they are sent).
+Timelines no longer show email addresses.

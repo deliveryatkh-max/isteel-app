@@ -41,6 +41,7 @@ class Sheet {
     if (a < 1 || b < 1) throw new Error('bad range');
     return new Range(this, a, b, c || 1, d || 1);
   }
+  deleteRow(r) { this.rows.splice(r - 1, 1); this.writes++; }
   appendRow(v) { const r = this.getLastRow() + 1; v.forEach((x, j) => this.set(r, j + 1, x)); }
   setFrozenRows() {}
 }

@@ -19,7 +19,32 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
     page.on('pageerror', e => { console.log('PAGE ERROR', e.message); results.push('FAIL page error ' + e.message); });
     return { ctx, page };
   }
-  const recordBtn = page => page.locator('button.btn-primary', { hasText: /កត់ត្រា|Record/ }).last();
+  const recordBtn = page => page.getByTestId('save');
+  const IMG = require('path').join(__dirname, '..', '..', 'web', 'icons', 'app-192.png');
+  const until = async (fn, ms) => { const end = Date.now() + (ms || 10000); for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error('timed out waiting'); await new Promise(r => setTimeout(r, 200)); } };
+  const sheetNow = async () => (await fetch(BASE + '/__sheet')).json();
+  const stepNames = async page => { await page.locator('#step').click(); const v = await page.locator('[role=option]').allTextContents(); await page.locator('#step').click(); return v.map(x => x.replace(/ជំហានបន្ទាប់|Next step|✔/g, '').replace(/^[^\u1780-\u17FFA-Za-z0-9x]+/, '').trim()); };
+  // Gate In form: plate by number search, driver, 1-5 truck photos (every field is required)
+  async function gateIn(page, digits, plate, driver) {
+    await page.locator('#plate').click();
+    await page.getByPlaceholder(/ស្វែងរក/).fill(digits);
+    await page.locator('[role=dialog] button', { hasText: plate }).first().click();
+    if (!(await page.locator('#driver').textContent()).includes(driver || '')) {
+      await page.locator('#driver').click();
+      await page.getByPlaceholder(/ស្វែងរក/).fill(driver);
+      await page.getByPlaceholder(/ស្វែងរក/).press('Enter');
+    }
+    await page.locator('input[type=file][multiple]').setInputFiles([IMG]);
+    await page.getByText('1/5').waitFor();
+  }
+  async function proof(page, name) {
+    await page.locator('#rcv').fill(name);
+    await page.locator('canvas').scrollIntoViewIfNeeded();
+    const box = await page.locator('canvas').boundingBox();
+    await page.mouse.move(box.x + 20, box.y + 30); await page.mouse.down();
+    await page.mouse.move(box.x + 120, box.y + 90, { steps: 8 }); await page.mouse.move(box.x + 220, box.y + 40, { steps: 8 }); await page.mouse.up();
+    await page.getByText(/បានចុះហត្ថលេខា/).waitFor();
+  }
 
   // ---- Security: Gate In
   const g = await as('guard@test.kh');
@@ -27,13 +52,25 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await g.page.getByText('ជើងដឹកថ្ងៃនេះ').first().waitFor();
   await g.page.screenshot({ path: SHOTS + '01-ops-phone-km.png' });
   await g.page.goto(BASE + '/delivery/#/record');
-  const evs = await g.page.locator('[role=radio]').allTextContents();
-  assert.deepStrictEqual(evs.map(s => s.replace(/ជំហានបន្ទាប់|Next step/, '').trim()), ['១.ចូលថ្លឹង', '៧.ចេញពីកន្លែងថ្លឹង']);
-  pass('Security sees only the steps Type Record allows', evs.join(', '));
+  const evs = await stepNames(g.page);
+  assert.deepStrictEqual(evs, ['១.ចូលថ្លឹង', '៧.ចេញពីកន្លែងថ្លឹង']);
+  pass('Security sees only the steps Type Record allows, in a dropdown', evs.join(', '));
+  // required fields: nothing filled -> red fields, nothing sent
+  await recordBtn(g.page).click();
+  await g.page.getByText('សូមបំពេញចន្លោះពណ៌ក្រហម។').waitFor();
+  assert.ok(await g.page.locator('[data-missing="1"]').count() >= 3);
+  await g.page.screenshot({ path: SHOTS + '02a-gatein-required.png', fullPage: true });
+  assert.strictEqual((await sheetNow()).trips.length, 1);
+  pass('Empty Gate In: plate, driver and truck photos turn red; nothing is saved');
+  // number-only plate search
   await g.page.locator('#plate').click();
   await g.page.getByPlaceholder(/ស្វែងរក/).fill('TEST-0001');
-  await g.page.locator('[role=dialog] button', { hasText: 'TEST-0001' }).first().click();
-  await g.page.screenshot({ path: SHOTS + '02-gatein-form.png' });
+  assert.strictEqual(await g.page.getByPlaceholder(/ស្វែងរក/).inputValue(), '0001');
+  assert.strictEqual(await g.page.getByPlaceholder(/ស្វែងរក/).getAttribute('inputmode'), 'numeric');
+  await g.page.keyboard.press('Escape');
+  pass('Plate search takes numbers only (number keypad)');
+  await gateIn(g.page, '0001', 'TEST-0001', 'Driver A');
+  await g.page.screenshot({ path: SHOTS + '02-gatein-form.png', fullPage: true });
   await recordBtn(g.page).click();
   const t1 = (await g.page.getByTestId('new-trip-id').textContent()).trim();
   assert.match(t1, /^\d\d-\d\d-\d\d-\d{3}$/);
@@ -42,9 +79,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
 
   // duplicate Gate In a moment later
   await g.page.getByText('កត់ត្រាថ្មី').click();
-  await g.page.locator('#plate').click();
-  await g.page.getByPlaceholder(/ស្វែងរក/).fill('TEST-0001');
-  await g.page.locator('[role=dialog] button', { hasText: 'TEST-0001' }).first().click();
+  await gateIn(g.page, '0001', 'TEST-0001', 'Driver A');
   await recordBtn(g.page).click();
   await g.page.getByText(/ទើបតែកត់ត្រា/).waitFor();
   await g.page.screenshot({ path: SHOTS + '04-duplicate.png' });
@@ -72,7 +107,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await w.page.goto(BASE + '/delivery/#/record?trip=' + t1 + '&code=6');
   await w.page.locator('#wh').waitFor();
   await w.page.screenshot({ path: SHOTS + '06-loading-form.png' });
-  const wEv = await w.page.locator('[role=radio]').allTextContents();
+  const wEv = await stepNames(w.page);
   assert.ok(!wEv.some(s => s.indexOf('ចូលថ្លឹង') >= 0));
   pass('Warehouse cannot see Gate In');
 
@@ -92,20 +127,21 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await d.page.goto(link1);
   await d.page.getByText('៩. បានប្រគល់ទំនិញ').click();
   await d.page.locator('label', { hasText: '9000000001' }).locator('input').check();
+  // every field required: kg, receiver, signature, photos
+  await recordBtn(d.page).click();
+  await d.page.getByText('សូមបំពេញចន្លោះពណ៌ក្រហម។').waitFor();
+  await d.page.screenshot({ path: SHOTS + '08a-driver-required.png', fullPage: true });
+  await d.page.getByLabel('kg').fill('1000');
   // proof of delivery: receiver, finger signature, two photos
-  await d.page.locator('#rcv').fill('Mr Receiver');
-  await d.page.locator('canvas').scrollIntoViewIfNeeded();
-  const box = await d.page.locator('canvas').boundingBox();
-  await d.page.mouse.move(box.x + 20, box.y + 30); await d.page.mouse.down();
-  await d.page.mouse.move(box.x + 120, box.y + 90, { steps: 8 }); await d.page.mouse.move(box.x + 220, box.y + 40, { steps: 8 }); await d.page.mouse.up();
-  await d.page.getByText(/បានចុះហត្ថលេខា/).waitFor();
-  const img = require('path').join(__dirname, '..', '..', 'web', 'icons', 'app-192.png');
-  await d.page.locator('input[type=file][multiple]').setInputFiles([img, img]);
-  await d.page.getByText('(2/5)').waitFor();
+  await proof(d.page, 'Mr Receiver');
+  await d.page.locator('input[type=file][multiple]').setInputFiles([IMG, IMG]);
+  await d.page.getByText('2/5').waitFor();
   await d.page.screenshot({ path: SHOTS + '08-driver-page.png', fullPage: true });
-  await d.page.getByRole('button', { name: /✔/ }).click();
+  const t0 = Date.now();
+  await recordBtn(d.page).click();
   await d.page.getByText(/បានកត់ត្រា/).first().waitFor();
-  const pr = (await (await fetch(BASE + '/__sheet')).json()).proof;
+  pass('Fast save: Delivered is confirmed before the photos are uploaded', (Date.now() - t0) + ' ms');
+  const pr = await until(async () => { const x = (await sheetNow()).proof; return x.length === 2 && x[1][5] && String(x[1][6]).split('\n').length === 2 ? x : null; });
   assert.strictEqual(pr.length, 2, 'one proof row');
   assert.strictEqual(pr[1][4], 'Mr Receiver');
   assert.ok(/^https:\/\/drive/.test(pr[1][5]), 'signature saved');
@@ -145,9 +181,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await skew(10 * 60000);
   await g.page.goto(BASE + '/delivery/#/record');
   await g.page.reload();
-  await g.page.locator('#plate').click();
-  await g.page.getByPlaceholder(/ស្វែងរក/).fill('TEST-0001');
-  await g.page.locator('[role=dialog] button', { hasText: 'TEST-0001' }).first().click();
+  await gateIn(g.page, '0001', 'TEST-0001', 'Driver A');
   await recordBtn(g.page).click();
   await g.page.getByText('សូមពិនិត្យ').waitFor();
   await g.page.screenshot({ path: SHOTS + '09-open-trip-warning.png' });
@@ -170,14 +204,17 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await l.page.getByText('កត់ត្រាជំហានបន្ទាប់').waitFor();
   pass('DN-002 added to trip 2 after the "open on another trip" warning');
   await skew(5 * 60000);
-  for (const [who, code, extra] of [['logi@test.kh', 3], ['wh@test.kh', 4], ['wh@test.kh', 5], ['wh@test.kh', 6, { wh: 'PNP2' }], ['guard@test.kh', 7]]) {
+  for (const [who, code, extra] of [['logi@test.kh', 3], ['wh@test.kh', 4], ['wh@test.kh', 5], ['wh@test.kh', 6, { wh: 'PNP2', kg: 2000, websling: true }], ['guard@test.kh', 7]]) {
     const r = await api('record', Object.assign({ ref: 'y' + code + Math.random(), code, tripId: t2 }, extra || {}), tok(who));
     assert.ok(r.ok && !r.data.needConfirm, JSON.stringify(r));
   }
   const detail2 = (await api('trip', { tripId: t2 }, tok('admin@test.kh'))).data;
   await d.page.goto(BASE + '/delivery/?t=' + t2 + '&k=' + detail2.driverLink);
   await d.page.getByText('៩. បានប្រគល់ទំនិញ').click();
-  await d.page.getByRole('button', { name: /✔/ }).click();   // single open DN is pre-ticked
+  await d.page.getByLabel('kg').fill('2000');   // single open DN is pre-ticked
+  await proof(d.page, 'Ms Two');
+  await d.page.locator('input[type=file][multiple]').setInputFiles([IMG]);
+  await recordBtn(d.page).click();
   await d.page.getByText(/បានកត់ត្រា|បានបញ្ចប់/).first().waitFor();
   pass('DN-002 delivered on trip 2 via the trip 2 driver link');
 
@@ -229,30 +266,33 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   assert.strictEqual(gMore, 0);
   pass('Dashboard (turnaround, OTIF, 3PL scorecard) opens for Admin; Security does not see it');
 
-  // ---- time correction with audit
+  // ---- no time changes; Supervisor/Admin can delete an entry (kept in Deleted Records + Audit Log)
   await a.page.goto(BASE + '/delivery/#/trip/' + t2);
-  await a.page.getByText('✎ កែម៉ោង').first().click();
-  await a.page.locator('#cr').fill('Guard tapped late');
-  await a.page.screenshot({ path: SHOTS + '13-correct-time.png' });
-  await a.page.getByRole('button', { name: 'រក្សាទុក' }).click();
-  await a.page.getByText(/Audit Log/).waitFor();
-  const sheet2 = await (await fetch(BASE + '/__sheet')).json();
-  assert.ok(sheet2.audit.length >= 2 && sheet2.audit[sheet2.audit.length - 1].indexOf('Guard tapped late') >= 0);
-  pass('Supervisor/Admin time correction writes the Audit Log');
+  await a.page.getByText('ប្រវត្តិជំហាន').waitFor();
+  assert.strictEqual(await a.page.getByText('✎ កែម៉ោង').count(), 0);
+  assert.strictEqual(await a.page.getByText('@test.kh').count(), 0, 'no email in the timeline');
+  const before = (await sheetNow()).log.length;
+  await a.page.getByText('🗑 លុប').nth(2).click();
+  await a.page.locator('#dr').fill('Tapped by mistake');
+  await a.page.screenshot({ path: SHOTS + '13-delete-entry.png' });
+  await a.page.locator('[role=dialog] button', { hasText: '🗑 លុប' }).click();
+  await a.page.getByText('បានលុប').waitFor();
+  const sheet2 = await sheetNow();
+  assert.strictEqual(sheet2.log.length, before - 1);
+  assert.ok(sheet2.audit.some(r => r.join(' ').indexOf('Tapped by mistake') >= 0));
+  pass('Admin deletes an entry with a reason (Audit Log); no change-time button; no email in the timeline');
   const s = await as('sup@test.kh');
   await s.page.goto(BASE + '/delivery/#/trip/' + t2);
-  await s.page.getByText('ប្រវត្តិជំហាន').waitFor();
-  const gLink = await g.page.goto(BASE + '/delivery/#/trip/' + t2).then(() => g.page.getByText('✎ កែម៉ោង').count());
-  assert.strictEqual(gLink, 0);
-  pass('Security does not get the correct-time button');
+  await s.page.getByText('🗑 លុប').first().waitFor();
+  const gDel = await g.page.goto(BASE + '/delivery/#/trip/' + t2).then(() => g.page.getByText('ប្រវត្តិជំហាន').waitFor()).then(() => g.page.getByText('🗑 លុប').count());
+  assert.strictEqual(gDel, 0);
+  pass('Supervisor sees Delete; Security does not')
 
   // ---- offline: saved on the phone, sent when back online
   await skew(5 * 60000);
   await g.page.goto(BASE + '/delivery/#/record');
   await g.page.reload();
-  await g.page.locator('#plate').click();
-  await g.page.getByPlaceholder(/ស្វែងរក/).fill('TEST-0002');
-  await g.page.locator('[role=dialog] button', { hasText: 'TEST-0002' }).first().click();
+  await gateIn(g.page, '0002', 'TEST-0002', 'Driver B');
   await g.ctx.setOffline(true);
   await recordBtn(g.page).click();
   await g.page.getByText('រក្សាទុកក្នុងទូរស័ព្ទ').waitFor();
@@ -267,19 +307,33 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   // ---- rented truck with its 3PL company; trucks inside show on the Summary
   await g.page.getByText('កត់ត្រាថ្មី').click();
   await g.page.locator('#plate').click();
-  await g.page.getByPlaceholder(/ស្វែងរក/).fill('2B-7777');
-  await g.page.getByRole('button', { name: /2B-7777/ }).click();
+  await g.page.getByRole('button', { name: /បន្ថែមឡានថ្មី/ }).click();
+  await g.page.getByPlaceholder(/ផ្លាកលេខ ឧ/).fill('2b');
+  await g.page.locator('[role=dialog] button', { hasText: /^➕ បន្ថែម$/ }).click();
+  await g.page.getByText(/ផ្លាកលេខមិនត្រឹមត្រូវ/).waitFor();
+  await g.page.getByPlaceholder(/ផ្លាកលេខ ឧ/).fill('2b-7777');
+  await g.page.locator('[role=dialog] button', { hasText: /^➕ បន្ថែម$/ }).click();
+  assert.match(await g.page.locator('#plate').textContent(), /2B-7777/);
+  await g.page.locator('#driver').click();
+  await g.page.getByPlaceholder(/ស្វែងរក/).fill('Rent Driver');
+  await g.page.getByPlaceholder(/ស្វែងរក/).press('Enter');
+  await g.page.locator('input[type=file][multiple]').setInputFiles([IMG, IMG, IMG, IMG, IMG, IMG]);
+  await g.page.getByText('5/5').waitFor();
+  assert.strictEqual(await g.page.getByText('ពីវិចិត្រសាល').count(), 0, 'no more photos after 5');
+  await g.page.screenshot({ path: SHOTS + '14a-new-truck.png', fullPage: true });
   await g.page.locator('#co').click();
   await g.page.getByPlaceholder(/ស្វែងរក/).fill('Fast Trans');
   await g.page.getByRole('button', { name: /Fast Trans/ }).click();
   await recordBtn(g.page).click();
   await g.page.getByTestId('new-trip-id').waitFor();
   const sheet5 = await (await fetch(BASE + '/__sheet')).json();
-  assert.ok(sheet5.companies.some(r => r[0] === '2B-7777' && r[1] === 'Fast Trans'));
+  assert.ok(sheet5.companies.some(r => r[0] === '2B-7777' && r[1] === 'Fast Trans' && r[4] === 'rented'));
+  const b2 = (await api('boot', {}, tok('guard@test.kh'))).data;
+  assert.ok(b2.trucks.some(x => x.plate === '2B-7777' && x.co === 'Fast Trans'));
   await g.page.goto(BASE + '/delivery/#/');
   await g.page.getByText('រង់ចាំយូរជាងគេក្នុងរោងចក្រ').waitFor();
   await g.page.screenshot({ path: SHOTS + '14b-ops-waiting.png' });
-  pass('Rented truck Gate In saves its 3PL company; trucks inside are listed on the Summary');
+  pass('Add new truck (plate checked), 5 photos max; its 3PL company and type are saved and offered next time; trucks inside are listed on the Summary');
 
   // ---- other screens: history, DN search, more, quality, users; English; dark; desktop
   for (const [hash, file] of [['#/trips', '15-active.png'], ['#/trips/history', '16-history.png'], ['#/dn', '17-dn-search.png'], ['#/more', '18-more.png'], ['#/quality', '19-quality.png'], ['#/users', '20-users.png']]) {

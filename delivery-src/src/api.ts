@@ -58,19 +58,23 @@ export async function api<T = any>(action: string, payload?: any, opts?: { noAut
 // ---------------------------------------------------------------- Outbox
 // A submission that cannot reach the server (no signal) is kept on the phone and sent again automatically,
 // with the time it was really recorded. Nothing is dropped silently: the header shows how many are waiting.
-export type OutItem = { ref: string; action: 'record' | 'drvRecord'; payload: any; label: string; at: number; error?: string };
+export type OutItem = { ref: string; action: 'record' | 'drvRecord' | 'attach' | 'drvAttach'; payload: any; label: string; at: number; error?: string };
 const OUT_KEY = 'dlv_outbox';
 const outSubs = new Set<() => void>();
 export const outbox = {
   list: (): OutItem[] => store.json<OutItem[]>(OUT_KEY) || [],
   save(items: OutItem[]) { store.set(OUT_KEY, JSON.stringify(items)); outSubs.forEach(f => f()); },
-  add(item: OutItem) {
+  /** false when the phone storage is full and the item could not be kept. */
+  add(item: OutItem): boolean {
     outbox.save(outbox.list().filter(x => x.ref !== item.ref).concat(item));
+    if (outbox.list().some(x => x.ref === item.ref)) return true;
+    if (item.action === 'attach' || item.action === 'drvAttach') return false;   // photos only: nothing left without them
     // Phone storage full (photos are big): keep the step without its photo rather than lose it.
-    if (!outbox.list().some(x => x.ref === item.ref)) {
+    {
       const payload = Object.assign({}, item.payload); delete payload.photo; delete payload.photos; delete payload.signature;
       outbox.save(outbox.list().concat(Object.assign({}, item, { payload, label: item.label + ' (no photo)' })));
     }
+    return true;
   },
   remove(ref: string) { outbox.save(outbox.list().filter(x => x.ref !== ref)); },
   subscribe(f: () => void) { outSubs.add(f); return () => { outSubs.delete(f); }; },
@@ -85,7 +89,7 @@ export async function flushOutbox(onSent?: (item: OutItem, res: any) => void) {
     for (const item of outbox.list()) {
       if (item.error) continue;
       try {
-        const res = await api(item.action, item.payload, { noAuth: item.action === 'drvRecord' });
+        const res = await api(item.action, item.payload, { noAuth: item.action === 'drvRecord' || item.action === 'drvAttach' });
         if (res && res.needConfirm) {
           // A warning appeared while it waited: keep it for the user to decide (never confirmed automatically).
           outbox.save(outbox.list().map(x => (x.ref === item.ref ? { ...x, error: res.needConfirm.map((w: any) => w.en + ' || ' + w.kh).join('\n') } : x)));

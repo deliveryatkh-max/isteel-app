@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { errText, t, useLang } from '../i18n';
 import { Alert, Segmented, shrinkPhoto, toast } from './ui';
+import { Field, Section } from './Form';
 
 export const MAX_PHOTOS = 5;
 
 /** Up to 5 photos (camera or gallery), shrunk on the phone so they send fast. */
-export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void; label: string }) {
+export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void; label?: string }) {
   useLang();
   const cam = useRef<HTMLInputElement>(null), gal = useRef<HTMLInputElement>(null);
   const add = async (files: FileList | null) => {
@@ -18,7 +19,8 @@ export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void
   };
   return (
     <div>
-      <span className="lbl">{p.label} <span className="muted font-normal">({p.value.length}/{MAX_PHOTOS})</span></span>
+      {p.label ? <span className="lbl">{p.label}</span> : null}
+      <span className="block muted text-[12.5px] mb-1.5">{p.value.length}/{MAX_PHOTOS} {t('រូប', 'photos')}</span>
       {p.value.length ? (
         <div className="flex flex-wrap gap-2 mb-2">
           {p.value.map((src, i) => (
@@ -43,7 +45,7 @@ export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void
 }
 
 /** Customer signature with a finger. Sent as a small PNG; empty string = not signed. */
-export function SignaturePad(p: { value: string; onChange: (v: string) => void }) {
+export function SignaturePad(p: { value: string; onChange: (v: string) => void; label?: boolean }) {
   useLang();
   const ref = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
@@ -62,7 +64,7 @@ export function SignaturePad(p: { value: string; onChange: (v: string) => void }
   const clear = () => { const c = ref.current!; c.getContext('2d')!.clearRect(0, 0, c.width, c.height); inked.current = false; p.onChange(''); };
   return (
     <div>
-      <span className="lbl">{t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')}</span>
+      {p.label !== false ? <span className="lbl">{t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')}</span> : null}
       <canvas ref={ref} width={600} height={200} className="w-full h-[150px] rounded-xl border-[1.5px] border-dashed border-line bg-white touch-none" aria-label={t('ចុះហត្ថលេខានៅទីនេះ', 'Sign here')} />
       <div className="flex justify-between items-center mt-1">
         <span className="muted text-[12.5px]">{p.value ? '✔ ' + t('បានចុះហត្ថលេខា', 'Signed') : t('ចុះហត្ថលេខាដោយម្រាមដៃ', 'Sign with a finger')}</span>
@@ -72,16 +74,22 @@ export function SignaturePad(p: { value: string; onChange: (v: string) => void }
   );
 }
 
-/** Delivered: receiver name, signature and up to 5 photos (one block, used by Record and the driver page). */
-export function ProofFields(p: { receiver: string; setReceiver: (v: string) => void; signature: string; setSignature: (v: string) => void; photos: string[]; setPhotos: (v: string[]) => void }) {
+/** Delivered: receiver name, signature and up to 5 photos, all required (used by Record and the driver page). */
+export function ProofFields(p: { receiver: string; setReceiver: (v: string) => void; signature: string; setSignature: (v: string) => void; photos: string[]; setPhotos: (v: string[]) => void; miss?: Record<string, string> }) {
   useLang();
+  const m = p.miss || {};
   return (
-    <section className="card grid gap-3">
-      <div><label className="lbl" htmlFor="rcv">{t('ឈ្មោះអ្នកទទួល', 'Receiver name')}</label>
-        <input id="rcv" className="in" value={p.receiver} onChange={e => p.setReceiver(e.target.value)} placeholder={t('មិនចាំបាច់', 'Optional')} /></div>
-      <SignaturePad value={p.signature} onChange={p.setSignature} />
-      <MultiPhoto label={t('រូបថតបុង និងទំនិញ', 'Delivery note and goods photos')} value={p.photos} onChange={p.setPhotos} />
-    </section>
+    <Section icon="✍️" title={t('ភស្តុតាងប្រគល់ទំនិញ', 'Proof of delivery')} color="#1e8a4c">
+      <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required htmlFor="rcv" error={m.receiver}>
+        <input id="rcv" className={'in ' + (m.receiver ? '!border-bad' : '')} value={p.receiver} onChange={e => p.setReceiver(e.target.value)} placeholder={t('ឈ្មោះអ្នកទទួលទំនិញ', 'Who received the goods')} />
+      </Field>
+      <Field icon="✍️" label={t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')} required error={m.signature}>
+        <SignaturePad value={p.signature} onChange={p.setSignature} label={false} />
+      </Field>
+      <Field icon="📷" label={t('រូបថតបុង និងទំនិញ (១–៥)', 'Delivery note and goods photos (1–5)')} required error={m.photos}>
+        <MultiPhoto value={p.photos} onChange={p.setPhotos} />
+      </Field>
+    </Section>
   );
 }
 

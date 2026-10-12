@@ -7,12 +7,22 @@ const { fixture, LOG_HEAD } = require('./fixture');
 
 const as = email => 'google:' + email;
 const ADMIN = as('admin@test.kh'), GUARD = as('guard@test.kh'), LOGI = as('logi@test.kh'), WH = as('wh@test.kh'), SUP = as('sup@test.kh');
+// Kim's rule (12 Oct 2026): every field is required except the remark. Tests fill the fields they do not test.
+function filled(p) {
+  p = Object.assign({}, p);
+  if (p.code === 1 && !/^TEST-/.test(p.plate || '') && !p.company) p.company = 'TEST 3PL';
+  if (p.code === 1 && !('driver' in p)) p.driver = 'TEST driver';
+  if (p.code === 2) p.dns = (p.dns || []).map(d => (/^9/.test(d.dn) || d.so ? d : Object.assign({ so: '1069999999' }, d)));
+  if (p.code === 6) p = Object.assign({ wh: 'PNP1', kg: 3000, websling: false }, p);
+  if (p.code === 9 && !p.receiver) p.receiver = 'TEST receiver';
+  return p;
+}
 let refN = 0;
 const ref = () => 'r' + (++refN);
 
 function env() { return makeEnv(fixture()); }
 function ok(res) { assert.ok(res.ok, 'expected ok, got ' + JSON.stringify(res.error)); return res.data; }
-function rec(e, token, p) { return e.call('record', Object.assign({ ref: ref() }, p), token); }
+function rec(e, token, p) { return e.call('record', filled(Object.assign({ ref: ref() }, p)), token); }
 const logRows = e => e.ss.getSheetByName('Time Log').rows.slice(1).filter(r => r.some(x => x !== '' && x != null));
 const col = name => LOG_HEAD.indexOf(name);
 const tripsRows = e => e.ss.getSheetByName('Trips').rows.slice(1);
@@ -266,10 +276,10 @@ test('driver link: signed per trip, only delivery steps, closes with the trip', 
   assert.ok(!bad.ok && /^LINK/.test(bad.error));
   const v = ok(e.call('drvTrip', { t: t1, k }, null));
   assert.strictEqual(v.trip.dns[0].dn, '9000000001');
-  const no = e.call('drvRecord', { t: t1, k, code: 4, ref: ref() }, null);
+  const no = e.call('drvRecord', filled({ t: t1, k, code: 4, ref: ref() }), null);
   assert.ok(!no.ok && /^DENIED/.test(no.error));
-  step(e, 30); ok(e.call('drvRecord', { t: t1, k, code: 8, dns: [{ dn: '9000000001' }], ref: ref() }, null));
-  step(e); ok(e.call('drvRecord', { t: t1, k, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], photo: 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64'), ref: ref() }, null));
+  step(e, 30); ok(e.call('drvRecord', filled({ t: t1, k, code: 8, dns: [{ dn: '9000000001' }], ref: ref() }), null));
+  step(e); ok(e.call('drvRecord', filled({ t: t1, k, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], photo: 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64'), ref: ref() }), null));
   const last = logRows(e).pop();
   assert.strictEqual(last[col('អ្នកកត់ត្រា')], '៤.ឡាន ISI');
   assert.strictEqual(last[col('User')], 'driver-link');
@@ -278,7 +288,7 @@ test('driver link: signed per trip, only delivery steps, closes with the trip', 
   const closed = ok(e.call('drvTrip', { t: t1, k }, null));
   assert.strictEqual(closed.trip.closed, true);
   assert.ok(closed.rate['9000000001']);
-  const more = e.call('drvRecord', { t: t1, k, code: 11, dns: [{ dn: '9000000001' }], remark: 'x', ref: ref() }, null);
+  const more = e.call('drvRecord', filled({ t: t1, k, code: 11, dns: [{ dn: '9000000001' }], remark: 'x', ref: ref() }), null);
   assert.ok(!more.ok && /^LINK_CLOSED/.test(more.error));
 });
 
@@ -287,7 +297,7 @@ test('no plan weight: Delivered needs the "whole DN" tick, else Partially Delive
   const t1 = gateIn(e, 'TEST-0001').tripId;
   step(e); ok(rec(e, LOGI, { code: 2, tripId: t1, dns: [{ dn: '5000111111', custName: 'TEST Customer B', custId: '6100000002' }], confirm: ['DN_NOT_IN_PLAN'] }));
   loadRest(e, t1);
-  step(e, 30); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '5000111111', final: false }] }));
+  step(e, 30); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '5000111111', kg: 500, final: false }] }));
   assert.strictEqual(ok(e.call('dn', { dn: '5000111111' }, ADMIN)).status, 'partial');
   const row = logRows(e).pop();
   assert.strictEqual(row[col('Form Mode')], 'Partial');
@@ -307,23 +317,15 @@ test('failed delivery stays open for a later trip; canceled trip', () => {
   assert.strictEqual(ok(e.call('trip', { tripId: t2 }, ADMIN)).stage, 'canceled');
 });
 
-test('time correction: Supervisor only, with an Audit Log row', () => {
+test('changing a recorded time is turned off for everyone (Kim, 12 Oct 2026)', () => {
   const e = env(); e.run('setup()');
   const t1 = gateIn(e, 'TEST-0001').tripId;
-  const d = ok(e.call('trip', { tripId: t1 }, SUP));
-  const row = d.rows[0];
-  const newTime = Date.parse('2026-10-12T07:45:00+07:00');
-  let r = e.call('correct', { row: row.row, key: row.key, time: newTime, reason: 'guard was late' }, GUARD);
-  assert.ok(!r.ok && /^DENIED/.test(r.error));
-  r = e.call('correct', { row: row.row, key: 'other', time: newTime, reason: 'x yz' }, SUP);
-  assert.ok(!r.ok && /^CHANGED/.test(r.error));
-  ok(e.call('correct', { row: row.row, key: row.key, time: newTime, reason: 'guard was late' }, SUP));
-  const audit = e.ss.getSheetByName('Audit Log').rows;
-  assert.strictEqual(audit.length, 3);   // header + Time Log + Trips
-  assert.strictEqual(audit[1][1], 'sup@test.kh');
-  assert.strictEqual(audit[1][6], '2026-10-12 08:00:00');
-  assert.strictEqual(audit[1][7], '2026-10-12 07:45:00');
-  assert.strictEqual(tripsRows(e)[0][5].getTime(), newTime);
+  const row = ok(e.call('trip', { tripId: t1 }, SUP)).rows[0];
+  for (const who of [GUARD, SUP, ADMIN]) {
+    const r = e.call('correct', { row: row.row, key: row.key, time: Date.parse('2026-10-12T07:45:00+07:00'), reason: 'guard was late' }, who);
+    assert.ok(!r.ok && /^DENIED/.test(r.error));
+  }
+  assert.strictEqual(ok(e.call('trip', { tripId: t1 }, SUP)).rows[0].time, row.time);
 });
 
 test('16: Gate Ins in a row never share a Trip ID', () => {
@@ -370,11 +372,11 @@ test('Users screen: Admin adds and changes roles, with audit', () => {
   assert.ok(!r.ok);
 });
 
-test('plan weight known but no kg typed: the "whole DN" tick finishes the DN', () => {
+test('the "whole DN" tick with the plan weight finishes the DN', () => {
   const e = env(); e.run('setup()');
   const t1 = gateIn(e, 'TEST-0001').tripId;
   loadAndOut(e, t1, ['9000000001']);
-  step(e, 30); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '9000000001', final: true }] }));
+  step(e, 30); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '9000000001', kg: 1000, final: true }] }));
   const d = ok(e.call('trip', { tripId: t1 }, ADMIN));
   assert.strictEqual(d.dnInfo['9000000001'].status, 'delivered');
   assert.strictEqual(d.stage, 'completed');

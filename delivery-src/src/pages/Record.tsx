@@ -3,9 +3,11 @@ import { L, t, useLang, kg as fmtKg } from '../i18n';
 import { go, openTrips, tripHref, useApp, useRoute } from '../state';
 import type { EventDef, PlanRow, TripSummary } from '../types';
 import { Alert, Badge, Opt, PhotoInput, Picker, Segmented, toast } from '../components/ui';
+import { Field, Section, STEP_LOOK, StepSelect, scrollToMissing } from '../components/Form';
+import { warmLocation } from '../components/submit';
 import { Scanner } from '../components/Scanner';
 import { useSubmit } from '../components/submit';
-import { ProofFields, RateLinks, SiteRateForm, siteRateSigned } from '../components/Proof';
+import { MultiPhoto, ProofFields, RateLinks, SiteRateForm, siteRateSigned } from '../components/Proof';
 
 export type DnLine = { dn: string; custId: string; custName: string; so: string; kg: string; final: boolean; inPlan: boolean };
 const DONE_LEGS = ['delivered', 'failed', 'canceled', 'moved'];
@@ -54,6 +56,7 @@ export function RecordPage() {
   const [done, setDone] = useState<{ tripId: string; round: string; code: number; queued?: boolean; rate?: Record<string, string>; siteRated?: boolean } | null>(null);
   const [formErr, setFormErr] = useState('');
   const sub = useSubmit('record');
+  useEffect(() => { warmLocation(); }, [code, tripId]);   // GPS ready before Save is pressed
 
   useEffect(() => { const q = route.q.get('trip'); if (q) setTripId(q); const c = Number(route.q.get('code')); if (c) setCode(c); }, [route]);
   // Changing step or trip starts a clean form.
@@ -65,7 +68,12 @@ export function RecordPage() {
   }, [trip && trip.id, code]);
 
   const planByDn = useMemo(() => { const m: Record<string, PlanRow> = {}; boot.plan.forEach(p => { m[p.dn] = p; }); return m; }, [boot.plan]);
-  const plateOpts: Opt[] = useMemo(() => boot.plates.map(p => ({ value: p.plate, label: p.plate, sub: p.type })), [boot.plates]);
+  // ISI trucks, then rented / customer trucks added before ("Add new truck", like the Fuel app).
+  const plateOpts: Opt[] = useMemo(() => {
+    const isi = new Set(boot.plates.map(p => p.plate));
+    return boot.plates.map(p => ({ value: p.plate, label: '🏭 ' + p.plate, sub: p.type }))
+      .concat((boot.trucks || []).filter(x => !isi.has(x.plate)).map(x => ({ value: x.plate, label: (x.type === 'customer' ? '🧑‍💼 ' : '🚛 ') + x.plate, sub: [x.co, x.type === 'customer' ? t('ឡានអតិថិជន', 'Customer truck') : t('ឡានជួល', 'Rented')].filter(Boolean).join(' · ') })));
+  }, [boot.plates, boot.trucks, lang]);
   const driverOpts: Opt[] = useMemo(() => {
     const mineFirst = boot.drivers.slice().sort((a, b) => Number(b.plate === plate) - Number(a.plate === plate));
     return mineFirst.map(d => ({ value: d.name, label: d.name, sub: [d.plate, d.co].filter(Boolean).join(' · ') }));
@@ -80,52 +88,78 @@ export function RecordPage() {
   function choosePlate(v: string) {
     setPlate(v);
     const known = boot.plates.some(p => p.plate === v);
-    setTruckType(known ? 'isi' : 'rented');
-    setCompany(known ? '' : (boot.plateCo || {})[v] || '');
+    const tk = (boot.trucks || []).find(x => x.plate === v);
+    setTruckType(known ? 'isi' : tk ? tk.type : 'rented');
+    setCompany(known ? '' : tk ? tk.co : (boot.plateCo || {})[v] || '');
     const d = boot.drivers.filter(x => x.plate === v);
     if (d.length === 1) setDriver(d[0].name);
   }
 
+  // Every field is required except the remark (Kim, 12 Oct 2026): what is missing turns red with its own message.
+  // After the first Save, red marks follow the form live: a field filled in loses its mark at once.
+  const [tried, setTried] = useState(false);
+  useEffect(() => { setTried(false); }, [code, tripId]);
+
+  function missing(): Record<string, string> {
+    const m: Record<string, string> = {};
+    if (code === 1) {
+      if (!plate) m.plate = t('សូមជ្រើស ឬបន្ថែមផ្លាកលេខឡាន', 'Choose or add the truck plate');
+      if (!driver.trim()) m.driver = t('សូមជ្រើស ឬវាយឈ្មោះតៃកុង', 'Choose or type the driver');
+      if (truckType !== 'isi' && !company.trim()) m.company = t('សូមជ្រើស ឬវាយឈ្មោះក្រុមហ៊ុន', 'Choose or type the company');
+      if (!photos.length) m.photos = t('សូមថតរូបឡាន (១–៥ រូប)', 'Take the truck photos (1–5)');
+      return m;
+    }
+    if (!trip) { m.trip = t('សូមជ្រើសរើសជើងដឹក', 'Choose the trip'); return m; }
+    if (code === 2) {
+      if (!lines.length) m.dns = t('សូមបន្ថែម DN យ៉ាងហោចណាស់មួយ', 'Add at least one DN');
+      lines.forEach(l => {
+        if (!l.inPlan && !l.custName) m['cust_' + l.dn] = t('សូមជ្រើសអតិថិជន', 'Choose the customer');
+        if (!l.inPlan && !l.so.trim()) m['so_' + l.dn] = t('សូមវាយលេខ SO', 'Type the SO number');
+      });
+    }
+    const sel = Object.keys(picked).filter(k => picked[k]);
+    if ((code === 8 || code === 9 || code === 11) && !sel.length) m.picked = t('សូមជ្រើសរើស DN', 'Choose the DN(s)');
+    if (code === 9) {
+      sel.forEach(dn => { if (!(Number((delivered[dn] || { kg: '' }).kg) > 0)) m['kg_' + dn] = t('សូមវាយទំងន់ដែលប្រគល់ (kg)', 'Type the delivered weight (kg)'); });
+      if (!receiver.trim()) m.receiver = t('សូមវាយឈ្មោះអ្នកទទួល', 'Type the receiver name');
+      if (!signature) m.signature = t('សូមឲ្យអ្នកទទួលចុះហត្ថលេខា', 'Ask the receiver to sign');
+      if (!photos.length) m.photos = t('សូមថតរូប (១–៥ រូប)', 'Take the photos (1–5)');
+    }
+    if (code === 6) {
+      if (!wh) m.wh = t('សូមជ្រើសឃ្លាំង', 'Choose the warehouse');
+      if (!(Number(loadKg) > 0)) m.loadKg = t('សូមវាយទំងន់ (kg)', 'Type the weight (kg)');
+      if (!websling) m.websling = t('សូមជ្រើស ប្រើ ឬមិនប្រើ', 'Choose Yes or No');
+      if (!photo) m.photo = t('សូមថតរូបទំនិញ', 'Take the goods photo');
+    }
+    if ((code === 8 || code === 11) && !photo) m.photo = t('សូមថតរូបបុង / ភស្តុតាង', 'Take the delivery note / proof photo');
+    if ((code === 10 || code === 11) && remark.trim().length < 3) m.remark = t('សូមសរសេរមូលហេតុ', 'Write the reason');
+    return m;
+  }
+
+  const miss = tried ? missing() : {};
+
   async function submit() {
     setFormErr('');
     if (!ev) return;
+    const m = missing();
+    setTried(true);
+    if (Object.keys(m).length) { setFormErr(t('សូមបំពេញចន្លោះពណ៌ក្រហម។', 'Please fill in the fields marked in red.')); scrollToMissing(); return; }
     const p: any = { code, remark: remark.trim() };
     if (code === 1) {
-      if (!plate) return setFormErr(t('សូមជ្រើស ឬវាយផ្លាកលេខឡាន។', 'Choose or type the truck plate.'));
-      Object.assign(p, { plate, driver, truckType });
-      if (truckType !== 'isi' && company) p.company = company;
-    } else {
-      if (!trip) return setFormErr(t('សូមជ្រើសរើសជើងដឹក។', 'Choose the trip.'));
-      p.tripId = trip.id;
-    }
-    if (code === 2) {
-      if (!lines.length) return setFormErr(t('សូមបន្ថែម DN យ៉ាងហោចណាស់មួយ។', 'Add at least one DN.'));
-      const noCust = lines.find(l => !l.inPlan && !l.custName);
-      if (noCust) return setFormErr(t('DN ' + noCust.dn + ' មិនមានក្នុងផែនការ សូមជ្រើសអតិថិជន។', 'DN ' + noCust.dn + ' is not in the plan: choose the customer.'));
-      p.dns = lines.map(l => ({ dn: l.dn, custId: l.custId, custName: l.custName, so: l.so }));
-    }
+      Object.assign(p, { plate, driver: driver.trim(), truckType, photos });
+      if (truckType !== 'isi') p.company = company.trim();
+    } else p.tripId = trip!.id;
+    if (code === 2) p.dns = lines.map(l => ({ dn: l.dn, custId: l.custId, custName: l.custName, so: l.so }));
     if ([8, 9, 11, 10].indexOf(code) >= 0) {
       const sel = Object.keys(picked).filter(k => picked[k]);
-      if (code !== 10 && !sel.length) return setFormErr(t('សូមជ្រើសរើស DN។', 'Choose the DN(s).'));
       p.dns = sel.map(dn => {
         const d = delivered[dn] || { kg: '', final: true };
         return code === 9 ? { dn, kg: Number(d.kg) || 0, final: d.final } : { dn };
       });
-      if (code === 9) {
-        const bad = p.dns.find((d: any) => !d.final && !d.kg);
-        if (bad) return setFormErr(t('DN ' + bad.dn + ' ប្រគល់មួយផ្នែក: សូមវាយទំងន់ (kg)។', 'DN ' + bad.dn + ' is a part delivery: type the weight (kg).'));
-      }
     }
-    if (code === 6) {
-      if (!wh) return setFormErr(t('សូមជ្រើសរើសឃ្លាំង។', 'Choose the warehouse.'));
-      Object.assign(p, { wh, kg: Number(loadKg) || 0, websling: websling === 'yes' ? true : websling === 'no' ? false : null });
-    }
-    if ((code === 10 || code === 11) && p.remark.length < 3) return setFormErr(t('សូមសរសេរមូលហេតុ។', 'Write the reason.'));
-    if (code === 9) {
-      if (photos.length) p.photos = photos;
-      if (signature) p.signature = signature;
-      if (receiver.trim()) p.receiver = receiver.trim();
-    } else if (photo) p.photo = photo;
+    if (code === 6) Object.assign(p, { wh, kg: Number(loadKg) || 0, websling: websling === 'yes', photo });
+    if (code === 9) Object.assign(p, { photos, signature, receiver: receiver.trim() });
+    if (code === 8 || code === 11) p.photo = photo;
     const label = L(ev) + ' · ' + (code === 1 ? plate : trip ? trip.plate + ' ' + trip.id : '');
     const r = await sub.send(p, label);
     if (r.ok) {
@@ -140,7 +174,7 @@ export function RecordPage() {
   }
 
   function reset(nextTrip?: string, next?: number) {
-    setDone(null); setPlate(''); setDriver(''); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setCompany(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
+    setDone(null); setTried(false); setFormErr(''); setPlate(''); setDriver(''); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setCompany(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
     if (nextTrip !== undefined) setTripId(nextTrip);
     if (next) setCode(next);
     go('/record' + (nextTrip ? '?trip=' + encodeURIComponent(nextTrip) + (next ? '&code=' + next : '') : ''));
@@ -192,112 +226,136 @@ export function RecordPage() {
   }
 
   const suggested = nextCode(trip);
+  const lk = STEP_LOOK[code] || { icon: '✔', color: '#084f6a' };
   return (
-    <main className="max-w-2xl mx-auto p-3 sm:p-4">
-      <section className="card">
-        <span className="lbl">1. {t('ជំហាន', 'Step')}</span>
-        <div className="grid grid-cols-2 gap-2" role="radiogroup">
-          {mine.map(e => (
-            <button key={e.code} type="button" role="radio" aria-checked={code === e.code} onClick={() => setCode(e.code)}
-              className={'text-left rounded-xl border-[1.5px] px-3 py-2 text-[14.5px] leading-snug ' + (code === e.code ? 'border-accent bg-soft font-bold text-brand' : 'border-line bg-card') + (e.code >= 10 ? ' col-span-1' : '')}>
-              {L(e)}{trip && e.code === suggested && code !== e.code ? <span className="block text-[11.5px] text-accent font-semibold">{t('ជំហានបន្ទាប់', 'Next step')}</span> : null}
-            </button>
-          ))}
-        </div>
-      </section>
+    <main className="max-w-2xl mx-auto p-3 sm:p-4 grid gap-3 pb-6">
+      <Section icon="🧭" title={t('ជំហាន', 'Step')} color={lk.color}>
+        <StepSelect events={mine} value={code} onChange={setCode} suggested={trip ? suggested : undefined} />
+      </Section>
 
       {code === 1 ? (
-        <section className="card grid gap-3">
-          <div><label className="lbl" htmlFor="plate">2. {t('ផ្លាកលេខឡាន', 'Truck plate')}</label>
-            <Picker id="plate" value={plate} options={plateOpts} onChange={choosePlate} allowFree upper placeholder={t('ជ្រើស ឬវាយផ្លាកលេខ', 'Choose or type the plate')} freeLabel={t('ឡានជួល/អតិថិជន', 'Rented / customer truck')} /></div>
-          <div><span className="lbl">{t('ប្រភេទឡាន', 'Truck type')}</span>
-            <Segmented value={truckType} onChange={setTruckType} options={[{ v: 'isi', km: 'ឡាន ISI', en: 'ISI truck' }, { v: 'rented', km: 'ឡានជួល', en: 'Rented' }, { v: 'customer', km: 'ឡានអតិថិជន', en: 'Customer truck' }]} /></div>
-          <div><label className="lbl" htmlFor="driver">{t('ឈ្មោះតៃកុង', 'Driver')}</label>
-            <Picker id="driver" value={driver} options={driverOpts} onChange={v => setDriver(v)} allowFree placeholder={t('ជ្រើស ឬវាយឈ្មោះតៃកុង', 'Choose or type the driver')} /></div>
+        <Section icon="🚚" title={t('ព័ត៌មានឡាន', 'Truck details')} color={lk.color}>
+          <Field icon="🔢" label={t('ផ្លាកលេខឡាន', 'Truck plate')} required htmlFor="plate" error={miss.plate}>
+            <Picker id="plate" value={plate} options={plateOpts} onChange={choosePlate} upper digits bad={!!miss.plate} placeholder={t('ជ្រើសផ្លាកលេខ', 'Choose the plate')}
+              addNew={{ button: '➕ ' + t('បន្ថែមឡានថ្មី', 'Add new truck'), placeholder: t('ផ្លាកលេខ ឧ. 3F-1234', 'Plate, e.g. 3F-1234'), check: plateCheck }} />
+          </Field>
+          <Field icon="🏷️" label={t('ប្រភេទឡាន', 'Truck type')} required>
+            <Segmented value={truckType} onChange={setTruckType} options={[{ v: 'isi', km: '🏭 ឡាន ISI', en: '🏭 ISI truck' }, { v: 'rented', km: '🚛 ឡានជួល', en: '🚛 Rented' }, { v: 'customer', km: '🧑‍💼 ឡានអតិថិជន', en: '🧑‍💼 Customer truck' }]} />
+          </Field>
+          <Field icon="👷" label={t('ឈ្មោះតៃកុង', 'Driver')} required htmlFor="driver" error={miss.driver}>
+            <Picker id="driver" value={driver} options={driverOpts} onChange={v => setDriver(v)} allowFree bad={!!miss.driver} placeholder={t('ជ្រើស ឬវាយឈ្មោះតៃកុង', 'Choose or type the driver')} />
+          </Field>
           {truckType !== 'isi' ? (
-            <div><label className="lbl" htmlFor="co">{t('ក្រុមហ៊ុនដឹកជញ្ជូន (3PL)', 'Transport company (3PL)')}</label>
-              <Picker id="co" value={company} options={coOpts} onChange={v => setCompany(v)} allowFree placeholder={t('ជ្រើស ឬវាយឈ្មោះក្រុមហ៊ុន', 'Choose or type the company')} /></div>
+            <Field icon="🏢" label={t('ក្រុមហ៊ុនដឹកជញ្ជូន (3PL)', 'Transport company (3PL)')} required htmlFor="co" error={miss.company}>
+              <Picker id="co" value={company} options={coOpts} onChange={v => setCompany(v)} allowFree bad={!!miss.company} placeholder={t('ជ្រើស ឬវាយឈ្មោះក្រុមហ៊ុន', 'Choose or type the company')} />
+            </Field>
           ) : null}
-          <PhotoInput label={t('រូបថតឡាន (មិនចាំបាច់)', 'Truck photo (optional)')} value={photo} onChange={setPhoto} />
-        </section>
+          <Field icon="📸" label={t('រូបថតឡាន (១–៥)', 'Truck photos (1–5)')} required error={miss.photos}>
+            <MultiPhoto value={photos} onChange={setPhotos} />
+          </Field>
+        </Section>
       ) : (
-        <section className="card">
-          <label className="lbl" htmlFor="trip">2. {t('ជើងដឹក', 'Trip')}</label>
-          <Picker id="trip" value={tripId} options={tripOpts} onChange={v => setTripId(v)} placeholder={t('ជ្រើសរើសឡាន / ជើងដឹក', 'Choose the truck / trip')} />
-          {trip ? (
-            <div className="flex flex-wrap items-center gap-2 mt-2 text-[13.5px]">
-              <Badge k={trip.stage} label={boot.stages[trip.stage]} /><span className="muted">{trip.id}</span>{trip.driver ? <span className="muted">· {trip.driver}</span> : null}
-            </div>
-          ) : !trips.length ? <p className="muted text-sm mt-2">{t('មិនមានជើងដឹកកំពុងដំណើរការ។ ចាប់ផ្តើមដោយ ចូលថ្លឹង។', 'No open trips. Start one with Gate In.')}</p> : null}
-        </section>
+        <Section icon="🚚" title={t('ជើងដឹក', 'Trip')} color={lk.color}>
+          <Field icon="🔎" label={t('ជើងដឹក', 'Trip')} required htmlFor="trip" error={miss.trip}>
+            <Picker id="trip" value={tripId} options={tripOpts} onChange={v => setTripId(v)} bad={!!miss.trip} placeholder={t('ជ្រើសរើសឡាន / ជើងដឹក', 'Choose the truck / trip')} />
+            {trip ? (
+              <div className="flex flex-wrap items-center gap-2 mt-2 text-[13.5px]">
+                <Badge k={trip.stage} label={boot.stages[trip.stage]} /><span className="muted">{trip.id}</span>{trip.driver ? <span className="muted">· 👷 {trip.driver}</span> : null}
+              </div>
+            ) : !trips.length ? <p className="muted text-sm mt-2 mb-0">{t('មិនមានជើងដឹកកំពុងដំណើរការ។ ចាប់ផ្តើមដោយ ចូលថ្លឹង។', 'No open trips. Start one with Gate In.')}</p> : null}
+          </Field>
+        </Section>
       )}
 
-      {code === 2 && trip ? <DnAdder lines={lines} setLines={setLines} planByDn={planByDn} plate={trip.plate} onTrip={trip.dns.map(d => d.dn)} custOpts={custOpts} plan={boot.plan} /> : null}
+      {code === 2 && trip ? <DnAdder lines={lines} setLines={setLines} planByDn={planByDn} plate={trip.plate} onTrip={trip.dns.map(d => d.dn)} custOpts={custOpts} plan={boot.plan} miss={miss} color={lk.color} /> : null}
 
       {[8, 9, 10, 11].indexOf(code) >= 0 && trip ? (
-        <section className="card">
-          <span className="lbl">3. {code === 10 ? t('DN ដែលលុបចោល (ទុកទទេ = លុបចោលជើងដឹកទាំងមូល)', 'DNs to cancel (none = cancel the whole trip)') : t('DN', 'DN')}</span>
-          {!openDns.length ? <p className="muted text-sm">{t('ជើងដឹកនេះមិនមាន DN បើកទេ។', 'This trip has no open DN.')}</p> : null}
-          <div className="grid gap-2">
-            {openDns.map(d => {
-              const on = !!picked[d.dn];
-              const pl = planByDn[d.dn];
-              const dv = delivered[d.dn] || { kg: '', final: true };
-              return (
-                <div key={d.dn} className={'rounded-xl border-[1.5px] p-2.5 ' + (on ? 'border-accent bg-soft' : 'border-line')}>
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input type="checkbox" className="w-5 h-5 mt-0.5 accent-[#0b76a0]" checked={on} onChange={e => setPicked(Object.assign({}, picked, { [d.dn]: e.target.checked }))} />
-                    <span className="min-w-0"><b>{d.dn}</b> <span className="muted text-[13px]">{L(boot.legs[d.leg])}</span>
-                      <span className="block text-[13px] muted truncate">{d.cust}{pl && pl.kg ? ' · ' + t('ផែនការ', 'plan') + ' ' + fmtKg(pl.kg) : ''}</span></span>
-                  </label>
-                  {code === 9 && on ? (
-                    <div className="grid gap-2 mt-2 pl-7">
-                      <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5 accent-[#0b76a0]" checked={dv.final} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: dv.kg, final: e.target.checked } }))} />
-                        {t('DN នេះប្រគល់គ្រប់ (ឬផ្នែកចុងក្រោយ)', 'This finishes the DN (all, or the last part)')}</label>
-                      <input className="in" inputMode="decimal" value={dv.kg} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: e.target.value.replace(/[^0-9.]/g, ''), final: dv.final } }))}
-                        placeholder={dv.final ? t('ទំងន់ដែលប្រគល់ kg (មិនចាំបាច់)', 'Delivered weight kg (optional)') : t('ទំងន់ដែលប្រគល់ kg (ចាំបាច់)', 'Delivered weight kg (needed)')} aria-label="kg" />
-                      {pl && pl.kg && Number(dv.kg) > 0 && Number(dv.kg) < pl.kg * 0.995 ? <span className="text-[12.5px] text-warn font-semibold">{t('តិចជាងផែនការ (' + fmtKg(pl.kg) + '): DN នឹងនៅ ប្រគល់មួយផ្នែក រហូតដល់គ្រប់ទំងន់។', 'Less than the plan (' + fmtKg(pl.kg) + '): the DN stays Partly delivered until the weight is complete.')}</span> : null}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        <Section icon="📄" title={code === 10 ? t('DN ដែលលុបចោល', 'DNs to cancel') : t('DN', 'DN')} color={lk.color}>
+          <Field icon="☑️" label={code === 10 ? t('ទុកទទេ = លុបចោលជើងដឹកទាំងមូល', 'None = cancel the whole trip') : t('ជ្រើស DN', 'Choose the DN(s)')} required={code !== 10} error={miss.picked}>
+            {!openDns.length ? <p className="muted text-sm m-0">{t('ជើងដឹកនេះមិនមាន DN បើកទេ។', 'This trip has no open DN.')}</p> : null}
+            <div className="grid gap-2">
+              {openDns.map(d => {
+                const on = !!picked[d.dn];
+                const pl = planByDn[d.dn];
+                const dv = delivered[d.dn] || { kg: '', final: true };
+                const kgMiss = miss['kg_' + d.dn];
+                return (
+                  <div key={d.dn} className={'rounded-xl border-[1.5px] p-2.5 ' + (on ? 'border-accent bg-soft' : 'border-line')}>
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input type="checkbox" className="w-5 h-5 mt-0.5 accent-[#0b76a0]" checked={on} onChange={e => setPicked(Object.assign({}, picked, { [d.dn]: e.target.checked }))} />
+                      <span className="min-w-0"><b>📄 {d.dn}</b> <span className="muted text-[13px]">{L(boot.legs[d.leg])}</span>
+                        <span className="block text-[13px] muted truncate">🏢 {d.cust}{pl && pl.kg ? ' · ' + t('ផែនការ', 'plan') + ' ' + fmtKg(pl.kg) : ''}</span></span>
+                    </label>
+                    {code === 9 && on ? (
+                      <div className="grid gap-2 mt-2 pl-7" data-missing={kgMiss ? '1' : undefined}>
+                        <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5 accent-[#0b76a0]" checked={dv.final} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: dv.kg, final: e.target.checked } }))} />
+                          {t('DN នេះប្រគល់គ្រប់ (ឬផ្នែកចុងក្រោយ)', 'This finishes the DN (all, or the last part)')}</label>
+                        <label className="font-bold text-[14px]">⚖️ {t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} <span className="text-bad">*</span></label>
+                        <input className={'in ' + (kgMiss ? '!border-bad' : '')} inputMode="decimal" value={dv.kg} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: e.target.value.replace(/[^0-9.]/g, ''), final: dv.final } }))}
+                          placeholder={pl && pl.kg ? String(pl.kg) : 'kg'} aria-label="kg" />
+                        {kgMiss ? <span className="text-bad text-[13px] font-semibold">⚠️ {kgMiss}</span> : null}
+                        {pl && pl.kg && Number(dv.kg) > 0 && Number(dv.kg) < pl.kg * 0.995 ? <span className="text-[12.5px] text-warn font-semibold">{t('តិចជាងផែនការ (' + fmtKg(pl.kg) + '): DN នឹងនៅ ប្រគល់មួយផ្នែក រហូតដល់គ្រប់ទំងន់។', 'Less than the plan (' + fmtKg(pl.kg) + '): the DN stays Partly delivered until the weight is complete.')}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </Field>
+        </Section>
       ) : null}
 
       {code === 6 && trip ? (
-        <section className="card grid gap-3">
-          <div><label className="lbl" htmlFor="wh">3. {t('ឃ្លាំង', 'Warehouse')}</label><Picker id="wh" value={wh} options={whOpts} onChange={v => setWh(v)} placeholder={t('ជ្រើសឃ្លាំង', 'Choose the warehouse')} /></div>
-          <div><label className="lbl" htmlFor="loadkg">{t('ទំងន់ (kg)', 'Weight (kg)')}</label><input id="loadkg" className="in" inputMode="decimal" value={loadKg} onChange={e => setLoadKg(e.target.value.replace(/[^0-9.]/g, ''))} /></div>
-          <div><span className="lbl">{t('ប្រើ Websling?', 'Websling used?')}</span><Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: 'ប្រើ', en: 'Yes' }, { v: 'no', km: 'មិនប្រើ', en: 'No' }]} /></div>
-          <PhotoInput label={t('រូបថតទំនិញ (មិនចាំបាច់)', 'Goods photo (optional)')} value={photo} onChange={setPhoto} />
-        </section>
+        <Section icon="🏗️" title={t('ការផ្ទុកទំនិញ', 'Loading')} color={lk.color}>
+          <Field icon="🏬" label={t('ឃ្លាំង', 'Warehouse')} required htmlFor="wh" error={miss.wh}>
+            <Picker id="wh" value={wh} options={whOpts} onChange={v => setWh(v)} bad={!!miss.wh} placeholder={t('ជ្រើសឃ្លាំង', 'Choose the warehouse')} />
+          </Field>
+          <Field icon="⚖️" label={t('ទំងន់ (kg)', 'Weight (kg)')} required htmlFor="loadkg" error={miss.loadKg}>
+            <input id="loadkg" className={'in ' + (miss.loadKg ? '!border-bad' : '')} inputMode="decimal" value={loadKg} onChange={e => setLoadKg(e.target.value.replace(/[^0-9.]/g, ''))} />
+          </Field>
+          <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required error={miss.websling}>
+            <Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: '✅ ប្រើ', en: '✅ Yes' }, { v: 'no', km: '❌ មិនប្រើ', en: '❌ No' }]} />
+          </Field>
+          <Field icon="📸" label={t('រូបថតទំនិញ', 'Goods photo')} required error={miss.photo}>
+            <PhotoInput value={photo} onChange={setPhoto} />
+          </Field>
+        </Section>
       ) : null}
 
-      {code === 9 && trip ? <ProofFields receiver={receiver} setReceiver={setReceiver} signature={signature} setSignature={setSignature} photos={photos} setPhotos={setPhotos} /> : null}
+      {code === 9 && trip ? <ProofFields receiver={receiver} setReceiver={setReceiver} signature={signature} setSignature={setSignature} photos={photos} setPhotos={setPhotos} miss={miss} /> : null}
       {[8, 11].indexOf(code) >= 0 && trip ? (
-        <section className="card"><PhotoInput label={t('រូបថតបុង / ភស្តុតាង (មិនចាំបាច់)', 'Delivery note / proof photo (optional)')} value={photo} onChange={setPhoto} /></section>
+        <Section icon="📸" title={t('ភស្តុតាង', 'Proof')} color={lk.color}>
+          <Field icon="🧾" label={t('រូបថតបុង / ភស្តុតាង', 'Delivery note / proof photo')} required error={miss.photo}>
+            <PhotoInput value={photo} onChange={setPhoto} />
+          </Field>
+        </Section>
       ) : null}
 
-      <section className="card">
-        <label className="lbl" htmlFor="remark">{t('កំណត់សំគាល់', 'Remark')}{code === 10 || code === 11 ? ' *' : ''}</label>
-        <textarea id="remark" className="in min-h-[70px]" value={remark} onChange={e => setRemark(e.target.value)}
-          placeholder={code === 10 || code === 11 ? t('មូលហេតុ (ចាំបាច់)', 'Reason (needed)') : t('មិនចាំបាច់', 'Optional')} />
-      </section>
+      <Section icon="📝" title={t('កំណត់សំគាល់', 'Remark')} color="#546274">
+        <Field icon="💬" label={code === 10 || code === 11 ? t('មូលហេតុ', 'Reason') : t('កំណត់សំគាល់', 'Remark')} required={code === 10 || code === 11} optional={!(code === 10 || code === 11)} htmlFor="remark" error={miss.remark}>
+          <textarea id="remark" className={'in min-h-[70px] ' + (miss.remark ? '!border-bad' : '')} value={remark} onChange={e => setRemark(e.target.value)}
+            placeholder={code === 10 || code === 11 ? t('សរសេរមូលហេតុ', 'Write the reason') : t('មិនចាំបាច់', 'Optional')} />
+        </Field>
+      </Section>
 
       {formErr ? <Alert tone="bad">{formErr}</Alert> : null}
       {sub.error ? <Alert tone="bad">{sub.error}</Alert> : null}
-      <button type="button" className="btn-primary w-full text-[17px] mb-6" onClick={submit} disabled={sub.sending || (code !== 1 && !trip)}>
-        {sub.sending ? t('កំពុងរក្សាទុក…', 'Saving…') : '✔ ' + t('កត់ត្រា', 'Record') + ' ' + (ev ? L(ev) : '')}
+      <button type="button" data-testid="save" className="btn w-full text-[17px] font-bold text-white border-0 min-h-[54px] shadow-md" style={{ background: lk.color }} onClick={submit} disabled={sub.sending}>
+        {sub.sending ? '⏳ ' + t('កំពុងរក្សាទុក…', 'Saving…') : lk.icon + ' ' + t('កត់ត្រា', 'Record') + ' ' + (ev ? L(ev) : '')}
       </button>
       {sub.dialog}
     </main>
   );
 }
 
+/** Plate typed in "Add new truck": same rule as the server. */
+function plateCheck(v: string) {
+  const s = v.toUpperCase().replace(/\s+/g, '');
+  return /^[A-Z0-9\u1780-\u17FF.-]{3,15}$/.test(s) && /\d/.test(s) ? '' : t('ផ្លាកលេខមិនត្រឹមត្រូវ (ឧ. 3F-1234)', 'That plate does not look right (e.g. 3F-1234)');
+}
+
 /** Arrival-Pickup DN: add DNs from the plan, by typing, or by scanning the Delivery Note barcode. */
-function DnAdder(p: { lines: DnLine[]; setLines: (l: DnLine[]) => void; planByDn: Record<string, PlanRow>; plate: string; onTrip: string[]; custOpts: Opt[]; plan: PlanRow[] }) {
+function DnAdder(p: { lines: DnLine[]; setLines: (l: DnLine[]) => void; planByDn: Record<string, PlanRow>; plate: string; onTrip: string[]; custOpts: Opt[]; plan: PlanRow[]; miss: Record<string, string>; color: string }) {
   useLang();
   const [typed, setTyped] = useState('');
   const [scan, setScan] = useState(false);
@@ -318,8 +376,8 @@ function DnAdder(p: { lines: DnLine[]; setLines: (l: DnLine[]) => void; planByDn
   }
   const setLine = (dn: string, f: Partial<DnLine>) => p.setLines(p.lines.map(l => (l.dn === dn ? Object.assign({}, l, f) : l)));
   return (
-    <section className="card">
-      <span className="lbl">3. {t('DN ដែលយកនៅលើជើងនេះ', 'DNs picked up on this trip')}</span>
+    <Section icon="📄" title={t('DN ដែលយកនៅលើជើងនេះ', 'DNs picked up on this trip')} color={p.color}>
+      <Field icon="➕" label={t('បន្ថែម DN', 'Add DNs')} required error={p.miss.dns}>
       <div className="grid gap-2 mb-2">
         <Picker value="" options={planOpts} onChange={v => add(v)} placeholder={t('ជ្រើសពី Delivery Plan', 'Choose from Delivery Plan')} />
         <div className="flex gap-2">
@@ -333,7 +391,7 @@ function DnAdder(p: { lines: DnLine[]; setLines: (l: DnLine[]) => void; planByDn
         {p.lines.map(l => (
           <div key={l.dn} className="rounded-xl border-[1.5px] border-line p-2.5">
             <div className="flex items-center justify-between gap-2">
-              <b>{l.dn}</b>
+              <b>📄 {l.dn}</b>
               <button type="button" className="btn btn-sm" onClick={() => p.setLines(p.lines.filter(x => x.dn !== l.dn))} aria-label={t('ដកចេញ', 'Remove')}>✕</button>
             </div>
             {l.inPlan ? (
@@ -341,15 +399,22 @@ function DnAdder(p: { lines: DnLine[]; setLines: (l: DnLine[]) => void; planByDn
             ) : (
               <div className="grid gap-1.5 mt-1.5">
                 <span className="text-[13px] text-warn font-semibold">{t('មិនមានក្នុង Delivery Plan: ជ្រើសអតិថិជន', 'Not in Delivery Plan: choose the customer')}</span>
-                <Picker value={l.custName ? (l.custId ? l.custId + '-' : '') + l.custName : ''} options={p.custOpts} allowFree placeholder={t('អតិថិជន', 'Customer')}
-                  onChange={(v, o) => { if (o) setLine(l.dn, { custId: o.sub || '', custName: o.label }); else setLine(l.dn, { custId: '', custName: v }); }} />
-                <input className="in" inputMode="numeric" value={l.so} onChange={e => setLine(l.dn, { so: e.target.value.replace(/\s/g, '') })} placeholder={t('លេខ SO (មិនចាំបាច់)', 'SO number (optional)')} />
+                <div data-missing={p.miss['cust_' + l.dn] ? '1' : undefined}>
+                  <Picker value={l.custName ? (l.custId ? l.custId + '-' : '') + l.custName : ''} options={p.custOpts} allowFree bad={!!p.miss['cust_' + l.dn]} placeholder={'🏢 ' + t('អតិថិជន *', 'Customer *')}
+                    onChange={(v, o) => { if (o) setLine(l.dn, { custId: o.sub || '', custName: o.label }); else setLine(l.dn, { custId: '', custName: v }); }} />
+                  {p.miss['cust_' + l.dn] ? <span className="text-bad text-[13px] font-semibold">⚠️ {p.miss['cust_' + l.dn]}</span> : null}
+                </div>
+                <div data-missing={p.miss['so_' + l.dn] ? '1' : undefined}>
+                  <input className={'in ' + (p.miss['so_' + l.dn] ? '!border-bad' : '')} inputMode="numeric" value={l.so} onChange={e => setLine(l.dn, { so: e.target.value.replace(/\s/g, '') })} placeholder={t('លេខ SO *', 'SO number *')} aria-label="SO" />
+                  {p.miss['so_' + l.dn] ? <span className="text-bad text-[13px] font-semibold">⚠️ {p.miss['so_' + l.dn]}</span> : null}
+                </div>
               </div>
             )}
           </div>
         ))}
       </div>
+      </Field>
       {scan ? <Scanner onClose={() => setScan(false)} onCode={c => { setScan(false); add(c); }} /> : null}
-    </section>
+    </Section>
   );
 }

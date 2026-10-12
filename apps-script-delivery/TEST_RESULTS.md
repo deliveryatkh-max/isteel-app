@@ -1,3 +1,10 @@
+# Test results (12 Oct 2026, part 2)
+
+Latest run: backend 33 of 33 pass; phone UI test 25 of 25 pass (local test server with the real .gs files, not the live sheet).
+New in this run: every field required except the remark (server and screens), number-only plate search, Add new truck with
+plate check, 5 photos max, delete entry (Supervisor/Admin, reason, Deleted Records + Audit Log, Trips updated), time change off,
+no email in timelines, fast save (step confirmed before the photos upload; photos attached after, also from the driver link).
+
 # Test results (11 Oct 2026)
 
 Nothing here was run against the live Google Sheet: the live sheet is not connected yet. The tests run the real

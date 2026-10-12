@@ -47,6 +47,7 @@ function doPost(e) {
     // Driver links: no sign-in, the signed link is the permission (only that trip's delivery steps).
     if (body.action === 'drvTrip') return json_({ ok: true, data: driverTrip_(p) });
     if (body.action === 'drvRecord') return json_({ ok: true, data: driverRecord_(p) });
+    if (body.action === 'drvAttach') { const c = checkDriverLink_(p, true); return json_({ ok: true, data: attachPhotos_(Object.assign({}, p, { tripId: c.tripId }), 'driver-link') }); }
     if (body.action === 'drvSiteRate') { const c = checkDriverLink_(p, true); return json_({ ok: true, data: siteRate_(p, c.tripId, 'driver-link') }); }
     // Customer rating link (no sign-in): signed per DN + trip.
     if (body.action === 'rateInfo') return json_({ ok: true, data: rateInfo_(p) });
@@ -68,10 +69,12 @@ function route_(action, p, user) {
     case 'ops': return ops_(p, user);
     case 'trip': return tripDetail_(p.tripId, user);
     case 'record': return record_(p, user);
+    case 'attach': return attach_(p, user);
     case 'dn': return dnDetail_(p.dn);
     case 'search': return search_(p);
     case 'history': return history_(p);
-    case 'correct': return correct_(p, user);
+    case 'deleteEntry': need_(user, 'supervisor'); return deleteEntry_(p, user);
+    case 'correct': fail_('DENIED', 'Changing a recorded time is turned off.', 'មិនអនុញ្ញាតឲ្យកែម៉ោងដែលបានកត់ត្រាទេ។');   // Kim, 12 Oct 2026
     case 'users': need_(user, 'admin'); return usersList_();
     case 'setUser': need_(user, 'admin'); return setUser_(p, user);
     case 'quality': need_(user, 'supervisor'); return quality_();
@@ -275,7 +278,7 @@ function boot_(user) {
     plates: m.plates, drivers: m.drivers, customers: m.customers, warehouses: m.warehouses, plan: planList,
     stages: STAGES, dnStatuses: DN_STATUS, legs: LEG, today: today, serverNow: Date.now(),
     settings: { warnMin: set.INSIDE_WARN_MIN, lateMin: set.INSIDE_LATE_MIN, farKm: set.FAR_KM },
-    companies: companyNames_(co), plateCo: plateCo, complaintTypes: COMPLAINT_TYPES,
+    companies: companyNames_(co), plateCo: plateCo, trucks: trucks_(), complaintTypes: COMPLAINT_TYPES,
     canKpi: ['admin', 'supervisor', 'logistics'].indexOf(user.roleKey) >= 0,
   };
 }
@@ -621,6 +624,7 @@ function saveEvent_(p, who) {
     if (code !== 1) st = tripState(tripRows, doneSet_(info));
     const check = checkEvent({ code: code, trip: code === 1 ? null : st, tripId: tripId, dns: dnList, dnInfo: info, plate: plate });
     if (check.errors.length) fail_(check.errors[0].code, check.errors.map(e => e.en).join(' '), check.errors.map(e => e.kh).join(' '));
+    requiredFields_(code, p, dns, plate, plan);
     // Repeated taps / retries without a ref: the same step for the same DN a moment ago.
     (dnList.length ? dnList : ['']).forEach(dn => {
       if (code !== 1 && isDuplicate(code, dn, at.getTime(), tripRows)) fail_('DUPLICATE', ev.en + (dn ? ' for DN ' + dn : '') + ' was already recorded a moment ago.', ev.kh + (dn ? ' សម្រាប់ DN ' + dn : '') + ' ទើបតែកត់ត្រារួចហើយ។');
@@ -629,10 +633,11 @@ function saveEvent_(p, who) {
     if (pending.length) return { needConfirm: pending };
 
     // Photos first (outside the sheet): a failed upload stops the save before anything is written.
-    const photos = (p.photos || (p.photo ? [p.photo] : [])).slice(0, MAX_PHOTOS);
+    // p.later: the phone sends the photos right after, with 'attach' (the step is saved without waiting for them).
+    const photos = p.later ? [] : (p.photos || (p.photo ? [p.photo] : [])).slice(0, MAX_PHOTOS);
     const photoUrls = photos.map((ph, i) => savePhoto_(ph, tripId + '_' + ev.key + (i ? '_' + (i + 1) : '')));
     const photoUrl = photoUrls[0] || '';
-    const sigUrl = code === 9 && p.signature ? savePhoto_(p.signature, tripId + '_signature') : '';
+    const sigUrl = code === 9 && p.signature && !p.later ? savePhoto_(p.signature, tripId + '_signature') : '';
 
     const keys = tripRows.map(r => r.key);
     const rowsOut = [];
@@ -713,12 +718,35 @@ function saveEvent_(p, who) {
       saveProof_(newRows, tripId, p.receiver, sigUrl, photoUrls, who.email);
       learnSites_(newRows.filter(r => r.latlong), who.email);
     }
-    if (code === 1 && p.company) rememberCompany_(plate, p.company, who.email);
+    if (code === 1 && photoUrls.length > 1) saveProof_(newRows, tripId, '', '', photoUrls, who.email);
+    if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
     if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
     if (ref) cache.put('ref_' + ref, JSON.stringify(res), 21600);
     return res;
   });
+}
+
+/**
+ * Every field of the form is required except the remark (Kim, 12 Oct 2026). Photos and the signature are checked
+ * on the phone only: a step kept on a full phone is sent without them rather than lost.
+ */
+function requiredFields_(code, p, dns, plate, plan) {
+  const miss = (en, kh) => fail_('REQUIRED', en, kh);
+  if (code === 1) {
+    if (!String(p.driver || '').trim()) miss('Choose or type the driver.', 'សូមជ្រើស ឬវាយឈ្មោះតៃកុង។');
+    if (!master_().plates.some(x => x.plate === plate) && !String(p.company || '').trim()) miss('Choose or type the transport company of this truck.', 'សូមជ្រើស ឬវាយក្រុមហ៊ុនដឹកជញ្ជូនរបស់ឡាននេះ។');
+  }
+  if (code === 2) dns.forEach(d => { if (!plan[d.dn] && !String(d.so || '').trim()) miss('Type the SO number of DN ' + d.dn + '.', 'សូមវាយលេខ SO របស់ DN ' + d.dn + '។'); });
+  if (code === 6) {
+    if (!String(p.wh || '').trim()) miss('Choose the warehouse.', 'សូមជ្រើសរើសឃ្លាំង។');
+    if (!(Number(p.kg) > 0)) miss('Type the loaded weight (kg).', 'សូមវាយទំងន់ទំនិញ (kg)។');
+    if (p.websling !== true && p.websling !== false) miss('Choose whether a websling was used.', 'សូមជ្រើស ប្រើ ឬមិនប្រើ Websling។');
+  }
+  if (code === 9) {
+    dns.forEach(d => { if (!(Number(d.kg) > 0)) miss('Type the delivered weight (kg) of DN ' + d.dn + '.', 'សូមវាយទំងន់ដែលប្រគល់ (kg) របស់ DN ' + d.dn + '។'); });
+    if (!String(p.receiver || '').trim()) miss('Type the receiver name.', 'សូមវាយឈ្មោះអ្នកទទួល។');
+  }
 }
 
 const stageKey_ = kh => Object.keys(STAGES).find(k => STAGES[k].kh === kh) || 'waiting';
@@ -743,6 +771,45 @@ function eventTime_(takenAt, now) {
   return now;
 }
 
+/**
+ * Photos and signature of a step already saved (sent right after the step so saving feels instant).
+ * p = { ref, tripId, code, keys, photos, signature }. The keys must be rows of that trip and step.
+ * Drive uploads happen before the lock; the first photo goes in the Time Log photo column (only if empty),
+ * the signature and all photos in Delivery Proof (the row of that Key No. is completed, or added).
+ */
+function attach_(p, user) {
+  const code = Number(p.code);
+  if (!EV[code]) fail_('BAD', 'Unknown event.');
+  if (!canRecord(user.role, allowed_()[code])) fail_('DENIED', 'Your role cannot record this step.', 'តួនាទីរបស់អ្នកមិនអាចកត់ត្រាជំហាននេះទេ។');
+  return attachPhotos_(p, user.email);
+}
+function attachPhotos_(p, email) {
+  const code = Number(p.code), ev = EV[code];
+  if (!ev) fail_('BAD', 'Unknown event.');
+  const tripId = String(p.tripId || '').trim();
+  const ref = String(p.ref || '').slice(0, 80);
+  const cache = CacheService.getScriptCache();
+  if (ref && cache.get('att_' + ref)) return JSON.parse(cache.get('att_' + ref));
+  const keys = (p.keys || []).map(String).filter(Boolean).slice(0, 40);
+  if (!tripId || !keys.length) fail_('BAD', 'Nothing to attach the photos to.', 'គ្មានការកត់ត្រាសម្រាប់ភ្ជាប់រូបថតទេ។');
+  const rows = rowsWhere_('key', keys);
+  if (rows.length !== keys.length || rows.some(r => r.trip !== tripId || r.code !== code)) fail_('NOTFOUND', 'That record was not found.', 'រកមិនឃើញការកត់ត្រានោះទេ។');
+  const photos = (p.photos || (p.photo ? [p.photo] : [])).slice(0, MAX_PHOTOS);
+  const photoUrls = photos.map((ph, i) => savePhoto_(ph, tripId + '_' + ev.key + (i ? '_' + (i + 1) : '')));
+  const sigUrl = code === 9 && p.signature ? savePhoto_(p.signature, tripId + '_signature') : '';
+  return withLock_(() => {
+    const sh = sheet_(SH.LOG), C = logCols_();
+    const f = code === 1 ? 'truckPhoto' : code === 6 ? 'goodsPhoto' : (code === 8 || code === 9 || code === 11) ? 'billPhoto' : '';
+    if (photoUrls[0] && f && C[f] != null) {
+      rows.forEach(r => { const cell = sh.getRange(r.row, C[f] + 1); if (!text_(cell.getValue())) cell.setValue(photoUrls[0]); });
+    }
+    if (sigUrl || photoUrls.length > 1 || (code === 9 && photoUrls.length)) proofUpdate_(rows, tripId, sigUrl, photoUrls, email);
+    const res = { ok: true, photos: photoUrls.length, signature: !!sigUrl };
+    if (ref) cache.put('att_' + ref, JSON.stringify(res), 21600);
+    return res;
+  });
+}
+
 function savePhoto_(dataUrl, name) {
   const m = String(dataUrl).match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
   if (!m) fail_('BAD', 'The photo could not be read. Please take it again.', 'មិនអាចអានរូបថតបានទេ។ សូមថតម្តងទៀត។');
@@ -755,7 +822,51 @@ function savePhoto_(dataUrl, name) {
   return file.getUrl();
 }
 
-// ---------------------------------------------------------------- Corrections (Supervisor / Admin), with audit trail
+// ---------------------------------------------------------------- Delete an entry (Supervisor / Admin)
+const DELETED_TAB = 'Deleted Records';
+/**
+ * p = { row, key, reason }. The row number and Key No. must both match. The whole row is first copied to the
+ * "Deleted Records" tab (with who, when and why) and to the Audit Log, then removed from Time Log, so it can be put back.
+ * The trip's line in Trips follows: new status, Gate In / Gate Out time cleared if that step is gone, removed if no step is left.
+ */
+function deleteEntry_(p, user) {
+  const reason = String(p.reason || '').trim();
+  if (reason.length < 3) fail_('BAD', 'Write the reason for deleting.', 'សូមសរសេរមូលហេតុនៃការលុប។');
+  return withLock_(() => {
+    const ss = ss_(), sh = sheet_(SH.LOG), C = logCols_();
+    const rowNo = Number(p.row);
+    if (!(rowNo >= 2 && rowNo <= sh.getLastRow())) fail_('NOTFOUND', 'That record was not found.', 'រកមិនឃើញការកត់ត្រានោះទេ។');
+    const vals = sh.getRange(rowNo, 1, 1, C.width).getValues()[0];
+    const r = parseRow_(vals, rowNo, C);
+    if (r.key !== String(p.key)) fail_('CHANGED', 'The sheet changed. Please reload and try again.', 'សន្លឹកបានផ្លាស់ប្តូរ។ សូមផ្ទុកឡើងវិញ។');
+    let del = ss.getSheetByName(DELETED_TAB);
+    if (!del) {
+      del = ss.insertSheet(DELETED_TAB);
+      const head = sh.getRange(1, 1, 1, C.width).getValues()[0];
+      del.getRange(1, 1, 1, head.length + 3).setValues([['Deleted Time', 'Deleted By', 'Reason'].concat(head)]).setFontWeight('bold');
+      del.setFrozenRows(1);
+    }
+    del.appendRow([now_(), user.email, reason].concat(vals));
+    audit_(user.email, 'Delete record', r.key, r.trip, 'Time Log row ' + rowNo, [r.eventText, r.dn, r.time ? fmt_(new Date(r.time), 'yyyy-MM-dd HH:mm') : ''].filter(Boolean).join(' · '), '', reason);
+    sh.deleteRow(rowNo);
+    const idx = tripsSheetIndex_(), meta = idx[r.trip];
+    if (meta) {
+      const trips = sheet_(SH.TRIPS);
+      const rows = rowsWhere_('trip', [r.trip]);
+      if (!rows.length) trips.deleteRow(meta.row);
+      else {
+        const dns = Array.from(new Set(rows.map(x => x.dn).filter(Boolean)));
+        const st = tripState(rows, dns.length ? doneSet_(dnsInfo_(dns, rowsWhere_('dn', dns), plan_())) : {});
+        if (meta.status !== STAGES[st.stage].kh) trips.getRange(meta.row, 8).setValue(STAGES[st.stage].kh);
+        if (r.code === 1 && st.gateIn == null) trips.getRange(meta.row, 6).setValue('');
+        if (r.code === 7 && st.gateOut == null) trips.getRange(meta.row, 7).setValue('');
+      }
+    }
+    return { ok: true, tripLeft: !!(meta ? rowsWhere_('trip', [r.trip]).length : true) };
+  });
+}
+
+// ---------------------------------------------------------------- Corrections (turned off 12 Oct 2026; kept for reference)
 /** p = { row, key, time (ms), reason }. The row number and Key No. must both match, so a moved row is never edited. */
 function correct_(p, user) {
   need_(user, 'supervisor');
