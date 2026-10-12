@@ -86,6 +86,21 @@ export function RecordPage() {
 
   const openDns = trip ? trip.dns.filter(d => DONE_LEGS.indexOf(d.leg) < 0) : [];
 
+  // Opened from the DN scan: that DN is already chosen, and Delivered starts with its plan weight.
+  const fromScan = route.q.get('from') === 'scan';
+  useEffect(() => {
+    const d = route.q.get('dn');
+    if (!d || !trip) return;
+    const pl = planByDn[d];
+    if (code === 2) {
+      if (trip.dns.some(x => x.dn === d)) return;
+      setLines([{ dn: d, custId: pl ? pl.custId : '', custName: pl ? pl.custName : '', so: pl ? pl.so : '', kg: '', final: true, inPlan: !!pl }]);
+    } else if ([8, 9, 10, 11].indexOf(code) >= 0 && openDns.some(x => x.dn === d)) {
+      setPicked({ [d]: true });
+      if (code === 9 && pl && pl.kg) setDelivered({ [d]: { kg: String(pl.kg), final: true } });
+    }
+  }, [code, tripId, trip && trip.dns.length]);
+
   function choosePlate(v: string) {
     setPlate(v);
     const known = boot.plates.some(p => p.plate === v);
@@ -222,6 +237,7 @@ export function RecordPage() {
             </>
           )}
           <div className="grid gap-2 mt-3">
+            {fromScan ? <button type="button" data-testid="scan-again" className="btn-primary text-[17px] min-h-[52px]" onClick={() => { seq.current++; go('/scan'); }}>📷 {t('ស្កេន DN បន្ទាប់', 'Scan next DN')}</button> : null}
             {done.code === 1 && canPickup && !done.queued && !done.saving ? <button type="button" className="btn-primary" onClick={() => reset(done.tripId, 2)}>➕ {t('បន្ថែម DN (ដល់កន្លែងចែកបុង)', 'Add DNs (Arrival-Pickup DN)')}</button> : null}
             {done.tripId && !done.queued && !done.saving ? <a className="btn no-underline" href={tripHref(done.tripId)}>🚚 {t('មើលជើងដឹក', 'Open trip')}</a> : null}
             {done.tripId && done.code !== 1 && !done.queued ? <button type="button" className="btn" onClick={() => reset(done.tripId)}>{t('កត់ត្រាជំហានបន្ទាប់', 'Record the next step')}</button> : null}

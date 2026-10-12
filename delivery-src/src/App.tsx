@@ -5,6 +5,7 @@ import { AppCtx, go, useRoute } from './state';
 import type { Boot, Ops } from './types';
 import { Alert, BottomNav, Header, Spinner, Tab, Toaster, toast } from './components/ui';
 import { OpsPage } from './pages/Ops';
+import { ScanPage } from './pages/Scan';
 import { RecordPage } from './pages/Record';
 import { TripPage } from './pages/Trip';
 import { TripsPage } from './pages/Trips';
@@ -21,12 +22,13 @@ const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
 
 const TABS: Tab[] = [
   { id: 'ops', icon: '📊', km: 'សង្ខេប', en: 'Summary' },
+  { id: 'scan', icon: '📷', km: 'ស្កេន', en: 'Scan' },
   { id: 'record', icon: '➕', km: 'កត់ត្រា', en: 'Record' },
   { id: 'trips', icon: '🚚', km: 'ជើងដឹក', en: 'Trips' },
   { id: 'dn', icon: '📄', km: 'DN', en: 'DN' },
   { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' },
 ];
-const TAB_OF: Record<string, string> = { '': 'ops', record: 'record', trips: 'trips', trip: 'trips', dn: 'dn', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
+const TAB_OF: Record<string, string> = { '': 'ops', scan: 'scan', record: 'record', trips: 'trips', trip: 'trips', dn: 'dn', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -80,6 +82,8 @@ export function App() {
   }, []);
 
   const refresh = () => { load(); setTick(x => x + 1); toast(t('កំពុងផ្ទុកឡើងវិញ…', 'Refreshing…')); };
+  // The ISI STEEL logo in the header refreshes like the Refresh button (index.html click handler).
+  useEffect(() => { (window as any).ISTEEL_REFRESH = refresh; return () => { delete (window as any).ISTEEL_REFRESH; }; });
   const busy = busyN > 0;
 
   if (need === 'setup') return <Shell busy={false}><Alert tone="warn">{t('កម្មវិធីមិនទាន់ភ្ជាប់ទៅ Google Sheet ទេ (API_URL នៅទទេក្នុង delivery/config.js)។ សូមមើល SETUP.md។', 'The app is not connected to the Google Sheet yet (API_URL is empty in delivery/config.js). See SETUP.md.')}</Alert></Shell>;
@@ -98,7 +102,8 @@ export function App() {
   const page = route.path[0] || '';
   const tab = TAB_OF[page] || 'ops';
   let body;
-  if (page === 'record') body = <RecordPage key={route.q.toString()} />;
+  if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
+  else if (page === 'record') body = <RecordPage key={route.q.toString()} />;
   else if (page === 'trip' && route.path[1]) body = <TripPage id={route.path[1]} />;
   else if (page === 'trips') body = <TripsPage />;
   else if (page === 'dn' && route.path[1]) body = <DnPage dn={route.path[1]} />;
@@ -110,7 +115,7 @@ export function App() {
   else if (page === 'dashboard' && boot.canKpi) body = <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
-    ops: ['ដឹកជញ្ជូន', 'Delivery'], record: ['កត់ត្រាដំណើរ', 'Record journey'], trips: ['ជើងដឹក', 'Trips'], dn: ['តាមដាន DN', 'DN tracking'], more: ['ផ្សេងៗ', 'More'],
+    ops: ['ដឹកជញ្ជូន', 'Delivery'], scan: ['ស្កេន DN', 'Scan DN'], record: ['កត់ត្រាដំណើរ', 'Record journey'], trips: ['ជើងដឹក', 'Trips'], dn: ['តាមដាន DN', 'DN tracking'], more: ['ផ្សេងៗ', 'More'],
   };
   const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
