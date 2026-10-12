@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { errText, L, t, useLang, ymdNow, ymdOf } from '../i18n';
-import { go, openTrips, useApp, useRoute } from '../state';
+import { go, matches, openTrips, useApp, useRoute } from '../state';
 import type { TripSummary } from '../types';
 import { TripCard } from '../components/TripCard';
 import { Alert, Segmented, Spinner } from '../components/ui';
@@ -13,7 +13,7 @@ export function TripsPage() {
   const view = route.path[1] === 'history' ? 'history' : 'active';
   return (
     <main className="max-w-3xl mx-auto p-3 sm:p-4">
-      <div className="mb-3"><Segmented value={view} onChange={v => go(v === 'history' ? '/trips/history' : '/trips')} options={[{ v: 'active', km: 'កំពុងដំណើរការ', en: 'Active trips' }, { v: 'history', km: 'ប្រវត្តិជើងដឹក', en: 'Trip history' }]} /></div>
+      <div className="mb-3"><Segmented value={view} onChange={v => go(v === 'history' ? '/trips/history' : '/')} options={[{ v: 'active', km: 'ថ្ងៃនេះ', en: 'Today' }, { v: 'history', km: 'ប្រវត្តិជើងដឹក', en: 'Trip history' }]} /></div>
       {view === 'active' ? <Active /> : <History />}
     </main>
   );
@@ -24,8 +24,7 @@ function Active() {
   const { boot, ops } = useApp();
   const [q, setQ] = useState('');
   const groups = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const list = openTrips(ops).filter(x => !s || [x.id, x.plate, x.driver, x.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' ').toLowerCase().indexOf(s) >= 0);
+    const list = openTrips(ops).filter(x => matches([x.id, x.plate, x.driver, x.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' '), q));
     return ORDER.map(k => ({ k, trips: list.filter(x => x.stage === k) })).filter(g => g.trips.length);
   }, [ops, q]);
   if (!ops) return <Spinner />;

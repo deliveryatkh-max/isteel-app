@@ -295,6 +295,13 @@ function distanceKm(a, b) {
 /** Customer ID from the Time Log customer text "6100000001-Name" (empty when there is none). */
 function custIdOf(text) { const m = String(text || '').match(/^\s*(\d{6,})/); return m ? m[1] : ''; }
 
+/** Search boxes match any part of the text: "1234" finds 3A-1234 or DN 8001234567; spaces, dashes and dots are ignored. */
+function matchText(hay, q) {
+  const squash = s => String(s || '').toLowerCase().replace(/[\s\-_.\/]+/g, '');
+  const w = String(q || '').trim().toLowerCase();
+  return !w || String(hay || '').toLowerCase().indexOf(w) >= 0 || squash(hay).indexOf(squash(w)) >= 0;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { EVENTS, EV, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf };
+  module.exports = { EVENTS, EV, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf, matchText };
 }

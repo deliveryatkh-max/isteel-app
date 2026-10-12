@@ -6,11 +6,20 @@ export type Ctx = {
   ops: Ops | null;
   /** Bumped by the Refresh button: pages that load their own data reload when it changes. */
   tick: number;
+  /** Goes up every minute while the app is open, so open pages refresh on their own (Kim, 12 Oct 2026). */
+  live: number;
   refreshOps: () => Promise<void>;
   setBusy: (b: boolean) => void;
 };
 export const AppCtx = createContext<Ctx>(null as any);
 export const useApp = () => useContext(AppCtx);
+
+/** Search boxes match any part of the text (Kim, 12 Oct 2026): "1234" finds 3A-1234 or DN 8001234567; spaces, dashes and dots are ignored. */
+const squash = (s: string) => String(s || '').toLowerCase().replace(/[\s\-_.\/]+/g, '');
+export function matches(hay: string, q: string) {
+  const w = String(q || '').trim().toLowerCase();
+  return !w || String(hay || '').toLowerCase().indexOf(w) >= 0 || squash(hay).indexOf(squash(w)) >= 0;
+}
 
 // ---------------------------------------------------------------- hash routes: #/record?trip=…  #/trip/26-10-12-001
 export type Route = { path: string[]; q: URLSearchParams };

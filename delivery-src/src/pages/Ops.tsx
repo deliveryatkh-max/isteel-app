@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { t, useLang } from '../i18n';
-import { tripHref, useApp } from '../state';
+import { go, matches, tripHref, useApp } from '../state';
 import { insideOf, TripCard } from '../components/TripCard';
-import { Badge, Spinner } from '../components/ui';
+import { Badge, Segmented, Spinner } from '../components/ui';
 
 /** Home / Operations: today's numbers and the trips still running. */
 export function OpsPage() {
@@ -31,8 +31,7 @@ export function OpsPage() {
     if (filter === 'inside') l = l.filter(x => !x.closed && x.gateIn && !x.gateOut);
     if (filter === 'out') l = l.filter(x => !x.closed && x.gateOut);
     if (filter === 'today') l = l.filter(x => x.date === ops.today);
-    const s = q.trim().toLowerCase();
-    if (s) l = l.filter(x => [x.id, x.plate, x.driver, x.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' ').toLowerCase().indexOf(s) >= 0);
+    if (q.trim()) l = l.filter(x => matches([x.id, x.plate, x.driver, x.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' '), q));
     return l;
   }, [ops, q, filter]);
   const dn = ops ? ops.dnToday : null;
@@ -52,8 +51,7 @@ export function OpsPage() {
   );
   return (
     <main className="max-w-3xl mx-auto p-3 sm:p-4">
-      <a href="#/record" className="btn-primary w-full mb-3 text-[17px] no-underline">➕ {t('កត់ត្រាដំណើរ', 'Record a journey step')}</a>
-      <h2 className="text-[15px] font-bold mt-1 mb-2">{t('ជើងដឹក', 'Trips')}</h2>
+      <div className="mb-3"><Segmented value="active" onChange={v => { if (v === 'history') go('/trips/history'); }} options={[{ v: 'active', km: 'ថ្ងៃនេះ', en: 'Today' }, { v: 'history', km: 'ប្រវត្តិជើងដឹក', en: 'Trip history' }]} /></div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <Card n={k.today} km="ជើងដឹកថ្ងៃនេះ" en="Trips today" f="today" />
         <Card n={k.active} km="កំពុងដំណើរការ" en="Active trips" f="active" />

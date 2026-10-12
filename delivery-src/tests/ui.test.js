@@ -206,14 +206,18 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   // ---- DN scan screen (typed here; the camera feeds the same lookup): Warehouse gets its own next step, opened after 2 s
   await w.page.goto(BASE + '/delivery/#/scan');
   await w.page.reload();
-  await w.page.getByPlaceholder(/វាយលេខ DN/).fill('9000000002');
+  // five buttons at the bottom (Kim, 12 Oct 2026): Home, Trips, Scan (big, middle), Record, More
+  const navTexts = await w.page.locator('nav').last().locator('a, button').allTextContents();
+  assert.deepStrictEqual(navTexts.map(x => x.replace(/[^\u1780-\u17FFA-Za-z]/g, '')), ['ទំព័រដើម', 'ជើងដឹក', 'ស្កេន', 'កត់ត្រា', 'ផ្សេងៗ']);
+  pass('Bottom bar has 5 buttons: Home, Trips, Scan in the middle, Record, More');
+  await w.page.getByPlaceholder(/វាយលេខ DN/).fill('0002');   // the last 4 digits are enough
   await w.page.getByRole('button', { name: 'រក' }).click();
   await w.page.getByTestId('scan-next').waitFor();
   assert.match(await w.page.getByTestId('scan-next').textContent(), /៤/);
   await w.page.screenshot({ path: SHOTS + '10b-scan-next-step.png' });
   await w.page.waitForURL(/#\/record\?trip=.*code=4.*dn=9000000002/, { timeout: 5000 });
   await w.page.getByText('កត់ត្រា').first().waitFor();
-  pass('Scan DN-002: the next step for Warehouse (4) opens by itself after 2 s');
+  pass('Scan DN-002 (typed as its last 4 digits): the next step for Warehouse (4) opens by itself after 2 s');
   await w.page.goto(BASE + '/delivery/#/scan/9000000002');
   await w.page.getByRole('button', { name: /ឈប់នៅទីនេះ/ }).click();
   await w.page.waitForTimeout(2500);
@@ -222,6 +226,11 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await w.page.goto(BASE + '/delivery/#/scan/12345678');
   await w.page.getByText(/រកមិនឃើញ DN នេះ/).waitFor();
   pass('An unknown DN shows a clear message');
+  await w.page.goto(BASE + '/delivery/#/scan');
+  await w.page.getByPlaceholder(/វាយលេខ DN/).fill('7777');
+  await w.page.getByRole('button', { name: 'រក' }).click();
+  await w.page.waitForURL(/#\/dn\?q=7777/);
+  pass('Part of a DN that is on no open trip opens the DN search with it filled in');
   await skew(5 * 60000);
   for (const [who, code, extra] of [['logi@test.kh', 3], ['wh@test.kh', 4], ['wh@test.kh', 5], ['wh@test.kh', 6, { wh: 'PNP2', kg: 2000, websling: true }], ['guard@test.kh', 7]]) {
     const r = await api('record', Object.assign({ ref: 'y' + code + Math.random(), code, tripId: t2 }, extra || {}), tok(who));
