@@ -11,7 +11,7 @@ const custIdOf = (text: string) => { const m = String(text || '').match(/^\s*(\d
 
 export function TripPage(p: { id: string }) {
   useLang();
-  const { boot, tick, setBusy, refreshOps } = useApp();
+  const { boot, tick, live, setBusy, refreshOps } = useApp();
   const [del, setDel] = useState<LogRow | null>(null);
   const [d, setD] = useState<TripDetail | null>(null);
   const [err, setErr] = useState('');
@@ -24,7 +24,7 @@ export function TripPage(p: { id: string }) {
       .catch(e => { if (live) setErr(errText(e.message)); })
       .finally(() => setBusy(false));
     return () => { live = false; };
-  }, [p.id, tick, n]);
+  }, [p.id, tick, live, n]);
 
   if (err) return <main className="max-w-2xl mx-auto p-4"><Alert tone="bad">{err}</Alert></main>;
   if (!d) return <Spinner />;

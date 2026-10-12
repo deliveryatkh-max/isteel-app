@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { matches } from '../state';
 import { L, setLang, t, useLang } from '../i18n';
 import type { Label } from '../types';
 
@@ -33,17 +34,19 @@ export function Header(p: { busy?: boolean; waiting?: number; onOutbox?: () => v
 }
 
 // ---------------------------------------------------------------- bottom navigation: Home and Refresh first (Kim)
-export type Tab = { id: string; icon: string; km: string; en: string };
-export function BottomNav(p: { tabs: Tab[]; active: string; onTab: (id: string) => void; onRefresh: () => void; busy?: boolean }) {
+export type Tab = { id: string; icon: string; km: string; en: string; big?: boolean };
+export function BottomNav(p: { tabs: Tab[]; active: string; onTab: (id: string) => void }) {
   useLang();
   const item = 'flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11.5px] leading-tight cursor-pointer bg-transparent border-0';
   return (
     <nav className="fixed bottom-0 inset-x-0 z-20 bg-card border-t border-line flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <a href="../" className={item + ' text-muted no-underline'}><img src="../icons/home.svg" alt="" width={22} height={22} /><b className="font-semibold truncate max-w-full">{t('ទំព័រដើម', 'Home')}</b></a>
-      <button type="button" className={item + ' text-muted'} onClick={p.onRefresh} disabled={p.busy}>
-        <span className={'text-[19px] leading-[22px] ' + (p.busy ? 'animate-spin' : '')}>↻</span><b className="font-semibold truncate max-w-full">{t('ផ្ទុកថ្មី', 'Refresh')}</b>
-      </button>
-      {p.tabs.map(x => (
+      {p.tabs.map(x => x.big ? (
+        // The Scan button sits raised in the middle, bigger than the rest.
+        <button key={x.id} type="button" className={item + ' !justify-end' + (p.active === x.id ? ' text-brand' : ' text-muted')} onClick={() => p.onTab(x.id)} aria-current={p.active === x.id}>
+          <span className="-mt-6 w-14 h-14 rounded-full bg-brand text-white flex items-center justify-center text-[26px] shadow-lg border-4 border-card">{x.icon}</span><b className="font-semibold truncate max-w-full">{t(x.km, x.en)}</b>
+        </button>
+      ) : (
         <button key={x.id} type="button" className={item + (p.active === x.id ? ' text-brand' : ' text-muted')} onClick={() => p.onTab(x.id)} aria-current={p.active === x.id}>
           <span className="text-[19px] leading-[22px]">{x.icon}</span><b className="font-semibold truncate max-w-full">{t(x.km, x.en)}</b>
         </button>
@@ -144,7 +147,7 @@ export function Picker(p: {
   const list = useMemo(() => {
     const s = p.digits ? q.replace(/\D/g, '') : q.trim().toLowerCase();
     const hit = !s ? p.options : p.digits ? p.options.filter(o => o.value.replace(/\D/g, '').indexOf(s) >= 0)
-      : p.options.filter(o => (o.label + ' ' + (o.sub || '') + ' ' + o.value).toLowerCase().indexOf(s) >= 0);
+      : p.options.filter(o => matches(o.label + ' ' + (o.sub || '') + ' ' + o.value, s));
     return hit.slice(0, 60);
   }, [q, p.options]);
   const cur = p.options.find(o => o.value === p.value);

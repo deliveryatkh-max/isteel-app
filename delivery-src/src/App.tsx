@@ -20,15 +20,14 @@ const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
   throw e;
 }));
 
+// Five buttons (Kim, 12 Oct 2026): Summary is inside Trips, DN search is inside Scan, Refresh is the ISI STEEL logo.
 const TABS: Tab[] = [
-  { id: 'ops', icon: '📊', km: 'សង្ខេប', en: 'Summary' },
-  { id: 'scan', icon: '📷', km: 'ស្កេន', en: 'Scan' },
+  { id: 'ops', icon: '🚚', km: 'ជើងដឹក', en: 'Trips' },
+  { id: 'scan', icon: '📷', km: 'ស្កេន', en: 'Scan', big: true },
   { id: 'record', icon: '➕', km: 'កត់ត្រា', en: 'Record' },
-  { id: 'trips', icon: '🚚', km: 'ជើងដឹក', en: 'Trips' },
-  { id: 'dn', icon: '📄', km: 'DN', en: 'DN' },
   { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' },
 ];
-const TAB_OF: Record<string, string> = { '': 'ops', scan: 'scan', record: 'record', trips: 'trips', trip: 'trips', dn: 'dn', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
+const TAB_OF: Record<string, string> = { '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -42,6 +41,7 @@ export function App() {
   const [err, setErr] = useState('');
   const [busyN, setBusyN] = useState(0);
   const [tick, setTick] = useState(0);
+  const [live, setLive] = useState(0);
   const waiting = useSyncExternalStore(outbox.subscribe, () => outbox.list().length);
   const route = useRoute();
 
@@ -73,11 +73,18 @@ export function App() {
   const last = useRef(Date.now());
   useEffect(() => {
     const on = () => { flushOutbox(() => refreshOps()); };
-    const vis = () => { if (document.visibilityState === 'visible' && Date.now() - last.current > 60000) { last.current = Date.now(); refreshOps(); on(); } };
+    // Back on screen after a while: fresh numbers straight away, without tapping anything.
+    const vis = () => { if (document.visibilityState === 'visible' && Date.now() - last.current > 20000) { last.current = Date.now(); refreshOps(); setLive(x => x + 1); on(); } };
     addEventListener('online', on);
     document.addEventListener('visibilitychange', vis);
-    // Live view: the trip list refreshes every minute while the app is open on screen.
-    const iv = setInterval(() => { if (document.visibilityState === 'visible' && navigator.onLine) { on(); if (Date.now() - last.current > 55000) { last.current = Date.now(); refreshOps(); } } }, 30000);
+    // Live view (Kim, 12 Oct 2026: refresh in the background without clicking): every 30 s while the app is on screen
+    // the trips and counts reload, and an open trip or DN page reloads every minute.
+    let k = 0;
+    const iv = setInterval(() => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+      on();
+      if (Date.now() - last.current > 25000) { last.current = Date.now(); refreshOps(); if (++k % 2 === 0) setLive(x => x + 1); }
+    }, 30000);
     return () => { removeEventListener('online', on); document.removeEventListener('visibilitychange', vis); clearInterval(iv); };
   }, []);
 
@@ -105,7 +112,7 @@ export function App() {
   if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
   else if (page === 'record') body = <RecordPage key={route.q.toString()} />;
   else if (page === 'trip' && route.path[1]) body = <TripPage id={route.path[1]} />;
-  else if (page === 'trips') body = <TripsPage />;
+  else if (page === 'trips' && route.path[1] === 'history') body = <TripsPage />;
   else if (page === 'dn' && route.path[1]) body = <DnPage dn={route.path[1]} />;
   else if (page === 'dn') body = <DnSearchPage />;
   else if (page === 'more') body = <MorePage />;
@@ -115,16 +122,16 @@ export function App() {
   else if (page === 'dashboard' && boot.canKpi) body = <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
-    ops: ['ដឹកជញ្ជូន', 'Delivery'], scan: ['ស្កេន DN', 'Scan DN'], record: ['កត់ត្រាដំណើរ', 'Record journey'], trips: ['ជើងដឹក', 'Trips'], dn: ['តាមដាន DN', 'DN tracking'], more: ['ផ្សេងៗ', 'More'],
+    ops: ['ជើងដឹក', 'Trips'], scan: ['ស្កេន DN', 'Scan DN'], record: ['កត់ត្រាដំណើរ', 'Record journey'], more: ['ផ្សេងៗ', 'More'],
   };
   const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
   return (
-    <AppCtx.Provider value={{ boot, ops, tick, refreshOps, setBusy }}>
-      <Header busy={busy} waiting={waiting} onOutbox={() => go('/more')} title={t(...titles[tab])} sub={sub} />
+    <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, setBusy }}>
+      <Header busy={busy} waiting={waiting} onOutbox={() => go('/more')} title={page === 'dn' ? t('តាមដាន DN', 'DN tracking') : t(...titles[tab])} sub={sub} />
       {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}
       {body}
-      <BottomNav tabs={TABS} active={tab} busy={busy} onRefresh={refresh} onTab={id => go(id === 'ops' ? '/' : '/' + id)} />
+      <BottomNav tabs={TABS} active={tab} onTab={id => go(id === 'ops' ? '/' : '/' + id)} />
       <Toaster />
     </AppCtx.Provider>
   );

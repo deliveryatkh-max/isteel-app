@@ -513,7 +513,7 @@ function search_(p) {
     const hay = [dn, cust, pl.so || '', i.legs.map(l => l.tripId + ' ' + l.plate).join(' '), rs.map(r => r.driver).join(' '), pl.plate || '', pl.driver || ''].join(' ').toLowerCase();
     return { dn: dn, cust: cust, so: pl.so || rs.map(r => r.so).filter(Boolean)[0] || '', date: date, status: i.status, kg: i.kg, planKg: i.planKg, trips: i.legs.map(l => ({ id: l.tripId, plate: l.plate, leg: l.leg })), hay: hay };
   });
-  if (q) list = list.filter(x => x.hay.indexOf(q) >= 0);
+  if (q) list = list.filter(x => matchText(x.hay, q));
   if (from) list = list.filter(x => x.date >= from);
   if (to) list = list.filter(x => x.date <= to);
   if (p.status) list = list.filter(x => x.status === p.status);
@@ -539,7 +539,7 @@ function history_(p) {
   let list = Object.keys(groups).map(id => tripSummary_(id, groups[id], idx, done)).filter(t => t.date >= from && t.date <= to);
   if (p.stage === 'closed') list = list.filter(t => t.closed);
   else if (p.stage) list = list.filter(t => t.stage === p.stage);
-  if (q) list = list.filter(t => [t.id, t.plate, t.driver, t.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0);
+  if (q) list = list.filter(t => matchText([t.id, t.plate, t.driver, t.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' '), q));
   list.sort((a, b) => (b.gateIn || b.lastTime) - (a.gateIn || a.lastTime));
   return { total: list.length, items: list.slice(0, 400), from: from, to: to };
 }

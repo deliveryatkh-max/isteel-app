@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { errText, fmtDate, fmtDateTime, kg as fmtKg, L, t, useLang, ymdNow, ymdOf } from '../i18n';
-import { dnHref, go, tripHref, useApp } from '../state';
+import { dnHref, go, tripHref, useApp, useRoute } from '../state';
 import type { DnInfo } from '../types';
 import { Alert, Badge, Kv, Spinner } from '../components/ui';
 import { Scanner } from '../components/Scanner';
@@ -21,7 +21,8 @@ type Item = { dn: string; cust: string; so: string; date: string; status: string
 export function DnSearchPage() {
   useLang();
   const { boot, tick, setBusy } = useApp();
-  const [q, setQ] = useState('');
+  const route = useRoute();
+  const [q, setQ] = useState(() => route.q.get('q') || '');
   const [from, setFrom] = useState(() => ymdOf(Date.now() - 6 * 86400000));
   const [to, setTo] = useState(ymdNow);
   const [status, setStatus] = useState('');
@@ -32,8 +33,8 @@ export function DnSearchPage() {
   useEffect(() => {
     let live = true;
     setErr(''); setBusy(true);
-    // A DN number on its own: search every date.
-    const exact = /^\d{6,}$/.test(q.trim());
+    // A number on its own (a whole DN or just its last digits): search every date.
+    const exact = /^\d{3,}$/.test(q.trim());
     api('search', { q, from: exact ? '' : from, to: exact ? '' : to, status })
       .then(r => { if (live) setRes(r); })
       .catch(e => { if (live) setErr(errText(e.message)); })
@@ -81,7 +82,7 @@ export function DnSearchPage() {
 
 export function DnPage(p: { dn: string }) {
   useLang();
-  const { boot, tick, setBusy } = useApp();
+  const { boot, tick, live, setBusy } = useApp();
   const [d, setD] = useState<DnInfo | null>(null);
   const [err, setErr] = useState('');
   const [n, setN] = useState(0);
@@ -94,13 +95,14 @@ export function DnPage(p: { dn: string }) {
   };
   useEffect(() => {
     let live = true;
-    setErr(''); setD(null); setBusy(true);
+    setErr(''); setBusy(true);
     api<DnInfo>('dn', { dn: p.dn })
       .then(x => { if (live) setD(x); })
       .catch(e => { if (live) setErr(errText(e.message)); })
       .finally(() => setBusy(false));
     return () => { live = false; };
-  }, [p.dn, tick, n]);
+  }, [p.dn, tick, live, n]);
+  useEffect(() => { setD(null); }, [p.dn]);
   if (err) return <main className="max-w-2xl mx-auto p-4"><Alert tone="bad">{err}</Alert></main>;
   if (!d) return <Spinner />;
   const pl = d.plan;

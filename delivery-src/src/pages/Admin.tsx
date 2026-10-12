@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { api, flushOutbox, outbox } from '../api';
 import { errText, fmtDateTime, L, t, useLang } from '../i18n';
-import { tripHref, useApp } from '../state';
+import { matches, tripHref, useApp } from '../state';
 import { Alert, Spinner, toast } from '../components/ui';
 
 /** More: who is signed in, steps waiting on this phone, and the Supervisor / Admin screens. */
@@ -130,7 +130,7 @@ export function UsersPage() {
         <button type="button" className="btn-primary" disabled={!!saving || !add.email} onClick={async () => { if (await save(add)) setAdd({ email: '', name: '', role: 'Driver' }); }}>{t('បន្ថែម', 'Add')}</button>
       </section>
       <input className="in mb-3" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('ស្វែងរកអ្នកប្រើ', 'Search users')} />
-      {d.users.filter(u => !s || (u.email + ' ' + u.name + ' ' + u.role).toLowerCase().indexOf(s) >= 0).map(u => (
+      {d.users.filter(u => matches(u.email + ' ' + u.name + ' ' + u.role, s)).map(u => (
         <div key={u.email} className="card !p-3 flex items-center gap-2">
           <div className="flex-1 min-w-0"><b className="block truncate">{u.name || u.email}</b><small className="muted block truncate">{u.email}</small></div>
           <select className="in !w-auto !min-h-[40px]" value={u.role} disabled={saving === u.email || u.email === boot.user.email} onChange={e => save({ email: u.email, role: e.target.value })} aria-label={t('តួនាទី', 'Role') + ' ' + u.email}>

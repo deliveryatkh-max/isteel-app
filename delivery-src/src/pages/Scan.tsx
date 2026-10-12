@@ -39,6 +39,20 @@ export function ScanPage(p: { dn?: string }) {
   const [left, setLeft] = useState(0);   // ms until the next step opens; 0 = stopped
 
   const [stayed, setStayed] = useState(false);
+  const [choices, setChoices] = useState<string[]>([]);
+  // Typing only part of a DN (e.g. the last 4 digits) is enough (Kim, 12 Oct 2026).
+  const findTyped = () => {
+    const q = cleanDn(typed);
+    if (!q) return;
+    const all: Record<string, 1> = {};
+    openTrips(ops).forEach(x => x.dns.forEach(z => { all[z.dn] = 1; }));
+    boot.plan.forEach(x => { if (x.dn) all[x.dn] = 1; });
+    const hits = Object.keys(all).filter(d => d.indexOf(q) >= 0);
+    if (hits.indexOf(q) >= 0 || (!hits.length && q.length >= 8)) setDn(q);
+    else if (hits.length === 1) setDn(hits[0]);
+    else if (hits.length) setChoices(hits.sort((a, b) => Number(b.endsWith(q)) - Number(a.endsWith(q)) || a.localeCompare(b)).slice(0, 12));
+    else go('/dn?q=' + encodeURIComponent(q));   // not on an open trip or today's plan: search every DN
+  };
   const asked = useRef(0);
   // Trips are read fresh when the screen opens (another phone may have just added the DN); the answer updates if they change.
   useEffect(() => { refreshOps(); }, []);
@@ -102,16 +116,23 @@ export function ScanPage(p: { dn?: string }) {
     return () => clearTimeout(id);
   }, [left, found]);
 
-  const again = () => { setDn(''); setFound(null); setTyped(''); setLeft(0); setErr(''); setStayed(false); };
+  const again = () => { setDn(''); setFound(null); setTyped(''); setLeft(0); setErr(''); setStayed(false); setChoices([]); };
 
   if (!dn) {
     return (
       <main className="max-w-xl mx-auto p-3 sm:p-4 grid gap-3">
         <ScanView tall onCode={c => setDn(cleanDn(c.replace(/^.*\/scan\//, '')))} />
-        <form className="flex gap-2" onSubmit={e => { e.preventDefault(); if (typed.trim()) setDn(cleanDn(typed)); }}>
-          <input className="in flex-1" inputMode="numeric" value={typed} onChange={e => setTyped(e.target.value)} placeholder={'⌨️ ' + t('វាយលេខ DN', 'Type the DN number')} aria-label="DN" />
+        <form className="flex gap-2" onSubmit={e => { e.preventDefault(); findTyped(); }}>
+          <input className="in flex-1" inputMode="numeric" value={typed} onChange={e => { setTyped(e.target.value); setChoices([]); }} placeholder={'⌨️ ' + t('វាយលេខ DN ឬ ៤ ខ្ទង់ចុងក្រោយ', 'DN number or its last 4 digits')} aria-label="DN" />
           <button type="submit" className="btn-primary" disabled={!typed.trim()}>{t('រក', 'Find')}</button>
         </form>
+        {choices.length ? (
+          <section className="card !p-3 grid gap-2" data-testid="dn-choices">
+            <b className="text-[14px]">{t('ជ្រើស DN', 'Choose the DN')}</b>
+            {choices.map(d => <button key={d} type="button" className="btn justify-start text-[16px] tracking-wide" onClick={() => setDn(d)}>📄 {d}</button>)}
+          </section>
+        ) : null}
+        <a href="#/dn" className="btn w-full no-underline">🔍 {t('ស្វែងរក DN តាមអតិថិជន ផ្លាកលេខ ឬថ្ងៃ', 'Search DNs by customer, truck or date')}</a>
       </main>
     );
   }

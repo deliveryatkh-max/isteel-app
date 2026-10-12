@@ -381,3 +381,16 @@ test('the "whole DN" tick with the plan weight finishes the DN', () => {
   assert.strictEqual(d.dnInfo['9000000001'].status, 'delivered');
   assert.strictEqual(d.stage, 'completed');
 });
+
+test('search boxes match any part of the text (Kim, 12 Oct 2026)', () => {
+  const { matchText } = require('../Logic.gs');
+  assert.ok(matchText('3A-1234 9000000001', '1234'));
+  assert.ok(matchText('3A-1234', '3a1234'));
+  assert.ok(matchText('DN 9000000001', '0001'));
+  assert.ok(!matchText('3A-1234', '5678'));
+  const e = env(); e.run('setup()');
+  const t1 = gateIn(e, 'TEST-0001').tripId;
+  loadAndOut(e, t1, ['9000000001', '9000000002']);
+  assert.deepStrictEqual(ok(e.call('search', { q: '0002' }, ADMIN)).items.map(x => x.dn), ['9000000002']);
+  assert.strictEqual(ok(e.call('history', { q: '0001' }, ADMIN)).total, 1);
+});
