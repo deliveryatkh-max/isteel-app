@@ -16,7 +16,7 @@ const XT_COLS = {
   'Site Ratings': ['Time', 'DN', 'Trip ID', 'Truck No.', '3PL', 'Customer', 'Wait', 'Unload Help', 'Access', 'Customer Delay', 'Remark', 'Confirmed By', 'Confirmed Time'],
   'Complaints': ['Complaint ID', 'Time', 'DN', 'Trip ID', 'Truck No.', '3PL', 'Customer', 'Type', 'Detail', 'Source', 'Recorded By', 'Status', 'Resolved Time', 'Resolved By', 'Resolution'],
   'Customer Sites': ['Customer ID', 'Customer Name', 'LatLong', 'Set By', 'Set Time'],
-  'Truck Companies': ['Truck No.', '3PL Company', 'Set By', 'Set Time'],
+  'Truck Companies': ['Truck No.', '3PL Company', 'Set By', 'Set Time', 'Truck Type'],
   'Delivery Settings': ['Setting', 'Value', 'Note'],
 };
 const SETTING_DEFAULTS = [
@@ -68,6 +68,8 @@ function xrows_(name) {
 function xappend_(name, obj) {
   const sh = xtab_(name);
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  // A column added to one of this app's own tabs in a later version: its header goes at the end.
+  (XT_COLS[name] || []).filter(h => head.indexOf(h) < 0).forEach(h => { head.push(h); sh.getRange(1, head.length).setValue(h).setFontWeight('bold'); });
   sh.appendRow(head.map(h => (obj[h] == null ? '' : obj[h])));
   return sh.getLastRow();
 }
@@ -123,21 +125,39 @@ function companyNames_(map) {
   Object.keys(map).forEach(k => { if (map[k] && map[k] !== 'ISI') set[map[k]] = 1; });
   return Object.keys(set).sort();
 }
-/** Gate In of a non-ISI truck with a company: remembered for next time. */
-function rememberCompany_(plate, company, email) {
+/**
+ * Gate In of a rented / customer truck: the plate, its company and truck type are kept in Truck Companies,
+ * so the plate shows in the list next time (like "Add new truck" in the Fuel app). ISI plates are never added.
+ */
+function rememberTruck_(plate, company, type, email) {
   plate = normPlate(plate); company = String(company || '').trim().slice(0, 60);
-  if (!plate || !company) return;
-  const map = companies_();
-  if (map[plate] === 'ISI' || map[plate] === company) return;
+  type = type === 'customer' ? 'customer' : 'rented';
+  if (!plate || master_().plates.some(x => x.plate === plate)) return;
   const row = xrows_(XT.COMPANIES).find(r => normPlate(r['Truck No.']) === plate);
-  if (row) { xset_(XT.COMPANIES, row._row, '3PL Company', company); xset_(XT.COMPANIES, row._row, 'Set By', email); xset_(XT.COMPANIES, row._row, 'Set Time', now_()); }
-  else xappend_(XT.COMPANIES, { 'Truck No.': plate, '3PL Company': company, 'Set By': email, 'Set Time': now_() });
-  CacheService.getScriptCache().remove('companies_v1');
+  if (row && text_(row['3PL Company']) === company && text_(row['Truck Type']) === type) return;
+  if (row) {
+    if (company) xset_(XT.COMPANIES, row._row, '3PL Company', company);
+    xset_(XT.COMPANIES, row._row, 'Truck Type', type);
+    xset_(XT.COMPANIES, row._row, 'Set By', email); xset_(XT.COMPANIES, row._row, 'Set Time', now_());
+  } else xappend_(XT.COMPANIES, { 'Truck No.': plate, '3PL Company': company, 'Truck Type': type, 'Set By': email, 'Set Time': now_() });
+  const cache = CacheService.getScriptCache();
+  cache.remove('companies_v1'); cache.remove('trucks_v1');
+}
+/** Rented / customer trucks seen before (Truck Companies tab): plate, company, type. */
+function trucks_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('trucks_v1');
+  if (hit) return JSON.parse(hit);
+  const out = xrows_(XT.COMPANIES).map(r => ({ plate: normPlate(r['Truck No.']), co: text_(r['3PL Company']), type: text_(r['Truck Type']) === 'customer' ? 'customer' : 'rented' }))
+    .filter(x => x.plate);
+  try { cache.put('trucks_v1', JSON.stringify(out), 600); } catch (e) { /* too big */ }
+  return out;
 }
 
 // ---------------------------------------------------------------- proof of delivery (signature + extra photos)
-function saveProof_(rows, tripId, receiver, sigUrl, photoUrls, email) {
-  if (!sigUrl && !receiver && photoUrls.length < 2) return;
+function saveProof_(rows, tripId, receiver, sigUrl, photoUrls, email, always) {
+  if (!always && !sigUrl && !receiver && photoUrls.length < 2) return;
+  rows = rows.slice(0, 1).concat(rows.slice(1).filter(r => r.dn));   // a trip step (Gate In) has one row
   const sh = xtab_(XT.PROOF);
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
   const out = rows.map(r => {
@@ -145,6 +165,24 @@ function saveProof_(rows, tripId, receiver, sigUrl, photoUrls, email) {
     return head.map(h => (o[h] == null ? '' : o[h]));
   });
   sh.getRange(sh.getLastRow() + 1, 1, out.length, head.length).setValues(out);
+}
+/** Photos sent after the step: completes the Delivery Proof row of each Key No. (made with the receiver name), or adds it. */
+function proofUpdate_(rows, tripId, sigUrl, photoUrls, email) {
+  rows = rows.slice(0, 1).concat(rows.slice(1).filter(r => r.dn));
+  const sh = xtab_(XT.PROOF);
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  const have = {};
+  xrows_(XT.PROOF).forEach(r => { if (String(r['Trip ID']) === tripId) have[text_(r['Key No.'])] = r._row; });
+  const iSig = head.indexOf('Signature'), iPh = head.indexOf('Photos');
+  const add = [];
+  rows.forEach(r => {
+    const at = have[r.key];
+    if (at) {
+      if (sigUrl && iSig >= 0) sh.getRange(at, iSig + 1).setValue(sigUrl);
+      if (photoUrls.length && iPh >= 0) sh.getRange(at, iPh + 1).setValue(photoUrls.join('\n'));
+    } else add.push(r);
+  });
+  if (add.length) saveProof_(add, tripId, '', sigUrl, photoUrls.length ? photoUrls : [], email, true);
 }
 function proofFor_(tripId) {
   return xrows_(XT.PROOF).filter(r => String(r['Trip ID']) === tripId).map(r => ({

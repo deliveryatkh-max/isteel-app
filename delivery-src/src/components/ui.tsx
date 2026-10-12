@@ -104,28 +104,57 @@ export function Toaster() {
  * (rented and customer trucks are not in Plate Number).
  */
 export type Opt = { value: string; label: string; sub?: string };
-export function Picker(p: { value: string; options: Opt[]; onChange: (v: string, o?: Opt) => void; placeholder?: string; allowFree?: boolean; freeLabel?: string; id?: string; upper?: boolean }) {
+export function Picker(p: {
+  value: string; options: Opt[]; onChange: (v: string, o?: Opt) => void; placeholder?: string; allowFree?: boolean; freeLabel?: string; id?: string; upper?: boolean;
+  /** "➕ Add new" button inside the list (like the Fuel app's Add new truck): check(v) returns an error text or ''. */
+  addNew?: { button: string; placeholder: string; check?: (v: string) => string };
+  bad?: boolean;
+  /** Plate search: number keypad, and "1234" finds "3A-1234" (Kim, 12 Oct 2026). */
+  digits?: boolean;
+}) {
   useLang();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [newV, setNewV] = useState('');
+  const [newErr, setNewErr] = useState('');
+  const addIt = () => {
+    const v = newV.trim();
+    const e = !v ? t('សូមវាយ', 'Type it first') : p.addNew && p.addNew.check ? p.addNew.check(v) : '';
+    if (e) { setNewErr(e); return; }
+    p.onChange(v); setOpen(false); setAdding(false); setNewV(''); setNewErr('');
+  };
   const list = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const hit = s ? p.options.filter(o => (o.label + ' ' + (o.sub || '') + ' ' + o.value).toLowerCase().indexOf(s) >= 0) : p.options;
+    const s = p.digits ? q.replace(/\D/g, '') : q.trim().toLowerCase();
+    const hit = !s ? p.options : p.digits ? p.options.filter(o => o.value.replace(/\D/g, '').indexOf(s) >= 0)
+      : p.options.filter(o => (o.label + ' ' + (o.sub || '') + ' ' + o.value).toLowerCase().indexOf(s) >= 0);
     return hit.slice(0, 60);
   }, [q, p.options]);
   const cur = p.options.find(o => o.value === p.value);
-  const free = q.trim() && p.allowFree && !p.options.some(o => o.value.toLowerCase() === q.trim().toLowerCase());
+  const free = q.trim() && p.allowFree && !p.digits && !p.options.some(o => o.value.toLowerCase() === q.trim().toLowerCase());
   return (
     <>
-      <button type="button" id={p.id} className="in text-left flex items-center justify-between gap-2" onClick={() => { setQ(''); setOpen(true); }}>
+      <button type="button" id={p.id} className={'in text-left flex items-center justify-between gap-2 ' + (p.bad ? '!border-bad' : '')} onClick={() => { setQ(''); setAdding(false); setOpen(true); }}>
         <span className={p.value ? '' : 'text-muted'}>{p.value ? (cur ? cur.label : p.value) : p.placeholder || t('ជ្រើសរើស…', 'Choose…')}</span>
         <span className="text-muted">▾</span>
       </button>
       {open ? (
         <Modal title={p.placeholder || t('ជ្រើសរើស', 'Choose')} onClose={() => setOpen(false)}>
-          <input autoFocus className="in mb-2" value={q} onChange={e => setQ(p.upper ? e.target.value.toUpperCase() : e.target.value)} placeholder={t('ស្វែងរក ឬវាយ…', 'Search or type…')}
+          <input autoFocus className="in mb-2" value={q} inputMode={p.digits ? 'numeric' : undefined} onChange={e => setQ(p.digits ? e.target.value.replace(/\D/g, '') : p.upper ? e.target.value.toUpperCase() : e.target.value)}
+            placeholder={p.digits ? t('ស្វែងរកតាមលេខ ឧ. 1234', 'Search by number, e.g. 1234') : t('ស្វែងរក ឬវាយ…', 'Search or type…')}
             onKeyDown={e => { if (e.key === 'Enter') { const pick = list[0] && !free ? list[0] : null; if (pick) { p.onChange(pick.value, pick); setOpen(false); } else if (free) { p.onChange(q.trim()); setOpen(false); } } }} />
-          {free ? <button type="button" className="btn w-full mb-2 justify-start" onClick={() => { p.onChange(q.trim()); setOpen(false); }}>➕ {p.freeLabel || t('ប្រើ', 'Use')} “{q.trim()}”</button> : null}
+          {p.addNew ? (adding ? (
+            <div className="rounded-xl border-[1.5px] border-accent bg-soft p-2.5 mb-2 grid gap-2">
+              <input autoFocus className="in" value={newV} onChange={e => { setNewV(p.upper ? e.target.value.toUpperCase() : e.target.value); setNewErr(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') addIt(); }} placeholder={p.addNew.placeholder} aria-label={p.addNew.placeholder} />
+              {newErr ? <span className="text-bad text-[13px] font-semibold">{newErr}</span> : null}
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className="btn btn-sm" onClick={() => setAdding(false)}>{t('បោះបង់', 'Cancel')}</button>
+                <button type="button" className="btn-primary btn-sm" onClick={addIt}>➕ {t('បន្ថែម', 'Add')}</button>
+              </div>
+            </div>
+          ) : <button type="button" className="btn w-full mb-2 justify-start !border-accent text-accent font-bold" onClick={() => { setAdding(true); setNewV(q.trim()); }}>{p.addNew.button}</button>) : null}
+          {free && !p.addNew ? <button type="button" className="btn w-full mb-2 justify-start" onClick={() => { p.onChange(q.trim()); setOpen(false); }}>➕ {p.freeLabel || t('ប្រើ', 'Use')} “{q.trim()}”</button> : null}
           <div className="grid gap-1">
             {list.map(o => (
               <button key={o.value} type="button" className={'text-left rounded-xl px-3 py-2 border-[1.5px] ' + (o.value === p.value ? 'border-accent bg-soft' : 'border-line bg-card')} onClick={() => { p.onChange(o.value, o); setOpen(false); }}>
@@ -152,13 +181,13 @@ export async function shrinkPhoto(file: File, max = 1280): Promise<string> {
     return c.toDataURL('image/jpeg', 0.72);
   } finally { URL.revokeObjectURL(url); }
 }
-export function PhotoInput(p: { value: string; onChange: (v: string) => void; label: string }) {
+export function PhotoInput(p: { value: string; onChange: (v: string) => void; label?: string }) {
   useLang();
   const cam = useRef<HTMLInputElement>(null), gal = useRef<HTMLInputElement>(null);
   const pick = async (f?: File | null) => { if (f) p.onChange(await shrinkPhoto(f)); };
   return (
     <div>
-      <span className="lbl">{p.label}</span>
+      {p.label ? <span className="lbl">{p.label}</span> : null}
       {p.value ? (
         <div className="flex items-center gap-3">
           <img src={p.value} alt="" className="w-20 h-20 object-cover rounded-xl border border-line" />

@@ -51,6 +51,13 @@ No Google password, API key or secret is in the web files. The browser only send
 3. Deploy → Manage deployments → ✎ → Version: *New version* → Deploy (same `/exec` URL).
 4. Optional: Telegram (step 9).
 
+### Update of 12 Oct 2026, part 2 (form, required fields, delete, fast save)
+
+1. Paste the new `Delivery.gs` and `Extras.gs` (Logic.gs unchanged). No `setup()` needed: the *Deleted Records* tab and the
+   *Truck Type* column are added by themselves the first time they are needed.
+2. Deploy → Manage deployments → ✎ → Version: *New version* → Deploy.
+Until this is deployed, the new screens can't save photos (the old script does not know the "attach" step).
+
 After a change to `Delivery.gs` or `Logic.gs`: paste the new file, then Deploy → *Manage deployments* → edit (✎) →
 Version: *New version* → Deploy. The `/exec` URL stays the same.
 
@@ -64,7 +71,7 @@ Read live from the **Type Record** tab, column *Allowed Recorders* (so editing t
 | Logistics / LT | ២, ៣ |
 | Warehouse | ៤, ៥, ៦ |
 | Driver (signed in) or driver link (no sign-in) | ៧ (if allowed), ៨, ៩, x.លុបចោល, x.បរាជ័យ |
-| Supervisor, Admin | every step, time corrections, data-quality check |
+| Supervisor, Admin | every step, delete an entry (with reason), data-quality check |
 | Admin | Users and roles |
 
 The *អ្នកកត់ត្រា* value written to Time Log is the matching Type Record group (e.g. `១.សន្តិសុខ`, `៤.ឡាន ISI`).

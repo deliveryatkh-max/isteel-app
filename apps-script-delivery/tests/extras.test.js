@@ -8,10 +8,20 @@ const L = require('../Logic.gs');
 
 const as = email => 'google:' + email;
 const ADMIN = as('admin@test.kh'), GUARD = as('guard@test.kh'), LOGI = as('logi@test.kh'), WH = as('wh@test.kh'), SUP = as('sup@test.kh');
+// Kim's rule (12 Oct 2026): every field is required except the remark. Tests fill the fields they do not test.
+function filled(p) {
+  p = Object.assign({}, p);
+  if (p.code === 1 && !/^TEST-/.test(p.plate || '') && !p.company) p.company = 'TEST 3PL';
+  if (p.code === 1 && !('driver' in p)) p.driver = 'TEST driver';
+  if (p.code === 2) p.dns = (p.dns || []).map(d => (/^9/.test(d.dn) || d.so ? d : Object.assign({ so: '1069999999' }, d)));
+  if (p.code === 6) p = Object.assign({ wh: 'PNP1', kg: 3000, websling: false }, p);
+  if (p.code === 9 && !p.receiver) p.receiver = 'TEST receiver';
+  return p;
+}
 let refN = 0;
 const ref = () => 'x' + (++refN);
 const ok = res => { assert.ok(res.ok, 'expected ok, got ' + JSON.stringify(res.error)); return res.data; };
-const rec = (e, token, p) => e.call('record', Object.assign({ ref: ref() }, p), token);
+const rec = (e, token, p) => e.call('record', filled(Object.assign({ ref: ref() }, p)), token);
 const step = (e, m) => e.advance((m || 5) * 60000);
 const tab = (e, name) => e.ss.getSheetByName(name).rows.slice(1).filter(r => r.some(x => x !== '' && x != null));
 const IMG = 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64');
@@ -90,7 +100,7 @@ test('site rating from the driver link after the trip is finished; customer dela
   const e = env();
   const id = trip(e, 'TEST-0001', ['9000000001']);
   const k = ok(e.call('trip', { tripId: id }, LOGI)).driverLink;
-  step(e, 40); ok(e.call('drvRecord', { t: id, k, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }, null));
+  step(e, 40); ok(e.call('drvRecord', filled({ t: id, k, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
   ok(e.call('drvSiteRate', { t: id, k, dns: ['9000000001'], wait: 'long', help: 'no', access: 'hard', custDelay: true, remark: 'waited 2h' }, null));
   ok(e.call('drvSiteRate', { t: id, k, dns: ['9000000001'], wait: 'short' }, null));   // second time: ignored
   const sr = tab(e, 'Site Ratings');
@@ -201,4 +211,88 @@ test('Logic: OTIF rules, stage minutes and distance', () => {
   assert.ok(Math.abs(L.distanceKm('11.55,104.92', '11.55,104.93') - 1.09) < 0.02);
   assert.strictEqual(L.distanceKm('', '11,104'), null);
   assert.strictEqual(L.custIdOf('6100000001-TEST Customer A'), '6100000001');
+});
+
+test('every field is required except the remark (server side)', () => {
+  const e = env();
+  const r1 = e.call('record', { ref: ref(), code: 1, plate: 'TEST-0001' }, GUARD);
+  assert.ok(!r1.ok && /^REQUIRED/.test(r1.error), 'driver');
+  const r2 = e.call('record', { ref: ref(), code: 1, plate: '2C-1111', driver: 'X' }, GUARD);
+  assert.ok(!r2.ok && /company/.test(r2.error), 'company of a rented truck');
+  const id = ok(rec(e, GUARD, { code: 1, plate: '2C-1111', driver: 'X', company: 'New 3PL', truckType: 'customer', photos: [IMG, IMG] })).tripId;
+  assert.deepStrictEqual(ok(e.call('boot', {}, GUARD)).trucks.find(x => x.plate === '2C-1111'), { plate: '2C-1111', co: 'New 3PL', type: 'customer' });
+  assert.strictEqual(tab(e, 'Delivery Proof').filter(r => r[2] === id).length, 1, 'extra truck photos kept');
+  step(e); ok(rec(e, LOGI, { code: 2, tripId: id, dns: [{ dn: '9000000001' }], confirm: ['PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, LOGI, { code: 3, tripId: id }));
+  step(e); ok(rec(e, WH, { code: 4, tripId: id }));
+  step(e); ok(rec(e, WH, { code: 5, tripId: id }));
+  const r3 = e.call('record', { ref: ref(), code: 6, tripId: id, wh: 'PNP1', kg: 3000 }, WH);
+  assert.ok(!r3.ok && /Websling/.test(r3.error));
+  step(e); ok(rec(e, WH, { code: 6, tripId: id }));
+  step(e); ok(rec(e, GUARD, { code: 7, tripId: id }));
+  const r4 = e.call('record', { ref: ref(), code: 9, tripId: id, dns: [{ dn: '9000000001' }], receiver: 'A' }, ADMIN);
+  assert.ok(!r4.ok && /kg/.test(r4.error));
+  const r5 = e.call('record', { ref: ref(), code: 9, tripId: id, dns: [{ dn: '9000000001', kg: 1000 }] }, ADMIN);
+  assert.ok(!r5.ok && /receiver/.test(r5.error));
+});
+
+test('a Truck Companies tab made by the first version gets the new Truck Type column by itself', () => {
+  const e = env();
+  e.ss.getSheetByName('Truck Companies').rows[0].length = 4;   // header without Truck Type
+  ok(rec(e, GUARD, { code: 1, plate: '2D-2222', driver: 'X', company: 'Old 3PL', truckType: 'rented' }));
+  const rows = e.ss.getSheetByName('Truck Companies').rows;
+  assert.strictEqual(rows[0][4], 'Truck Type');
+  assert.strictEqual(rows[1][0], '2D-2222'); assert.strictEqual(rows[1][4], 'rented');
+});
+
+test('delete an entry: Supervisor/Admin only, with a reason; the row is kept in Deleted Records and the Audit Log', () => {
+  const e = env();
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  const d = ok(e.call('trip', { tripId: id }, SUP));
+  const out = d.rows.find(r => r.code === 7);
+  assert.ok(!e.call('deleteEntry', { row: out.row, key: out.key, reason: 'tapped by mistake' }, GUARD).ok);
+  assert.ok(!e.call('deleteEntry', { row: out.row, key: out.key, reason: '' }, SUP).ok);
+  assert.ok(/^CHANGED/.test(e.call('deleteEntry', { row: out.row, key: 'other', reason: 'tapped by mistake' }, SUP).error));
+  const before = e.ss.getSheetByName('Time Log').rows.length;
+  ok(e.call('deleteEntry', { row: out.row, key: out.key, reason: 'tapped by mistake' }, SUP));
+  assert.strictEqual(e.ss.getSheetByName('Time Log').rows.length, before - 1);
+  const del = tab(e, 'Deleted Records');
+  assert.strictEqual(del.length, 1); assert.strictEqual(del[0][1], 'sup@test.kh'); assert.strictEqual(del[0][2], 'tapped by mistake');
+  assert.ok(tab(e, 'Audit Log').some(r => r[2] === 'Delete record' && r[3] === out.key));
+  const after = ok(e.call('trip', { tripId: id }, ADMIN));
+  assert.strictEqual(after.gateOut, null);
+  assert.strictEqual(after.stage, 'loaded');
+  const tr = e.ss.getSheetByName('Trips').rows.find(r => r[0] === id);
+  assert.strictEqual(tr[6], '');
+  // deleting every step of a trip removes its Trips line too
+  for (const r of after.rows.slice().reverse()) ok(e.call('deleteEntry', { row: r.row, key: r.key, reason: 'test trip' }, ADMIN));
+  assert.ok(!e.ss.getSheetByName('Trips').rows.some(r => r[0] === id));
+});
+
+test('fast save: the step is saved first, photos and signature follow with attach (also from the driver link)', () => {
+  const e = env();
+  const id = trip(e, 'TEST-0001', ['9000000001', '9000000002']);
+  step(e, 40);
+  const r = ok(rec(e, ADMIN, { code: 9, tripId: id, dns: [{ dn: '9000000001', kg: 1000 }], receiver: 'Mr Fast', later: true, photos: [IMG], signature: SIG }));
+  assert.strictEqual(e.files.length, 0, 'nothing uploaded while saving the step');
+  assert.strictEqual(tab(e, 'Delivery Proof')[0][4], 'Mr Fast');
+  const a = { ref: ref(), tripId: id, code: 9, keys: r.keys, photos: [IMG, IMG], signature: SIG };
+  ok(e.call('attach', a, ADMIN));
+  ok(e.call('attach', a, ADMIN));   // retried: nothing uploaded twice
+  assert.strictEqual(e.files.length, 3);
+  const proof = tab(e, 'Delivery Proof');
+  assert.strictEqual(proof.length, 1);
+  assert.strictEqual(proof[0][6].split('\n').length, 2);
+  assert.ok(proof[0][5]);
+  const d = ok(e.call('trip', { tripId: id }, ADMIN));
+  assert.ok(d.rows.find(x => x.key === r.keys[0]).billPhoto || d.proof[0].photos.length === 2);
+  // wrong trip or step, and roles
+  assert.strictEqual(e.call('attach', { ref: ref(), tripId: id, code: 8, keys: r.keys, photos: [IMG] }, ADMIN).error.split(':')[0], 'NOTFOUND');
+  assert.strictEqual(e.call('attach', { ref: ref(), tripId: id, code: 9, keys: r.keys, photos: [IMG] }, GUARD).error.split(':')[0], 'DENIED');
+  // driver link
+  const k = ok(e.call('trip', { tripId: id }, LOGI)).driverLink;
+  step(e); const r2 = ok(e.call('drvRecord', filled({ t: id, k, code: 9, dns: [{ dn: '9000000002', kg: 500 }], later: true, ref: ref() }), null));
+  ok(e.call('drvAttach', { t: id, k, ref: ref(), code: 9, keys: r2.keys, photos: [IMG] }, null));
+  assert.strictEqual(tab(e, 'Delivery Proof').length, 2);
+  assert.ok(!e.call('drvAttach', { t: id, k: 'bad', ref: ref(), code: 9, keys: r2.keys, photos: [IMG] }, null).ok);
 });

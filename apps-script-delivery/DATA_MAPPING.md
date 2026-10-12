@@ -1,8 +1,10 @@
 # Data mapping (SSK-DELIVERY-DATA)
 
 Existing tabs, columns, formulas and rows are kept as they are. The app only **appends** rows to Time Log, and
-**adds** two tabs (Trips, Audit Log). The only edits to existing cells are an authorised time correction
-(Time Log *Date & Time of Record* / *Date of Record*, logged in Audit Log) and a role change in User Manager ROLE (logged).
+**adds** two tabs (Trips, Audit Log). The only edits to existing cells are a role change in User Manager ROLE (logged), and
+the photo cell of a row the app has just written (photos are sent a moment after the step, so saving is fast).
+Changing a recorded time is turned off (Kim, 12 Oct 2026). A Supervisor/Admin can **delete** a Time Log row with a reason:
+the whole row is first copied to the **Deleted Records** tab (Deleted Time · Deleted By · Reason + all Time Log columns) and to the Audit Log, so it can be put back.
 
 ## Time Log: one row per event (per DN for DN steps); columns found by header name
 
@@ -33,12 +35,12 @@ Feature tabs (12 Oct 2026), each with its own rows:
 
 | Tab | Columns | Written when |
 |---|---|---|
-| Delivery Proof | Time · Key No. · Trip ID · DN · Receiver Name · Signature · Photos · User | Delivered with a signature, receiver name or 2+ photos (first photo also goes to Time Log *រូបថតបុង*) |
+| Delivery Proof | Time · Key No. · Trip ID · DN · Receiver Name · Signature · Photos · User | Delivered (receiver name at once, signature and photos a moment later), or Gate In with 2+ truck photos (first photo also goes to Time Log) |
 | Customer Ratings | Time · DN · Trip ID · Truck No. · 3PL · Overall · Driver Polite · On Time · Goods OK · Comment | customer submits the rating link (one per DN and trip) |
 | Site Ratings | Time · DN · Trip ID · Truck No. · 3PL · Customer · Wait · Unload Help · Access · Customer Delay · Remark · Confirmed By · Confirmed Time | driver rates the customer site; Logistics/Supervisor confirms a customer delay |
 | Complaints | Complaint ID · Time · DN · Trip ID · Truck No. · 3PL · Customer · Type · Detail · Source · Recorded By · Status · Resolved Time · Resolved By · Resolution | complaint added / resolved (ID `C` + yymmdd + `-NN`) |
 | Customer Sites | Customer ID · Customer Name · LatLong · Set By · Set Time | first Delivered with a location sets it; Logistics can move it (Audit Log) |
-| Truck Companies | Truck No. · 3PL Company · Set By · Set Time | Gate In of a rented / customer truck with a company |
+| Truck Companies | Truck No. · 3PL Company · Set By · Set Time · Truck Type | Gate In of a new rented / customer truck ("Add new truck"); Truck Type = rented / customer; offered in the plate list next time. An older tab gets the Truck Type column by itself |
 | Delivery Settings | Setting · Value · Note | edited by hand (targets, alert minutes, Telegram chat id) |
 
 3PL of a truck: ISI plates = ISI; else Truck Companies; else the driver's company in Driver List (ក្រុមហ៊ុន).

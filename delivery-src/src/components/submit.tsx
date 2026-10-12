@@ -1,21 +1,30 @@
 import { useState } from 'react';
-import { api, ApiError, newRef, outbox } from '../api';
+import { api, ApiError, flushOutbox, newRef, outbox, type OutItem } from '../api';
 import { errText, L, t } from '../i18n';
 import type { Warning } from '../types';
 import { Alert, Modal } from './ui';
 
-/** Phone location for the LatLong column. Never holds the user up: gives up after 4 s. */
-export function getLatLong(): Promise<string> {
-  return new Promise(res => {
+/**
+ * Phone location for the LatLong column. Asked for as soon as a form opens (warmLocation), so pressing
+ * Save never waits for the GPS; gives up after 4 s.
+ */
+let warm: { at: number; p: Promise<string> } | null = null;
+export function warmLocation() {
+  if (warm && Date.now() - warm.at < 60000) return warm.p;
+  const p = new Promise<string>(res => {
     if (!navigator.geolocation) return res('');
     const timer = setTimeout(() => res(''), 4000);
     navigator.geolocation.getCurrentPosition(
-      p => { clearTimeout(timer); res(p.coords.latitude.toFixed(6) + ',' + p.coords.longitude.toFixed(6)); },
+      x => { clearTimeout(timer); res(x.coords.latitude.toFixed(6) + ',' + x.coords.longitude.toFixed(6)); },
       () => { clearTimeout(timer); res(''); },
       { enableHighAccuracy: true, timeout: 3800, maximumAge: 60000 },
     );
   });
+  warm = { at: Date.now(), p };
+  p.then(v => { if (!v && warm && warm.p === p) warm = null; });   // no fix: ask again next time
+  return p;
 }
+export const getLatLong = warmLocation;
 
 export type SendResult = { ok: true; data: any } | { ok: false; queued?: boolean };
 
@@ -23,6 +32,18 @@ export type SendResult = { ok: true; data: any } | { ok: false; queued?: boolean
  * Sends one journey step. Warnings come back for the user to confirm (never confirmed for them);
  * with no signal the step is kept on the phone and sent later with the time it was really recorded.
  */
+/** Photos of a saved step: kept in the outbox (so a lost signal never loses them) and sent at once. */
+function sendMedia(action: 'record' | 'drvRecord', body: any, res: any, media: any, label: string) {
+  const drv = action === 'drvRecord';
+  const item: OutItem = {
+    ref: newRef(), action: drv ? 'drvAttach' : 'attach', label: '📷 ' + label, at: Date.now(),
+    payload: Object.assign({ tripId: res.tripId, code: body.code, keys: res.keys }, drv ? { t: body.t, k: body.k } : {}, media),
+  };
+  item.payload.ref = item.ref;
+  if (outbox.add(item)) flushOutbox();
+  else api(item.action, item.payload, { noAuth: drv }).catch(() => { /* phone full and no signal: the step is saved, its photos are not */ });
+}
+
 export function useSubmit(action: 'record' | 'drvRecord') {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -32,10 +53,15 @@ export function useSubmit(action: 'record' | 'drvRecord') {
     if (sending) return { ok: false };
     setSending(true); setError('');
     const body = Object.assign({ ref: newRef(), takenAt: Date.now(), confirm: [] as string[] }, payload);
+    // Fast save: the step goes first without its photos (small, quick); the photos follow in the background.
+    const media: any = {};
+    ['photo', 'photos', 'signature'].forEach(k => { if (body[k] && (!Array.isArray(body[k]) || body[k].length)) media[k] = body[k]; });
+    const hasMedia = Object.keys(media).length > 0;
     try {
       if (!body.latlong) body.latlong = await getLatLong();
       for (;;) {
-        const res = await api(action, body, { noAuth: action === 'drvRecord' });
+        const light = hasMedia ? Object.assign({}, body, { photo: undefined, photos: undefined, signature: undefined, later: true }) : body;
+        const res = await api(action, light, { noAuth: action === 'drvRecord' });
         if (res && res.needConfirm) {
           const yes = await new Promise<boolean>(resolve => setAsk({ warnings: res.needConfirm, resolve }));
           setAsk(null);
@@ -43,6 +69,7 @@ export function useSubmit(action: 'record' | 'drvRecord') {
           body.confirm = Array.from(new Set(body.confirm.concat(res.needConfirm.map((w: Warning) => w.code))));
           continue;
         }
+        if (hasMedia && res && res.keys && res.keys.length) sendMedia(action, body, res, media, label);
         return { ok: true, data: res };
       }
     } catch (e: any) {

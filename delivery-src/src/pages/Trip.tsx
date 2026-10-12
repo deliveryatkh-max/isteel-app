@@ -12,9 +12,9 @@ const custIdOf = (text: string) => { const m = String(text || '').match(/^\s*(\d
 export function TripPage(p: { id: string }) {
   useLang();
   const { boot, tick, setBusy, refreshOps } = useApp();
+  const [del, setDel] = useState<LogRow | null>(null);
   const [d, setD] = useState<TripDetail | null>(null);
   const [err, setErr] = useState('');
-  const [fix, setFix] = useState<LogRow | null>(null);
   const [n, setN] = useState(0);
   useEffect(() => {
     let live = true;
@@ -113,21 +113,21 @@ export function TripPage(p: { id: string }) {
                 <span className="font-semibold whitespace-nowrap">{fmtTime(r.time)}</span>
               </div>
               <div className="muted text-[13px]">
-                {[fmtDate(r.time), r.dn ? 'DN ' + r.dn : '', r.cust, r.wh, r.kg ? fmtKg(r.kg) : '', r.mode === 'Partial' ? t('មួយផ្នែក', 'part') : '', r.recorder, r.user].filter(Boolean).join(' · ')}
+                {[fmtDate(r.time), r.dn ? 'DN ' + r.dn : '', r.cust, r.wh, r.kg ? fmtKg(r.kg) : '', r.mode === 'Partial' ? t('មួយផ្នែក', 'part') : '', r.recorder].filter(Boolean).join(' · ')}
               </div>
               {r.remark ? <div className="text-[13.5px]">💬 {r.remark}</div> : null}
               {d.far && d.far[r.row] ? <div className="text-[13px] font-semibold text-warn">⚠️ {t('កត់ត្រាឆ្ងាយពីទីតាំងអតិថិជន ', 'Recorded ')}{d.far[r.row]}{t(' គ.ម', ' km from the customer site')}</div> : null}
               <div className="flex flex-wrap gap-x-3 text-[13px]">
                 {[r.truckPhoto, r.goodsPhoto, r.billPhoto].filter(Boolean).map((u, i) => <a key={i} href={u} target="_blank" rel="noopener">📷 {t('រូបថត', 'Photo')}</a>)}
                 {r.latlong ? <a href={'https://maps.google.com/?q=' + r.latlong} target="_blank" rel="noopener">📍 {t('ទីតាំង', 'Location')}</a> : null}
+                {boot.canCorrect ? <button type="button" className="text-bad bg-transparent border-0 p-0 cursor-pointer underline font-semibold" onClick={() => setDel(r)}>🗑 {t('លុប', 'Delete')}</button> : null}
                 {canSite && r.latlong && (r.code === 8 || r.code === 9) && custIdOf(r.cust) ? <button type="button" className="text-accent bg-transparent border-0 p-0 cursor-pointer underline" onClick={() => setSite(r)}>🏁 {t('ទីតាំងអតិថិជន', 'Customer site')}</button> : null}
-                {boot.canCorrect ? <button type="button" className="text-accent bg-transparent border-0 p-0 cursor-pointer underline" onClick={() => setFix(r)}>✎ {t('កែម៉ោង', 'Correct time')}</button> : null}
               </div>
             </li>
           ))}
         </ol>
       </section>
-      {fix ? <CorrectTime row={fix} onClose={() => setFix(null)} onDone={() => { setFix(null); setN(n + 1); refreshOps(); toast('✅ ' + t('បានកែ និងកត់ក្នុង Audit Log', 'Corrected and written to the Audit Log')); }} /> : null}
+      {del ? <DeleteEntry row={del} onClose={() => setDel(null)} onDone={left => { setDel(null); refreshOps(); toast('🗑 ' + t('បានលុប', 'Deleted')); if (left) setN(n + 1); else location.hash = '#/trips'; }} /> : null}
     </main>
   );
 }
@@ -167,35 +167,33 @@ function DriverLink(p: { tripId: string; token: string }) {
   );
 }
 
-/** Supervisor / Admin: change the time of one record, with the reason (written to Audit Log). */
-function CorrectTime(p: { row: LogRow; onClose: () => void; onDone: () => void }) {
+/** Supervisor / Admin: delete one entry, with the reason. The row is kept in the Deleted Records tab and the Audit Log. */
+function DeleteEntry(p: { row: LogRow; onClose: () => void; onDone: (tripLeft: boolean) => void }) {
   const { boot } = useApp();
   useLang();
-  // datetime-local in Cambodia time
-  const local = (ms: number) => new Date(ms + 7 * 3600000).toISOString().slice(0, 16);
-  const [v, setV] = useState(local(p.row.time));
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
-  const save = async () => {
-    setErr('');
-    const ms = Date.parse(v + ':00+07:00');
-    if (!ms) return setErr(t('ម៉ោងមិនត្រឹមត្រូវ។', 'The time is not valid.'));
+  const go = async () => {
     if (reason.trim().length < 3) return setErr(t('សូមសរសេរមូលហេតុ។', 'Write the reason.'));
-    setSaving(true);
-    try { await api('correct', { row: p.row.row, key: p.row.key, time: ms, reason: reason.trim() }); p.onDone(); }
+    setSaving(true); setErr('');
+    try { const r = await api<{ tripLeft: boolean }>('deleteEntry', { row: p.row.row, key: p.row.key, reason: reason.trim() }); p.onDone(r.tripLeft); }
     catch (e: any) { setErr(errText(e.message)); }
     finally { setSaving(false); }
   };
   return (
-    <Modal title={t('កែម៉ោង', 'Correct time')} onClose={p.onClose}>
-      <p className="mt-0 text-[14px]"><b>{eventLabel(boot, p.row)}</b><br /><span className="muted">{p.row.key} · {t('ឥឡូវ', 'now')} {fmtDateTime(p.row.time)}</span></p>
-      <label className="lbl" htmlFor="ct">{t('ម៉ោងថ្មី (ម៉ោងកម្ពុជា)', 'New time (Cambodia time)')}</label>
-      <input id="ct" className="in mb-3" type="datetime-local" value={v} onChange={e => setV(e.target.value)} />
-      <label className="lbl" htmlFor="cr">{t('មូលហេតុ', 'Reason')} *</label>
-      <textarea id="cr" className="in mb-3 min-h-[64px]" value={reason} onChange={e => setReason(e.target.value)} />
+    <Modal title={'🗑 ' + t('លុបការកត់ត្រា', 'Delete entry')} onClose={p.onClose}>
+      <div className="rounded-xl bg-badsoft text-bad p-3 mb-3 text-[14px]">
+        <b>{eventLabel(boot, p.row)}</b>{p.row.dn ? ' · DN ' + p.row.dn : ''}<br />{fmtDateTime(p.row.time)} · {p.row.plate}
+      </div>
+      <label className="lbl" htmlFor="dr">{t('មូលហេតុ', 'Reason')} <span className="text-bad">*</span></label>
+      <textarea id="dr" className="in mb-3 min-h-[64px]" value={reason} onChange={e => setReason(e.target.value)} placeholder={t('ហេតុអ្វីលុប?', 'Why delete it?')} />
       {err ? <Alert tone="bad">{err}</Alert> : null}
-      <button type="button" className="btn-primary w-full" onClick={save} disabled={saving}>{saving ? t('កំពុងរក្សាទុក…', 'Saving…') : t('រក្សាទុក', 'Save')}</button>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="btn" onClick={p.onClose}>{t('បោះបង់', 'Cancel')}</button>
+        <button type="button" className="btn !bg-bad !border-bad !text-white" onClick={go} disabled={saving}>{saving ? t('កំពុងលុប…', 'Deleting…') : '🗑 ' + t('លុប', 'Delete')}</button>
+      </div>
+      <p className="muted text-[12.5px] mb-0 mt-2">{t('ជួរនេះត្រូវរក្សាទុកក្នុងតារាង Deleted Records និង Audit Log។', 'The row is kept in the Deleted Records tab and the Audit Log.')}</p>
     </Modal>
   );
 }

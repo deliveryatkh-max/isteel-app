@@ -80,7 +80,7 @@ export function QualityPage() {
   const list = type ? d.issues.filter(i => i.type === type) : d.issues;
   return (
     <main className="max-w-2xl mx-auto p-3 sm:p-4">
-      <Alert tone="info">{t('ការពិនិត្យនេះអានតែប៉ុណ្ណោះ: មិនកែទិន្នន័យដោយស្វ័យប្រវត្តិទេ។ ការកែម៉ោង ធ្វើពីទំព័រជើងដឹក ហើយកត់ក្នុង Audit Log។', 'This check only reads: nothing is corrected automatically. Times are corrected from the trip screen and written to the Audit Log.')}</Alert>
+      <Alert tone="info">{t('ការពិនិត្យនេះអានតែប៉ុណ្ណោះ: មិនកែទិន្នន័យដោយស្វ័យប្រវត្តិទេ។', 'This check only reads: nothing is corrected automatically.')}</Alert>
       <p className="muted text-[13px]">{t('បានពិនិត្យ ', 'Checked ')}{d.checkedRows}{t(' ជួរចុងក្រោយ · ', ' latest rows · ')}{d.total}{t(' បញ្ហា', ' issues')}</p>
       <div className="flex flex-wrap gap-2 mb-3">
         <button type="button" className={'chip ' + (!type ? 'chip-on' : '')} onClick={() => setType('')}>{t('ទាំងអស់', 'All')} {d.issues.length}</button>
