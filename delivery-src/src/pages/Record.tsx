@@ -13,6 +13,21 @@ export type DnLine = { dn: string; custId: string; custName: string; so: string;
 const DONE_LEGS = ['delivered', 'failed', 'canceled', 'moved'];
 const cleanDn = (s: string) => String(s || '').toUpperCase().replace(/\s+/g, '').replace(/[^0-9A-Z-]/g, '');
 
+/**
+ * Kim (12 Oct 2026): a trip or DN that has done a step is not offered again for that step or an earlier one.
+ * Steps 2–7 list trips still before the step; 8, 9 and 11 list trucks out on delivery; Cancel lists every open trip.
+ */
+export function tripFitsStep(x: TripSummary, code: number) {
+  const prog = x.progress != null ? x.progress : x.lastCode || 0;
+  if (code >= 2 && code <= 7) return !x.gateOut && (code === 2 ? prog <= 2 : prog < code);
+  if (code === 8 || code === 9 || code === 11) return !!x.gateOut && x.dns.some(d => dnFitsStep(d.leg, code));
+  return true;
+}
+/** DNs to tick on a step: open ones, and for Arrival Destination only those not yet arrived. */
+export function dnFitsStep(leg: string, code: number) {
+  return DONE_LEGS.indexOf(leg) < 0 && !(code === 8 && leg === 'at_customer');
+}
+
 /** The step that usually comes next for a trip (highlighted, never forced). */
 export function nextCode(trip?: TripSummary | null) {
   if (!trip) return 1;
@@ -60,11 +75,13 @@ export function RecordPage() {
   useEffect(() => { warmLocation(); }, [code, tripId]);   // GPS ready before Save is pressed
 
   useEffect(() => { const q = route.q.get('trip'); if (q) setTripId(q); const c = Number(route.q.get('code')); if (c) setCode(c); }, [route]);
+  // A trip already past the chosen step is dropped (Kim, 12 Oct 2026).
+  useEffect(() => { if (trip && !tripFitsStep(trip, code)) setTripId(''); }, [trip && trip.id, code]);
   // Changing step or trip starts a clean form.
   useEffect(() => { setPicked({}); setDelivered({}); setLines([]); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setRemark(''); setFormErr(''); sub.setError(''); }, [code, tripId]);
   useEffect(() => {
     if (!trip) return;
-    const open = trip.dns.filter(d => DONE_LEGS.indexOf(d.leg) < 0);
+    const open = trip.dns.filter(d => dnFitsStep(d.leg, code));
     if (open.length === 1 && [8, 9, 11].indexOf(code) >= 0) setPicked({ [open[0].dn]: true });
   }, [trip && trip.id, code]);
 
@@ -79,12 +96,12 @@ export function RecordPage() {
     const mineFirst = boot.drivers.slice().sort((a, b) => Number(b.plate === plate) - Number(a.plate === plate));
     return mineFirst.map(d => ({ value: d.name, label: d.name, sub: [d.plate, d.co].filter(Boolean).join(' · ') }));
   }, [boot.drivers, plate]);
-  const tripOpts: Opt[] = useMemo(() => trips.map(x => ({ value: x.id, label: x.plate + ' · ' + x.round, sub: x.id + ' · ' + L(boot.stages[x.stage]) + (x.dns.length ? ' · ' + x.dns.map(d => d.dn).join(', ') : '') })), [trips, lang]);
+  const tripOpts: Opt[] = useMemo(() => trips.filter(x => tripFitsStep(x, code)).map(x => ({ value: x.id, label: x.plate + ' · ' + x.round, sub: x.id + ' · ' + L(boot.stages[x.stage]) + (x.dns.length ? ' · ' + x.dns.map(d => d.dn).join(', ') : '') })), [trips, lang, code]);
   const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
   const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
   const coOpts: Opt[] = useMemo(() => (boot.companies || []).map(c => ({ value: c, label: c })), [boot.companies]);
 
-  const openDns = trip ? trip.dns.filter(d => DONE_LEGS.indexOf(d.leg) < 0) : [];
+  const openDns = trip ? trip.dns.filter(d => dnFitsStep(d.leg, code)) : [];
 
   // Opened from the DN scan: that DN is already chosen, and Delivered starts with its plan weight.
   const fromScan = route.q.get('from') === 'scan';

@@ -220,11 +220,13 @@ function checkEvent(ctx) {
     const onTrip = dn => !!t.dns[dn];
     if (ev.code === 7 && !t.dnList.length) warn('NO_DN', 'No DN has been picked up on this trip yet.', 'មិនទាន់មាន DN ណាមួយនៅលើជើងដឹកនេះទេ។');
     if (ev.code >= 2 && ev.code <= 7 && t.gateOut != null) err('AFTER_GATE_OUT', 'The truck already left (Gate Out). This step belongs before Gate Out.', 'ឡានបានចេញពីកន្លែងថ្លឹងរួចហើយ។');
-    if (ev.code >= 3 && ev.code <= 7 && t.lastProgress > ev.code) warn('ORDER', 'A later step (' + EV[t.lastProgress].en + ') is already recorded.', 'ជំហានបន្ទាប់ (' + EV[t.lastProgress].kh + ') បានកត់ត្រារួចហើយ។');
+    // Kim (12 Oct 2026): once a trip has done a step, that step and the ones before it are closed for it.
+    if (ev.code >= 3 && ev.code <= 7 && t.gateOut == null && t.lastProgress >= ev.code) err('STEP_PASSED', 'This trip is already at ' + EV[t.lastProgress].en + '. Earlier steps can no longer be recorded.', 'ជើងដឹកនេះនៅជំហាន ' + EV[t.lastProgress].kh + ' រួចហើយ។ មិនអាចកត់ត្រាជំហានមុនបានទៀតទេ។');
     if ((ev.code === 8 || ev.code === 9 || ev.code === 11) && t.gateOut == null) warn('NOT_OUT', 'This truck has no Gate Out yet.', 'ឡាននេះមិនទាន់ចេញពីកន្លែងថ្លឹងទេ។');
     if ([8, 9, 11].indexOf(ev.code) >= 0 || (ev.code === 10 && dns.length)) {
       dns.forEach(dn => {
         if (!onTrip(dn)) err('DN_NOT_ON_TRIP', 'DN ' + dn + ' is not on this trip. Record Arrival-Pickup DN for it first.', 'DN ' + dn + ' មិននៅលើជើងដឹកនេះទេ។ សូមកត់ត្រា ដល់កន្លែងចែកបុង ជាមុន។');
+        else if (ev.code === 8 && t.dns[dn].leg === 'at_customer') err('DN_ARRIVED', 'DN ' + dn + ' has already arrived at the customer.', 'DN ' + dn + ' បានមកដល់ទីតាំងទំលាក់រួចហើយ។');
         else if (LEG_DONE[t.dns[dn].leg]) err('DN_DONE_ON_TRIP', 'DN ' + dn + ' is already ' + LEG[t.dns[dn].leg].en + ' on this trip.', 'DN ' + dn + ' ' + LEG[t.dns[dn].leg].kh + ' នៅលើជើងដឹកនេះរួចហើយ។');
       });
     }

@@ -4,7 +4,7 @@ import { L, setLang, t, useLang } from '../i18n';
 import type { Label } from '../types';
 
 // ---------------------------------------------------------------- header (shared iSteel banner)
-export function Header(p: { busy?: boolean; waiting?: number; onOutbox?: () => void; title?: string; sub?: string }) {
+export function Header(p: { busy?: boolean; waiting?: number; onOutbox?: () => void; title?: string; sub?: string; phoneView?: { on: boolean; toggle: () => void } }) {
   const lang = useLang();
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   const flip = () => {
@@ -22,6 +22,12 @@ export function Header(p: { busy?: boolean; waiting?: number; onOutbox?: () => v
       </div>
       <div className="bar-right">
         {p.waiting ? <button type="button" className="icon-btn" style={{ width: 'auto', padding: '0 6px', background: '#8a5a00', borderColor: '#ffc46b' }} onClick={p.onOutbox} title={t('រង់ចាំផ្ញើ', 'Waiting to send')}>⏳{p.waiting}</button> : null}
+        {p.phoneView ? (
+          // Only on a computer: see the app as on a phone, and back (Kim, 12 Oct 2026).
+          <button type="button" className="icon-btn" onClick={p.phoneView.toggle} data-testid="phone-view"
+            title={p.phoneView.on ? t('ទិដ្ឋភាពកុំព្យូទ័រ', 'Computer view') : t('ទិដ្ឋភាពទូរស័ព្ទ', 'Phone view')}
+            aria-label={p.phoneView.on ? t('ទិដ្ឋភាពកុំព្យូទ័រ', 'Computer view') : t('ទិដ្ឋភាពទូរស័ព្ទ', 'Phone view')}>{p.phoneView.on ? '🖥' : '📱'}</button>
+        ) : null}
         <button type="button" className="icon-btn lang-btn" onClick={() => setLang(lang === 'en' ? 'km' : 'en')} title={lang === 'en' ? 'ភាសាខ្មែរ' : 'English'} aria-label={lang === 'en' ? 'ភាសាខ្មែរ' : 'English'}>
           <img src="../icons/flag-kh.svg" alt="ខ្មែរ" className={lang === 'km' ? 'on' : ''} />
           <img src="../icons/flag-gb.svg" alt="English" className={lang === 'en' ? 'on' : ''} />
@@ -33,15 +39,16 @@ export function Header(p: { busy?: boolean; waiting?: number; onOutbox?: () => v
   );
 }
 
-// ---------------------------------------------------------------- bottom navigation: Home and Refresh first (Kim)
+// ---------------------------------------------------------------- bottom navigation (phones): 5 buttons, Scan big in the middle
 export type Tab = { id: string; icon: string; km: string; en: string; big?: boolean };
 export function BottomNav(p: { tabs: Tab[]; active: string; onTab: (id: string) => void }) {
   useLang();
   const item = 'flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11.5px] leading-tight cursor-pointer bg-transparent border-0';
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-20 bg-card border-t border-line flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <a href="../" className={item + ' text-muted no-underline'}><img src="../icons/home.svg" alt="" width={22} height={22} /><b className="font-semibold truncate max-w-full">{t('ទំព័រដើម', 'Home')}</b></a>
-      {p.tabs.map(x => x.big ? (
+    <nav className="bottom-nav fixed bottom-0 inset-x-0 z-20 bg-card border-t border-line flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      {p.tabs.map(x => x.id === 'home' ? (
+        <a key="home" href="../" className={item + ' text-muted no-underline'}><img src="../icons/home.svg" alt="" width={22} height={22} /><b className="font-semibold truncate max-w-full">{t('ទំព័រដើម', 'Home')}</b></a>
+      ) : x.big ? (
         // The Scan button sits raised in the middle, bigger than the rest.
         <button key={x.id} type="button" className={item + ' !justify-end' + (p.active === x.id ? ' text-brand' : ' text-muted')} onClick={() => p.onTab(x.id)} aria-current={p.active === x.id}>
           <span className="-mt-6 w-14 h-14 rounded-full bg-brand text-white flex items-center justify-center text-[26px] shadow-lg border-4 border-card">{x.icon}</span><b className="font-semibold truncate max-w-full">{t(x.km, x.en)}</b>
