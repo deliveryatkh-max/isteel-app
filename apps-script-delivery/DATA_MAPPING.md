@@ -29,6 +29,23 @@ Existing tabs, columns, formulas and rows are kept as they are. The app only **a
 
 **Audit Log**: Time · User · Action · Key No. · Trip ID · Field · Old Value · New Value · Reason.
 
+Feature tabs (12 Oct 2026), each with its own rows:
+
+| Tab | Columns | Written when |
+|---|---|---|
+| Delivery Proof | Time · Key No. · Trip ID · DN · Receiver Name · Signature · Photos · User | Delivered with a signature, receiver name or 2+ photos (first photo also goes to Time Log *រូបថតបុង*) |
+| Customer Ratings | Time · DN · Trip ID · Truck No. · 3PL · Overall · Driver Polite · On Time · Goods OK · Comment | customer submits the rating link (one per DN and trip) |
+| Site Ratings | Time · DN · Trip ID · Truck No. · 3PL · Customer · Wait · Unload Help · Access · Customer Delay · Remark · Confirmed By · Confirmed Time | driver rates the customer site; Logistics/Supervisor confirms a customer delay |
+| Complaints | Complaint ID · Time · DN · Trip ID · Truck No. · 3PL · Customer · Type · Detail · Source · Recorded By · Status · Resolved Time · Resolved By · Resolution | complaint added / resolved (ID `C` + yymmdd + `-NN`) |
+| Customer Sites | Customer ID · Customer Name · LatLong · Set By · Set Time | first Delivered with a location sets it; Logistics can move it (Audit Log) |
+| Truck Companies | Truck No. · 3PL Company · Set By · Set Time | Gate In of a rented / customer truck with a company |
+| Delivery Settings | Setting · Value · Note | edited by hand (targets, alert minutes, Telegram chat id) |
+
+3PL of a truck: ISI plates = ISI; else Truck Companies; else the driver's company in Driver List (ក្រុមហ៊ុន).
+
+**OTIF** (per DN with a plan DELIVERY DATE in the period): on time = last Delivered date ≤ plan date; in full = DN status Delivered;
+a failed leg = not OTIF; canceled DNs and confirmed customer delays are left out; credited to the 3PL of the truck that delivered last.
+
 ## Read only
 
 User Manager (EMAIL, NAME, ROLE), Type Record (Allowed Recorders), Plate Number, Driver List, Customer, Warehouse List

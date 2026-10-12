@@ -53,7 +53,7 @@ class SS {
 function pad(n, w) { return String(n).padStart(w || 2, '0'); }
 function formatDate(d, tz, f) {
   // Node runs with TZ=Asia/Phnom_Penh, so local time = Cambodia time.
-  return f.replace(/yyyy|MM|dd|HH|mm|ss/g, t => ({ yyyy: d.getFullYear(), MM: pad(d.getMonth() + 1), dd: pad(d.getDate()), HH: pad(d.getHours()), mm: pad(d.getMinutes()), ss: pad(d.getSeconds()) })[t]);
+  return f.replace(/yyyy|yy|MM|dd|HH|mm|ss/g, t => ({ yyyy: d.getFullYear(), yy: pad(d.getFullYear() % 100), MM: pad(d.getMonth() + 1), dd: pad(d.getDate()), HH: pad(d.getHours()), mm: pad(d.getMinutes()), ss: pad(d.getSeconds()) })[t]);
 }
 
 function makeEnv(sheets, opts) {
@@ -62,6 +62,7 @@ function makeEnv(sheets, opts) {
   const props = Object.assign({ GOOGLE_CLIENT_ID: 'cid', SESSION_SECRET: 'sess-secret', LINK_SECRET: 'link-secret', PHOTO_FOLDER_ID: 'folder1' }, opts.props || {});
   const cache = {};
   const files = [];
+  const triggers = [], telegram = [];
   let clock = opts.now || Date.parse('2026-10-12T08:00:00+07:00');
   const RealDate = Date;
   class FakeDate extends RealDate {
@@ -75,10 +76,12 @@ function makeEnv(sheets, opts) {
     Date: FakeDate, module: undefined,
     SpreadsheetApp: { getActive: () => ss },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) },
-    CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; } }) },
+    CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => true, releaseLock: () => {} }) },
     ContentService: { createTextOutput: s => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
-    UrlFetchApp: { fetch: url => {
+    ScriptApp: { getProjectTriggers: () => triggers, newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { triggers.push({ getHandlerFunction: () => fn }); } }) }) }) },
+    UrlFetchApp: { fetch: (url, o) => {
+      if (/api\.telegram\.org/.test(url)) { telegram.push(JSON.parse(o.payload)); return { getResponseCode: () => 200, getContentText: () => '{"ok":true}' }; }
       const tok = decodeURIComponent(url.split('id_token=')[1]);
       const m = tok.match(/^google:(.+)$/);
       return m ? { getResponseCode: () => 200, getContentText: () => JSON.stringify({ aud: 'cid', email: m[1], email_verified: 'true', exp: Math.floor(clock / 1000) + 3600 }) }
@@ -103,9 +106,9 @@ function makeEnv(sheets, opts) {
   };
   vm.createContext(ctx);
   const dir = path.join(__dirname, '..');
-  ['Logic.gs', 'Delivery.gs'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
+  ['Logic.gs', 'Delivery.gs', 'Extras.gs'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
   const env = {
-    ss, props, cache, files, ctx,
+    ss, props, cache, files, ctx, triggers, telegram,
     setNow: t => { clock = typeof t === 'number' ? t : Date.parse(t); },
     advance: ms => { clock += ms; },
     now: () => clock,

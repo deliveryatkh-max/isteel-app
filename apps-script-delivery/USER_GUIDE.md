@@ -40,3 +40,15 @@ Admin sets user roles (More → Users and roles).
 
 **Summary** shows today's trips, active trips, trucks inside the site, out on delivery, completed and canceled, and DN counts.
 **Trips** has Active trips (by step) and Trip history (any dates). **DN** finds a DN by number, customer, truck, trip, SO or date and shows every trip that carried it.
+
+## ថ្មី (12 Oct 2026) · New
+
+**ខ្មែរ.** ៩.បានប្រគល់: ឈ្មោះអ្នកទទួល ហត្ថលេខាដោយម្រាមដៃ និងរូបថតរហូតដល់ ៥។ បន្ទាប់ពីប្រគល់: បង្ហាញ QR ឲ្យអតិថិជនវាយតម្លៃ (មិនចាំបាច់ចូលគណនី) ហើយតៃកុងវាយតម្លៃទីតាំងអតិថិជន។
+សង្ខេប: ឡាននៅក្នុងរោងចក្រយូរ ប្តូរពណ៌ទឹកក្រូច ហើយក្រហម (ផ្ញើ Telegram)។ DN: 📣 កត់ត្រា និងដោះស្រាយបណ្តឹង, បញ្ជាក់ការយឺតដោយអតិថិជន។
+ចូលថ្លឹងឡានជួល: ជ្រើសក្រុមហ៊ុន 3PL។ ផ្សេងៗ → Dashboard (OTIF, ពេលវេលាក្នុងរោងចក្រ, ពិន្ទុ 3PL) និង បណ្តឹងអតិថិជន។
+
+**English.** Delivered now takes the receiver name, a finger signature and up to 5 photos. After Delivered, show the customer the rating QR
+(no sign-in) and the driver rates the customer site. Summary lists trucks inside the plant: orange, then red (and a Telegram alert).
+DN screen: 📣 add and resolve complaints, confirm a customer delay (left out of OTIF). Rented truck Gate In asks for the 3PL company.
+More → Dashboard (OTIF, turnaround, 3PL scorecard; Supervisor, Admin, Logistics) and Customer complaints.
+A delivery recorded more than 1 km from the customer site is flagged on the trip; Logistics can set the customer site from a trip.

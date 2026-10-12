@@ -68,7 +68,7 @@ export const outbox = {
     outbox.save(outbox.list().filter(x => x.ref !== item.ref).concat(item));
     // Phone storage full (photos are big): keep the step without its photo rather than lose it.
     if (!outbox.list().some(x => x.ref === item.ref)) {
-      const payload = Object.assign({}, item.payload); delete payload.photo;
+      const payload = Object.assign({}, item.payload); delete payload.photo; delete payload.photos; delete payload.signature;
       outbox.save(outbox.list().concat(Object.assign({}, item, { payload, label: item.label + ' (no photo)' })));
     }
   },

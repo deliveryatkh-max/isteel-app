@@ -22,7 +22,9 @@ http.createServer((req, res) => {
     return;
   }
   if (u.pathname === '/__skew') { skew += Number(u.searchParams.get('ms')); res.end(String(skew)); return; }
-  if (u.pathname === '/__sheet') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ log: env.ss.getSheetByName('Time Log').rows, trips: env.ss.getSheetByName('Trips').rows, audit: env.ss.getSheetByName('Audit Log').rows })); return; }
+  if (u.pathname === '/__sheet') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ log: env.ss.getSheetByName('Time Log').rows, trips: env.ss.getSheetByName('Trips').rows, audit: env.ss.getSheetByName('Audit Log').rows,
+    proof: env.ss.getSheetByName('Delivery Proof').rows, crate: env.ss.getSheetByName('Customer Ratings').rows, srate: env.ss.getSheetByName('Site Ratings').rows,
+    complaints: env.ss.getSheetByName('Complaints').rows, companies: env.ss.getSheetByName('Truck Companies').rows })); return; }
   if (u.pathname === '/delivery/config.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end("window.DELIVERY_CONFIG = { API_URL: 'http://localhost:" + PORT + "/api' };"); return; }
   if (u.pathname === '/sw.js') { res.writeHead(404); res.end(); return; }
   let p = path.join(REPO, 'web', decodeURIComponent(u.pathname));

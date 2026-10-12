@@ -274,8 +274,12 @@ test('driver link: signed per trip, only delivery steps, closes with the trip', 
   assert.strictEqual(last[col('អ្នកកត់ត្រា')], '៤.ឡាន ISI');
   assert.strictEqual(last[col('User')], 'driver-link');
   assert.ok(String(last[col('រូបថតបុង')]).startsWith('https://drive.google.com/'));
-  const closed = e.call('drvTrip', { t: t1, k }, null);
-  assert.ok(!closed.ok && /^LINK_CLOSED/.test(closed.error));
+  // A finished trip still opens (rating QR, site rating) but records nothing more.
+  const closed = ok(e.call('drvTrip', { t: t1, k }, null));
+  assert.strictEqual(closed.trip.closed, true);
+  assert.ok(closed.rate['9000000001']);
+  const more = e.call('drvRecord', { t: t1, k, code: 11, dns: [{ dn: '9000000001' }], remark: 'x', ref: ref() }, null);
+  assert.ok(!more.ok && /^LINK_CLOSED/.test(more.error));
 });
 
 test('no plan weight: Delivered needs the "whole DN" tick, else Partially Delivered', () => {

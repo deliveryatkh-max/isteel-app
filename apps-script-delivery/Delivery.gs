@@ -34,6 +34,7 @@ const LOG_COLS = {
 const OPS_ROWS = 6000;        // Operations screens read only the newest rows of Time Log (plenty for 30+ days)
 const OPEN_DAYS = 14;         // open trips older than this drop off the Active list (they stay in History)
 const DRIVER_LINK_DAYS = 4;   // a driver link works for this many days after Gate In
+const MAX_PHOTOS = 5;         // photos per step (Delivered: proof of delivery)
 
 // ---------------------------------------------------------------- web entry points
 function doGet() { return json_({ ok: true, app: 'Delivery Journey' }); }
@@ -46,6 +47,10 @@ function doPost(e) {
     // Driver links: no sign-in, the signed link is the permission (only that trip's delivery steps).
     if (body.action === 'drvTrip') return json_({ ok: true, data: driverTrip_(p) });
     if (body.action === 'drvRecord') return json_({ ok: true, data: driverRecord_(p) });
+    if (body.action === 'drvSiteRate') { const c = checkDriverLink_(p, true); return json_({ ok: true, data: siteRate_(p, c.tripId, 'driver-link') }); }
+    // Customer rating link (no sign-in): signed per DN + trip.
+    if (body.action === 'rateInfo') return json_({ ok: true, data: rateInfo_(p) });
+    if (body.action === 'rateSave') return json_({ ok: true, data: rateSave_(p) });
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, p, user) };
     if (user.session) out.session = user.session;
@@ -70,6 +75,13 @@ function route_(action, p, user) {
     case 'users': need_(user, 'admin'); return usersList_();
     case 'setUser': need_(user, 'admin'); return setUser_(p, user);
     case 'quality': need_(user, 'supervisor'); return quality_();
+    case 'siteRate': return siteRate_(p, String(p.tripId || ''), user.email);
+    case 'confirmDelay': return confirmDelay_(p, user);
+    case 'complaints': return complaints_(p);
+    case 'complaintAdd': return complaintAdd_(p, user);
+    case 'complaintResolve': return complaintResolve_(p, user);
+    case 'setSite': return setSite_(p, user);
+    case 'kpi': return kpi_(p, user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -115,8 +127,8 @@ function setup() {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('LINK_SECRET')) props.setProperty('LINK_SECRET', Utilities.getUuid() + Utilities.getUuid());
   if (!props.getProperty('PHOTO_FOLDER_ID')) props.setProperty('PHOTO_FOLDER_ID', DriveApp.createFolder('Delivery App Photos').getId());
+  const notes = setupExtras_();
   const missing = Object.keys(LOG_COLS).filter(k => logCols_()[k] == null).map(k => LOG_COLS[k]);
-  const notes = [];
   if (missing.length) notes.push('Time Log is missing these headers: ' + missing.join(', '));
   if (!prop_('GOOGLE_CLIENT_ID')) notes.push('Add GOOGLE_CLIENT_ID in Script properties.');
   if (!prop_('SESSION_SECRET')) notes.push('Copy SESSION_SECRET from the Fuel app script into Script properties.');
@@ -252,6 +264,9 @@ function boot_(user) {
   const today = ymd_(now_());
   const from = ymd_(new Date(Date.now() - 30 * 86400000));
   const planList = Object.keys(plan).map(k => plan[k]).filter(p => !p.date || p.date >= from);
+  const set = settings_(), co = companies_();
+  const plateCo = {};
+  Object.keys(co).forEach(k => { if (co[k] !== 'ISI') plateCo[k] = co[k]; });
   return {
     user: { email: user.email, name: user.name, role: user.role, roleKey: user.roleKey },
     events: EVENTS.map(e => ({ code: e.code, key: e.key, kh: e.kh, en: e.en, scope: e.scope, allowed: allowed[e.code] || '', can: canRecord(user.role, allowed[e.code]) })),
@@ -259,6 +274,9 @@ function boot_(user) {
     isAdmin: user.roleKey === 'admin',
     plates: m.plates, drivers: m.drivers, customers: m.customers, warehouses: m.warehouses, plan: planList,
     stages: STAGES, dnStatuses: DN_STATUS, legs: LEG, today: today, serverNow: Date.now(),
+    settings: { warnMin: set.INSIDE_WARN_MIN, lateMin: set.INSIDE_LATE_MIN, farKm: set.FAR_KM },
+    companies: companyNames_(co), plateCo: plateCo, complaintTypes: COMPLAINT_TYPES,
+    canKpi: ['admin', 'supervisor', 'logistics'].indexOf(user.roleKey) >= 0,
   };
 }
 
@@ -409,6 +427,11 @@ function tripDetail_(tripId, user) {
   if (!s.closed && (user.roleKey === 'admin' || user.roleKey === 'supervisor' || user.roleKey === 'logistics' || user.roleKey === 'security')) {
     out.driverLink = driverLinkToken_(tripId);
   }
+  out.far = farRows_(all);
+  out.proof = proofFor_(tripId);
+  out.rate = rateLinks_(tripId, all);
+  out.company = companyOf_(s.plate);
+  out.complaints = complaintList_(xrows_(XT.COMPLAINTS).filter(r => text_(r['Trip ID']) === tripId)).length;
   return out;
 }
 
@@ -439,6 +462,11 @@ function dnDetail_(dn) {
   const rows = rowsWhere_('dn', [dn]);
   const info = dnsInfo_([dn], rows, plan)[dn];
   info.rows = rows.sort((a, b) => a.time - b.time);
+  info.complaints = complaints_({ dn: dn }).items;
+  info.siteRatings = siteRatingsOf_(dn);
+  info.custRatings = customerRatingsOf_(dn);
+  info.rate = {};
+  rows.filter(r => r.code === 9 && r.trip).forEach(r => { info.rate[r.trip] = rateToken_(dn, r.trip); });
   return info;
 }
 
@@ -600,8 +628,11 @@ function saveEvent_(p, who) {
     const pending = check.warnings.filter(w => !confirm[w.code]);
     if (pending.length) return { needConfirm: pending };
 
-    // Photo first (outside the sheet): a failed upload stops the save before anything is written.
-    const photoUrl = p.photo ? savePhoto_(p.photo, tripId + '_' + ev.key) : '';
+    // Photos first (outside the sheet): a failed upload stops the save before anything is written.
+    const photos = (p.photos || (p.photo ? [p.photo] : [])).slice(0, MAX_PHOTOS);
+    const photoUrls = photos.map((ph, i) => savePhoto_(ph, tripId + '_' + ev.key + (i ? '_' + (i + 1) : '')));
+    const photoUrl = photoUrls[0] || '';
+    const sigUrl = code === 9 && p.signature ? savePhoto_(p.signature, tripId + '_signature') : '';
 
     const keys = tripRows.map(r => r.key);
     const rowsOut = [];
@@ -677,7 +708,14 @@ function saveEvent_(p, who) {
         if (idx[id].status !== STAGES[st2.stage].kh) trips.getRange(idx[id].row, 8).setValue(STAGES[st2.stage].kh);
       });
     }
+    // Extras (own tabs): proof of delivery, 3PL company of a rented truck, customer site from the first delivery.
+    if (code === 9) {
+      saveProof_(newRows, tripId, p.receiver, sigUrl, photoUrls, who.email);
+      learnSites_(newRows.filter(r => r.latlong), who.email);
+    }
+    if (code === 1 && p.company) rememberCompany_(plate, p.company, who.email);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
+    if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
     if (ref) cache.put('ref_' + ref, JSON.stringify(res), 21600);
     return res;
   });
@@ -711,7 +749,8 @@ function savePhoto_(dataUrl, name) {
   if (m[2].length > 2800000) fail_('BAD', 'The photo is too large.', 'រូបថតធំពេក។');
   const id = prop_('PHOTO_FOLDER_ID');
   if (!id) fail_('SETUP', 'Run setup() once in Apps Script (photo folder).');
-  const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], name + '_' + fmt_(now_(), 'yyyyMMdd_HHmmss') + '.jpg');
+  const ext = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[m[1]];
+  const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], name + '_' + fmt_(now_(), 'yyyyMMdd_HHmmss') + ext);
   const file = DriveApp.getFolderById(id).createFile(blob);
   return file.getUrl();
 }
@@ -804,13 +843,15 @@ function quality_() {
     rs.filter(r => (r.code === 9 || r.code === 8) && r.dn && !rs.some(x => x.code === 2 && x.dn === r.dn)).forEach(r => add('NO_PICKUP', id, 'DN ' + r.dn + ' has ' + EV[r.code].en + ' but no Arrival-Pickup DN.', 'DN ' + r.dn + ' មាន ' + EV[r.code].kh + ' ប៉ុន្តែគ្មាន ដល់កន្លែងចែកបុង។'));
     if (!st.closed && st.last && Date.now() - st.last.time > 2 * 86400000 && st.dnList.length) add('STALE', id, 'Still open after 2 days (' + st.openDns.join(', ') + ').', 'នៅបើកលើសពី 2 ថ្ងៃ (' + st.openDns.join(', ') + ')។');
   });
+  const far = farRows_(rows);
+  rows.filter(r => far[r.row]).forEach(r => add('FAR', r.trip, EV[r.code].en + ' for DN ' + r.dn + ' was recorded ' + far[r.row] + ' km from the customer site.', EV[r.code].kh + ' DN ' + r.dn + ' កត់ត្រាឆ្ងាយពីទីតាំងអតិថិជន ' + far[r.row] + ' គ.ម។'));
   return { issues: issues.slice(0, 500), total: issues.length, checkedRows: rows.length };
 }
 
 // ---------------------------------------------------------------- Driver trip links (no sign-in)
 function linkSecret_() { const s = prop_('LINK_SECRET'); if (!s) fail_('SETUP', 'Run setup() once in Apps Script.'); return s; }
 function driverLinkToken_(tripId) { return b64url_(Utilities.computeHmacSha256Signature('drv|' + tripId, linkSecret_())).slice(0, 22); }
-function checkDriverLink_(p) {
+function checkDriverLink_(p, allowClosed) {
   const tripId = String(p.t || '').trim();
   if (!tripId || String(p.k || '') !== driverLinkToken_(tripId)) fail_('LINK', 'This link is not valid.', 'តំណនេះមិនត្រឹមត្រូវ។');
   let rows = rowsWhere_('trip', [tripId]);
@@ -818,15 +859,18 @@ function checkDriverLink_(p) {
   const dns = Array.from(new Set(rows.map(r => r.dn).filter(Boolean)));
   const done = dns.length ? doneSet_(dnsInfo_(dns, rowsWhere_('dn', dns), plan_())) : {};
   const st = tripState(rows, done);
-  if (st.closed) fail_('LINK_CLOSED', 'This trip is finished. Thank you!', 'ជើងដឹកនេះបានបញ្ចប់ហើយ។ សូមអរគុណ!');
+  if (st.closed && !allowClosed) fail_('LINK_CLOSED', 'This trip is finished. Thank you!', 'ជើងដឹកនេះបានបញ្ចប់ហើយ។ សូមអរគុណ!');
   if (st.gateIn && Date.now() - st.gateIn > DRIVER_LINK_DAYS * 86400000) fail_('LINK', 'This link has expired.', 'តំណនេះផុតកំណត់ហើយ។');
   return { tripId: tripId, rows: rows, st: st, done: done };
 }
 function driverTrip_(p) {
-  const c = checkDriverLink_(p);
+  const c = checkDriverLink_(p, true);   // a finished trip still opens (rating QR, site rating), but records nothing
   const idx = tripsSheetIndex_();
   const s = tripSummary_(c.tripId, c.rows, idx, c.done);
-  return { trip: { id: s.id, plate: s.plate, driver: s.driver, round: s.round, stage: s.stage, gateOut: s.gateOut, dns: s.dns }, stages: STAGES, legs: LEG };
+  const rated = {};
+  xrows_(XT.SRATE).forEach(r => { if (String(r['Trip ID']) === c.tripId) rated[normDn(r.DN)] = 1; });
+  return { trip: { id: s.id, plate: s.plate, driver: s.driver, round: s.round, stage: s.stage, gateOut: s.gateOut, closed: s.closed, dns: s.dns }, stages: STAGES, legs: LEG,
+    rate: rateLinks_(c.tripId, c.rows), siteRated: Object.keys(rated) };
 }
 function driverRecord_(p) {
   const c = checkDriverLink_(p);
@@ -838,4 +882,11 @@ function driverRecord_(p) {
   const type = isi ? 'isi' : /អតិថិជន/.test(fleet) ? 'customer' : 'rented';
   const allowed = allowed_();
   return saveEvent_(Object.assign({}, p, { tripId: c.tripId, plate: '' }), { email: 'driver-link', recorder: truckLabel_(type, String(allowed[code] || '').split('|').map(s => s.trim())) });
+}
+
+/** Customer rating links (DN → key) for the DNs delivered on this trip. */
+function rateLinks_(tripId, rows) {
+  const out = {};
+  rows.forEach(r => { if (r.code === 9 && r.dn) out[r.dn] = rateToken_(r.dn, tripId); });
+  return out;
 }

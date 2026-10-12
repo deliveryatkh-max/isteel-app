@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, API_URL, CLIENT_ID, flushOutbox, outbox, setToken, signedEmail, store, token } from './api';
 import { errText, t, useLang } from './i18n';
 import { AppCtx, go, useRoute } from './state';
@@ -10,6 +10,14 @@ import { TripPage } from './pages/Trip';
 import { TripsPage } from './pages/Trips';
 import { DnPage, DnSearchPage } from './pages/Dn';
 import { MorePage, QualityPage, UsersPage } from './pages/Admin';
+import { ComplaintsPage } from './components/Complaints';
+
+// The dashboard is loaded only when opened. After an update the old file name may be gone: reload once to get the new one.
+const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
+  const k = 'dlv_chunk_reload';
+  if (Date.now() - Number(sessionStorage.getItem(k) || 0) > 30000) { sessionStorage.setItem(k, String(Date.now())); location.reload(); }
+  throw e;
+}));
 
 const TABS: Tab[] = [
   { id: 'ops', icon: '📊', km: 'សង្ខេប', en: 'Summary' },
@@ -18,7 +26,7 @@ const TABS: Tab[] = [
   { id: 'dn', icon: '📄', km: 'DN', en: 'DN' },
   { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' },
 ];
-const TAB_OF: Record<string, string> = { '': 'ops', record: 'record', trips: 'trips', trip: 'trips', dn: 'dn', more: 'more', quality: 'more', users: 'more' };
+const TAB_OF: Record<string, string> = { '': 'ops', record: 'record', trips: 'trips', trip: 'trips', dn: 'dn', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -98,11 +106,13 @@ export function App() {
   else if (page === 'more') body = <MorePage />;
   else if (page === 'quality' && boot.canCorrect) body = <QualityPage />;
   else if (page === 'users' && boot.isAdmin) body = <UsersPage />;
+  else if (page === 'complaints') body = <ComplaintsPage />;
+  else if (page === 'dashboard' && boot.canKpi) body = <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
     ops: ['ដឹកជញ្ជូន', 'Delivery'], record: ['កត់ត្រាដំណើរ', 'Record journey'], trips: ['ជើងដឹក', 'Trips'], dn: ['តាមដាន DN', 'DN tracking'], more: ['ផ្សេងៗ', 'More'],
   };
-  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
+  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
   return (
     <AppCtx.Provider value={{ boot, ops, tick, refreshOps, setBusy }}>

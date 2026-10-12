@@ -6,6 +6,14 @@ import type { DnInfo } from '../types';
 import { Alert, Badge, Kv, Spinner } from '../components/ui';
 import { Scanner } from '../components/Scanner';
 import { eventLabel } from './Trip';
+import { DnComplaints } from '../components/Complaints';
+import type { SiteRating } from '../types';
+
+const WAIT: Record<string, [string, string]> = { short: ['< ៣០ នាទី', '< 30 min'], mid: ['៣០–៦០ នាទី', '30–60 min'], long: ['> ១ ម៉ោង', '> 1 hour'] };
+const HELP: Record<string, [string, string]> = { yes: ['ជួយ', 'helped'], some: ['ជួយបន្តិច', 'helped a little'], no: ['មិនជួយ', 'no help'] };
+const ACCESS: Record<string, [string, string]> = { easy: ['ផ្លូវងាយ', 'easy access'], hard: ['ផ្លូវពិបាក', 'hard access'], blocked: ['ផ្លូវបិទ', 'blocked'] };
+const pick = (m: Record<string, [string, string]>, k: string) => (m[k] ? t(...m[k]) : '');
+const stars = (n: number) => (n ? '★'.repeat(n) + '☆'.repeat(5 - n) : '');
 
 type Item = { dn: string; cust: string; so: string; date: string; status: string; kg: number; planKg: number; trips: { id: string; plate: string; leg: string }[] };
 
@@ -76,6 +84,14 @@ export function DnPage(p: { dn: string }) {
   const { boot, tick, setBusy } = useApp();
   const [d, setD] = useState<DnInfo | null>(null);
   const [err, setErr] = useState('');
+  const [n, setN] = useState(0);
+  const canConfirm = ['admin', 'supervisor', 'logistics'].indexOf(boot.user.roleKey) >= 0;
+  const confirmDelay = async (r: SiteRating, undo: boolean) => {
+    setBusy(true);
+    try { await api('confirmDelay', { row: r.row, dn: p.dn, undo }); setN(n + 1); }
+    catch (e: any) { setErr(errText(e.message)); }
+    finally { setBusy(false); }
+  };
   useEffect(() => {
     let live = true;
     setErr(''); setD(null); setBusy(true);
@@ -84,7 +100,7 @@ export function DnPage(p: { dn: string }) {
       .catch(e => { if (live) setErr(errText(e.message)); })
       .finally(() => setBusy(false));
     return () => { live = false; };
-  }, [p.dn, tick]);
+  }, [p.dn, tick, n]);
   if (err) return <main className="max-w-2xl mx-auto p-4"><Alert tone="bad">{err}</Alert></main>;
   if (!d) return <Spinner />;
   const pl = d.plan;
@@ -116,6 +132,35 @@ export function DnPage(p: { dn: string }) {
               <Badge k={l.leg} label={boot.legs[l.leg]} />
             </a>
           ))}
+        </section>
+      ) : null}
+      <DnComplaints dn={d.dn} items={d.complaints || []} trips={d.legs.map(l => ({ id: l.tripId, plate: l.plate }))} />
+      {(d.custRatings && d.custRatings.length) || (d.siteRatings && d.siteRatings.length) ? (
+        <section className="card">
+          <h2 className="text-[15px] font-bold mt-0 mb-2">⭐ {t('ការវាយតម្លៃ', 'Ratings')}</h2>
+          {(d.custRatings || []).map((r, i) => (
+            <div key={'c' + i} className="py-1.5 border-b border-line last:border-0 text-[14px]">
+              <b>{t('អតិថិជន', 'Customer')}</b> <span className="text-warn text-[16px]">{stars(r.overall)}</span>
+              <div className="muted text-[12.5px]">{fmtDateTime(r.time)} · {r.trip}
+                {r.polite ? ' · ' + t('តៃកុង ', 'driver ') + r.polite + '/5' : ''}{r.ontime ? ' · ' + t('ទាន់ពេល ', 'on time ') + r.ontime + '/5' : ''}{r.goods ? ' · ' + t('ទំនិញ ', 'goods ') + r.goods + '/5' : ''}</div>
+              {r.comment ? <div>💬 {r.comment}</div> : null}
+            </div>
+          ))}
+          {(d.siteRatings || []).map(r => (
+            <div key={'s' + r.row} className="py-1.5 border-b border-line last:border-0 text-[14px]">
+              <b>{t('ទីតាំងអតិថិជន (តៃកុង)', 'Customer site (driver)')}</b>
+              <div>{[pick(WAIT, r.wait), pick(HELP, r.help), pick(ACCESS, r.access)].filter(Boolean).join(' · ')}</div>
+              <div className="muted text-[12.5px]">{fmtDateTime(r.time)} · {r.trip}{r.remark ? ' · 💬 ' + r.remark : ''}</div>
+              {r.custDelay ? (
+                <div className="flex items-center gap-2 flex-wrap mt-1">
+                  <span className={'text-[12.5px] font-bold rounded-full px-2 py-0.5 ' + (r.confirmedBy ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>
+                    {r.confirmedBy ? '✔ ' + t('យឺតដោយអតិថិជន (បានបញ្ជាក់)', 'Customer delay confirmed') : t('យឺតដោយអតិថិជន (រង់ចាំបញ្ជាក់)', 'Customer delay, not confirmed')}</span>
+                  {canConfirm ? <button type="button" className="btn btn-sm" onClick={() => confirmDelay(r, !!r.confirmedBy)}>{r.confirmedBy ? t('ដកការបញ្ជាក់', 'Undo') : t('បញ្ជាក់', 'Confirm')}</button> : null}
+                </div>
+              ) : null}
+            </div>
+          ))}
+          <p className="muted text-[12px] m-0 mt-1">{t('ការយឺតដោយអតិថិជនដែលបានបញ្ជាក់ មិនរាប់ក្នុង OTIF ទេ។', 'A confirmed customer delay does not count against OTIF.')}</p>
         </section>
       ) : null}
       {d.rows && d.rows.length ? (

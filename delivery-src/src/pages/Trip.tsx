@@ -5,6 +5,9 @@ import { dnHref, useApp } from '../state';
 import type { LogRow, TripDetail } from '../types';
 import { Alert, Badge, Kv, Modal, Spinner, toast } from '../components/ui';
 import { nextCode } from './Record';
+import { RateLinks } from '../components/Proof';
+
+const custIdOf = (text: string) => { const m = String(text || '').match(/^\s*(\d{6,})/); return m ? m[1] : ''; };
 
 export function TripPage(p: { id: string }) {
   useLang();
@@ -27,6 +30,14 @@ export function TripPage(p: { id: string }) {
   if (!d) return <Spinner />;
   const next = nextCode(d);
   const canNext = !d.closed && boot.events.some(e => e.can);
+  const canSite = ['admin', 'supervisor', 'logistics'].indexOf(boot.user.roleKey) >= 0;
+  const setSite = async (r: LogRow) => {
+    if (!confirm(t('កំណត់ទីតាំងនេះជាទីតាំងអតិថិជន ', 'Set this location as the site of ') + r.cust + '?')) return;
+    setBusy(true);
+    try { await api('setSite', { custId: custIdOf(r.cust), custName: r.cust.replace(/^\s*\d+\s*-\s*/, ''), latlong: r.latlong, reason: 'Set from trip ' + d.id }); toast('✅ ' + t('បានកំណត់ទីតាំងអតិថិជន', 'Customer site saved')); setN(n + 1); }
+    catch (e: any) { toast(errText(e.message)); }
+    finally { setBusy(false); }
+  };
   return (
     <main className="max-w-2xl mx-auto p-3 sm:p-4">
       <section className="card">
@@ -38,6 +49,8 @@ export function TripPage(p: { id: string }) {
           <Badge k={d.stage} label={boot.stages[d.stage]} />
         </div>
         <Kv k={t('តៃកុង', 'Driver')} v={d.driver || '–'} />
+        {d.company ? <Kv k="3PL" v={d.company} /> : null}
+        {d.complaints ? <Kv k={t('បណ្តឹង', 'Complaints')} v={<span className="text-bad">📣 {d.complaints}</span>} /> : null}
         <Kv k={t('ចូលថ្លឹង', 'Gate In')} v={fmtDateTime(d.gateIn)} />
         <Kv k={t('ចេញពីកន្លែងថ្លឹង', 'Gate Out')} v={fmtDateTime(d.gateOut)} />
         {d.legacy ? <p className="muted text-[13px] mt-2 mb-0">{t('ជើងដឹកនេះកត់ត្រាដោយ AppSheet (គ្មានក្នុងតារាង Trips)។', 'This trip was recorded in AppSheet (not in the Trips tab).')}</p> : null}
@@ -72,6 +85,23 @@ export function TripPage(p: { id: string }) {
 
       {d.driverLink ? <DriverLink tripId={d.id} token={d.driverLink} /> : null}
 
+      {d.proof && d.proof.length ? (
+        <section className="card">
+          <h2 className="text-[15px] font-bold mt-0 mb-2">✍️ {t('ភស្តុតាងប្រគល់', 'Proof of delivery')}</h2>
+          {d.proof.map(x => (
+            <div key={x.key} className="py-1.5 border-b border-line last:border-0 text-[14px]">
+              <b>DN {x.dn}</b>{x.receiver ? <span> · {t('អ្នកទទួល', 'received by')} {x.receiver}</span> : null}
+              <div className="flex flex-wrap gap-3 text-[13px]">
+                {x.signature ? <a href={x.signature} target="_blank" rel="noopener">✍️ {t('ហត្ថលេខា', 'Signature')}</a> : null}
+                {x.photos.map((u, i) => <a key={i} href={u} target="_blank" rel="noopener">📷 {i + 1}</a>)}
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {d.rate && Object.keys(d.rate).length ? <RateLinks tripId={d.id} links={d.rate} /> : null}
+
       <section className="card">
         <h2 className="text-[15px] font-bold mt-0 mb-2">{t('ប្រវត្តិជំហាន', 'Timeline')}</h2>
         <ol className="list-none m-0 p-0">
@@ -86,9 +116,11 @@ export function TripPage(p: { id: string }) {
                 {[fmtDate(r.time), r.dn ? 'DN ' + r.dn : '', r.cust, r.wh, r.kg ? fmtKg(r.kg) : '', r.mode === 'Partial' ? t('មួយផ្នែក', 'part') : '', r.recorder, r.user].filter(Boolean).join(' · ')}
               </div>
               {r.remark ? <div className="text-[13.5px]">💬 {r.remark}</div> : null}
-              <div className="flex gap-3 text-[13px]">
+              {d.far && d.far[r.row] ? <div className="text-[13px] font-semibold text-warn">⚠️ {t('កត់ត្រាឆ្ងាយពីទីតាំងអតិថិជន ', 'Recorded ')}{d.far[r.row]}{t(' គ.ម', ' km from the customer site')}</div> : null}
+              <div className="flex flex-wrap gap-x-3 text-[13px]">
                 {[r.truckPhoto, r.goodsPhoto, r.billPhoto].filter(Boolean).map((u, i) => <a key={i} href={u} target="_blank" rel="noopener">📷 {t('រូបថត', 'Photo')}</a>)}
                 {r.latlong ? <a href={'https://maps.google.com/?q=' + r.latlong} target="_blank" rel="noopener">📍 {t('ទីតាំង', 'Location')}</a> : null}
+                {canSite && r.latlong && (r.code === 8 || r.code === 9) && custIdOf(r.cust) ? <button type="button" className="text-accent bg-transparent border-0 p-0 cursor-pointer underline" onClick={() => setSite(r)}>🏁 {t('ទីតាំងអតិថិជន', 'Customer site')}</button> : null}
                 {boot.canCorrect ? <button type="button" className="text-accent bg-transparent border-0 p-0 cursor-pointer underline" onClick={() => setFix(r)}>✎ {t('កែម៉ោង', 'Correct time')}</button> : null}
               </div>
             </li>

@@ -4,8 +4,12 @@ import { errText, fmtTime, L, t, useLang } from '../i18n';
 import type { Label, TripDn } from '../types';
 import { Alert, Badge, Header, PhotoInput, Spinner, toast, Toaster } from '../components/ui';
 import { useSubmit } from '../components/submit';
+import { ProofFields, RateLinks, SiteRateForm } from '../components/Proof';
 
-type DrvTrip = { trip: { id: string; plate: string; driver: string; round: string; stage: string; gateOut: number | null; dns: TripDn[] }; stages: Record<string, Label>; legs: Record<string, Label> };
+type DrvTrip = {
+  trip: { id: string; plate: string; driver: string; round: string; stage: string; gateOut: number | null; closed?: boolean; dns: TripDn[] };
+  stages: Record<string, Label>; legs: Record<string, Label>; rate?: Record<string, string>; siteRated?: string[];
+};
 const DONE = ['delivered', 'failed', 'canceled', 'moved'];
 
 /**
@@ -22,6 +26,9 @@ export function DriverPage(p: { tripId: string; k: string }) {
   const [kg, setKg] = useState<Record<string, string>>({});
   const [part, setPart] = useState<Record<string, boolean>>({});
   const [photo, setPhoto] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [signature, setSignature] = useState('');
+  const [receiver, setReceiver] = useState('');
   const [remark, setRemark] = useState('');
   const [formErr, setFormErr] = useState('');
   const [queued, setQueued] = useState(false);
@@ -45,8 +52,9 @@ export function DriverPage(p: { tripId: string; k: string }) {
     const dns = sel.map(dn => (code === 9 ? { dn, kg: Number(kg[dn]) || 0, final: !part[dn] } : { dn }));
     const bad = dns.find((x: any) => code === 9 && !x.final && !x.kg);
     if (bad) return setFormErr(t('ប្រគល់មួយផ្នែក: សូមវាយទំងន់ (kg)។', 'Part delivery: type the weight (kg).'));
-    const r = await sub.send({ t: p.tripId, k: p.k, code, dns, remark: remark.trim(), photo: photo || undefined }, (code === 8 ? 'Arrived' : code === 9 ? 'Delivered' : 'Failed') + ' · ' + p.tripId);
-    if (r.ok) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded')); setPicked({}); setKg({}); setPart({}); setPhoto(''); setRemark(''); setN(n + 1); }
+    const proof = code === 9 ? { photos: photos.length ? photos : undefined, signature: signature || undefined, receiver: receiver.trim() || undefined } : { photo: photo || undefined };
+    const r = await sub.send(Object.assign({ t: p.tripId, k: p.k, code, dns, remark: remark.trim() }, proof), (code === 8 ? 'Arrived' : code === 9 ? 'Delivered' : 'Failed') + ' · ' + p.tripId);
+    if (r.ok) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded')); setPicked({}); setKg({}); setPart({}); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setRemark(''); setN(n + 1); }
     else if ('queued' in r && r.queued) setQueued(true);
   }
 
@@ -98,8 +106,9 @@ export function DriverPage(p: { tripId: string; k: string }) {
                     ))}
                   </div>
                 </section>
+                {code === 9 ? <ProofFields receiver={receiver} setReceiver={setReceiver} signature={signature} setSignature={setSignature} photos={photos} setPhotos={setPhotos} /> : null}
                 <section className="card grid gap-3">
-                  <PhotoInput label={t('រូបថតបុង (មិនចាំបាច់)', 'Delivery note photo (optional)')} value={photo} onChange={setPhoto} />
+                  {code !== 9 ? <PhotoInput label={t('រូបថតបុង (មិនចាំបាច់)', 'Delivery note photo (optional)')} value={photo} onChange={setPhoto} /> : null}
                   <div><label className="lbl" htmlFor="drm">{t('កំណត់សំគាល់', 'Remark')}{code === 11 ? ' *' : ''}</label>
                     <textarea id="drm" className="in min-h-[64px]" value={remark} onChange={e => setRemark(e.target.value)} placeholder={code === 11 ? t('មូលហេតុ (ចាំបាច់)', 'Reason (needed)') : t('មិនចាំបាច់', 'Optional')} /></div>
                 </section>
@@ -108,6 +117,9 @@ export function DriverPage(p: { tripId: string; k: string }) {
                 <button type="button" className="btn-primary w-full text-[17px] mb-6" disabled={sub.sending} onClick={send}>{sub.sending ? t('កំពុងរក្សាទុក…', 'Saving…') : '✔ ' + t('កត់ត្រា', 'Record')}</button>
               </>
             )}
+            {d!.rate ? <RateLinks tripId={tr.id} links={d!.rate} /> : null}
+            {d!.rate ? <SiteRateForm key={n} dns={Object.keys(d!.rate).filter(dn => (d!.siteRated || []).indexOf(dn) < 0)}
+              send={body => api('drvSiteRate', Object.assign({ t: p.tripId, k: p.k }, body), { noAuth: true })} onDone={() => setN(n + 1)} /> : null}
           </>
         ) : null}
       </main>

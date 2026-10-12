@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e41">
+  <meta name="robots" content="noindex">
+  <title>ISI STEEL · វាយតម្លៃការដឹកជញ្ជូន</title>
+  <link rel="icon" type="image/png" href="../icons/favicon.png">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- Customer rating page: no sign-in, no app. Plain HTML so it opens fast on any phone. The link is signed per DN and trip. -->
+  <style>
+    :root { --bg: #f3f6fa; --card: #fff; --text: #011e41; --muted: #546274; --line: #d6dee8; --brand: #084f6a; --accent: #0b76a0; --soft: #d4e1f5; --star: #f2a900; --bad: #b3261e; --ok: #1e7b46; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #06111f; --card: #0d1e32; --text: #e6eef7; --muted: #9cb0c6; --line: #213852; --brand: #61cbf4; --accent: #61cbf4; --soft: #112d48; --bad: #f28b82; --ok: #5cc98a; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 "Noto Sans Khmer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 16px; padding-top: env(safe-area-inset-top); min-height: 54px; color: #fff;
+      background: #091f3f url(../icons/banner-pattern.png) left center / auto 120px repeat-x; }
+    .logo { display: flex; align-items: center; gap: 8px; font: 800 17px/1 system-ui, sans-serif; letter-spacing: .5px; }
+    .logo img { border-radius: 50%; }
+    .lang { display: inline-flex; gap: 3px; padding: 4px 5px; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; background: transparent; cursor: pointer; }
+    .lang img { width: 17px; height: 12px; border-radius: 2px; opacity: .4; filter: grayscale(.7); }
+    .lang img.on { opacity: 1; filter: none; box-shadow: 0 0 0 1.5px #fff; }
+    main { max-width: 480px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    h1 { font-size: 19px; margin: 0 0 4px; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .q { margin: 14px 0 6px; font-weight: 600; }
+    .stars { display: flex; gap: 4px; }
+    .stars button { flex: 1; font-size: 34px; line-height: 1; padding: 6px 0; border: 0; background: transparent; color: var(--line); cursor: pointer; }
+    .stars.small button { font-size: 26px; }
+    .stars button.on { color: var(--star); }
+    textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; }
+    .btn { width: 100%; min-height: 50px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
+    .btn:disabled { opacity: .55; }
+    .msg { padding: 10px 14px; border-radius: 12px; font-weight: 600; }
+    .bad { background: rgba(179,38,30,.1); color: var(--bad); }
+    .ok { background: rgba(30,123,70,.12); color: var(--ok); text-align: center; font-size: 18px; padding: 24px 14px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30">STEEL</div>
+    <button type="button" class="lang" id="lang" aria-label="English / ខ្មែរ"><img src="../icons/flag-kh.svg" alt="ខ្មែរ" id="fkh"><img src="../icons/flag-gb.svg" alt="English" id="fen"></button>
+  </header>
+  <main>
+    <div id="err" class="msg bad" hidden></div>
+    <div id="load" class="muted" data-t="កំពុងផ្ទុក…|Loading…"></div>
+    <div id="done" class="card msg ok" hidden data-t="🙏 សូមអរគុណសម្រាប់ការវាយតម្លៃ!|🙏 Thank you for your rating!"></div>
+    <form id="form" class="card" hidden>
+      <h1 data-t="តើការដឹកជញ្ជូនយ៉ាងម៉េចដែរ?|How was your delivery?"></h1>
+      <div class="muted" id="info"></div>
+      <div class="q" data-t="ពិន្ទុរួម *|Overall *"></div>
+      <div class="stars" data-k="overall"></div>
+      <div class="q" data-t="តៃកុងគួរសម|Driver was polite"></div>
+      <div class="stars small" data-k="polite"></div>
+      <div class="q" data-t="មកដល់ទាន់ពេល|Arrived on time"></div>
+      <div class="stars small" data-k="ontime"></div>
+      <div class="q" data-t="ទំនិញល្អ គ្រប់ចំនួន|Goods complete and undamaged"></div>
+      <div class="stars small" data-k="goods"></div>
+      <div class="q" data-t="មតិ (មិនចាំបាច់)|Comment (optional)"></div>
+      <textarea id="comment" maxlength="500"></textarea>
+      <div id="ferr" class="msg bad" hidden style="margin-top:10px"></div>
+      <button type="submit" class="btn" id="send" data-t="ផ្ញើ|Send"></button>
+    </form>
+  </main>
+  <script src="config.js"></script>
+  <script>
+  (function () {
+    var lang = 'km';
+    try { if (localStorage.getItem('app_lang') === 'en') lang = 'en'; } catch (e) {}
+    var T = function (s) { var p = String(s).split('|'); return lang === 'en' ? p[1] || p[0] : p[0]; };
+    var $ = function (id) { return document.getElementById(id); };
+    var info = null, vals = { overall: 0, polite: 0, ontime: 0, goods: 0 };
+    function paint() {
+      document.documentElement.lang = lang;
+      document.querySelectorAll('[data-t]').forEach(function (el) { el.textContent = T(el.getAttribute('data-t')); });
+      $('fkh').className = lang === 'km' ? 'on' : ''; $('fen').className = lang === 'en' ? 'on' : '';
+      if (info) $('info').textContent = (info.cust ? info.cust + ' · ' : '') + 'DN ' + info.dn + ' · ' + info.plate + ' · ' +
+        new Date(info.time).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Phnom_Penh' });
+    }
+    $('lang').onclick = function () { lang = lang === 'en' ? 'km' : 'en'; try { localStorage.setItem('app_lang', lang); } catch (e) {} paint(); };
+    document.querySelectorAll('.stars').forEach(function (box) {
+      var k = box.getAttribute('data-k');
+      for (var i = 1; i <= 5; i++) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = '★'; b.setAttribute('aria-label', i + ' / 5'); b.value = i;
+        b.onclick = function () { vals[k] = Number(this.value); box.querySelectorAll('button').forEach(function (x) { x.className = Number(x.value) <= vals[k] ? 'on' : ''; }); };
+        box.appendChild(b);
+      }
+    });
+    var q = new URLSearchParams(location.search);
+    var link = { d: q.get('d') || '', t: q.get('t') || '', k: q.get('k') || '' };
+    var url = (window.DELIVERY_CONFIG || {}).API_URL;
+    function call(action, payload) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: action, payload: payload }) })
+        .then(function (r) { return r.json(); })
+        .then(function (r) { if (!r.ok) { var m = String(r.error || '').replace(/^[A-Z_]+:\s*/, '').split(' || '); var e = new Error(lang === 'en' ? m[0] : m[1] || m[0]); e.code = String(r.error || '').split(':')[0]; throw e; } return r.data; });
+    }
+    function fail(el, e) { el.textContent = e && e.message && e.code ? e.message : T('មិនអាចភ្ជាប់អ៊ីនធឺណិត។ សូមព្យាយាមម្តងទៀត។|No connection. Please try again.'); el.hidden = false; }
+    paint();
+    if (!url || !link.d || !link.k) { $('load').hidden = true; fail($('err'), { code: 'LINK', message: T('តំណនេះមិនត្រឹមត្រូវ។|This link is not valid.') }); return; }
+    call('rateInfo', link).then(function (r) {
+      info = r; $('load').hidden = true;
+      if (r.rated) { $('done').hidden = false; return; }
+      $('form').hidden = false; paint();
+    }).catch(function (e) { $('load').hidden = true; fail($('err'), e); });
+    $('form').onsubmit = function (ev) {
+      ev.preventDefault();
+      $('ferr').hidden = true;
+      if (!vals.overall) { fail($('ferr'), { code: 'BAD', message: T('សូមជ្រើសផ្កាយសម្រាប់ពិន្ទុរួម។|Choose the stars for Overall.') }); return; }
+      $('send').disabled = true;
+      call('rateSave', Object.assign({}, link, vals, { comment: $('comment').value.trim() }))
+        .then(function () { $('form').hidden = true; $('done').hidden = false; })
+        .catch(function (e) { if (e.code === 'DONE') { $('form').hidden = true; $('done').hidden = false; } else fail($('ferr'), e); })
+        .then(function () { $('send').disabled = false; });
+    };
+  })();
+  </script>
+</body>
+</html>

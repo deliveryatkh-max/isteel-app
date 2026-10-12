@@ -48,6 +48,8 @@ export function MorePage() {
           </>
         )}
       </section>
+      {boot.canKpi ? <Link href="#/dashboard" icon="📈" km="Dashboard" en="Dashboard" sub="OTIF · Turnaround · 3PL scorecard" /> : null}
+      <Link href="#/complaints" icon="📣" km="បណ្តឹងអតិថិជន" en="Customer complaints" />
       <Link href="#/trips/history" icon="🗂️" km="ប្រវត្តិជើងដឹក" en="Trip history" />
       {boot.canCorrect ? <Link href="#/quality" icon="🩺" km="ពិនិត្យគុណភាពទិន្នន័យ" en="Data quality check" sub={t('បង្ហាញតែបញ្ហា មិនកែស្វ័យប្រវត្តិ', 'Shows problems only; nothing is changed')} /> : null}
       {boot.isAdmin ? <Link href="#/users" icon="👥" km="អ្នកប្រើប្រាស់ និងតួនាទី" en="Users and roles" /> : null}
@@ -59,6 +61,7 @@ type Issue = { type: string; trip: string; en: string; kh: string };
 const TYPE_LABEL: Record<string, [string, string]> = {
   NO_GATE_IN: ['គ្មាន ចូលថ្លឹង', 'No Gate In'], PLATES: ['ឡានច្រើនលើជើងតែមួយ', 'Several trucks on one trip'], ORDER: ['លំដាប់ម៉ោងខុស', 'Times out of order'],
   REPEAT: ['កត់ត្រាស្ទួន', 'Recorded twice'], NO_PICKUP: ['គ្មាន ដល់កន្លែងចែកបុង', 'No Arrival-Pickup DN'], STALE: ['បើកយូរពេក', 'Open too long'],
+  FAR: ['ឆ្ងាយពីទីតាំងអតិថិជន', 'Far from the customer site'],
 };
 export function QualityPage() {
   useLang();
