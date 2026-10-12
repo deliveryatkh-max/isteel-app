@@ -248,6 +248,53 @@ function isDuplicate(code, dn, nowMs, tripRows) {
   return tripRows.some(r => r.code === code && (r.dn || '') === (dn || '') && Math.abs(nowMs - r.time) < DUPLICATE_MINUTES * 60000);
 }
 
+// ---------------------------------------------------------------- KPIs (dashboard)
+/** Plant stages measured from the first time of each step: [key, from code, to code]. */
+const SEGMENTS = [
+  ['gate_to_bill', 1, 2], ['at_bill', 2, 3], ['to_wh', 3, 4], ['wait_load', 4, 5], ['loading', 5, 6], ['to_gate_out', 6, 7],
+];
+/** Minutes of each plant stage for one trip (only stages whose two steps exist, in order). total = Gate In → Gate Out. */
+function stageMinutes(rows) {
+  const first = {};
+  rows.forEach(r => { if (r.code >= 1 && r.code <= 7 && (first[r.code] == null || r.time < first[r.code])) first[r.code] = r.time; });
+  const out = {};
+  SEGMENTS.forEach(s => {
+    const a = first[s[1]], b = first[s[2]];
+    if (a != null && b != null && b >= a) out[s[0]] = (b - a) / 60000;
+  });
+  if (first[1] != null && first[7] != null && first[7] >= first[1]) out.total = (first[7] - first[1]) / 60000;
+  return out;
+}
+
+/**
+ * OTIF of one DN: info = dnsInfo entry (legs, status), due = plan date yyyy-mm-dd, ymdOf = time → yyyy-mm-dd.
+ * Returns null when the DN does not count (canceled, or late only because of a confirmed customer delay),
+ * else { ok, onTime, inFull, failed, doneAt }.
+ */
+function otifOf(info, due, ymdOf, customerDelay) {
+  if (!info || info.status === 'canceled') return null;
+  const failed = info.legs.some(l => l.leg === 'failed');
+  const delivered = info.legs.filter(l => l.leg === 'delivered');
+  const doneAt = delivered.length ? Math.max.apply(null, delivered.map(l => l.time)) : 0;
+  const inFull = info.status === 'delivered';
+  const onTime = !!doneAt && (!due || ymdOf(doneAt) <= due);
+  if (!onTime && customerDelay && inFull && !failed) return null;
+  return { ok: onTime && inFull && !failed, onTime: onTime, inFull: inFull, failed: failed, doneAt: doneAt };
+}
+
+/** Straight-line distance in km between two "lat,long" texts (null when either is missing). */
+function distanceKm(a, b) {
+  const p = String(a || '').split(',').map(Number), q = String(b || '').split(',').map(Number);
+  if (p.length !== 2 || q.length !== 2 || p.some(isNaN) || q.some(isNaN) || (!p[0] && !p[1]) || (!q[0] && !q[1])) return null;
+  const R = 6371, rad = x => x * Math.PI / 180;
+  const dLat = rad(q[0] - p[0]), dLon = rad(q[1] - p[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(p[0])) * Math.cos(rad(q[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** Customer ID from the Time Log customer text "6100000001-Name" (empty when there is none). */
+function custIdOf(text) { const m = String(text || '').match(/^\s*(\d{6,})/); return m ? m[1] : ''; }
+
 if (typeof module !== 'undefined') {
-  module.exports = { EVENTS, EV, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES };
+  module.exports = { EVENTS, EV, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf };
 }

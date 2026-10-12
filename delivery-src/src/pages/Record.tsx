@@ -5,6 +5,7 @@ import type { EventDef, PlanRow, TripSummary } from '../types';
 import { Alert, Badge, Opt, PhotoInput, Picker, Segmented, toast } from '../components/ui';
 import { Scanner } from '../components/Scanner';
 import { useSubmit } from '../components/submit';
+import { ProofFields, RateLinks, SiteRateForm, siteRateSigned } from '../components/Proof';
 
 export type DnLine = { dn: string; custId: string; custName: string; so: string; kg: string; final: boolean; inPlan: boolean };
 const DONE_LEGS = ['delivered', 'failed', 'canceled', 'moved'];
@@ -39,6 +40,10 @@ export function RecordPage() {
   const [truckType, setTruckType] = useState<'isi' | 'rented' | 'customer'>('isi');
   const [driver, setDriver] = useState('');
   const [photo, setPhoto] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [signature, setSignature] = useState('');
+  const [receiver, setReceiver] = useState('');
+  const [company, setCompany] = useState('');
   const [remark, setRemark] = useState('');
   const [wh, setWh] = useState('');
   const [loadKg, setLoadKg] = useState('');
@@ -46,13 +51,13 @@ export function RecordPage() {
   const [lines, setLines] = useState<DnLine[]>([]);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [delivered, setDelivered] = useState<Record<string, { kg: string; final: boolean }>>({});
-  const [done, setDone] = useState<{ tripId: string; round: string; code: number; queued?: boolean } | null>(null);
+  const [done, setDone] = useState<{ tripId: string; round: string; code: number; queued?: boolean; rate?: Record<string, string>; siteRated?: boolean } | null>(null);
   const [formErr, setFormErr] = useState('');
   const sub = useSubmit('record');
 
   useEffect(() => { const q = route.q.get('trip'); if (q) setTripId(q); const c = Number(route.q.get('code')); if (c) setCode(c); }, [route]);
   // Changing step or trip starts a clean form.
-  useEffect(() => { setPicked({}); setDelivered({}); setLines([]); setPhoto(''); setRemark(''); setFormErr(''); sub.setError(''); }, [code, tripId]);
+  useEffect(() => { setPicked({}); setDelivered({}); setLines([]); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setRemark(''); setFormErr(''); sub.setError(''); }, [code, tripId]);
   useEffect(() => {
     if (!trip) return;
     const open = trip.dns.filter(d => DONE_LEGS.indexOf(d.leg) < 0);
@@ -68,6 +73,7 @@ export function RecordPage() {
   const tripOpts: Opt[] = useMemo(() => trips.map(x => ({ value: x.id, label: x.plate + ' · ' + x.round, sub: x.id + ' · ' + L(boot.stages[x.stage]) + (x.dns.length ? ' · ' + x.dns.map(d => d.dn).join(', ') : '') })), [trips, lang]);
   const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
   const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
+  const coOpts: Opt[] = useMemo(() => (boot.companies || []).map(c => ({ value: c, label: c })), [boot.companies]);
 
   const openDns = trip ? trip.dns.filter(d => DONE_LEGS.indexOf(d.leg) < 0) : [];
 
@@ -75,6 +81,7 @@ export function RecordPage() {
     setPlate(v);
     const known = boot.plates.some(p => p.plate === v);
     setTruckType(known ? 'isi' : 'rented');
+    setCompany(known ? '' : (boot.plateCo || {})[v] || '');
     const d = boot.drivers.filter(x => x.plate === v);
     if (d.length === 1) setDriver(d[0].name);
   }
@@ -86,6 +93,7 @@ export function RecordPage() {
     if (code === 1) {
       if (!plate) return setFormErr(t('សូមជ្រើស ឬវាយផ្លាកលេខឡាន។', 'Choose or type the truck plate.'));
       Object.assign(p, { plate, driver, truckType });
+      if (truckType !== 'isi' && company) p.company = company;
     } else {
       if (!trip) return setFormErr(t('សូមជ្រើសរើសជើងដឹក។', 'Choose the trip.'));
       p.tripId = trip.id;
@@ -113,11 +121,17 @@ export function RecordPage() {
       Object.assign(p, { wh, kg: Number(loadKg) || 0, websling: websling === 'yes' ? true : websling === 'no' ? false : null });
     }
     if ((code === 10 || code === 11) && p.remark.length < 3) return setFormErr(t('សូមសរសេរមូលហេតុ។', 'Write the reason.'));
-    if (photo) p.photo = photo;
+    if (code === 9) {
+      if (photos.length) p.photos = photos;
+      if (signature) p.signature = signature;
+      if (receiver.trim()) p.receiver = receiver.trim();
+    } else if (photo) p.photo = photo;
     const label = L(ev) + ' · ' + (code === 1 ? plate : trip ? trip.plate + ' ' + trip.id : '');
     const r = await sub.send(p, label);
     if (r.ok) {
-      setDone({ tripId: r.data.tripId, round: r.data.round, code });
+      const rate: Record<string, string> = {};
+      (r.data.rate || []).forEach((x: { dn: string; k: string }) => { rate[x.dn] = x.k; });
+      setDone({ tripId: r.data.tripId, round: r.data.round, code, rate });
       toast('✅ ' + t('បានកត់ត្រា', 'Recorded'));
       refreshOps();
     } else if ('queued' in r && r.queued) {
@@ -126,7 +140,7 @@ export function RecordPage() {
   }
 
   function reset(nextTrip?: string, next?: number) {
-    setDone(null); setPlate(''); setDriver(''); setPhoto(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
+    setDone(null); setPlate(''); setDriver(''); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setCompany(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
     if (nextTrip !== undefined) setTripId(nextTrip);
     if (next) setCode(next);
     go('/record' + (nextTrip ? '?trip=' + encodeURIComponent(nextTrip) + (next ? '&code=' + next : '') : ''));
@@ -167,6 +181,12 @@ export function RecordPage() {
             <button type="button" className="btn" onClick={() => reset('')}>{t('កត់ត្រាថ្មី', 'Record another')}</button>
           </div>
         </div>
+        {done.rate && Object.keys(done.rate).length ? (
+          <>
+            <RateLinks tripId={done.tripId} links={done.rate} open />
+            {!done.siteRated ? <SiteRateForm dns={Object.keys(done.rate)} send={siteRateSigned(done.tripId)} onDone={() => setDone(Object.assign({}, done, { siteRated: true }))} /> : null}
+          </>
+        ) : null}
       </main>
     );
   }
@@ -194,6 +214,10 @@ export function RecordPage() {
             <Segmented value={truckType} onChange={setTruckType} options={[{ v: 'isi', km: 'ឡាន ISI', en: 'ISI truck' }, { v: 'rented', km: 'ឡានជួល', en: 'Rented' }, { v: 'customer', km: 'ឡានអតិថិជន', en: 'Customer truck' }]} /></div>
           <div><label className="lbl" htmlFor="driver">{t('ឈ្មោះតៃកុង', 'Driver')}</label>
             <Picker id="driver" value={driver} options={driverOpts} onChange={v => setDriver(v)} allowFree placeholder={t('ជ្រើស ឬវាយឈ្មោះតៃកុង', 'Choose or type the driver')} /></div>
+          {truckType !== 'isi' ? (
+            <div><label className="lbl" htmlFor="co">{t('ក្រុមហ៊ុនដឹកជញ្ជូន (3PL)', 'Transport company (3PL)')}</label>
+              <Picker id="co" value={company} options={coOpts} onChange={v => setCompany(v)} allowFree placeholder={t('ជ្រើស ឬវាយឈ្មោះក្រុមហ៊ុន', 'Choose or type the company')} /></div>
+          ) : null}
           <PhotoInput label={t('រូបថតឡាន (មិនចាំបាច់)', 'Truck photo (optional)')} value={photo} onChange={setPhoto} />
         </section>
       ) : (
@@ -251,7 +275,8 @@ export function RecordPage() {
         </section>
       ) : null}
 
-      {[8, 9, 11].indexOf(code) >= 0 && trip ? (
+      {code === 9 && trip ? <ProofFields receiver={receiver} setReceiver={setReceiver} signature={signature} setSignature={setSignature} photos={photos} setPhotos={setPhotos} /> : null}
+      {[8, 11].indexOf(code) >= 0 && trip ? (
         <section className="card"><PhotoInput label={t('រូបថតបុង / ភស្តុតាង (មិនចាំបាច់)', 'Delivery note / proof photo (optional)')} value={photo} onChange={setPhoto} /></section>
       ) : null}
 

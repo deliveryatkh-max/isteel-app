@@ -92,10 +92,54 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await d.page.goto(link1);
   await d.page.getByText('៩. បានប្រគល់ទំនិញ').click();
   await d.page.locator('label', { hasText: '9000000001' }).locator('input').check();
-  await d.page.screenshot({ path: SHOTS + '08-driver-page.png' });
+  // proof of delivery: receiver, finger signature, two photos
+  await d.page.locator('#rcv').fill('Mr Receiver');
+  await d.page.locator('canvas').scrollIntoViewIfNeeded();
+  const box = await d.page.locator('canvas').boundingBox();
+  await d.page.mouse.move(box.x + 20, box.y + 30); await d.page.mouse.down();
+  await d.page.mouse.move(box.x + 120, box.y + 90, { steps: 8 }); await d.page.mouse.move(box.x + 220, box.y + 40, { steps: 8 }); await d.page.mouse.up();
+  await d.page.getByText(/បានចុះហត្ថលេខា/).waitFor();
+  const img = require('path').join(__dirname, '..', '..', 'web', 'icons', 'app-192.png');
+  await d.page.locator('input[type=file][multiple]').setInputFiles([img, img]);
+  await d.page.getByText('(2/5)').waitFor();
+  await d.page.screenshot({ path: SHOTS + '08-driver-page.png', fullPage: true });
   await d.page.getByRole('button', { name: /✔/ }).click();
-  await d.page.getByText(/បានកត់ត្រា/).waitFor();
-  pass('Driver link records DN-001 Delivered on trip 1 without sign-in');
+  await d.page.getByText(/បានកត់ត្រា/).first().waitFor();
+  const pr = (await (await fetch(BASE + '/__sheet')).json()).proof;
+  assert.strictEqual(pr.length, 2, 'one proof row');
+  assert.strictEqual(pr[1][4], 'Mr Receiver');
+  assert.ok(/^https:\/\/drive/.test(pr[1][5]), 'signature saved');
+  assert.strictEqual(String(pr[1][6]).split('\n').length, 2);
+  pass('Driver link records DN-001 Delivered with receiver, signature and 2 photos, without sign-in');
+  // after Delivered: customer rating QR and the driver's site rating
+  await d.page.getByText('ឲ្យអតិថិជនវាយតម្លៃ').waitFor();
+  await d.page.getByText('> ១ ម៉ោង').click();
+  await d.page.getByText('យឺតដោយសារអតិថិជន').click();
+  await d.page.screenshot({ path: SHOTS + '08b-driver-after-delivered.png', fullPage: true });
+  await d.page.getByRole('button', { name: 'ផ្ញើការវាយតម្លៃ' }).click();
+  await d.page.getByText('វាយតម្លៃទីតាំងអតិថិជន').waitFor({ state: 'detached' });
+  const sr = (await (await fetch(BASE + '/__sheet')).json()).srate;
+  assert.strictEqual(sr.length, 2); assert.strictEqual(sr[1][6], 'long'); assert.strictEqual(sr[1][9], 'Yes');
+  pass('Driver rates the customer site (long wait, customer delay)');
+  // customer rating page: no sign-in
+  const rt = (await api('trip', { tripId: t1 }, 'google:admin@test.kh')).data.rate['9000000001'];
+  const c = await as(null);
+  await c.page.goto(BASE + '/delivery/rate.html?d=9000000001&t=' + t1 + '&k=' + rt);
+  await c.page.getByText('តើការដឹកជញ្ជូនយ៉ាងម៉េចដែរ?').waitFor();
+  await c.page.locator('.stars[data-k=overall] button').nth(1).click();
+  await c.page.locator('.stars[data-k=polite] button').nth(4).click();
+  await c.page.locator('#comment').fill('Arrived late');
+  await c.page.screenshot({ path: SHOTS + '08c-customer-rating.png', fullPage: true });
+  await c.page.locator('#send').click();
+  await c.page.getByText(/សូមអរគុណ/).waitFor();
+  const cr = (await (await fetch(BASE + '/__sheet')).json()).crate;
+  assert.strictEqual(cr.length, 2); assert.strictEqual(cr[1][5], 2); assert.strictEqual(cr[1][6], 5);
+  await c.page.reload();
+  await c.page.locator('#done').waitFor();
+  const bad = await as(null);
+  await bad.page.goto(BASE + '/delivery/rate.html?d=9000000001&t=' + t1 + '&k=wrongkey');
+  await bad.page.getByText('តំណនេះមិនត្រឹមត្រូវ។').waitFor();
+  pass('Customer rates the delivery from the QR link (no sign-in); rated once; a wrong key is refused');
 
   // ---- truck comes back: trip 2 (open previous trip warning)
   await skew(10 * 60000);
@@ -157,6 +201,34 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await a.page.screenshot({ path: SHOTS + '12-dn-detail.png', fullPage: true });
   pass('DN screen lists both trips for the split DN');
 
+  // ---- complaints and customer delay on the DN screen (Logistics)
+  await l.page.goto(BASE + '/delivery/#/dn/9000000001');
+  await l.page.reload();
+  await l.page.getByRole('button', { name: /បន្ថែម/ }).click();
+  await l.page.getByRole('button', { name: 'អាកប្បកិរិយាតៃកុង' }).click();
+  await l.page.getByPlaceholder('ពិពណ៌នាបណ្តឹង').fill('Driver did not help unload');
+  await l.page.getByRole('button', { name: 'រក្សាទុក' }).click();
+  await l.page.getByText(/C\d{6}-01/).waitFor();
+  await l.page.getByRole('button', { name: 'បញ្ជាក់' }).click();
+  await l.page.getByText('យឺតដោយអតិថិជន (បានបញ្ជាក់)').waitFor();
+  await l.page.screenshot({ path: SHOTS + '12b-dn-complaint-ratings.png', fullPage: true });
+  const sh4 = await (await fetch(BASE + '/__sheet')).json();
+  assert.strictEqual(sh4.complaints.length, 2); assert.strictEqual(sh4.complaints[1][10], 'logi@test.kh');
+  assert.strictEqual(sh4.srate[1][11], 'logi@test.kh');
+  await l.page.goto(BASE + '/delivery/#/complaints');
+  await l.page.getByText('Driver did not help unload').waitFor();
+  pass('Complaint logged against the DN (3PL from the truck); customer delay confirmed by Logistics');
+  // ---- dashboard (English only), loaded on demand
+  await a.page.goto(BASE + '/delivery/#/more');
+  await a.page.reload();
+  await a.page.getByText('Dashboard').first().click();
+  await a.page.getByText('3PL scorecard').waitFor();
+  await a.page.getByText('Where trucks spend time inside the plant').waitFor();
+  await a.page.screenshot({ path: SHOTS + '12c-dashboard.png', fullPage: true });
+  const gMore = await g.page.goto(BASE + '/delivery/#/more').then(() => g.page.waitForTimeout(500)).then(() => g.page.getByText('Dashboard').count());
+  assert.strictEqual(gMore, 0);
+  pass('Dashboard (turnaround, OTIF, 3PL scorecard) opens for Admin; Security does not see it');
+
   // ---- time correction with audit
   await a.page.goto(BASE + '/delivery/#/trip/' + t2);
   await a.page.getByText('✎ កែម៉ោង').first().click();
@@ -192,6 +264,22 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   const sheet3 = await (await fetch(BASE + '/__sheet')).json();
   assert.ok(sheet3.trips.some(r => r[2] === 'TEST-0002'));
   pass('No signal: Gate In kept on the phone, sent automatically when back online');
+  // ---- rented truck with its 3PL company; trucks inside show on the Summary
+  await g.page.getByText('កត់ត្រាថ្មី').click();
+  await g.page.locator('#plate').click();
+  await g.page.getByPlaceholder(/ស្វែងរក/).fill('2B-7777');
+  await g.page.getByRole('button', { name: /2B-7777/ }).click();
+  await g.page.locator('#co').click();
+  await g.page.getByPlaceholder(/ស្វែងរក/).fill('Fast Trans');
+  await g.page.getByRole('button', { name: /Fast Trans/ }).click();
+  await recordBtn(g.page).click();
+  await g.page.getByTestId('new-trip-id').waitFor();
+  const sheet5 = await (await fetch(BASE + '/__sheet')).json();
+  assert.ok(sheet5.companies.some(r => r[0] === '2B-7777' && r[1] === 'Fast Trans'));
+  await g.page.goto(BASE + '/delivery/#/');
+  await g.page.getByText('រង់ចាំយូរជាងគេក្នុងរោងចក្រ').waitFor();
+  await g.page.screenshot({ path: SHOTS + '14b-ops-waiting.png' });
+  pass('Rented truck Gate In saves its 3PL company; trucks inside are listed on the Summary');
 
   // ---- other screens: history, DN search, more, quality, users; English; dark; desktop
   for (const [hash, file] of [['#/trips', '15-active.png'], ['#/trips/history', '16-history.png'], ['#/dn', '17-dn-search.png'], ['#/more', '18-more.png'], ['#/quality', '19-quality.png'], ['#/users', '20-users.png']]) {
