@@ -51,7 +51,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
   useEffect(() => { const iv = setInterval(() => { if (navigator.onLine) flushOutbox(); }, 30000); return () => clearInterval(iv); }, []);
 
   function missing() {
-    const sel = Object.keys(picked).filter(k => picked[k]);
+    const sel = Object.keys(picked).filter(k => picked[k] && (code !== 8 || !(d && d.trip && d.trip.dns.some(z => z.dn === k && z.leg === 'at_customer'))));
     const m: Record<string, string> = {};
     if (!sel.length) m.picked = t('សូមជ្រើសរើស DN', 'Choose the DN(s)');
     if (code === 9) {
@@ -67,7 +67,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
 
   async function send() {
     setFormErr('');
-    const sel = Object.keys(picked).filter(k => picked[k]);
+    const sel = Object.keys(picked).filter(k => picked[k] && (code !== 8 || !(d && d.trip && d.trip.dns.some(z => z.dn === k && z.leg === 'at_customer'))));
     const m = missing();
     setTried(true);
     if (Object.keys(m).length) { setFormErr(t('សូមបំពេញចន្លោះពណ៌ក្រហម។', 'Please fill in the fields marked in red.')); scrollToMissing(); return; }
@@ -80,6 +80,8 @@ export function DriverPage(p: { tripId: string; k: string }) {
 
   const tr = d && d.trip;
   const open = tr ? tr.dns.filter(z => DONE.indexOf(z.leg) < 0) : [];
+  // A DN that already arrived is not offered again for Arrived (Kim, 12 Oct 2026).
+  const shown = open.filter(z => code !== 8 || z.leg !== 'at_customer');
   const lk = STEP_LOOK[code];
   return (
     <>
@@ -116,7 +118,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
                 <Section icon="📄" title="DN" color={lk.color}>
                   <Field icon="☑️" label={t('ជ្រើស DN', 'Choose the DN(s)')} required error={miss.picked}>
                   <div className="grid gap-2">
-                    {open.map(z => (
+                    {shown.map(z => (
                       <div key={z.dn} className={'rounded-xl border-[1.5px] p-2.5 ' + (picked[z.dn] ? 'border-accent bg-soft' : 'border-line')}>
                         <label className="flex items-start gap-2.5">
                           <input type="checkbox" className="w-5 h-5 mt-0.5" checked={!!picked[z.dn]} onChange={e => setPicked(Object.assign({}, picked, { [z.dn]: e.target.checked }))} />

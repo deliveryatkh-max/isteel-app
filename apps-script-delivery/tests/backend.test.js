@@ -207,7 +207,7 @@ test('12: repeated submissions do not create duplicates', () => {
   const tripId = ok(r1).tripId;
   step(e, 1); ok(rec(e, WH, { code: 4, tripId, confirm: ['ORDER'] }));
   const r4 = rec(e, WH, { code: 4, tripId, confirm: ['ORDER'] });
-  assert.ok(!r4.ok && /^DUPLICATE/.test(r4.error));
+  assert.ok(!r4.ok && /^(DUPLICATE|STEP_PASSED)/.test(r4.error), r4.error);   // a step done once is closed for the trip
   assert.strictEqual(logRows(e).filter(r => r[col('Master Trip ID')] === tripId).length, 2);
 });
 
@@ -393,4 +393,20 @@ test('search boxes match any part of the text (Kim, 12 Oct 2026)', () => {
   loadAndOut(e, t1, ['9000000001', '9000000002']);
   assert.deepStrictEqual(ok(e.call('search', { q: '0002' }, ADMIN)).items.map(x => x.dn), ['9000000002']);
   assert.strictEqual(ok(e.call('history', { q: '0001' }, ADMIN)).total, 1);
+});
+
+test('a step already passed is closed for the trip; an arrived DN cannot arrive again (Kim, 12 Oct 2026)', () => {
+  const e = env(); e.run('setup()');
+  const t1 = gateIn(e, 'TEST-0001').tripId;
+  step(e); ok(rec(e, WH, { code: 5, tripId: t1, confirm: ['ORDER'] }));
+  step(e); let r = rec(e, WH, { code: 4, tripId: t1 });
+  assert.ok(!r.ok && /^STEP_PASSED/.test(r.error), r.error);
+  r = rec(e, WH, { code: 5, tripId: t1 });
+  assert.ok(!r.ok && /^(STEP_PASSED|DUPLICATE)/.test(r.error), r.error);
+  step(e); ok(rec(e, WH, { code: 6, tripId: t1, wh: 'PNP1', kg: 1000, confirm: ['ORDER'] }));
+  const t2 = gateIn(e, 'TEST-0002').tripId;
+  loadAndOut(e, t2, ['9000000001']);
+  step(e, 5); ok(rec(e, ADMIN, { code: 8, tripId: t2, dns: [{ dn: '9000000001' }] }));
+  step(e, 5); r = rec(e, ADMIN, { code: 8, tripId: t2, dns: [{ dn: '9000000001' }] });
+  assert.ok(!r.ok && /^DN_ARRIVED/.test(r.error), r.error);
 });

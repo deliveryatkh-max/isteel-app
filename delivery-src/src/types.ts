@@ -13,7 +13,7 @@ export type Boot = {
 export type TripDn = { dn: string; cust: string; leg: string; kg: number };
 export type TripSummary = {
   id: string; date: string; plate: string; driver: string; round: string; gateIn: number | null; gateOut: number | null;
-  stage: string; closed: boolean; lastTime: number; lastCode: number; dns: TripDn[]; legacy: boolean;
+  stage: string; closed: boolean; lastTime: number; lastCode: number; progress?: number; dns: TripDn[]; legacy: boolean;
 };
 export type LogRow = {
   row: number; key: string; code: number; eventText: string; recorder: string; trip: string; plate: string; driver: string; round: string;

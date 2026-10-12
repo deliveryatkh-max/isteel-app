@@ -12,6 +12,7 @@ import { TripsPage } from './pages/Trips';
 import { DnPage, DnSearchPage } from './pages/Dn';
 import { MorePage, QualityPage, UsersPage } from './pages/Admin';
 import { ComplaintsPage } from './components/Complaints';
+import { HOME, ordered, PhoneFrame, SideNav, useLayout } from './components/Nav';
 
 // The dashboard is loaded only when opened. After an update the old file name may be gone: reload once to get the new one.
 const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
@@ -22,6 +23,7 @@ const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
 
 // Five buttons (Kim, 12 Oct 2026): Summary is inside Trips, DN search is inside Scan, Refresh is the ISI STEEL logo.
 const TABS: Tab[] = [
+  HOME,
   { id: 'ops', icon: '🚚', km: 'ជើងដឹក', en: 'Trips' },
   { id: 'scan', icon: '📷', km: 'ស្កេន', en: 'Scan', big: true },
   { id: 'record', icon: '➕', km: 'កត់ត្រា', en: 'Record' },
@@ -33,7 +35,16 @@ const TAB_OF: Record<string, string> = { '': 'ops', trips: 'ops', trip: 'ops', s
 const bootKey = () => 'dlv_boot_' + signedEmail();
 const opsKey = () => 'dlv_ops_' + signedEmail();
 
-export function App() {
+/** On a computer with 📱 Phone view on, only the phone frame shows (the app inside it loads the data); otherwise the app. */
+export function Root() {
+  const lay = useLayout();
+  if (lay.wide && lay.prefs.phone) {
+    return <><Header phoneView={{ on: true, toggle: () => lay.save({ phone: false }) }} /><PhoneFrame /></>;
+  }
+  return <App lay={lay} />;
+}
+
+function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   useLang();
   const [boot, setBoot] = useState<Boot | null>(() => (token() ? store.json<Boot>(bootKey()) : null));
   const [ops, setOps] = useState<Ops | null>(() => (token() ? store.json<Ops>(opsKey()) : null));
@@ -44,6 +55,13 @@ export function App() {
   const [live, setLive] = useState(0);
   const waiting = useSyncExternalStore(outbox.subscribe, () => outbox.list().length);
   const route = useRoute();
+  const phoneView = lay.wide ? { on: lay.prefs.phone, toggle: () => lay.save({ phone: !lay.prefs.phone }) } : undefined;
+  const side = lay.wide && !lay.prefs.phone ? lay.prefs.side : '';
+  useEffect(() => {
+    const c = document.body.classList;
+    c.toggle('nav-side', !!side); c.toggle('nav-left', side === 'left'); c.toggle('nav-right', side === 'right');
+    return () => { c.remove('nav-side', 'nav-left', 'nav-right'); };
+  }, [side]);
 
   const setBusy = useCallback((b: boolean) => setBusyN(n => Math.max(0, n + (b ? 1 : -1))), []);
   const failed = (e: any) => {
@@ -92,6 +110,7 @@ export function App() {
   // The ISI STEEL logo in the header refreshes like the Refresh button (index.html click handler).
   useEffect(() => { (window as any).ISTEEL_REFRESH = refresh; return () => { delete (window as any).ISTEEL_REFRESH; }; });
   const busy = busyN > 0;
+  const onTab = (id: string) => go(id === 'ops' ? '/' : '/' + id);
 
   if (need === 'setup') return <Shell busy={false}><Alert tone="warn">{t('កម្មវិធីមិនទាន់ភ្ជាប់ទៅ Google Sheet ទេ (API_URL នៅទទេក្នុង delivery/config.js)។ សូមមើល SETUP.md។', 'The app is not connected to the Google Sheet yet (API_URL is empty in delivery/config.js). See SETUP.md.')}</Alert></Shell>;
   if (need === 'signin') return <Shell busy={busy}><SignIn onToken={tok => { setToken(tok); setNeed(''); }} /></Shell>;
@@ -128,10 +147,13 @@ export function App() {
 
   return (
     <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, setBusy }}>
-      <Header busy={busy} waiting={waiting} onOutbox={() => go('/more')} title={page === 'dn' ? t('តាមដាន DN', 'DN tracking') : t(...titles[tab])} sub={sub} />
-      {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}
-      {body}
-      <BottomNav tabs={TABS} active={tab} onTab={id => go(id === 'ops' ? '/' : '/' + id)} />
+      <Header busy={busy} waiting={waiting} onOutbox={() => go('/more')} phoneView={phoneView} title={page === 'dn' ? t('តាមដាន DN', 'DN tracking') : t(...titles[tab])} sub={sub} />
+      <div className="app-body">
+        {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}
+        {body}
+      </div>
+      {side ? <SideNav items={ordered(TABS, lay.prefs.order)} active={tab} side={side} onTab={onTab} onSide={() => lay.save({ side: side === 'left' ? 'right' : 'left' })} onOrder={ids => lay.save({ order: ids })} />
+        : <BottomNav tabs={ordered(TABS, lay.prefs.order)} active={tab} onTab={onTab} />}
       <Toaster />
     </AppCtx.Provider>
   );

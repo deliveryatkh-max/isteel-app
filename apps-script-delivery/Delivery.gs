@@ -389,7 +389,7 @@ function tripSummary_(id, rows, tripsIdx, done) {
     id: id, date: meta.date || (st.gateIn ? ymd_(new Date(st.gateIn)) : first.time ? ymd_(new Date(first.time)) : ''),
     plate: meta.plate || pick('plate'), driver: meta.driver || pick('driver'), round: meta.round || pick('round'),
     gateIn: st.gateIn, gateOut: st.gateOut, stage: st.stage, closed: st.closed, lastTime: st.last ? st.last.time : 0,
-    lastCode: st.last ? st.last.code : 0,
+    lastCode: st.last ? st.last.code : 0, progress: st.lastProgress,
     dns: st.dnList.map(d => ({ dn: d.dn, cust: d.cust, leg: d.leg, kg: d.kg })),
     legacy: !tripsIdx[id],
   };

@@ -62,3 +62,8 @@ A delivery recorded more than 1 km from the customer site is flagged on the trip
 Plate search is by number (e.g. 1234); a new truck is added with ➕ Add new truck; 1–5 truck photos.
 Saving is fast: the step is saved first, its photos follow in the background (⏳ in the header until they are sent).
 Timelines no longer show email addresses.
+
+## On a computer, and steps already passed (12 Oct 2026)
+
+**English.** On a computer the menu stands down the left side; ⇄ moves it to the right, ✏️ (or holding a button) lets you drag the buttons into your own order, and 📱 in the header shows the app as on a phone (🖥 goes back). These choices are kept on that computer.
+A trip that has done a step is no longer offered for that step or an earlier one (e.g. a trip at Loading is not offered for step 4), and a DN that has arrived at the customer is not offered for Arrived again. The server refuses such entries too.
