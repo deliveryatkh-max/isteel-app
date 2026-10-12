@@ -188,7 +188,7 @@ function authenticate_(token) {
     email = verifyGoogle_(token);
     session = makeSession_(email);
   }
-  const u = users_().find(x => x.email === email);
+  const u = usersCached_().find(x => x.email === email);
   if (!u) fail_('NOACCESS', email + ' is not in User Manager. Ask the admin to add you.', email + ' មិនមាននៅក្នុង User Manager ទេ។ សូមស្នើអ្នកគ្រប់គ្រងបន្ថែមអ្នក។');
   return { email: email, name: u.name, role: u.role, roleKey: roleKey(u.role), session: session };
 }
@@ -212,11 +212,25 @@ function users_() {
   return t.rows.filter(x => x[e]).map(x => ({ email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: text_(x[r]) }));
 }
 
-/** Allowed recorders per event code, read live from Type Record. */
+/** Sign-in check on every call: User Manager kept 60 s in the cache (saving is faster; a role change shows within a minute). */
+function usersCached_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('users_v1');
+  if (hit) return JSON.parse(hit);
+  const u = users_();
+  try { cache.put('users_v1', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  return u;
+}
+
+/** Allowed recorders per event code, from Type Record (kept 5 minutes in the cache). */
 function allowed_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('allowed_v1');
+  if (hit) return JSON.parse(hit);
   const t = table_(SH.TYPES);
   const out = {};
   t.rows.forEach(r => { const c = eventCode(r[0]); if (c) out[c] = text_(r[3]); });
+  cache.put('allowed_v1', JSON.stringify(out), 300);
   return out;
 }
 
@@ -757,7 +771,7 @@ function columnValues_(sh, c) {
 }
 /** Trips of this plate today that exist only in Time Log (made by AppSheet), so Trip Round keeps counting. */
 function legacyRoundsToday_(plate, today, idx) {
-  const rows = tailRows_(800).filter(r => r.code === 1 && r.plate === plate && ymd_(new Date(r.time)) === today && !idx[r.trip]);
+  const rows = tailRows_(300).filter(r => r.code === 1 && r.plate === plate && ymd_(new Date(r.time)) === today && !idx[r.trip]);
   return rows.length;
 }
 
@@ -926,6 +940,7 @@ function setUser_(p, user) {
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
       audit_(user.email, 'User added', '', '', email, '', role, 'Users screen');
     }
+    CacheService.getScriptCache().remove('users_v1');
     return usersList_();
   });
 }

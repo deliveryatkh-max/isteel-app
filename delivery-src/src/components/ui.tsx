@@ -71,15 +71,32 @@ export function Alert(p: { tone: 'bad' | 'ok' | 'warn' | 'info'; children: React
 
 export function Spinner() { return <div className="spinner" aria-label="Loading" />; }
 
+/** The part of the screen the phone keyboard leaves free, so a sheet sits on top of the keyboard (Kim, 12 Oct 2026). */
+function useKeyboardGap() {
+  const [vp, setVp] = useState<{ bottom: number; height: number } | null>(null);
+  useEffect(() => {
+    const v = window.visualViewport;
+    if (!v) return;
+    const on = () => setVp({ bottom: Math.max(0, window.innerHeight - v.height - v.offsetTop), height: v.height });
+    on();
+    v.addEventListener('resize', on); v.addEventListener('scroll', on);
+    return () => { v.removeEventListener('resize', on); v.removeEventListener('scroll', on); };
+  }, []);
+  return vp;
+}
+
 export function Modal(p: { title: string; onClose?: () => void; children: React.ReactNode; wide?: boolean }) {
+  const vp = useKeyboardGap();
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && p.onClose) p.onClose(); };
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
   }, [p.onClose]);
   return (
-    <div className="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center" onClick={e => { if (e.target === e.currentTarget && p.onClose) p.onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={p.title} className={'bg-card w-full rounded-t-2xl sm:rounded-2xl max-h-[88vh] overflow-auto p-4 ' + (p.wide ? 'sm:max-w-2xl' : 'sm:max-w-md')}>
+    <div className="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center" style={vp && vp.bottom ? { bottom: vp.bottom } : undefined}
+      onClick={e => { if (e.target === e.currentTarget && p.onClose) p.onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={p.title} className={'bg-card w-full rounded-t-2xl sm:rounded-2xl max-h-[88vh] overflow-auto p-4 ' + (p.wide ? 'sm:max-w-2xl' : 'sm:max-w-md')}
+        style={vp ? { maxHeight: Math.round(vp.height * 0.88) } : undefined}>
         <div className="flex items-center justify-between gap-2 mb-3">
           <h2 className="m-0 text-[17px] font-bold">{p.title}</h2>
           {p.onClose ? <button type="button" className="btn btn-sm" onClick={p.onClose} aria-label={t('បិទ', 'Close')}>✕</button> : null}
