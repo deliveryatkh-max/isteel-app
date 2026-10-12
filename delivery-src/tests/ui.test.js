@@ -203,11 +203,40 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await l.page.getByRole('button', { name: 'បាទ/ចាស កត់ត្រា' }).click();
   await l.page.getByText('កត់ត្រាជំហានបន្ទាប់').waitFor();
   pass('DN-002 added to trip 2 after the "open on another trip" warning');
+  // ---- DN scan screen (typed here; the camera feeds the same lookup): Warehouse gets its own next step, opened after 2 s
+  await w.page.goto(BASE + '/delivery/#/scan');
+  await w.page.reload();
+  await w.page.getByPlaceholder(/វាយលេខ DN/).fill('9000000002');
+  await w.page.getByRole('button', { name: 'រក' }).click();
+  await w.page.getByTestId('scan-next').waitFor();
+  assert.match(await w.page.getByTestId('scan-next').textContent(), /៤/);
+  await w.page.screenshot({ path: SHOTS + '10b-scan-next-step.png' });
+  await w.page.waitForURL(/#\/record\?trip=.*code=4.*dn=9000000002/, { timeout: 5000 });
+  await w.page.getByText('កត់ត្រា').first().waitFor();
+  pass('Scan DN-002: the next step for Warehouse (4) opens by itself after 2 s');
+  await w.page.goto(BASE + '/delivery/#/scan/9000000002');
+  await w.page.getByRole('button', { name: /ឈប់នៅទីនេះ/ }).click();
+  await w.page.waitForTimeout(2500);
+  assert.match(w.page.url(), /#\/scan\/9000000002/);
+  pass('Link #/scan/<DN> works (for a QR on the DN later); Stay here stops the countdown');
+  await w.page.goto(BASE + '/delivery/#/scan/12345678');
+  await w.page.getByText(/រកមិនឃើញ DN នេះ/).waitFor();
+  pass('An unknown DN shows a clear message');
   await skew(5 * 60000);
   for (const [who, code, extra] of [['logi@test.kh', 3], ['wh@test.kh', 4], ['wh@test.kh', 5], ['wh@test.kh', 6, { wh: 'PNP2', kg: 2000, websling: true }], ['guard@test.kh', 7]]) {
     const r = await api('record', Object.assign({ ref: 'y' + code + Math.random(), code, tripId: t2 }, extra || {}), tok(who));
     assert.ok(r.ok && !r.data.needConfirm, JSON.stringify(r));
   }
+  // scan -> step form with the DN already ticked -> save -> Scan next DN
+  await a.page.goto(BASE + '/delivery/#/scan/9000000002');
+  await a.page.reload();
+  await a.page.waitForURL(/code=8.*dn=9000000002/, { timeout: 8000 });
+  assert.ok(await a.page.locator('label', { hasText: '9000000002' }).locator('input').isChecked());
+  await a.page.locator('input[type=file]').nth(1).setInputFiles([IMG]);
+  await recordBtn(a.page).click();
+  await a.page.getByTestId('scan-again').click();
+  await a.page.waitForURL(/#\/scan$/);
+  pass('Scan opens Arrived with the DN ticked; after saving, "Scan next DN" goes back to the camera');
   const detail2 = (await api('trip', { tripId: t2 }, tok('admin@test.kh'))).data;
   await d.page.goto(BASE + '/delivery/?t=' + t2 + '&k=' + detail2.driverLink);
   await d.page.getByText('៩. បានប្រគល់ទំនិញ').click();
