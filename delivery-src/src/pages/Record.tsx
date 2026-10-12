@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { L, t, useLang, kg as fmtKg } from '../i18n';
 import { go, openTrips, tripHref, useApp, useRoute } from '../state';
 import type { EventDef, PlanRow, TripSummary } from '../types';
@@ -53,7 +53,8 @@ export function RecordPage() {
   const [lines, setLines] = useState<DnLine[]>([]);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [delivered, setDelivered] = useState<Record<string, { kg: string; final: boolean }>>({});
-  const [done, setDone] = useState<{ tripId: string; round: string; code: number; queued?: boolean; rate?: Record<string, string>; siteRated?: boolean } | null>(null);
+  const [done, setDone] = useState<{ tripId: string; round: string; code: number; queued?: boolean; saving?: boolean; label?: string; rate?: Record<string, string>; siteRated?: boolean } | null>(null);
+  const seq = useRef(0);   // which save the screen is showing (the user may move on before the answer comes back)
   const [formErr, setFormErr] = useState('');
   const sub = useSubmit('record');
   useEffect(() => { warmLocation(); }, [code, tripId]);   // GPS ready before Save is pressed
@@ -161,19 +162,24 @@ export function RecordPage() {
     if (code === 9) Object.assign(p, { photos, signature, receiver: receiver.trim() });
     if (code === 8 || code === 11) p.photo = photo;
     const label = L(ev) + ' · ' + (code === 1 ? plate : trip ? trip.plate + ' ' + trip.id : '');
+    // The answer screen shows at once (Kim: saving felt slow); it fills in when the server answers.
+    const my = ++seq.current;
+    setDone({ tripId: p.tripId || '', round: trip ? trip.round : '', code, saving: true, label });
     const r = await sub.send(p, label);
+    const here = seq.current === my;
     if (r.ok) {
       const rate: Record<string, string> = {};
       (r.data.rate || []).forEach((x: { dn: string; k: string }) => { rate[x.dn] = x.k; });
-      setDone({ tripId: r.data.tripId, round: r.data.round, code, rate });
-      toast('✅ ' + t('បានកត់ត្រា', 'Recorded'));
+      if (here) setDone({ tripId: r.data.tripId, round: r.data.round, code, rate });
+      toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + (here ? '' : ': ' + label));
       refreshOps();
     } else if ('queued' in r && r.queued) {
-      setDone({ tripId: p.tripId || '', round: '', code, queued: true });
-    }
+      if (here) setDone({ tripId: p.tripId || '', round: '', code, queued: true });
+    } else if (here) setDone(null);   // refused or "No, go back": the form is still filled in
   }
 
   function reset(nextTrip?: string, next?: number) {
+    seq.current++;
     setDone(null); setTried(false); setFormErr(''); setPlate(''); setDriver(''); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setCompany(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
     if (nextTrip !== undefined) setTripId(nextTrip);
     if (next) setCode(next);
@@ -189,7 +195,14 @@ export function RecordPage() {
     return (
       <main className="max-w-2xl mx-auto p-3 sm:p-4">
         <div className="card text-center">
-          {done.queued ? (
+          {done.saving ? (
+            <>
+              <div className="text-[44px] animate-pulse">⏳</div>
+              <h2 className="text-lg font-bold m-0">{L(boot.events.find(e => e.code === done.code))}</h2>
+              <p className="muted mb-0">{t('កំពុងរក្សាទុក… អ្នកអាចបន្តការងារបាន។', 'Saving… you can carry on.')}</p>
+              {done.code === 1 ? <div className="my-3"><div className="muted text-sm">{t('លេខជើងដឹក', 'Trip ID')}</div><div className="text-[30px] font-bold text-muted">…</div></div> : <p className="muted">{done.tripId}</p>}
+            </>
+          ) : done.queued ? (
             <>
               <div className="text-[44px]">⏳</div>
               <h2 className="text-lg font-bold m-0">{t('រក្សាទុកក្នុងទូរស័ព្ទ', 'Saved on this phone')}</h2>
@@ -209,8 +222,8 @@ export function RecordPage() {
             </>
           )}
           <div className="grid gap-2 mt-3">
-            {done.code === 1 && canPickup && !done.queued ? <button type="button" className="btn-primary" onClick={() => reset(done.tripId, 2)}>➕ {t('បន្ថែម DN (ដល់កន្លែងចែកបុង)', 'Add DNs (Arrival-Pickup DN)')}</button> : null}
-            {done.tripId && !done.queued ? <a className="btn no-underline" href={tripHref(done.tripId)}>🚚 {t('មើលជើងដឹក', 'Open trip')}</a> : null}
+            {done.code === 1 && canPickup && !done.queued && !done.saving ? <button type="button" className="btn-primary" onClick={() => reset(done.tripId, 2)}>➕ {t('បន្ថែម DN (ដល់កន្លែងចែកបុង)', 'Add DNs (Arrival-Pickup DN)')}</button> : null}
+            {done.tripId && !done.queued && !done.saving ? <a className="btn no-underline" href={tripHref(done.tripId)}>🚚 {t('មើលជើងដឹក', 'Open trip')}</a> : null}
             {done.tripId && done.code !== 1 && !done.queued ? <button type="button" className="btn" onClick={() => reset(done.tripId)}>{t('កត់ត្រាជំហានបន្ទាប់', 'Record the next step')}</button> : null}
             <button type="button" className="btn" onClick={() => reset('')}>{t('កត់ត្រាថ្មី', 'Record another')}</button>
           </div>
@@ -221,6 +234,7 @@ export function RecordPage() {
             {!done.siteRated ? <SiteRateForm dns={Object.keys(done.rate)} send={siteRateSigned(done.tripId)} onDone={() => setDone(Object.assign({}, done, { siteRated: true }))} /> : null}
           </>
         ) : null}
+        {sub.dialog}
       </main>
     );
   }

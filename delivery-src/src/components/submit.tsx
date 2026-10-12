@@ -45,13 +45,13 @@ function sendMedia(action: 'record' | 'drvRecord', body: any, res: any, media: a
 }
 
 export function useSubmit(action: 'record' | 'drvRecord') {
-  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState(0);   // steps on their way (the form is free again at once)
+  const sending = busy > 0;
   const [error, setError] = useState('');
   const [ask, setAsk] = useState<{ warnings: Warning[]; resolve: (ok: boolean) => void } | null>(null);
 
   async function send(payload: any, label: string): Promise<SendResult> {
-    if (sending) return { ok: false };
-    setSending(true); setError('');
+    setBusy(n => n + 1); setError('');
     const body = Object.assign({ ref: newRef(), takenAt: Date.now(), confirm: [] as string[] }, payload);
     // Fast save: the step goes first without its photos (small, quick); the photos follow in the background.
     const media: any = {};
@@ -80,7 +80,7 @@ export function useSubmit(action: 'record' | 'drvRecord') {
       setError(errText(e.message));
       return { ok: false };
     } finally {
-      setSending(false);
+      setBusy(n => n - 1);
     }
   }
 
