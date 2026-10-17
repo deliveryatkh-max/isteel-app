@@ -220,7 +220,7 @@ test('every field is required except the remark (server side)', () => {
   const r2 = e.call('record', { ref: ref(), code: 1, plate: '2C-1111', driver: 'X' }, GUARD);
   assert.ok(!r2.ok && /company/.test(r2.error), 'company of a rented truck');
   const id = ok(rec(e, GUARD, { code: 1, plate: '2C-1111', driver: 'X', company: 'New 3PL', truckType: 'customer', photos: [IMG, IMG] })).tripId;
-  assert.deepStrictEqual(ok(e.call('boot', {}, GUARD)).trucks.find(x => x.plate === '2C-1111'), { plate: '2C-1111', co: 'New 3PL', type: 'customer' });
+  assert.deepStrictEqual(ok(e.call('boot', {}, GUARD)).trucks.find(x => x.plate === '2C-1111'), { plate: '2C-1111', co: 'New 3PL', type: 'customer', driver: 'X' });
   assert.strictEqual(tab(e, 'Delivery Proof').filter(r => r[2] === id).length, 1, 'extra truck photos kept');
   step(e); ok(rec(e, LOGI, { code: 2, tripId: id, dns: [{ dn: '9000000001' }], confirm: ['PLAN_OTHER_TRUCK'] }));
   step(e); ok(rec(e, LOGI, { code: 3, tripId: id }));
@@ -236,13 +236,25 @@ test('every field is required except the remark (server side)', () => {
   assert.ok(!r5.ok && /receiver/.test(r5.error));
 });
 
-test('a Truck Companies tab made by the first version gets the new Truck Type column by itself', () => {
-  const e = env();
-  e.ss.getSheetByName('Truck Companies').rows[0].length = 4;   // header without Truck Type
-  ok(rec(e, GUARD, { code: 1, plate: '2D-2222', driver: 'X', company: 'Old 3PL', truckType: 'rented' }));
-  const rows = e.ss.getSheetByName('Truck Companies').rows;
-  assert.strictEqual(rows[0][4], 'Truck Type');
-  assert.strictEqual(rows[1][0], '2D-2222'); assert.strictEqual(rows[1][4], 'rented');
+test('3PL Truck tab (17 Oct 2026): made once from Truck Companies, which stays as it is; Active = No hides a truck', () => {
+  const e = env();   // a sheet from before this version: Truck Companies has trucks, there is no 3PL Truck tab yet
+  e.ss.sheets = e.ss.sheets.filter(x => x.name !== '3PL Truck');
+  const co = e.ss.getSheetByName('Truck Companies');
+  co.rows.push(['2E-3333', 'Old 3PL', 'a@x', '', 'customer'], ['2E-4444', 'Other 3PL', 'a@x', '', 'rented']);
+  Object.keys(e.cache).forEach(k => delete e.cache[k]);
+  const before = JSON.stringify(co.rows);
+  const b = ok(e.call('boot', {}, GUARD));
+  const tk = e.ss.getSheetByName('3PL Truck').rows;
+  assert.deepStrictEqual(tk[0], ['Plate', 'Company', 'Truck Type', 'Driver', 'Active', 'Added By', 'Added Time']);
+  assert.deepStrictEqual(tk.slice(1).map(r => r.slice(0, 5)), [['2E-3333', 'Old 3PL', 'Customer', '', 'Yes'], ['2E-4444', 'Other 3PL', 'Rented', '', 'Yes']]);
+  assert.strictEqual(JSON.stringify(co.rows), before, 'Truck Companies untouched');
+  assert.deepStrictEqual(b.trucks.map(x => x.plate + ':' + x.type), ['2E-3333:customer', '2E-4444:rented']);
+  tk[2][4] = 'No'; delete e.cache.trucks_v2;
+  assert.deepStrictEqual(ok(e.call('boot', {}, GUARD)).trucks.map(x => x.plate), ['2E-3333']);
+  ok(rec(e, GUARD, { code: 1, plate: '2D-2222', driver: 'Y', company: 'New 3PL', truckType: 'rented' }));
+  const last = e.ss.getSheetByName('3PL Truck').rows.slice(-1)[0];
+  assert.deepStrictEqual(last.slice(0, 6), ['2D-2222', 'New 3PL', 'Rented', 'Y', 'Yes', 'guard@test.kh']);
+  assert.strictEqual(e.ss.getSheetByName('Truck Companies').rows.length, 3, 'nothing new in Truck Companies');
 });
 
 test('delete an entry: Supervisor/Admin only, with a reason; the row is kept in Deleted Records and the Audit Log', () => {

@@ -270,14 +270,19 @@ function allowed_() {
 
 function master_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('master_v1');
+  const hit = cache.get('master_v2');
   if (hit) return JSON.parse(hit);
-  const plates = table_(SH.PLATES);
-  const pPlate = 2, pType = 3;   // ផ្លាកលេខឡាន, ប្រភេទឡាន (no header name is stable enough: matched by position, checked below)
-  const isiPlates = plates.rows.filter(r => r[pPlate]).map(r => ({ plate: normPlate(r[pPlate]), type: text_(r[pType]) }));
-  const drv = table_(SH.DRIVERS);
-  const dName = col_(drv.head, 'ឈ្មោះតៃកុង'), dPlate = col_(drv.head, 'CODE'), dCo = col_(drv.head, 'ក្រុមហ៊ុន');
-  const drivers = drv.rows.filter(r => r[dName]).map(r => ({ name: text_(r[dName]), plate: normPlate(r[dPlate]), co: text_(r[dCo]) }));
+  const ft = fuelTrucks_();
+  let isiPlates, drivers;
+  if (ft) ({ plates: isiPlates, drivers } = ft);
+  else {   // USERS_SHEET_ID not set yet: the old Plate Number / Driver List tabs of this sheet
+    const plates = table_(SH.PLATES);
+    const pPlate = 2, pType = 3;   // ផ្លាកលេខឡាន, ប្រភេទឡាន (no header name is stable enough: matched by position, checked below)
+    isiPlates = plates.rows.filter(r => r[pPlate]).map(r => ({ plate: normPlate(r[pPlate]), type: text_(r[pType]) }));
+    const drv = table_(SH.DRIVERS);
+    const dName = col_(drv.head, 'ឈ្មោះតៃកុង'), dPlate = col_(drv.head, 'CODE'), dCo = col_(drv.head, 'ក្រុមហ៊ុន');
+    drivers = drv.rows.filter(r => r[dName]).map(r => ({ name: text_(r[dName]), plate: normPlate(r[dPlate]), co: text_(r[dCo]) }));
+  }
   const cu = table_(SH.CUST);
   const cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name');
   const customers = cu.rows.filter(r => r[cId]).map(r => ({ id: text_(r[cId]), name: text_(r[cName]) }));
@@ -285,8 +290,34 @@ function master_() {
   const whc = col_(wh.head, 'WH_CODE');
   const warehouses = Array.from(new Set(wh.rows.map(r => text_(r[whc])).filter(Boolean)));
   const m = { plates: isiPlates, drivers: drivers, customers: customers, warehouses: warehouses };
-  try { cache.put('master_v1', JSON.stringify(m), 600); } catch (e) { /* over 100 KB: just not cached */ }
+  try { cache.put('master_v2', JSON.stringify(m), 600); } catch (e) { /* over 100 KB: just not cached */ }
   return m;
+}
+
+/**
+ * ISI trucks and drivers from one list (Kim, 17 Oct 2026): the "Driver & Truck" tab of the Fuel Refill sheet
+ * (USERS_SHEET_ID), the same list the Fuel app uses. Each row is a driver (ឈ្មោះតៃកុង) with the truck plate in CODE;
+ * every plate there counts as an ISI truck unless its company (ក្រុមហ៊ុន) is filled with a non-ISI name.
+ * That tab has no truck-type column, so the plate's driver is shown under it instead.
+ */
+const FUEL_TRUCKS_TAB = 'Driver & Truck';
+function fuelTrucks_() {
+  const id = prop_('USERS_SHEET_ID');
+  if (!id) return null;
+  const sh = SpreadsheetApp.openById(id).getSheetByName(FUEL_TRUCKS_TAB);
+  if (!sh) { console.warn('The Fuel Refill sheet has no "' + FUEL_TRUCKS_TAB + '" tab: using Plate Number / Driver List.'); return null; }
+  const t = tableOf_(sh);
+  const iName = t.head.indexOf('ឈ្មោះតៃកុង'), iPlate = t.head.indexOf('CODE'), iCo = t.head.indexOf('ក្រុមហ៊ុន');
+  if (iName < 0 || iPlate < 0) throw new Error('"' + FUEL_TRUCKS_TAB + '" needs the headers ឈ្មោះតៃកុង and CODE.');
+  const drivers = t.rows.filter(r => text_(r[iName])).map(r => ({ name: text_(r[iName]), plate: normPlate(r[iPlate]), co: iCo < 0 ? '' : text_(r[iCo]) }));
+  const by = {}, order = [];
+  t.rows.forEach(r => {
+    const plate = normPlate(r[iPlate]), co = iCo < 0 ? '' : text_(r[iCo]);
+    if (!plate || plate === '0' || (co && !/isi/i.test(co))) return;
+    if (!by[plate]) { by[plate] = []; order.push(plate); }
+    if (text_(r[iName])) by[plate].push(text_(r[iName]));
+  });
+  return { plates: order.map(p => ({ plate: p, type: by[p].join(', ') })), drivers: drivers };
 }
 
 /** Delivery Plan rows by DN: plate, driver, round, customer, SO, weight. */
@@ -806,7 +837,7 @@ function saveEvent_(p, who) {
       learnSites_(newRows.filter(r => r.latlong), who.email);
     }
     if (code === 1 && photoUrls.length > 1) saveProof_(newRows, tripId, '', '', photoUrls, who.email);
-    if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email);
+    if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email, p.driver);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
     if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
     if (ref) cache.put('ref_' + ref, JSON.stringify(res), 21600);

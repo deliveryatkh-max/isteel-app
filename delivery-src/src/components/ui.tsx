@@ -208,6 +208,37 @@ export async function shrinkPhoto(file: File, max = 1280): Promise<string> {
     return c.toDataURL('image/jpeg', 0.72);
   } finally { URL.revokeObjectURL(url); }
 }
+/**
+ * Same stamp as the Fuel app (Kim, 17 Oct 2026): a navy strip under the photo with the ID on the left and
+ * "STEEL · date time" (Phnom Penh) on the right. A photo that fails to load is sent as it is.
+ */
+export function watermark(dataUrl: string, id: string, at?: number): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight, band = Math.max(36, Math.round(w * 0.07));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h + band;
+      const x = c.getContext('2d')!;
+      x.drawImage(img, 0, 0);
+      x.fillStyle = '#011e41'; x.fillRect(0, h, w, band);
+      const d = new Date((at || Date.now()) + 7 * 3600 * 1000), p = (n: number) => String(n).padStart(2, '0');
+      const when = p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear() + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+      const pad = Math.round(band * 0.35), mid = h + band / 2;
+      x.textBaseline = 'middle'; x.fillStyle = '#fff';
+      const right = 'STEEL · ' + when;
+      const fonts = (k: number) => [`700 ${Math.round(band * 0.5 * k)}px system-ui, sans-serif`, `400 ${Math.round(band * 0.4 * k)}px system-ui, sans-serif`];
+      const width = (k: number) => { const f = fonts(k); x.font = f[0]; const a = x.measureText(id).width; x.font = f[1]; return a + x.measureText(right).width; };
+      const k = Math.min(1, (w - pad * 3) / Math.max(1, width(1)));   // small photo: both texts shrink so they never overlap
+      const f = fonts(k);
+      x.font = f[0]; x.textAlign = 'left'; x.fillText(id, pad, mid);
+      x.font = f[1]; x.textAlign = 'right'; x.fillText(right, w - pad, mid);
+      resolve(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 export function PhotoInput(p: { value: string; onChange: (v: string) => void; label?: string }) {
   useLang();
   const cam = useRef<HTMLInputElement>(null), gal = useRef<HTMLInputElement>(null);

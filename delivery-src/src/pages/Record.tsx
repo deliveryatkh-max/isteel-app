@@ -86,12 +86,19 @@ export function RecordPage() {
   }, [trip && trip.id, code]);
 
   const planByDn = useMemo(() => { const m: Record<string, PlanRow> = {}; boot.plan.forEach(p => { m[p.dn] = p; }); return m; }, [boot.plan]);
-  // ISI trucks, then rented / customer trucks added before ("Add new truck", like the Fuel app).
+  // Truck type first, then only that kind of truck (Kim, 17 Oct 2026): ISI trucks come from the Fuel sheet's
+  // Driver & Truck list; rented and customer trucks from the 3PL Truck tab (new ones added with "Add new truck").
   const plateOpts: Opt[] = useMemo(() => {
+    if (truckType === 'isi') return boot.plates.map(p => ({ value: p.plate, label: '🏭 ' + p.plate, sub: p.type }));
     const isi = new Set(boot.plates.map(p => p.plate));
-    return boot.plates.map(p => ({ value: p.plate, label: '🏭 ' + p.plate, sub: p.type }))
-      .concat((boot.trucks || []).filter(x => !isi.has(x.plate)).map(x => ({ value: x.plate, label: (x.type === 'customer' ? '🧑‍💼 ' : '🚛 ') + x.plate, sub: [x.co, x.type === 'customer' ? t('ឡានអតិថិជន', 'Customer truck') : t('ឡានជួល', 'Rented')].filter(Boolean).join(' · ') })));
-  }, [boot.plates, boot.trucks, lang]);
+    return (boot.trucks || []).filter(x => x.type === truckType && !isi.has(x.plate))
+      .map(x => ({ value: x.plate, label: (x.type === 'customer' ? '🧑‍💼 ' : '🚛 ') + x.plate, sub: [x.co, x.driver].filter(Boolean).join(' · ') }));
+  }, [boot.plates, boot.trucks, truckType, lang]);
+  function chooseType(v: 'isi' | 'rented' | 'customer') {
+    setTruckType(v);
+    if (v === truckType) return;
+    setPlate(''); setCompany(''); setDriver('');
+  }
   const driverOpts: Opt[] = useMemo(() => {
     const mineFirst = boot.drivers.slice().sort((a, b) => Number(b.plate === plate) - Number(a.plate === plate));
     return mineFirst.map(d => ({ value: d.name, label: d.name, sub: [d.plate, d.co].filter(Boolean).join(' · ') }));
@@ -120,12 +127,11 @@ export function RecordPage() {
 
   function choosePlate(v: string) {
     setPlate(v);
-    const known = boot.plates.some(p => p.plate === v);
-    const tk = (boot.trucks || []).find(x => x.plate === v);
-    setTruckType(known ? 'isi' : tk ? tk.type : 'rented');
-    setCompany(known ? '' : tk ? tk.co : (boot.plateCo || {})[v] || '');
+    const tk = truckType === 'isi' ? null : (boot.trucks || []).find(x => x.plate === v);
+    setCompany(tk ? tk.co : truckType === 'isi' ? '' : (boot.plateCo || {})[v] || '');
     const d = boot.drivers.filter(x => x.plate === v);
     if (d.length === 1) setDriver(d[0].name);
+    else if (tk && tk.driver) setDriver(tk.driver);
   }
 
   // Every field is required except the remark (Kim, 12 Oct 2026): what is missing turns red with its own message.
@@ -282,12 +288,12 @@ export function RecordPage() {
 
       {code === 1 ? (
         <Section icon="🚚" title={t('ព័ត៌មានឡាន', 'Truck details')} color={lk.color}>
+          <Field icon="🏷️" label={t('ប្រភេទឡាន', 'Truck type')} required>
+            <Segmented value={truckType} onChange={chooseType} options={[{ v: 'isi', km: '🏭 ឡាន ISI', en: '🏭 ISI truck' }, { v: 'rented', km: '🚛 ឡានជួល', en: '🚛 Rented' }, { v: 'customer', km: '🧑‍💼 ឡានអតិថិជន', en: '🧑‍💼 Customer truck' }]} />
+          </Field>
           <Field icon="🔢" label={t('ផ្លាកលេខឡាន', 'Truck plate')} required htmlFor="plate" error={miss.plate}>
             <Picker id="plate" value={plate} options={plateOpts} onChange={choosePlate} upper digits bad={!!miss.plate} placeholder={t('ជ្រើសផ្លាកលេខ', 'Choose the plate')}
-              addNew={{ button: '➕ ' + t('បន្ថែមឡានថ្មី', 'Add new truck'), placeholder: t('ផ្លាកលេខ ឧ. 3F-1234', 'Plate, e.g. 3F-1234'), check: plateCheck }} />
-          </Field>
-          <Field icon="🏷️" label={t('ប្រភេទឡាន', 'Truck type')} required>
-            <Segmented value={truckType} onChange={setTruckType} options={[{ v: 'isi', km: '🏭 ឡាន ISI', en: '🏭 ISI truck' }, { v: 'rented', km: '🚛 ឡានជួល', en: '🚛 Rented' }, { v: 'customer', km: '🧑‍💼 ឡានអតិថិជន', en: '🧑‍💼 Customer truck' }]} />
+              addNew={truckType === 'isi' ? undefined : { button: '➕ ' + t('បន្ថែមឡានថ្មី', 'Add new truck'), placeholder: t('ផ្លាកលេខ ឧ. 3F-1234', 'Plate, e.g. 3F-1234'), check: plateCheck }} />
           </Field>
           <Field icon="👷" label={t('ឈ្មោះតៃកុង', 'Driver')} required htmlFor="driver" error={miss.driver}>
             <Picker id="driver" value={driver} options={driverOpts} onChange={v => setDriver(v)} allowFree bad={!!miss.driver} placeholder={t('ជ្រើស ឬវាយឈ្មោះតៃកុង', 'Choose or type the driver')} />
