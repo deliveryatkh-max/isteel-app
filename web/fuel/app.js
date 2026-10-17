@@ -254,7 +254,8 @@
     state.form = { type: p.type, plate: p.plate, driver: p.driver, km: p.km || '', hour: p.hour || '',
       litres: p.litres, note: p.note || '', odoPhoto: p.odoPhoto || null, hourPhoto: p.hourPhoto || null,
       pumpPhoto: p.pumpPhoto || null, signature: p.signature || null, takenAt: item.takenAt, meterBroken: !!p.meterBroken,
-      newDriver: !!p.newDriver, newPlate: !!p.newPlate };
+      newDriver: !!p.newDriver, newPlate: !!p.newPlate,
+      stamped: p.stamped ? { odoPhoto: true, hourPhoto: true, pumpPhoto: true } : null };
     state.gps = { status: 'ok', lat: p.lat, lng: p.lng, acc: 0 };
     go({ s: 'new' });
     toast(L('សូមកែ ហើយបញ្ជូនម្តងទៀត', 'Fix it and submit again'));
@@ -283,8 +284,7 @@
           if (src[k]) { const key = 'demo://' + r.id + '/' + k + '/' + Date.now(); demo.photos[key] = src[k]; r[k] = key; }
         });
         if (action === 'submit') {
-          const d = new Date(), pd = n => String(n).padStart(2, '0');
-          const id = `FR${String(d.getFullYear()).slice(2)}${pd(d.getMonth() + 1)}${pd(d.getDate())}-${pd(d.getHours())}${pd(d.getMinutes())}${pd(d.getSeconds())}`;
+          const id = p.newId || entryId(Date.now());
           const r = { id, type: p.type, plate: p.plate, driver: p.driver, km: toNum(p.km) || null, hour: toNum(p.hour) || null,
             litres: toNum(p.litres), note: p.note || '', latLong: `${(+p.lat).toFixed(6)}, ${(+p.lng).toFixed(6)}`,
             user: user.email, dateTime: Date.now(), status: '', reviewedBy: '' };
@@ -1038,13 +1038,14 @@
       ${f[key] ? `<button type="button" class="sheet-btn danger" data-remove><span class="ic">🗑</span><span>${L('ដករូបចេញ', 'Remove photo')}</span></button>` : ''}`);
     const stillHere = () => state.form === f && current() && (current().s === 'new' || current().s === 'edit');
     const rm = $('[data-remove]', sh.el);
-    if (rm) rm.onclick = () => { f[key] = null; sh.close(); if (stillHere()) renderForm(); };
+    if (rm) rm.onclick = () => { f[key] = null; if (f.stamped) delete f.stamped[key]; sh.close(); if (stillHere()) renderForm(); };
     $$('input[type=file]', sh.el).forEach(input => input.onchange = async () => {
       const file = input.files && input.files[0];
       sh.close();
       if (!file) return;
       try {
         f[key] = await resizeImage(file, 1280, 0.72);
+        if (f.stamped) delete f.stamped[key];
         if (stillHere()) renderForm();
       } catch (e) { toast(L('រូបថតមិនត្រឹមត្រូវ', 'Could not read photo')); }
     });
@@ -1070,14 +1071,21 @@
     btn.disabled = true; btn.textContent = L('កំពុងបញ្ជូន...', 'Sending...');
     $('#errBox').innerHTML = '';
     const t = typeInfo(f.type);
+    const takenAt = f.takenAt || Date.now();
+    const photoId = state.editing ? state.editing.id : entryId(takenAt);
+    const photoAt = state.editing ? state.editing.dateTime : takenAt;
+    const photos = {};
+    for (const k of ['odoPhoto', 'hourPhoto', 'pumpPhoto']) {
+      photos[k] = f[k] && !(f.stamped && f.stamped[k]) ? await watermark(f[k], photoId, photoAt).catch(() => f[k]) : f[k];
+    }
     const payload = {
       type: f.type, plate: f.plate.trim(), driver: f.driver,
       km: t.meter === 'km' && !f.meterBroken ? f.km : '', hour: t.meter === 'hour' ? f.hour : '',
       meterBroken: t.meter === 'km' && !!f.meterBroken,
       litres: f.litres, note: f.note.trim(),
-      odoPhoto: t.meter === 'km' ? f.odoPhoto : null,
-      hourPhoto: t.meter === 'hour' ? f.hourPhoto : null,
-      pumpPhoto: f.pumpPhoto, signature: f.signature,
+      odoPhoto: t.meter === 'km' ? photos.odoPhoto : null,
+      hourPhoto: t.meter === 'hour' ? photos.hourPhoto : null,
+      pumpPhoto: photos.pumpPhoto, signature: f.signature,
       newDriver: !!f.newDriver, newPlate: !!f.newPlate,
     };
     try {
@@ -1092,8 +1100,8 @@
         back();
       } else {
         payload.lat = state.gps.lat; payload.lng = state.gps.lng;
-        const item = { ref: newRef(), user: state.config.user.email, takenAt: f.takenAt || Date.now(), tries: 0, error: '', payload };
-        payload.ref = item.ref; payload.takenAt = item.takenAt;
+        const item = { ref: newRef(), user: state.config.user.email, takenAt, tries: 0, error: '', payload };
+        payload.ref = item.ref; payload.takenAt = item.takenAt; payload.newId = photoId; payload.stamped = true;
         await outbox.add(item);
         remember(f);
         resetForm();
@@ -1186,6 +1194,39 @@
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
       img.src = url;
+    });
+  }
+
+  /** The ID the server gives a new entry: FR + date-time of Submit in Cambodia time (UTC+7, no summer time). */
+  function entryId(t) {
+    const d = new Date(t + 7 * 3600 * 1000), p = n => String(n).padStart(2, '0');
+    return 'FR' + p(d.getUTCFullYear() % 100) + p(d.getUTCMonth() + 1) + p(d.getUTCDate())
+      + '-' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds());
+  }
+
+  /** Kim, 17 Oct 2026: every photo carries its entry ID and date-time in a navy strip under the picture. */
+  function watermark(dataUrl, id, at) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth, h = img.naturalHeight, band = Math.max(36, Math.round(w * 0.07));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h + band;
+        const x = c.getContext('2d');
+        x.drawImage(img, 0, 0);
+        x.fillStyle = '#011e41'; x.fillRect(0, h, w, band);
+        const d = new Date((at || Date.now()) + 7 * 3600 * 1000), p = n => String(n).padStart(2, '0');
+        const when = p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear() + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+        const pad = Math.round(band * 0.35), mid = h + band / 2;
+        x.textBaseline = 'middle'; x.fillStyle = '#fff';
+        x.font = `700 ${Math.round(band * 0.5)}px system-ui, sans-serif`;
+        x.textAlign = 'left'; x.fillText(id, pad, mid);
+        x.font = `400 ${Math.round(band * 0.4)}px system-ui, sans-serif`;
+        x.textAlign = 'right'; x.fillText('STEEL · ' + when, w - pad, mid);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => reject(new Error('bad image'));
+      img.src = dataUrl;
     });
   }
 

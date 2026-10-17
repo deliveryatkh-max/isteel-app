@@ -491,7 +491,7 @@ function submitRefill_(p, user) {
     const taken = Number(p.takenAt);
     const now = taken && taken <= Date.now() + 5 * 60 * 1000 && taken >= Date.now() - 3 * 24 * 3600 * 1000
       ? new Date(taken) : new Date();
-    const id = newId_(sheet, cols, now);
+    const id = newId_(sheet, cols, now, p.newId);
     const values = new Array(sheet.getLastColumn()).fill('');
     const set = (name, v) => { if (cols[name] !== undefined) values[cols[name]] = v; };
 
@@ -1687,10 +1687,12 @@ function findRow_(sheet, cols, id) {
   return i + 2;
 }
 
-function newId_(sheet, cols, now) {
-  const base = 'FR' + Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyMMdd-HHmmss');
+function newId_(sheet, cols, now, wanted) {
   const ids = new Set(sheet.getRange(2, cols[COL.ID_FR] + 1, Math.max(sheet.getLastRow() - 1, 1), 1)
     .getValues().map(r => String(r[0])));
+  // The phone stamps this ID on the photos (watermark), so it is kept when it is free.
+  if (/^FR\d{6}-\d{6}$/.test(String(wanted || '')) && !ids.has(wanted)) return wanted;
+  const base = 'FR' + Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyMMdd-HHmmss');
   let id = base, n = 2;
   while (ids.has(id)) id = base + '-' + n++;
   return id;
