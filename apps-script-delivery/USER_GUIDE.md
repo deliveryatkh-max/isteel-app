@@ -56,10 +56,10 @@ A delivery recorded more than 1 km from the customer site is flagged on the trip
 ## ថ្មី (12 Oct 2026, ទី២) · New
 
 **ខ្មែរ.** ជំហានជាបញ្ជីទម្លាក់ចុះ មានពណ៌ និងរូប។ គ្រប់ចន្លោះត្រូវបំពេញ (លើកលែងតែកំណត់សំគាល់) ចន្លោះខ្វះប្តូរពណ៌ក្រហម។
-ផ្លាកលេខ: ស្វែងរកតាមលេខ (ឧ. 1234)។ ឡានថ្មី: ➕ បន្ថែមឡានថ្មី។ រូបថតឡាន ១–៥។ ការរក្សាទុកលឿន: រូបថតផ្ញើបន្ទាប់ (⏳ នៅលើក្បាល)។
+ជ្រើសប្រភេទឡានមុន: ឡាន ISI បង្ហាញតែឡានក្នុង Driver & Truck (Fuel)។ ឡានជួល / ឡានអតិថិជន បង្ហាញតែឡានក្នុង 3PL Truck ហើយឡានថ្មី: ➕ បន្ថែមឡានថ្មី។ ផ្លាកលេខ: ស្វែងរកតាមលេខ (ឧ. 1234)។ រូបថតទាំងអស់មានលេខជើងដឹក និងថ្ងៃម៉ោង។ រូបថតឡាន ១–៥។ ការរក្សាទុកលឿន: រូបថតផ្ញើបន្ទាប់ (⏳ នៅលើក្បាល)។
 
 **English.** The step is a coloured dropdown. Every field is required except the remark; what is missing turns red.
-Plate search is by number (e.g. 1234); a new truck is added with ➕ Add new truck; 1–5 truck photos.
+Choose the truck type first: ISI truck lists only the Fuel sheet's Driver & Truck plates; Rented / Customer truck lists only the 3PL Truck tab, and a new one is added with ➕ Add new truck. Plate search is by number (e.g. 1234); 1–5 truck photos. Every photo is stamped with the Trip ID and date-time.
 Saving is fast: the step is saved first, its photos follow in the background (⏳ in the header until they are sent).
 Timelines no longer show email addresses.
 

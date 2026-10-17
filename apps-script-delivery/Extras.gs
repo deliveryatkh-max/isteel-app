@@ -8,7 +8,7 @@
 
 const XT = {
   PROOF: 'Delivery Proof', CRATE: 'Customer Ratings', SRATE: 'Site Ratings', COMPLAINTS: 'Complaints',
-  SITES: 'Customer Sites', COMPANIES: 'Truck Companies', SETTINGS: 'Delivery Settings',
+  SITES: 'Customer Sites', COMPANIES: 'Truck Companies', SETTINGS: 'Delivery Settings', TRUCKS: '3PL Truck',
 };
 const XT_COLS = {
   'Delivery Proof': ['Time', 'Key No.', 'Trip ID', 'DN', 'Receiver Name', 'Signature', 'Photos', 'User'],
@@ -18,6 +18,7 @@ const XT_COLS = {
   'Customer Sites': ['Customer ID', 'Customer Name', 'LatLong', 'Set By', 'Set Time'],
   'Truck Companies': ['Truck No.', '3PL Company', 'Set By', 'Set Time', 'Truck Type'],
   'Delivery Settings': ['Setting', 'Value', 'Note'],
+  '3PL Truck': ['Plate', 'Company', 'Truck Type', 'Driver', 'Active', 'Added By', 'Added Time'],
 };
 const SETTING_DEFAULTS = [
   ['INSIDE_WARN_MIN', 90, 'A truck inside the plant (Gate In, no Gate Out) turns orange after this many minutes'],
@@ -33,6 +34,7 @@ const COMPLAINT_TYPES = ['late', 'driver', 'damage', 'short', 'wrong', 'other'];
 /** Called by setup(): adds the feature tabs (never touches existing ones) and the delay-alert timer. */
 function setupExtras_() {
   const ss = ss_();
+  trucksTab_();
   Object.keys(XT_COLS).forEach(name => {
     if (ss.getSheetByName(name)) return;
     const sh = ss.insertSheet(name);
@@ -108,18 +110,52 @@ function telegram_(text) {
   } catch (e) { console.error('Telegram: ' + e); return false; }
 }
 
-// ---------------------------------------------------------------- 3PL company of a truck
-/** plate → company: ISI trucks are "ISI"; others from Truck Companies (filled at Gate In), else the driver's company. */
+// ---------------------------------------------------------------- 3PL trucks and their companies
+/**
+ * Rented and customer trucks live in the "3PL Truck" tab (Kim, 17 Oct 2026): Plate, Company, Truck Type
+ * (Rented / Customer), Driver, Active. Kim can add or edit rows by hand; Active = No hides a truck.
+ * Made on first use, with the trucks already kept in Truck Companies copied over once (that tab is left as it is).
+ */
+function trucksTab_() {
+  const ss = ss_();
+  let sh = ss.getSheetByName(XT.TRUCKS);
+  if (sh) return sh;
+  const cols = XT_COLS[XT.TRUCKS];
+  sh = ss.insertSheet(XT.TRUCKS);
+  sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.getRange('A:A').setNumberFormat('@');   // plates like 3E-2588 stay text
+  const seen = {};
+  const old = xrows_(XT.COMPANIES).map(r => {
+    const plate = normPlate(r['Truck No.']);
+    if (!plate || seen[plate]) return null;
+    seen[plate] = 1;
+    return [plate, text_(r['3PL Company']), text_(r['Truck Type']) === 'customer' ? 'Customer' : 'Rented', '', 'Yes', text_(r['Set By']), r['Set Time'] || ''];
+  }).filter(Boolean);
+  if (old.length) sh.getRange(2, 1, old.length, cols.length).setValues(old);
+  const cache = CacheService.getScriptCache();
+  cache.remove('companies_v2'); cache.remove('trucks_v2');
+  return sh;
+}
+const truckType_ = v => (/cust|អតិថិជន/i.test(String(v || '')) ? 'customer' : 'rented');
+const truckActive_ = v => !/^(no|false|n|0|ទេ)$/i.test(String(v == null ? '' : v).trim());
+function truckRows_() {
+  trucksTab_();
+  return xrows_(XT.TRUCKS).map(r => ({ row: r._row, plate: normPlate(r.Plate), co: text_(r.Company), type: truckType_(r['Truck Type']), driver: text_(r.Driver), active: truckActive_(r.Active) }))
+    .filter(x => x.plate);
+}
+
+/** plate → company: ISI trucks are "ISI"; others from 3PL Truck (filled at Gate In), else the driver's company. */
 function companies_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('companies_v1');
+  const hit = cache.get('companies_v2');
   if (hit) return JSON.parse(hit);
   const m = master_();
   const map = {};
   m.drivers.forEach(d => { if (d.plate && d.co) map[d.plate] = d.co; });
-  xrows_(XT.COMPANIES).forEach(r => { const p = normPlate(r['Truck No.']); if (p && r['3PL Company']) map[p] = String(r['3PL Company']).trim(); });
+  truckRows_().forEach(x => { if (x.co) map[x.plate] = x.co; });
   m.plates.forEach(p => { map[p.plate] = 'ISI'; });
-  try { cache.put('companies_v1', JSON.stringify(map), 600); } catch (e) { /* too big to cache */ }
+  try { cache.put('companies_v2', JSON.stringify(map), 600); } catch (e) { /* too big to cache */ }
   return map;
 }
 const companyOf_ = (plate, map) => (map || companies_())[normPlate(plate)] || '';
@@ -129,31 +165,32 @@ function companyNames_(map) {
   return Object.keys(set).sort();
 }
 /**
- * Gate In of a rented / customer truck: the plate, its company and truck type are kept in Truck Companies,
+ * Gate In of a rented / customer truck: the plate, its company, truck type and driver are kept in 3PL Truck,
  * so the plate shows in the list next time (like "Add new truck" in the Fuel app). ISI plates are never added.
  */
-function rememberTruck_(plate, company, type, email) {
-  plate = normPlate(plate); company = String(company || '').trim().slice(0, 60);
+function rememberTruck_(plate, company, type, email, driver) {
+  plate = normPlate(plate); company = String(company || '').trim().slice(0, 60); driver = String(driver || '').trim().slice(0, 60);
   type = type === 'customer' ? 'customer' : 'rented';
   if (!plate || master_().plates.some(x => x.plate === plate)) return;
-  const row = xrows_(XT.COMPANIES).find(r => normPlate(r['Truck No.']) === plate);
-  if (row && text_(row['3PL Company']) === company && text_(row['Truck Type']) === type) return;
+  const label = type === 'customer' ? 'Customer' : 'Rented';
+  const row = truckRows_().find(x => x.plate === plate);
+  if (row && row.co === company && row.type === type && (row.driver || !driver) && row.active) return;
   if (row) {
-    if (company) xset_(XT.COMPANIES, row._row, '3PL Company', company);
-    xset_(XT.COMPANIES, row._row, 'Truck Type', type);
-    xset_(XT.COMPANIES, row._row, 'Set By', email); xset_(XT.COMPANIES, row._row, 'Set Time', now_());
-  } else xappend_(XT.COMPANIES, { 'Truck No.': plate, '3PL Company': company, 'Truck Type': type, 'Set By': email, 'Set Time': now_() });
+    if (company) xset_(XT.TRUCKS, row.row, 'Company', company);
+    xset_(XT.TRUCKS, row.row, 'Truck Type', label);
+    if (driver && !row.driver) xset_(XT.TRUCKS, row.row, 'Driver', driver);
+    if (!row.active) xset_(XT.TRUCKS, row.row, 'Active', 'Yes');   // seen at the gate again
+  } else xappend_(XT.TRUCKS, { Plate: plate, Company: company, 'Truck Type': label, Driver: driver, Active: 'Yes', 'Added By': email, 'Added Time': now_() });
   const cache = CacheService.getScriptCache();
-  cache.remove('companies_v1'); cache.remove('trucks_v1');
+  cache.remove('companies_v2'); cache.remove('trucks_v2');
 }
-/** Rented / customer trucks seen before (Truck Companies tab): plate, company, type. */
+/** Active rented / customer trucks (3PL Truck tab): plate, company, type, driver. */
 function trucks_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('trucks_v1');
+  const hit = cache.get('trucks_v2');
   if (hit) return JSON.parse(hit);
-  const out = xrows_(XT.COMPANIES).map(r => ({ plate: normPlate(r['Truck No.']), co: text_(r['3PL Company']), type: text_(r['Truck Type']) === 'customer' ? 'customer' : 'rented' }))
-    .filter(x => x.plate);
-  try { cache.put('trucks_v1', JSON.stringify(out), 600); } catch (e) { /* too big */ }
+  const out = truckRows_().filter(x => x.active).map(x => ({ plate: x.plate, co: x.co, type: x.type, driver: x.driver }));
+  try { cache.put('trucks_v2', JSON.stringify(out), 600); } catch (e) { /* too big */ }
   return out;
 }
 

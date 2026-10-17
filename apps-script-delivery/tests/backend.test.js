@@ -417,9 +417,9 @@ test('plates like 3E-2588 are saved as text, not 0 (17 Oct 2026)', () => {
   const lr = logRows(e).find(r => r[col('Master Trip ID')] === t1);
   assert.strictEqual(lr[col('ផ្លាកលេខឡាន')], '3E-2588');
   assert.strictEqual(tripsRows(e).find(r => r[0] === t1)[2], '3E-2588');
-  const co = e.ss.getSheetByName('Truck Companies');
-  const h = co.rows[0].indexOf('Truck No.');
-  assert.ok(co.rows.slice(1).some(r => r[h] === '3E-2588'), 'Truck Companies keeps the plate');
+  const co = e.ss.getSheetByName('3PL Truck');
+  const h = co.rows[0].indexOf('Plate');
+  assert.ok(co.rows.slice(1).some(r => r[h] === '3E-2588'), '3PL Truck keeps the plate');
   // the mock does turn it into 0 without Plain text, like Google Sheets
   const sh = e.ss.getSheetByName('Audit Log'); sh.set(50, 1, '3E-2588');
   assert.strictEqual(sh.get(50, 1), 0);
@@ -473,4 +473,23 @@ test('one user list: Delivery signs in from the Fuel Refill Users tab (Kim, 17 O
   const nw = book.rows.find(r => r[0] === 'new@test.kh');
   assert.strictEqual(nw[head.indexOf('Delivery Role')], 'Logistics');
   assert.strictEqual(JSON.stringify(e.ss.getSheetByName('User Manager').rows), um);
+});
+
+test('one truck list: ISI trucks and drivers come from the Fuel sheet Driver & Truck tab (Kim, 17 Oct 2026)', () => {
+  const H = ['Email', 'Name', 'Role', 'Active', 'ដឹកជញ្ជូន', 'Delivery Role'];
+  const DT = ['ID_DL', 'ឈ្មោះ', 'ឈ្មោះតៃកុង', 'រូបថត', 'ក្រុមហ៊ុន', 'ប័ណ្ណបើកបរ', 'CODE', 'លេខសំគាល់បុគ្គលិក', 'ទំហំអាវ', 'ទំហាំស្បែកជើង', 'Odometer Broken?'];
+  const e = makeEnv(fixture(), { props: { USERS_SHEET_ID: 'fuel' }, books: { fuel: {
+    Users: [H, ['guard@test.kh', 'G', 'user', 'Yes', true, 'Security']],
+    'Driver & Truck': [DT,
+      [1, 'A', '01.Sok', '', 'ISI Steel', '', '3E-2588', '', '', '', 'No'],
+      [2, 'B', '02.Dara', '', 'ISI Steel', '', '3E-2588', '', '', '', 'No'],
+      [3, 'C', '03.Vibol', '', '', '', '2A-1111', '', '', '', ''],
+      [4, 'D', '04.Rent', '', 'Fast Trans', '', '2B-9999', '', '', '', '']],
+  } } });
+  e.run('setup()');
+  const b = ok(e.call('boot', {}, GUARD));
+  assert.deepStrictEqual(b.plates, [{ plate: '3E-2588', type: '01.Sok, 02.Dara' }, { plate: '2A-1111', type: '03.Vibol' }]);
+  assert.deepStrictEqual(b.drivers.map(d => d.name), ['01.Sok', '02.Dara', '03.Vibol', '04.Rent']);
+  assert.ok(!b.plates.some(p => p.plate === 'TEST-0001'), 'the old Plate Number tab is no longer used');
+  assert.strictEqual(b.plateCo['2B-9999'], 'Fast Trans');
 });

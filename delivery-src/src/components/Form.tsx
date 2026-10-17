@@ -63,8 +63,9 @@ export function StepSelect(p: { events: EventDef[]; value: number; onChange: (co
 export function Section(p: { icon: string; title: string; color?: string; children: React.ReactNode }) {
   const c = p.color || '#0b76a0';
   return (
-    <section className="card !p-0 overflow-hidden">
-      <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-line" style={{ background: c + '14' }}>
+    // No overflow-hidden: the step list drops out of the card (it was cut off and looked like nothing opened, 17 Oct 2026).
+    <section className="card !p-0">
+      <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-line rounded-t-2xl" style={{ background: c + '14' }}>
         <span className="w-8 h-8 rounded-lg flex items-center justify-center text-[17px]" style={{ background: c + '26' }}>{p.icon}</span>
         <b className="text-[15.5px]" style={{ color: c }}>{p.title}</b>
       </div>

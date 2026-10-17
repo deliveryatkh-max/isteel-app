@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api, ApiError, flushOutbox, newRef, outbox, type OutItem } from '../api';
 import { errText, L, t } from '../i18n';
 import type { Warning } from '../types';
-import { Alert, Modal } from './ui';
+import { Alert, Modal, watermark } from './ui';
 
 /**
  * Phone location for the LatLong column. Asked for as soon as a form opens (warmLocation), so pressing
@@ -32,9 +32,19 @@ export type SendResult = { ok: true; data: any } | { ok: false; queued?: boolean
  * Sends one journey step. Warnings come back for the user to confirm (never confirmed for them);
  * with no signal the step is kept on the phone and sent later with the time it was really recorded.
  */
+/** Every photo (not the signature) gets the Trip ID and the time it was taken, like the Fuel app. Before the Trip ID exists (Gate In with no signal) the plate is used. */
+async function stamp(media: any, id: string, at: number) {
+  const out = Object.assign({}, media);
+  if (out.photo) out.photo = await watermark(out.photo, id, at);
+  if (Array.isArray(out.photos)) out.photos = await Promise.all(out.photos.map((x: string) => watermark(x, id, at)));
+  return out;
+}
+const stampId = (body: any) => String(body.tripId || body.t || body.plate || '');
+
 /** Photos of a saved step: kept in the outbox (so a lost signal never loses them) and sent at once. */
-function sendMedia(action: 'record' | 'drvRecord', body: any, res: any, media: any, label: string) {
+async function sendMedia(action: 'record' | 'drvRecord', body: any, res: any, raw: any, label: string) {
   const drv = action === 'drvRecord';
+  const media = await stamp(raw, String(res.tripId || stampId(body)), body.takenAt);
   const item: OutItem = {
     ref: newRef(), action: drv ? 'drvAttach' : 'attach', label: '📷 ' + label, at: Date.now(),
     payload: Object.assign({ tripId: res.tripId, code: body.code, keys: res.keys }, drv ? { t: body.t, k: body.k } : {}, media),
@@ -69,11 +79,12 @@ export function useSubmit(action: 'record' | 'drvRecord') {
           body.confirm = Array.from(new Set(body.confirm.concat(res.needConfirm.map((w: Warning) => w.code))));
           continue;
         }
-        if (hasMedia && res && res.keys && res.keys.length) sendMedia(action, body, res, media, label);
+        if (hasMedia && res && res.keys && res.keys.length) sendMedia(action, body, res, media, label).catch(() => { /* step saved; photos could not be prepared */ });
         return { ok: true, data: res };
       }
     } catch (e: any) {
       if (e instanceof ApiError && e.code === 'NET') {
+        if (hasMedia) Object.assign(body, await stamp(media, stampId(body), body.takenAt).catch(() => ({})));
         outbox.add({ ref: body.ref, action, payload: body, label, at: Date.now() });
         return { ok: false, queued: true };
       }

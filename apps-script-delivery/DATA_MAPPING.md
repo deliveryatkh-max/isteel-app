@@ -41,16 +41,23 @@ Feature tabs (12 Oct 2026), each with its own rows:
 | Complaints | Complaint ID · Time · DN · Trip ID · Truck No. · 3PL · Customer · Type · Detail · Source · Recorded By · Status · Resolved Time · Resolved By · Resolution | complaint added / resolved (ID `C` + yymmdd + `-NN`) |
 | Customer Sites | Customer ID · Customer Name · LatLong · Set By · Set Time | first Delivered with a location sets it; Logistics can move it (Audit Log) |
 | Truck Companies | Truck No. · 3PL Company · Set By · Set Time · Truck Type | Gate In of a new rented / customer truck ("Add new truck"); Truck Type = rented / customer; offered in the plate list next time. An older tab gets the Truck Type column by itself |
+| 3PL Truck | Plate · Company · Truck Type · Driver · Active · Added By · Added Time | rented / customer trucks (17 Oct 2026). Made on first use from Truck Companies (copied once; Truck Companies is no longer written). Gate In of a new truck adds a row; Kim can edit rows by hand; Active = No hides it |
 | Delivery Settings | Setting · Value · Note | edited by hand (targets, alert minutes, Telegram chat id) |
 
-3PL of a truck: ISI plates = ISI; else Truck Companies; else the driver's company in Driver List (ក្រុមហ៊ុន).
+3PL of a truck: ISI plates = ISI; else 3PL Truck; else the driver's company (ក្រុមហ៊ុន).
+
+ISI trucks and drivers: the Fuel Refill sheet's **Driver & Truck** tab (via `USERS_SHEET_ID`): every CODE is an ISI plate unless
+ក្រុមហ៊ុន names a non-ISI company. Without `USERS_SHEET_ID`, Plate Number and Driver List of this sheet.
+
+Every photo (not the signature) is stamped on the phone like the Fuel app: a navy strip under it with the Trip ID
+(the plate when sent with no signal before a Trip ID exists) and `STEEL · dd/mm/yyyy HH:mm` (Phnom Penh time).
 
 **OTIF** (per DN with a plan DELIVERY DATE in the period): on time = last Delivered date ≤ plan date; in full = DN status Delivered;
 a failed leg = not OTIF; canceled DNs and confirmed customer delays are left out; credited to the 3PL of the truck that delivered last.
 
 ## Read only
 
-User Manager (EMAIL, NAME, ROLE), Type Record (Allowed Recorders), Plate Number, Driver List, Customer, Warehouse List
+User Manager (EMAIL, NAME, ROLE), Type Record (Allowed Recorders), Plate Number, Driver List (only without USERS_SHEET_ID), Customer, Warehouse List
 (WH_CODE only; the PASSWORD column is never read out), Delivery Plan (DN, plate, driver, round, customer, SO, weight, fleet).
 
 ## Trip ID and statuses

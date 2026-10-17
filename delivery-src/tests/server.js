@@ -22,9 +22,13 @@ http.createServer((req, res) => {
     return;
   }
   if (u.pathname === '/__skew') { skew += Number(u.searchParams.get('ms')); res.end(String(skew)); return; }
+  if (u.pathname === '/__lastphoto') {   // the newest photo saved to Drive, to check its date/time stamp
+    const f = env.files.filter(b => /jpe?g/.test(b.type || '')).slice(-1)[0];
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ n: env.files.length, data: f ? 'data:image/jpeg;base64,' + Buffer.from(f.getBytes()).toString('base64') : '' })); return;
+  }
   if (u.pathname === '/__sheet') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ log: env.ss.getSheetByName('Time Log').rows, trips: env.ss.getSheetByName('Trips').rows, audit: env.ss.getSheetByName('Audit Log').rows,
     proof: env.ss.getSheetByName('Delivery Proof').rows, crate: env.ss.getSheetByName('Customer Ratings').rows, srate: env.ss.getSheetByName('Site Ratings').rows,
-    complaints: env.ss.getSheetByName('Complaints').rows, companies: env.ss.getSheetByName('Truck Companies').rows })); return; }
+    complaints: env.ss.getSheetByName('Complaints').rows, companies: env.ss.getSheetByName('Truck Companies').rows, trucks3pl: (env.ss.getSheetByName('3PL Truck') || { rows: [] }).rows })); return; }
   if (u.pathname === '/delivery/config.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end("window.DELIVERY_CONFIG = { API_URL: 'http://localhost:" + PORT + "/api' };"); return; }
   if (u.pathname === '/sw.js') { res.writeHead(404); res.end(); return; }
   let p = path.join(REPO, 'web', decodeURIComponent(u.pathname));

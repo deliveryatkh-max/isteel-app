@@ -7,7 +7,7 @@ export type Boot = {
   plates: { plate: string; type: string }[]; drivers: { name: string; plate: string; co: string }[];
   customers: { id: string; name: string }[]; warehouses: string[]; plan: PlanRow[];
   stages: Record<string, Label>; dnStatuses: Record<string, Label>; legs: Record<string, Label>; today: string; serverNow: number;
-  settings?: { warnMin: number; lateMin: number; farKm: number }; companies?: string[]; plateCo?: Record<string, string>; trucks?: { plate: string; co: string; type: 'rented' | 'customer' }[];
+  settings?: { warnMin: number; lateMin: number; farKm: number }; companies?: string[]; plateCo?: Record<string, string>; trucks?: { plate: string; co: string; type: 'rented' | 'customer'; driver?: string }[];
   complaintTypes?: string[]; canKpi?: boolean;
 };
 export type TripDn = { dn: string; cust: string; leg: string; kg: number };

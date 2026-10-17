@@ -54,6 +54,13 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await g.page.goto(BASE + '/delivery/#/record');
   const evs = await stepNames(g.page);
   assert.deepStrictEqual(evs, ['១.ចូលថ្លឹង', '៧.ចេញពីកន្លែងថ្លឹង']);
+  // the list really opens and an option can be tapped (Kim, 17 Oct 2026: nothing appeared)
+  await g.page.locator('#step').click();
+  await g.page.locator('[role=option]').last().click({ timeout: 3000 });
+  assert.match(await g.page.locator('#step').textContent(), /៧/);
+  await g.page.locator('#step').click();
+  await g.page.locator('[role=option]').first().click({ timeout: 3000 });
+  pass('Step dropdown opens above the form and a step can be chosen');
   pass('Security sees only the steps Type Record allows, in a dropdown', evs.join(', '));
   // required fields: nothing filled -> red fields, nothing sent
   await recordBtn(g.page).click();
@@ -356,6 +363,11 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   // ---- rented truck with its 3PL company; trucks inside show on the Summary
   await g.page.getByText('កត់ត្រាថ្មី').click();
   await g.page.locator('#plate').click();
+  assert.strictEqual(await g.page.getByRole('button', { name: /បន្ថែមឡានថ្មី/ }).count(), 0, 'ISI trucks come only from Driver & Truck');
+  await g.page.keyboard.press('Escape');
+  await g.page.getByRole('button', { name: /ឡានជួល/ }).click();
+  await g.page.locator('#plate').click();
+  assert.strictEqual(await g.page.locator('[role=dialog] button', { hasText: 'TEST-0001' }).count(), 0, 'no ISI trucks under Rented');
   await g.page.getByRole('button', { name: /បន្ថែមឡានថ្មី/ }).click();
   await g.page.getByPlaceholder(/ផ្លាកលេខ ឧ/).fill('2b');
   await g.page.locator('[role=dialog] button', { hasText: /^➕ បន្ថែម$/ }).click();
@@ -376,13 +388,18 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await recordBtn(g.page).click();
   await g.page.getByTestId('new-trip-id').waitFor();
   const sheet5 = await (await fetch(BASE + '/__sheet')).json();
-  assert.ok(sheet5.companies.some(r => r[0] === '2B-7777' && r[1] === 'Fast Trans' && r[4] === 'rented'));
+  assert.ok(sheet5.trucks3pl.some(r => r[0] === '2B-7777' && r[1] === 'Fast Trans' && r[2] === 'Rented' && r[3] === 'Rent Driver' && r[4] === 'Yes'));
+  // every photo gets the Fuel-style stamp: a navy strip under it with the Trip ID and STEEL · date time
+  const shot = await until(async () => { const j = await (await fetch(BASE + '/__lastphoto')).json(); return j.data ? j : null; });
+  const px = await g.page.evaluate(src => new Promise(res => { const i = new Image(); i.onload = () => { const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const x = c.getContext('2d'); x.drawImage(i, 0, 0); res({ w: i.width, h: i.height, p: Array.from(x.getImageData(2, i.height - 2, 1, 1).data) }); }; i.src = src; }), shot.data);
+  assert.strictEqual(px.h, 192 + 36, 'strip added under the 192 px photo');
+  assert.ok(px.p[0] < 20 && px.p[1] < 50 && px.p[2] > 40 && px.p[2] < 90, 'navy strip ' + px.p);
   const b2 = (await api('boot', {}, tok('guard@test.kh'))).data;
   assert.ok(b2.trucks.some(x => x.plate === '2B-7777' && x.co === 'Fast Trans'));
   await g.page.goto(BASE + '/delivery/#/');
   await g.page.getByText('រង់ចាំយូរជាងគេក្នុងរោងចក្រ').waitFor();
   await g.page.screenshot({ path: SHOTS + '14b-ops-waiting.png' });
-  pass('Add new truck (plate checked), 5 photos max; its 3PL company and type are saved and offered next time; trucks inside are listed on the Summary');
+  pass('Rented: only 3PL Truck plates, photos stamped with ID and time, Add new truck (plate checked), 5 photos max; its 3PL company and type are saved and offered next time; trucks inside are listed on the Summary');
 
   // ---- other screens: history, DN search, more, quality, users; English; dark; desktop
   for (const [hash, file] of [['#/trips', '15-active.png'], ['#/trips/history', '16-history.png'], ['#/dn', '17-dn-search.png'], ['#/more', '18-more.png'], ['#/quality', '19-quality.png'], ['#/users', '20-users.png']]) {

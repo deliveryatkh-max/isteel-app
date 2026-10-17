@@ -30,9 +30,15 @@ No Google password, API key or secret is in the web files. The browser only send
      Supervisor, Admin) decides which steps they record. A Fuel admin with no Delivery Role is a Delivery Admin.
      Then run **`moveDeliveryUsers()`** once: it copies each User Manager role into Delivery Role (adding the column at the
      end, and adding missing people with only ដឹកជញ្ជូន ticked) and logs every change. User Manager is no longer used.
+     The same id also gives the **one truck list** (17 Oct 2026): ISI trucks and drivers come from the Fuel sheet's
+     **Driver & Truck** tab (ឈ្មោះតៃកុង, CODE = plate, ក្រុមហ៊ុន). Plate Number and Driver List are no longer read
+     (they are still used if `USERS_SHEET_ID` is empty). Rented and customer trucks are in the **3PL Truck** tab of
+     Delivery Data (Plate, Company, Truck Type Rented/Customer, Driver, Active, Added By, Added Time): made by itself on
+     first use, with the trucks already in Truck Companies copied in once (Truck Companies is left as it is). Rows can be
+     added or edited by hand; Active = No hides a truck from the list.
 5. **Run `setup()` once** (choose `setup` in the function list → Run → allow the permissions). It:
    - adds two new tabs, **Trips** and **Audit Log**, after the existing tabs (no existing tab, column or row is touched);
-   - adds the feature tabs **Delivery Proof, Customer Ratings, Site Ratings, Complaints, Customer Sites, Truck Companies, Delivery Settings**
+   - adds the feature tabs **Delivery Proof, Customer Ratings, Site Ratings, Complaints, Customer Sites, Truck Companies, Delivery Settings, 3PL Truck**
      (again after the existing tabs; nothing existing is touched) and a 10-minute timer `checkDelays` for the delay alert;
    - creates the Drive folder **Delivery App Photos** and the `LINK_SECRET` used to sign driver and rating links;
    - writes a short report in the log: missing Time Log headers or properties, if any.
