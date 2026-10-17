@@ -70,8 +70,11 @@ function xappend_(name, obj) {
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
   // A column added to one of this app's own tabs in a later version: its header goes at the end.
   (XT_COLS[name] || []).filter(h => head.indexOf(h) < 0).forEach(h => { head.push(h); sh.getRange(1, head.length).setValue(h).setFontWeight('bold'); });
-  sh.appendRow(head.map(h => (obj[h] == null ? '' : obj[h])));
-  return sh.getLastRow();
+  const r = sh.getLastRow() + 1;
+  if (r > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 50);
+  plateText_(sh, r, 1, head.map((h, i) => (/truck no|plate/i.test(h) ? i : -1)));   // 3E-2588 stays a plate, not 0
+  sh.getRange(r, 1, 1, head.length).setValues([head.map(h => (obj[h] == null ? '' : obj[h]))]);
+  return r;
 }
 function xset_(name, row, field, value) {
   const sh = xtab_(name);

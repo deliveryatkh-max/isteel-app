@@ -188,8 +188,8 @@ function authenticate_(token) {
     email = verifyGoogle_(token);
     session = makeSession_(email);
   }
-  const u = usersCached_().find(x => x.email === email);
-  if (!u) fail_('NOACCESS', email + ' is not in User Manager. Ask the admin to add you.', email + ' មិនមាននៅក្នុង User Manager ទេ។ សូមស្នើអ្នកគ្រប់គ្រងបន្ថែមអ្នក។');
+  const u = usersCached_().find(x => x.email === email && x.ok);
+  if (!u) fail_('NOACCESS', email + ' has no Delivery access. Ask the admin to tick ដឹកជញ្ជូន and set your Delivery Role in Users.', email + ' មិនទាន់មានសិទ្ធិ ដឹកជញ្ជូន ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ដឹកជញ្ជូន និងដាក់ Delivery Role ក្នុង Users។');
   return { email: email, name: u.name, role: u.role, roleKey: roleKey(u.role), session: session };
 }
 function need_(user, level) {
@@ -206,19 +206,53 @@ function table_(name) {
 }
 const col_ = (head, name) => head.indexOf(name);
 
+/**
+ * One user list for every app (Kim, 17 Oct 2026): the "Users" tab of the Fuel Refill sheet, whose id is the
+ * Script Property USERS_SHEET_ID. A user may open Delivery when Active = Yes and the ដឹកជញ្ជូន box is ticked;
+ * the "Delivery Role" column (Security, Logistics, Warehouse, Driver, Supervisor, Admin) sets what they can record.
+ * A Fuel Refill admin with no Delivery Role is a Delivery Admin. Until USERS_SHEET_ID is set, User Manager is used.
+ */
+const FUEL_USERS_TAB = 'Users', DELIVERY_ROLE_COL = 'Delivery Role', TRANSPORT_COL = 'ដឹកជញ្ជូន';
+function usersSheet_() {
+  const id = prop_('USERS_SHEET_ID');
+  if (!id) return null;
+  const sh = SpreadsheetApp.openById(id).getSheetByName(FUEL_USERS_TAB);
+  if (!sh) throw new Error('The Fuel Refill sheet has no "' + FUEL_USERS_TAB + '" tab (USERS_SHEET_ID).');
+  return sh;
+}
+function tableOf_(sh) {
+  if (!sh || sh.getLastRow() < 1) return { head: [], rows: [] };
+  const v = sh.getRange(1, 1, sh.getLastRow(), Math.max(1, sh.getLastColumn())).getValues();
+  return { head: v[0].map(h => String(h).trim()), rows: v.slice(1) };
+}
+const yes_ = v => v === true || /^(yes|true|y|1)$/i.test(String(v).trim());
+
+/** Everyone in the user list (with or without Delivery access), for sign-in and the Users screen. */
 function users_() {
-  const t = table_(SH.USERS);
-  const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE');
-  return t.rows.filter(x => x[e]).map(x => ({ email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: text_(x[r]) }));
+  const fuel = usersSheet_();
+  if (!fuel) {
+    const t = table_(SH.USERS);
+    const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE');
+    return t.rows.filter(x => x[e]).map(x => ({ email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: text_(x[r]), ok: true }));
+  }
+  const t = tableOf_(fuel);
+  const c = name => t.head.indexOf(name);
+  const e = c('Email'), n = c('Name'), fr = c('Role'), a = c('Active'), tr = c(TRANSPORT_COL), dr = c(DELIVERY_ROLE_COL);
+  return t.rows.filter(x => x[e]).map(x => {
+    const fuelAdmin = /admin/i.test(text_(x[fr]));
+    const role = (dr >= 0 ? text_(x[dr]) : '') || (fuelAdmin ? 'Admin' : '');
+    return { email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: role,
+      ok: (a < 0 || yes_(x[a])) && (tr < 0 || yes_(x[tr]) || fuelAdmin) && !!role };
+  });
 }
 
-/** Sign-in check on every call: User Manager kept 60 s in the cache (saving is faster; a role change shows within a minute). */
+/** Sign-in check on every call: the user list kept 60 s in the cache (saving is faster; a role change shows within a minute). */
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('users_v1');
+  const hit = cache.get('users_v2');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('users_v1', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('users_v2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
@@ -377,6 +411,43 @@ function doneSet_(info) {
   const out = {};
   Object.keys(info).forEach(dn => { if (info[dn].status === 'delivered') out[dn] = true; });
   return out;
+}
+
+/**
+ * Truck plate cells are set to Plain text before writing (17 Oct 2026): otherwise Google Sheets reads plates
+ * like 3E-2588 as a number (3 × 10^-2588) and saves 0. Only the plate columns change format.
+ */
+function plateText_(sh, row, nRows, cols) {
+  cols.filter(c => c != null && c >= 0).forEach(c => sh.getRange(row, c + 1, nRows, 1).setNumberFormat('@'));
+}
+
+/**
+ * Run once from the editor (17 Oct 2026): lists the Time Log and Trips rows whose truck plate was saved as 0
+ * (plates like 3E-2588 before plateText_), with the plate the driver's own truck suggests. Read-only: it changes
+ * nothing except writing the list to a "Plate check" tab, so the rows can be checked before any correction.
+ */
+function findZeroPlates() {
+  const C = logCols_(), log = sheet_(SH.LOG), trips = sheet_(SH.TRIPS);
+  const byDriver = {};
+  master_().drivers.forEach(d => { if (d.plate && d.plate !== '0') byDriver[d.name] = d.plate; });
+  const zero = v => v === 0 || String(v).trim() === '0';
+  const out = [];
+  const lv = log.getLastRow() >= 2 ? log.getRange(2, 1, log.getLastRow() - 1, C.width).getValues() : [];
+  lv.forEach((v, i) => {
+    if (!zero(v[C.plate])) return;
+    const r = parseRow_(v, i + 2, C);
+    out.push([SH.LOG, i + 2, r.trip, r.time ? new Date(r.time) : '', r.driver, byDriver[r.driver] || '']);
+  });
+  const tv = trips.getLastRow() >= 2 ? trips.getRange(2, 1, trips.getLastRow() - 1, TRIP_COLS.length).getValues() : [];
+  tv.forEach((v, i) => { if (zero(v[2])) out.push([SH.TRIPS, i + 2, text_(v[0]), v[5] || v[1] || '', text_(v[3]), byDriver[text_(v[3])] || '']); });
+  const ss = ss_();
+  const sh = ss.getSheetByName('Plate check') || ss.insertSheet('Plate check');
+  sh.clear();
+  sh.getRange(1, 1, 1, 6).setValues([['Sheet', 'Row', 'Trip ID', 'Time', 'Driver', "Driver's truck (suggested)"]]).setFontWeight('bold');
+  if (out.length) { plateText_(sh, 2, out.length, [5]); sh.getRange(2, 1, out.length, 6).setValues(out); }
+  const msg = 'Rows with plate 0: ' + out.length + ' (see the Plate check tab). Nothing was changed.';
+  console.log(msg);
+  return msg;
 }
 
 /** Summary of one trip for lists. */
@@ -699,6 +770,7 @@ function saveEvent_(p, who) {
     });
     const start = sh.getLastRow() + 1;
     if (start + rowsOut.length - 1 > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), rowsOut.length + 50);
+    plateText_(sh, start, rowsOut.length, [C.plate]);
     sh.getRange(start, 1, rowsOut.length, C.width).setValues(rowsOut);
 
     // Trips tab: new row on Gate In; Gate Out Time and Trip Status kept up to date.
@@ -708,6 +780,7 @@ function saveEvent_(p, who) {
     const after = tripState(tripRows.concat(newRows), doneAfter);
     if (code === 1) {
       const r = trips.getLastRow() + 1;
+      plateText_(trips, r, 1, [2]);
       trips.getRange(r, 1, 1, TRIP_COLS.length).setValues([[tripId, new Date(at.getFullYear(), at.getMonth(), at.getDate()), plate, driver, round, at, '', STAGES[after.stage].kh]]);
     } else {
       const meta = idx[tripId];
@@ -860,7 +933,9 @@ function deleteEntry_(p, user) {
       del.getRange(1, 1, 1, head.length + 3).setValues([['Deleted Time', 'Deleted By', 'Reason'].concat(head)]).setFontWeight('bold');
       del.setFrozenRows(1);
     }
-    del.appendRow([now_(), user.email, reason].concat(vals));
+    const dr = del.getLastRow() + 1;
+    plateText_(del, dr, 1, [3 + C.plate]);
+    del.getRange(dr, 1, 1, vals.length + 3).setValues([[now_(), user.email, reason].concat(vals)]);
     audit_(user.email, 'Delete record', r.key, r.trip, 'Time Log row ' + rowNo, [r.eventText, r.dn, r.time ? fmt_(new Date(r.time), 'yyyy-MM-dd HH:mm') : ''].filter(Boolean).join(' · '), '', reason);
     sh.deleteRow(rowNo);
     const idx = tripsSheetIndex_(), meta = idx[r.trip];
@@ -923,6 +998,8 @@ function setUser_(p, user) {
   if (role && ROLES.indexOf(role) < 0 && role !== 'LT') fail_('BAD', 'Unknown role.');
   if (email === user.email && role !== 'Admin') fail_('BAD', 'You cannot remove your own Admin role.', 'អ្នកមិនអាចដកតួនាទី Admin ពីខ្លួនឯងបានទេ។');
   return withLock_(() => {
+    const fuel = usersSheet_();
+    if (fuel) return setFuelUser_(fuel, email, role, p.name, user);
     const sh = sheet_(SH.USERS);
     const t = table_(SH.USERS);
     const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE'), uid = col_(t.head, 'UID');
@@ -940,8 +1017,81 @@ function setUser_(p, user) {
       sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
       audit_(user.email, 'User added', '', '', email, '', role, 'Users screen');
     }
-    CacheService.getScriptCache().remove('users_v1');
+    CacheService.getScriptCache().remove('users_v2');
     return usersList_();
+  });
+}
+
+/** Users screen with the shared list: sets Delivery Role (adds the column once); a new person gets Active = Yes and ដឹកជញ្ជូន ticked. */
+function setFuelUser_(sh, email, role, name, user) {
+  let t = tableOf_(sh);
+  if (t.head.indexOf(DELIVERY_ROLE_COL) < 0) {
+    sh.getRange(1, t.head.length + 1).setValue(DELIVERY_ROLE_COL).setFontWeight('bold');
+    t = tableOf_(sh);
+  }
+  const c = n => t.head.indexOf(n);
+  const e = c('Email'), dr = c(DELIVERY_ROLE_COL);
+  const i = t.rows.findIndex(x => String(x[e]).trim().toLowerCase() === email);
+  if (i >= 0) {
+    const old = text_(t.rows[i][dr]);
+    sh.getRange(i + 2, dr + 1).setValue(role);
+    if (c(TRANSPORT_COL) >= 0 && role && !yes_(t.rows[i][c(TRANSPORT_COL)])) sh.getRange(i + 2, c(TRANSPORT_COL) + 1).setValue(true);
+    audit_(user.email, 'User role', '', '', email, old, role, 'Users screen');
+  } else {
+    const row = new Array(t.head.length).fill('');
+    row[e] = email; row[dr] = role;
+    if (c('Name') >= 0) row[c('Name')] = String(name || '').trim();
+    if (c('Role') >= 0) row[c('Role')] = 'user';
+    if (c('Active') >= 0) row[c('Active')] = 'Yes';
+    if (c(TRANSPORT_COL) >= 0) row[c(TRANSPORT_COL)] = true;
+    sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    audit_(user.email, 'User added', '', '', email, '', role, 'Users screen');
+  }
+  CacheService.getScriptCache().remove('users_v2');
+  return usersList_();
+}
+
+/**
+ * Run once from the editor after setting USERS_SHEET_ID (Kim, 17 Oct 2026): copies each User Manager role into
+ * the Delivery Role column of the Fuel Refill Users tab. People missing there are added (Active = Yes, only
+ * ដឹកជញ្ជូន ticked). User Manager itself is not changed. Everything done is listed in the log it returns.
+ */
+function moveDeliveryUsers() {
+  const sh = usersSheet_();
+  if (!sh) return 'Set the Script Property USERS_SHEET_ID to the Fuel Refill sheet id first.';
+  const t = table_(SH.USERS);
+  const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE');
+  return withLock_(() => {
+    let f = tableOf_(sh);
+    if (f.head.indexOf(DELIVERY_ROLE_COL) < 0) { sh.getRange(1, f.head.length + 1).setValue(DELIVERY_ROLE_COL).setFontWeight('bold'); f = tableOf_(sh); }
+    const c = x => f.head.indexOf(x);
+    const fe = c('Email'), dr = c(DELIVERY_ROLE_COL), tr = c(TRANSPORT_COL);
+    const log = [];
+    t.rows.filter(x => x[e] && text_(x[r])).forEach(x => {
+      const email = String(x[e]).trim().toLowerCase(), role = text_(x[r]);
+      const i = f.rows.findIndex(y => String(y[fe]).trim().toLowerCase() === email);
+      if (i >= 0) {
+        if (text_(f.rows[i][dr])) { log.push(email + ': kept ' + text_(f.rows[i][dr])); return; }
+        sh.getRange(i + 2, dr + 1).setValue(role);
+        if (tr >= 0 && !yes_(f.rows[i][tr])) sh.getRange(i + 2, tr + 1).setValue(true);
+        log.push(email + ': Delivery Role ' + role);
+      } else {
+        const row = new Array(f.head.length).fill('');
+        row[fe] = email; row[dr] = role;
+        if (c('Name') >= 0) row[c('Name')] = text_(x[n]);
+        if (c('Role') >= 0) row[c('Role')] = 'user';
+        if (c('Active') >= 0) row[c('Active')] = 'Yes';
+        f.head.forEach((h, k) => { if (k !== tr && /^(ចាក់សាំង|ថែមម៉ោង|ទីតាំងថ្មី|Dashboard)$/.test(h)) row[k] = false; });
+        if (tr >= 0) row[tr] = true;
+        sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+        f.rows.push(row);
+        log.push(email + ': added (' + role + ')');
+      }
+    });
+    CacheService.getScriptCache().remove('users_v2');
+    const msg = 'Moved ' + log.length + ' users:\n' + log.join('\n');
+    console.log(msg);
+    return msg;
   });
 }
 

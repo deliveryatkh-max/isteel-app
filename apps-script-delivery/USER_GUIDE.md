@@ -67,3 +67,7 @@ Timelines no longer show email addresses.
 
 **English.** On a computer the menu stands down the left side; ⇄ moves it to the right, ✏️ (or holding a button) lets you drag the buttons into your own order, and 📱 in the header shows the app as on a phone (🖥 goes back). These choices are kept on that computer.
 A trip that has done a step is no longer offered for that step or an earlier one (e.g. a trip at Loading is not offered for step 4), and a DN that has arrived at the customer is not offered for Arrived again. The server refuses such entries too.
+
+## One user list (17 Oct 2026)
+
+**English.** Delivery now reads users from the Fuel Refill sheet's **Users** tab, like every other app. To give someone Delivery access: Active = Yes, tick ដឹកជញ្ជូន, and choose their **Delivery Role**. The Users screen under More edits that same tab.
