@@ -209,7 +209,26 @@
     return flushing;
   }
   window.addEventListener('online', () => flushOutbox());
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') flushOutbox(); });
+  // A phone can keep the app open for days. Back on screen after 10+ minutes, it checks whether a newer
+  // version is on the site and reloads when nothing is being typed (Kim, 17 Oct 2026).
+  const MY_VERSION = ((document.currentScript && document.currentScript.src.match(/[?&]v=([\w.-]+)/)) || [])[1] || '';
+  let hiddenAt = 0;
+  function untouched() {
+    const f = state.form;
+    return !state.editing && (!f || !(f.km || f.hour || f.litres || f.note || f.odoPhoto || f.hourPhoto || f.pumpPhoto));
+  }
+  function checkVersion() {
+    if (!MY_VERSION || DEMO) return;
+    fetch('./?nosw=1', { cache: 'no-store' }).then(r => r.text()).then(html => {
+      const v = (html.match(/app\.js\?v=([\w.-]+)/) || [])[1];
+      if (v && v !== MY_VERSION && untouched()) location.reload();
+    }).catch(() => {});
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') { hiddenAt = Date.now(); return; }
+    flushOutbox();
+    if (hiddenAt && Date.now() - hiddenAt > 10 * 60 * 1000) checkVersion();
+  });
   window.addEventListener('beforeunload', e => {
     // Entries are kept in IndexedDB; only warn when this browser can't keep them.
     if (!outbox.db && outbox.mine().length && !DEMO) { e.preventDefault(); e.returnValue = ''; }

@@ -1,6 +1,7 @@
 // Offline cache for the whole STEEL site (home menu, Fuel app, dashboard).
-// Pages and files open at once from the phone's cache, and the latest copy is fetched in the background
-// for next time ("stale-while-revalidate"). Data (the Apps Script API) is never cached here: it is a POST
+// Pages (HTML) come from the network first, so phones always get the newest version; the cached copy is used
+// when the network is slow (over 3 s) or offline. Other files open at once from the phone's cache, and the
+// latest copy is fetched in the background for next time ("stale-while-revalidate"). Data (the Apps Script API) is never cached here: it is a POST
 // to another site, and each app keeps its own data cache. Bump VERSION only to drop every cached file.
 const VERSION = 'steel-v1';
 const FONTS = 'steel-fonts-v1';
@@ -38,12 +39,24 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (url.origin === self.location.origin) {
     if (url.searchParams.has('nosw')) return;
-    e.respondWith(fresh(e, VERSION, req.mode === 'navigate'));
+    e.respondWith(req.mode === 'navigate' ? page(e) : fresh(e, VERSION, false));
   } else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     e.respondWith(fresh(e, FONTS, false));
   }
   // Everything else (Google sign-in, the API, Telegram) goes straight to the network.
 });
+
+/** Network first for pages (Kim, 17 Oct 2026: phones kept running last week's app), cache after 3 s or offline. */
+async function page(e) {
+  const req = e.request, path = new URL(req.url).pathname;
+  const cache = await caches.open(VERSION);
+  const net = fetch(req).then(r => { if (keep(r)) cache.put(path, r.clone()); return r; });
+  e.waitUntil(net.catch(() => {}));
+  const slow = new Promise(res => setTimeout(res, 3000)).then(() => cache.match(path));
+  const hit = await Promise.race([net.catch(() => null), slow]);
+  if (hit) return hit;
+  return net.catch(async () => (await cache.match(path)) || (await cache.match('./')) || Response.error());
+}
 
 /** Answer from the cache when we have it and refresh it in the background; otherwise wait for the network. */
 async function fresh(e, name, page) {
