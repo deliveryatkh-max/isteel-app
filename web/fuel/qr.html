@@ -22,12 +22,27 @@
     .stk .pl { font-size: 26px; font-weight: 700; letter-spacing: .5px; margin-top: 4px; font-family: system-ui, sans-serif; }
     .stk .dr { font-size: 12px; color: var(--muted); min-height: 1.4em; }
     .stk .go { font-size: 12px; color: var(--brand); font-weight: 700; margin-top: 2px; }
+    .stk .hd, .stk .ft { display: none; }
     @media print {
       @page { size: A4; margin: 10mm; }
       body { background: #fff; }
       .bar, #msg { display: none; }
       .grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; padding: 0; }
       .stk { border-color: #999; }
+      /* A4 mode (Kim, 17 Oct 2026): one truck per page, with the STEEL banner and a big plate number. */
+      body.a4 .grid { display: block; }
+      body.a4 .stk { display: flex; flex-direction: column; align-items: center; height: 276mm; padding: 0; border: 3px solid #011e41; border-radius: 6mm; overflow: hidden; break-after: page; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body.a4 .stk:last-child { break-after: auto; }
+      body.a4 .stk .hd { order: -2; display: flex; align-self: stretch; align-items: center; justify-content: center; gap: 4mm; height: 30mm; background: #091f3f url(../icons/banner-pattern.png) repeat-x; background-size: auto 30mm; color: #fff; }
+      body.a4 .stk .hd img { width: 18mm; height: 18mm; border-radius: 50%; }
+      body.a4 .stk .hd span { font: 800 13mm/1 system-ui, sans-serif; letter-spacing: 1mm; }
+      body.a4 .stk .go { order: -1; font-size: 11mm; line-height: 1.3; color: #011e41; margin: 9mm 0 4mm; }
+      body.a4 .stk .go small i { display: none; }
+      body.a4 .stk .go small { display: block; font-size: 6mm; color: #546274; font-weight: 400; }
+      body.a4 .stk svg { width: 150mm; max-width: none; }
+      body.a4 .stk .pl { font-size: 30mm; line-height: 1; margin-top: 4mm; letter-spacing: 1mm; }
+      body.a4 .stk .dr { display: none; }
+      body.a4 .stk .ft { display: block; margin-top: auto; padding-bottom: 7mm; font-size: 5mm; color: #546274; }
     }
   </style>
 </head>
@@ -36,6 +51,7 @@
     <b>🖨 QR ឡាន · Truck QR stickers</b>
     <input id="q" type="search" placeholder="ស្វែងរក / Search">
     <button type="button" id="print">បោះពុម្ព / Print</button>
+    <button type="button" id="printA4">📄 A4 មួយឡាន មួយទំព័រ</button>
     <a href="./">← ចាក់សាំង</a>
   </div>
   <div id="msg">កំពុងទាញទិន្នន័យ… / Loading…</div>
@@ -62,9 +78,11 @@
       const plates = (cfg.plates || []).filter(p => !q || p.toUpperCase().includes(q));
       document.getElementById('grid').innerHTML = plates.map(p => {
         const drivers = (cfg.drivers || []).filter(d => d.plate === p).map(d => d.name).join(', ');
-        return `<div class="stk">${svgFor(base + '?plate=' + encodeURIComponent(p))}
+        return `<div class="stk"><div class="hd"><img src="../icons/isi-white.png" alt=""><span>STEEL</span></div>
+          ${svgFor(base + '?plate=' + encodeURIComponent(p))}
           <div class="pl">${esc(p)}</div><div class="dr">${esc(drivers)}</div>
-          <div class="go">⛽ ស្កេនដើម្បីចាក់សាំង · Scan to refill</div></div>`;
+          <div class="go">⛽ ស្កេនដើម្បីចាក់សាំង<small><i> · </i>Scan to refill</small></div>
+          <div class="ft">STEEL · ចាក់សាំង · isteel-app.pages.dev</div></div>`;
       }).join('');
       document.getElementById('msg').textContent = plates.length + ' ឡាន / trucks';
     }
@@ -80,7 +98,9 @@
       } catch (e) { document.getElementById('msg').textContent = e.message; }
     }
     document.getElementById('q').oninput = () => cfg && draw();
-    document.getElementById('print').onclick = () => window.print();
+    document.getElementById('print').onclick = () => { document.body.classList.remove('a4'); window.print(); };
+    document.getElementById('printA4').onclick = () => { document.body.classList.add('a4'); window.print(); document.body.classList.remove('a4'); };
+    window.onafterprint = () => document.body.classList.remove('a4');
     load();
   })();
   </script>
