@@ -410,3 +410,31 @@ test('a step already passed is closed for the trip; an arrived DN cannot arrive 
   step(e, 5); r = rec(e, ADMIN, { code: 8, tripId: t2, dns: [{ dn: '9000000001' }] });
   assert.ok(!r.ok && /^DN_ARRIVED/.test(r.error), r.error);
 });
+
+test('plates like 3E-2588 are saved as text, not 0 (17 Oct 2026)', () => {
+  const e = env(); e.run('setup()');
+  const t1 = gateIn(e, '3E-2588').tripId;
+  const lr = logRows(e).find(r => r[col('Master Trip ID')] === t1);
+  assert.strictEqual(lr[col('ផ្លាកលេខឡាន')], '3E-2588');
+  assert.strictEqual(tripsRows(e).find(r => r[0] === t1)[2], '3E-2588');
+  const co = e.ss.getSheetByName('Truck Companies');
+  const h = co.rows[0].indexOf('Truck No.');
+  assert.ok(co.rows.slice(1).some(r => r[h] === '3E-2588'), 'Truck Companies keeps the plate');
+  // the mock does turn it into 0 without Plain text, like Google Sheets
+  const sh = e.ss.getSheetByName('Audit Log'); sh.set(50, 1, '3E-2588');
+  assert.strictEqual(sh.get(50, 1), 0);
+});
+
+test('findZeroPlates lists rows saved as 0 and changes nothing else', () => {
+  const e = env(); e.run('setup()');
+  const t1 = gateIn(e, 'TEST-0001').tripId;
+  const log = e.ss.getSheetByName('Time Log');
+  const i = log.rows.findIndex(r => r[col('Master Trip ID')] === t1);
+  log.rows[i][col('ផ្លាកលេខឡាន')] = 0;
+  const before = JSON.stringify(log.rows);
+  assert.match(e.run('findZeroPlates()'), /plate 0: 1/);
+  assert.strictEqual(JSON.stringify(log.rows), before);
+  const pc = e.ss.getSheetByName('Plate check').rows;
+  assert.strictEqual(pc[1][2], t1);
+  assert.strictEqual(pc[1][5], 'TEST-0001');   // Driver A's own truck
+});

@@ -379,6 +379,43 @@ function doneSet_(info) {
   return out;
 }
 
+/**
+ * Truck plate cells are set to Plain text before writing (17 Oct 2026): otherwise Google Sheets reads plates
+ * like 3E-2588 as a number (3 × 10^-2588) and saves 0. Only the plate columns change format.
+ */
+function plateText_(sh, row, nRows, cols) {
+  cols.filter(c => c != null && c >= 0).forEach(c => sh.getRange(row, c + 1, nRows, 1).setNumberFormat('@'));
+}
+
+/**
+ * Run once from the editor (17 Oct 2026): lists the Time Log and Trips rows whose truck plate was saved as 0
+ * (plates like 3E-2588 before plateText_), with the plate the driver's own truck suggests. Read-only: it changes
+ * nothing except writing the list to a "Plate check" tab, so the rows can be checked before any correction.
+ */
+function findZeroPlates() {
+  const C = logCols_(), log = sheet_(SH.LOG), trips = sheet_(SH.TRIPS);
+  const byDriver = {};
+  master_().drivers.forEach(d => { if (d.plate && d.plate !== '0') byDriver[d.name] = d.plate; });
+  const zero = v => v === 0 || String(v).trim() === '0';
+  const out = [];
+  const lv = log.getLastRow() >= 2 ? log.getRange(2, 1, log.getLastRow() - 1, C.width).getValues() : [];
+  lv.forEach((v, i) => {
+    if (!zero(v[C.plate])) return;
+    const r = parseRow_(v, i + 2, C);
+    out.push([SH.LOG, i + 2, r.trip, r.time ? new Date(r.time) : '', r.driver, byDriver[r.driver] || '']);
+  });
+  const tv = trips.getLastRow() >= 2 ? trips.getRange(2, 1, trips.getLastRow() - 1, TRIP_COLS.length).getValues() : [];
+  tv.forEach((v, i) => { if (zero(v[2])) out.push([SH.TRIPS, i + 2, text_(v[0]), v[5] || v[1] || '', text_(v[3]), byDriver[text_(v[3])] || '']); });
+  const ss = ss_();
+  const sh = ss.getSheetByName('Plate check') || ss.insertSheet('Plate check');
+  sh.clear();
+  sh.getRange(1, 1, 1, 6).setValues([['Sheet', 'Row', 'Trip ID', 'Time', 'Driver', "Driver's truck (suggested)"]]).setFontWeight('bold');
+  if (out.length) { plateText_(sh, 2, out.length, [5]); sh.getRange(2, 1, out.length, 6).setValues(out); }
+  const msg = 'Rows with plate 0: ' + out.length + ' (see the Plate check tab). Nothing was changed.';
+  console.log(msg);
+  return msg;
+}
+
 /** Summary of one trip for lists. */
 function tripSummary_(id, rows, tripsIdx, done) {
   const st = tripState(rows, done);
@@ -699,6 +736,7 @@ function saveEvent_(p, who) {
     });
     const start = sh.getLastRow() + 1;
     if (start + rowsOut.length - 1 > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), rowsOut.length + 50);
+    plateText_(sh, start, rowsOut.length, [C.plate]);
     sh.getRange(start, 1, rowsOut.length, C.width).setValues(rowsOut);
 
     // Trips tab: new row on Gate In; Gate Out Time and Trip Status kept up to date.
@@ -708,6 +746,7 @@ function saveEvent_(p, who) {
     const after = tripState(tripRows.concat(newRows), doneAfter);
     if (code === 1) {
       const r = trips.getLastRow() + 1;
+      plateText_(trips, r, 1, [2]);
       trips.getRange(r, 1, 1, TRIP_COLS.length).setValues([[tripId, new Date(at.getFullYear(), at.getMonth(), at.getDate()), plate, driver, round, at, '', STAGES[after.stage].kh]]);
     } else {
       const meta = idx[tripId];
@@ -860,7 +899,9 @@ function deleteEntry_(p, user) {
       del.getRange(1, 1, 1, head.length + 3).setValues([['Deleted Time', 'Deleted By', 'Reason'].concat(head)]).setFontWeight('bold');
       del.setFrozenRows(1);
     }
-    del.appendRow([now_(), user.email, reason].concat(vals));
+    const dr = del.getLastRow() + 1;
+    plateText_(del, dr, 1, [3 + C.plate]);
+    del.getRange(dr, 1, 1, vals.length + 3).setValues([[now_(), user.email, reason].concat(vals)]);
     audit_(user.email, 'Delete record', r.key, r.trip, 'Time Log row ' + rowNo, [r.eventText, r.dn, r.time ? fmt_(new Date(r.time), 'yyyy-MM-dd HH:mm') : ''].filter(Boolean).join(' · '), '', reason);
     sh.deleteRow(rowNo);
     const idx = tripsSheetIndex_(), meta = idx[r.trip];

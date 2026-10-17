@@ -25,12 +25,15 @@ class Range {
   }
   setValue(x) { this.sh.set(this.r, this.c, x); return this; }
   setFontWeight() { return this; }
-  setNumberFormat() { return this; }
+  setNumberFormat(f) { for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) this.sh.fmt[(this.r + i) + ':' + (this.c + j)] = f; return this; }
 }
 class Sheet {
-  constructor(name, rows) { this.name = name; this.rows = rows.map(r => r.slice()); this.maxRows = Math.max(1000, rows.length + 10); this.writes = 0; }
+  constructor(name, rows) { this.name = name; this.rows = rows.map(r => r.slice()); this.maxRows = Math.max(1000, rows.length + 10); this.writes = 0; this.fmt = {}; }
   get(r, c) { const row = this.rows[r - 1]; const v = row ? row[c - 1] : undefined; return v === undefined || v === null ? '' : v; }
-  set(r, c, v) { if (r > this.maxRows) throw new Error('row outside sheet'); while (this.rows.length < r) this.rows.push([]); this.rows[r - 1][c - 1] = v; this.writes++; }
+  set(r, c, v) {
+    if (r > this.maxRows) throw new Error('row outside sheet');
+    // Like Google Sheets: text such as 3E-2588 in a cell that is not Plain text is read as a number (3×10^-2588 = 0).
+    if (typeof v === 'string' && this.fmt[r + ':' + c] !== '@' && /^\s*\d+(\.\d+)?E[-+]?\d+\s*$/i.test(v)) v = Number(v); while (this.rows.length < r) this.rows.push([]); this.rows[r - 1][c - 1] = v; this.writes++; }
   getName() { return this.name; }
   getLastRow() { for (let i = this.rows.length; i > 0; i--) if ((this.rows[i - 1] || []).some(x => x !== '' && x != null)) return i; return 0; }
   getLastColumn() { let m = 0; this.rows.forEach(r => r.forEach((x, j) => { if (x !== '' && x != null) m = Math.max(m, j + 1); })); return m; }
@@ -44,6 +47,7 @@ class Sheet {
   deleteRow(r) { this.rows.splice(r - 1, 1); this.writes++; }
   appendRow(v) { const r = this.getLastRow() + 1; v.forEach((x, j) => this.set(r, j + 1, x)); }
   setFrozenRows() {}
+  clear() { this.rows = []; this.fmt = {}; return this; }
 }
 class SS {
   constructor(sheets) { this.sheets = Object.keys(sheets).map(n => new Sheet(n, sheets[n])); }
