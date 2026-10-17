@@ -462,8 +462,13 @@
     $('#navbar').hidden = false;
     if (!state.form) resetForm();
     // Opened from a truck's QR sticker with the phone camera: start a new entry for that truck.
-    const qrPlate = new URLSearchParams(location.search).get('plate');
-    if (qrPlate) {
+    const params = new URLSearchParams(location.search);
+    const qrPlate = params.get('plate'), checkId = params.get('check');
+    if (checkId) {
+      // Opened from the "Check" button on a Telegram post: show that entry (openDetail checks who may see it).
+      try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* ignore */ }
+      go({ s: 'detail', id: checkId });
+    } else if (qrPlate) {
       try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* ignore */ }
       if (state.editing) leaveEdit();
       useTruckCode(qrPlate);
@@ -1423,8 +1428,22 @@
     if (rv.restoreY != null) { window.scrollTo(0, rv.restoreY); rv.restoreY = null; }
   }
 
+  /** Reviewers, admins and people with the Dashboard ticked may open an entry's details (also from Telegram). */
+  function canCheck() {
+    const c = state.config || {}, u = c.user || {};
+    return c.canCheck != null ? !!c.canCheck : (u.role === 'reviewer' || u.role === 'admin');
+  }
+  const canReview = () => { const u = (state.config || {}).user || {}; return u.role === 'reviewer' || u.role === 'admin'; };
+
   async function openDetail(id) {
     const me = current();
+    if (!canCheck()) {
+      $('#view').innerHTML = `<div class="card success"><div class="big">🔒</div>
+        <p>${L('មានតែអ្នកត្រួតពិនិត្យ អ្នកគ្រប់គ្រង ឬអ្នកមានសិទ្ធិប្រើ Dashboard ទេ ដែលអាចមើលព័ត៌មាននេះបាន។', 'Only reviewers, admins and people with Dashboard access can see these details.')}</p>
+        <button class="btn primary" id="toNew">➕ ${L('បញ្ចូលថ្មី', 'New entry')}</button></div>`;
+      $('#toNew').onclick = () => go({ s: 'new' });
+      return;
+    }
     const redraw = () => { const box = $('#dReason'); if (!box || !box.innerHTML) renderDetail(id); };
     if (!(await ensureRows(me, redraw))) return;
     renderDetail(id);
@@ -1458,7 +1477,7 @@
         ? photos.map(([k, kh, en]) => `<figure data-k="${k}"><div class="ph-box"><div class="spinner"></div></div><figcaption>${L(kh, en)}</figcaption></figure>`).join('')
         : `<div class="hint">${L('គ្មានរូបថត', 'No photos')}</div>`}</div>
       <div id="dReason"></div>
-      <div class="decide">
+      <div class="decide" ${canReview() ? '' : 'hidden'}>
         <button type="button" class="btn ok" id="dOk">✔ ${L('ត្រឹមត្រូវ', 'Correct')}</button>
         <button type="button" class="btn ghost" id="dEdit">✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
         <button type="button" class="btn bad" id="dCancel">🗑 ${L('លុបចោល', 'Cancel entry')}</button>

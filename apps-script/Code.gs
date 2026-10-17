@@ -450,6 +450,11 @@ function isReviewer_(user) {
   return user.role === 'reviewer' || user.role === 'admin';
 }
 
+/** Who may open an entry's details from the Telegram "Check" button: reviewers, admins and anyone with the Dashboard ticked (Kim, 17 Oct 2026). */
+function canCheck_(user) {
+  return isReviewer_(user) || canUse_(user, 'dashboard');
+}
+
 // ---------- Actions ----------
 
 function getConfig_(payload, user) {
@@ -464,6 +469,7 @@ function getConfig_(payload, user) {
     litreLimit: Number(getSetting_('LITRE_LIMIT')) || 250,
     lastReadings: lastReadings_(),
     pendingCount: isReviewer_(user) ? pendingCount_() : undefined,
+    canCheck: canCheck_(user),
   };
 }
 
@@ -582,7 +588,7 @@ function listMine_(p, user) {
 
 /** Every entry, newest first, for the reviewer tab (grouped by year / month / day on the phone). */
 function listAll_(p, user) {
-  if (!isReviewer_(user)) throw new Error('Only reviewers can see this list.');
+  if (!canCheck_(user)) throw new Error('Only reviewers can see this list.');
   return allRefills_().sort((a, b) => (b.dateTime || 0) - (a.dateTime || 0));
 }
 
@@ -857,25 +863,39 @@ function sendTelegramQueue() {
   }
 }
 
-/** Sends one entry: an album when it has 2+ photos, one photo with caption, or a text message. */
+/**
+ * Sends one entry with a "Check" button: one photo with the summary, or a text message.
+ * Telegram allows no buttons on an album, so 2+ photos go as an album with the summary and button just under it.
+ */
 function postRefillToTelegram_(r) {
   const chatId = getSetting_('TELEGRAM_CHAT_ID');
   const caption = telegramCaption_(r);
+  const buttons = JSON.stringify({ inline_keyboard: [[checkButton_(r)]] });
   const photos = [r.odoPhoto, r.hourPhoto, r.pumpPhoto].map(telegramPhoto_).filter(Boolean);
   if (!photos.length) {
-    return telegram_('sendMessage', { chat_id: chatId, text: caption, parse_mode: 'HTML' });
+    return telegram_('sendMessage', { chat_id: chatId, text: caption, parse_mode: 'HTML', reply_markup: buttons });
   }
   if (photos.length === 1) {
-    return telegram_('sendPhoto', { chat_id: chatId, photo: photos[0], caption: caption, parse_mode: 'HTML' });
+    return telegram_('sendPhoto', { chat_id: chatId, photo: photos[0], caption: caption, parse_mode: 'HTML', reply_markup: buttons });
   }
   const payload = { chat_id: chatId };
   payload.media = JSON.stringify(photos.map((blob, i) => {
     payload['p' + i] = blob;
-    const m = { type: 'photo', media: 'attach://p' + i };
-    if (i === 0) { m.caption = caption; m.parse_mode = 'HTML'; }
-    return m;
+    return { type: 'photo', media: 'attach://p' + i };
   }));
-  return telegram_('sendMediaGroup', payload);
+  const album = telegram_('sendMediaGroup', payload);
+  const first = Array.isArray(album) ? album[0] : album;
+  const text = { chat_id: chatId, text: caption, parse_mode: 'HTML', reply_markup: buttons };
+  if (first && first.message_id) text.reply_parameters = JSON.stringify({ message_id: first.message_id, allow_sending_without_reply: true });
+  return telegram_('sendMessage', text);
+}
+
+/**
+ * The "Check" button: opens the entry's details in the Fuel app. Telegram shows a button to everyone in the group,
+ * so the app itself lets only reviewers, admins and Dashboard users see the details (canCheck_).
+ */
+function checkButton_(r) {
+  return { text: '🔎 ពិនិត្យ · Check', url: appUrl_() + '/fuel/?check=' + encodeURIComponent(r.id) };
 }
 
 function telegramPhoto_(url) {
@@ -1019,11 +1039,12 @@ function alertUnusual_(r, rows, replyTo) {
     ];
     if (u.sameDay) lines.push('🔁 ចាក់លើកទី ' + (u.sameDay + 1) + ' នៅថ្ងៃនេះ / refill no. ' + (u.sameDay + 1) + ' today');
     if (u.kmGap !== null) lines.push('📏 ' + num(u.kmGap) + ' km ពីលើកមុន / since the last refill');
-    lines.push('👉 Requires Investigation · <a href="' + appUrl_() + '/dashboard/">Dashboard</a>');
+    lines.push('👉 Requires Investigation');
     if (r.dateTime) lines.push('🕒 ' + Utilities.formatDate(new Date(r.dateTime), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'));
     lines.push('🆔 <code>' + esc(r.id) + '</code>');
     const chatId = getSetting_('TELEGRAM_ALERT_CHAT_ID');
-    const payload = { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML', disable_web_page_preview: true };
+    const payload = { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML', disable_web_page_preview: true,
+      reply_markup: JSON.stringify({ inline_keyboard: [[checkButton_(r), { text: '📊 Dashboard', url: appUrl_() + '/dashboard/' }]] }) };
     // Shown as a reply under the entry's post only if alerts ever go to the same group.
     const first = Array.isArray(replyTo) ? replyTo[0] : replyTo;
     if (first && first.message_id && chatId === getSetting_('TELEGRAM_CHAT_ID')) {
