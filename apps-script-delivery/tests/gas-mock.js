@@ -62,6 +62,7 @@ function formatDate(d, tz, f) {
 }
 
 function makeEnv(sheets, opts) {
+  if (opts && opts.books) Object.keys(opts.books).forEach(k => { if (!(opts.books[k] instanceof SS)) opts.books[k] = new SS(opts.books[k]); });
   opts = opts || {};
   const ss = new SS(sheets);
   const props = Object.assign({ GOOGLE_CLIENT_ID: 'cid', SESSION_SECRET: 'sess-secret', LINK_SECRET: 'link-secret', PHOTO_FOLDER_ID: 'folder1' }, opts.props || {});
@@ -79,7 +80,7 @@ function makeEnv(sheets, opts) {
   const ctx = {
     console, JSON, Math, Number, String, Array, Object, Boolean, RegExp, Error, Set, Map, parseInt, parseFloat, isNaN, encodeURIComponent,
     Date: FakeDate, module: undefined,
-    SpreadsheetApp: { getActive: () => ss },
+    SpreadsheetApp: { getActive: () => ss, openById: id => { const b = (opts.books || {})[id]; if (!b) throw new Error('No spreadsheet ' + id); return b; } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) },
     CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => true, releaseLock: () => {} }) },

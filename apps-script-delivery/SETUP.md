@@ -24,6 +24,12 @@ No Google password, API key or secret is in the web files. The browser only send
    - `GOOGLE_CLIENT_ID` = the same Client ID as the Fuel app (it ends in `.apps.googleusercontent.com`; it is also in `web/config.js`).
    - `SESSION_SECRET` = copy the value of `SESSION_SECRET` from the **Fuel app's** Apps Script (Project Settings → Script Properties).
      With the same value, signing in once on the home menu also signs you in to Delivery. Never paste it in a chat or a file.
+   - `USERS_SHEET_ID` = the id of the **Fuel Refill** Google Sheet (the long part of its address between `/d/` and `/edit`).
+     Since 17 Oct 2026 every app uses that sheet's **Users** tab as the one user list (Kim's request): Delivery lets in people
+     with Active = Yes and ដឹកជញ្ជូន ticked, and their **Delivery Role** column (Security, Logistics, Warehouse, Driver,
+     Supervisor, Admin) decides which steps they record. A Fuel admin with no Delivery Role is a Delivery Admin.
+     Then run **`moveDeliveryUsers()`** once: it copies each User Manager role into Delivery Role (adding the column at the
+     end, and adding missing people with only ដឹកជញ្ជូន ticked) and logs every change. User Manager is no longer used.
 5. **Run `setup()` once** (choose `setup` in the function list → Run → allow the permissions). It:
    - adds two new tabs, **Trips** and **Audit Log**, after the existing tabs (no existing tab, column or row is touched);
    - adds the feature tabs **Delivery Proof, Customer Ratings, Site Ratings, Complaints, Customer Sites, Truck Companies, Delivery Settings**
