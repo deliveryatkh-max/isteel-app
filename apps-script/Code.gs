@@ -513,7 +513,10 @@ function submitRefill_(p, user) {
     set(COL.PUMP_PHOTO, savePhoto_(p.pumpPhoto, id, 'pump'));
     set(COL.SIGNATURE, savePhoto_(p.signature, id, 'signature'));
 
-    sheet.appendRow(values);
+    const rowNum = sheet.getLastRow() + 1;
+    if (rowNum > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    keepText_(sheet, rowNum, cols, TEXT_COLS);
+    sheet.getRange(rowNum, 1, 1, values.length).setValues([values]);
     pendingChanged_();
     if (ref) {
       refs[ref] = id;
@@ -571,6 +574,7 @@ function updateRefill_(p, user) {
     if (clean.meterRequired && clean.meter === 'km' && !clean.meterBroken && !row[cols[COL.ODO_PHOTO]]) throw new Error('Odometer photo is required.');
     if (clean.meterRequired && clean.meter === 'hour' && !row[cols[COL.HOUR_PHOTO]]) throw new Error('Hour meter photo is required.');
 
+    keepText_(sheet, rowNum, cols, TEXT_COLS);
     sheet.getRange(rowNum, 1, 1, row.length).setValues([row]);
     return { id: p.id, plate: clean.plate, driver: clean.driver };
   } finally {
@@ -1234,6 +1238,89 @@ function fixDriverNames() {
 }
 
 /**
+ * Run once from the editor (Kim's request, 17 Oct 2026): puts back the truck plates that Google Sheets
+ * turned into 0 (plates like 3E-2588 were read as a number). For each such row it picks the plate from
+ * the driver's own truck, checked against the km reading, or else the one truck whose last km fits.
+ * Only the plate column changes, and the whole column is set to Plain text so it can't happen again.
+ * Every row is listed in a new "Plate fixes" sheet; rows it can't be sure about stay 0 there for a manual fix.
+ */
+function fixZeroPlates() {
+  const ePlate = v => /^\d+E-\d+$/i.test(String(v || '').trim());
+  const masterPlate = {};
+  const candidates = [];
+  readTable_(SHEETS.DRIVER_TRUCK).forEach(r => {
+    const code = String(r[DT_PLATE] || '').trim().toUpperCase();
+    if (!ePlate(code)) return;
+    if (candidates.indexOf(code) < 0) candidates.push(code);
+    const label = String(r[DT_DRIVER] || '').trim();
+    if (label && !masterPlate[label]) masterPlate[label] = code;
+  });
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = refillSheet_();
+    const cols = headerIndex_(sheet);
+    const n = sheet.getLastRow() - 1;
+    if (n < 1) return 'No rows.';
+    const all = sheet.getRange(2, 1, n, sheet.getLastColumn()).getValues();
+    const plateCol = cols[COL.PLATE], drvCol = cols[COL.DRIVER], kmCol = cols[COL.KM];
+    const idCol = cols[COL.ID_FR], dtCol = cols[COL.DATETIME];
+    const rows = all.map((r, i) => {
+      const dt = r[dtCol];
+      const km = kmCol === undefined ? NaN : toNumber_(r[kmCol]);
+      return { i: i, id: r[idCol], plate: String(r[plateCol] === null ? '' : r[plateCol]).trim().toUpperCase(),
+        driver: String(r[drvCol] || '').trim(), km: km > 0 ? km : null, t: dt instanceof Date ? dt.getTime() : 0 };
+    }).sort((a, b) => a.t - b.t || a.i - b.i);
+    rows.forEach(r => { if (ePlate(r.plate) && candidates.indexOf(r.plate) < 0) candidates.push(r.plate); });
+
+    const lastKm = {}, used = {};   // per plate: last km so far; per driver: how often each E-plate was used
+    const log = [];
+    rows.forEach(r => {
+      if (r.plate === '0') {
+        const counts = used[r.driver] || {};
+        const mine = masterPlate[r.driver]
+          || Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || '';
+        const gap = c => (r.km !== null && lastKm[c] !== undefined) ? r.km - lastKm[c] : null;
+        const fits = c => { const g = gap(c); return g !== null && g >= 0 && g <= 3000; };
+        let plate = '', how = '';
+        if (mine && (r.km === null || lastKm[mine] === undefined || fits(mine))) {
+          plate = mine; how = "driver's truck" + (fits(mine) ? ', km fits (+' + gap(mine) + ')' : '');
+        } else {
+          const ok = candidates.filter(fits).sort((a, b) => gap(a) - gap(b));
+          if (ok.length === 1 || (ok.length > 1 && gap(ok[1]) - gap(ok[0]) > 500)) {
+            plate = ok[0]; how = 'km follows on from this truck (+' + gap(ok[0]) + ')';
+          } else {
+            how = ok.length ? 'not sure: ' + ok.slice(0, 3).join(', ') : 'no truck matches the km';
+          }
+        }
+        log.push([r.i + 2, r.id, r.driver, r.km === null ? '' : r.km, plate || '(left as 0)', how]);
+        if (plate) r.plate = plate;
+      }
+      if (ePlate(r.plate)) {
+        if (r.km !== null) lastKm[r.plate] = r.km;
+        const u = used[r.driver] = used[r.driver] || {};
+        u[r.plate] = (u[r.plate] || 0) + 1;
+      }
+    });
+
+    sheet.getRange(2, plateCol + 1, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+    log.forEach(l => { if (l[4].charAt(0) !== '(') sheet.getRange(l[0], plateCol + 1).setValue(l[4]); });
+    const ss = SpreadsheetApp.getActive();
+    const logSheet = ss.getSheetByName('Plate fixes') || ss.insertSheet('Plate fixes');
+    logSheet.clear();
+    logSheet.getRange(1, 1, 1, 6).setValues([['Row', 'ID_FR', 'Driver', 'Km', 'New plate', 'How']]).setFontWeight('bold');
+    if (log.length) logSheet.getRange(2, 1, log.length, 6).setNumberFormat('@').setValues(log.map(l => l.map(String)));
+    const fixed = log.filter(l => l[4].charAt(0) !== '(').length;
+    const msg = 'Plates fixed: ' + fixed + '. Left as 0: ' + (log.length - fixed) + '.';
+    console.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * Run once from the editor: finds the group the bot was added to, saves its chat ID in the
  * Settings sheet and posts a test message there. Before running it, add the bot to the group
  * and send /start@<bot name> in the group.
@@ -1440,7 +1527,12 @@ function addNewNames_(p) {
   if (!row[DT_PLATE] && !row[DT_DRIVER]) return;
   const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.DRIVER_TRUCK);
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
-  sheet.appendRow(header.map(h => row[h] === undefined ? '' : row[h]));
+  const rowNum = sheet.getLastRow() + 1;
+  if (rowNum > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+  const at = {};
+  header.forEach((h, i) => { at[h] = i; });
+  keepText_(sheet, rowNum, at, [DT_PLATE, DT_DRIVER]);
+  sheet.getRange(rowNum, 1, 1, header.length).setValues([header.map(h => row[h] === undefined ? '' : row[h])]);
   delete tableCache_[SHEETS.DRIVER_TRUCK];
 }
 
@@ -1487,6 +1579,14 @@ function equipmentByType_() {
     (out[type] || (out[type] = [])).push(name);
   });
   return out;
+}
+
+// Plates like 3E-2588 look like numbers to Google Sheets (3 × 10^-2588, saved as 0), so these
+// cells are set to Plain text before anything is written to them.
+const TEXT_COLS = [COL.PLATE, COL.DRIVER, COL.NOTE];
+
+function keepText_(sheet, rowNum, cols, names) {
+  names.forEach(n => { if (cols[n] !== undefined) sheet.getRange(rowNum, cols[n] + 1).setNumberFormat('@'); });
 }
 
 function refillSheet_() {
