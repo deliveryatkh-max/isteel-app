@@ -337,6 +337,8 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 }
 .decide .btn { flex-direction: column; gap: 0; padding: 8px 4px; line-height: 1.25; border-radius: 12px; }
 .decide .btn small { color: inherit; opacity: .85; font-size: 11px; }
+/* Reviewed entries are final: the buttons stay visible but greyed out (Kim, 17 Oct 2026). */
+.decide.done .btn[disabled] { opacity: .4; filter: grayscale(1); cursor: not-allowed; pointer-events: none; }
 
 /* Entries still sending */
 .badge.sending { background: var(--brand-soft); color: var(--brand); }

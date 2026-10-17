@@ -1537,10 +1537,10 @@
         ? photos.map(([k, kh, en]) => `<figure data-k="${k}"><div class="ph-box"><div class="spinner"></div></div><figcaption>${L(kh, en)}</figcaption></figure>`).join('')
         : `<div class="hint">${L('គ្មានរូបថត', 'No photos')}</div>`}</div>
       <div id="dReason"></div>
-      <div class="decide" ${canReview() ? '' : 'hidden'}>
-        <button type="button" class="btn ok" id="dOk">✔ ${L('ត្រឹមត្រូវ', 'Correct')}</button>
-        <button type="button" class="btn ghost" id="dEdit">✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
-        <button type="button" class="btn bad" id="dCancel">🗑 ${L('លុបចោល', 'Cancel entry')}</button>
+      <div class="decide ${r.status ? 'done' : ''}" ${canReview() ? '' : 'hidden'}>
+        <button type="button" class="btn ok" id="dOk" ${r.status ? 'disabled' : ''}>✔ ${L('ត្រឹមត្រូវ', 'Correct')}</button>
+        <button type="button" class="btn ghost" id="dEdit" ${r.status ? 'disabled' : ''}>✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
+        <button type="button" class="btn bad" id="dCancel" ${r.status ? 'disabled' : ''}>🗑 ${L('លុបចោល', 'Cancel entry')}</button>
       </div>`;
 
     photos.forEach(async ([k]) => {
