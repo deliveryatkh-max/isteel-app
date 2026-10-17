@@ -551,8 +551,8 @@ function updateRefill_(p, user) {
     const row = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
     // Reviewers and admins can correct any entry; others only their own entries before review.
     if (!isReviewer_(user) && String(row[cols[COL.USER]]).toLowerCase() !== user.email) throw new Error('You can only edit your own entries.');
-    // Reviewed entries are final for everyone (Kim, 17 Oct 2026).
-    if (row[cols[COL.STATUS]]) throw new Error('This entry has already been reviewed and can no longer be edited.');
+    // Reviewed entries are final; only admins can still correct them (Kim, 17 Oct 2026).
+    if (row[cols[COL.STATUS]] && user.role !== 'admin') throw new Error('This entry has already been reviewed and can no longer be edited.');
     const entryTime = row[cols[COL.DATETIME]] instanceof Date ? row[cols[COL.DATETIME]].getTime() : null;
     addNewNames_(p);
     const clean = validate_(p, p.id, entryTime);
