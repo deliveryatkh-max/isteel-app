@@ -97,6 +97,7 @@ const HOME_APPS = [
   { key: 'overtime', col: 'ថែមម៉ោង' },
   { key: 'location', col: 'ទីតាំងថ្មី' },
   { key: 'dashboard', col: 'Dashboard' },
+  { key: 'meeting', col: 'ប្រជុំ' },
 ];
 // Ticked for every user by default (Kim, 10 Oct 2026). Dashboard stays for reviewers and admins.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location'];
