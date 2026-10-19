@@ -346,7 +346,7 @@
 
   // ---------------- Demo mode ----------------
 
-  const demo = { rows: (window.DEMO_DATA && window.DEMO_DATA.rows || []).map(r => Object.assign({}, r)), photos: {}, user: null };
+  const demo = { rows: (window.DEMO_DATA && window.DEMO_DATA.rows || []).map(r => Object.assign({}, r)), photos: {}, reads: {}, user: null };
   function demoApi(action, p) {
     const D = window.DEMO_DATA;
     const user = demo.user;
@@ -372,6 +372,9 @@
             litres: toNum(p.litres), note: p.note || '', latLong: `${(+p.lat).toFixed(6)}, ${(+p.lng).toFixed(6)}`,
             user: user.email, dateTime: Date.now(), status: '', reviewedBy: '' };
           savePhotos(r, p);
+          // Demo photo check: the demo reader's answers (see readPhoto) stand in for the server's.
+          if (p.reads && Object.keys(p.reads).length) r.pc = Object.assign({}, p.reads.odoPhoto || p.reads.hourPhoto ? { meter: (demo.reads[p.reads.odoPhoto || p.reads.hourPhoto] || {}).value, meterWrong: (demo.reads[p.reads.odoPhoto || p.reads.hourPhoto] || {}).wrong } : {},
+            p.reads.pumpPhoto ? { litres: (demo.reads[p.reads.pumpPhoto] || {}).value, pumpWrong: (demo.reads[p.reads.pumpPhoto] || {}).wrong } : {});
           demo.rows.push(r);
           return resolve({ id });
         }
@@ -394,6 +397,12 @@
           return resolve({ id: r.id });
         }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
+        if (action === 'transcribe') return setTimeout(() => resolve({ text: 'ចាក់សាំងនៅស្ថានីយ៍ទួលគោក' }), 800);
+        if (action === 'readPhoto') {
+          const res = window.DEMO_READ ? window.DEMO_READ(p) : { value: p.kind === 'litres' ? 120 : p.kind === 'km' ? 474500 : null };
+          res.token = 'demo' + Math.random(); demo.reads[res.token] = res;
+          return setTimeout(() => resolve(res), 1200);
+        }
         if (action === 'thumbs') return resolve({ thumbs: Object.fromEntries(p.urls.map(u => [u, demo.photos[u] || null])) });
         throw new Error('Unknown action');
       } catch (e) { reject(e); }
@@ -828,6 +837,11 @@
     if (!(l > 0)) errors.push(L('ចំនួនចាក់ (លីត្រ)', 'Litres'));
     else if (l > state.config.litreLimit) warnings.push(L(`${fmtNum(l)} L លើស ${state.config.litreLimit} L`, `${fmtNum(l)} L is above the ${state.config.litreLimit} L limit`));
     if (!editing && state.gps.status !== 'ok') errors.push(L('ទីតាំង GPS', 'GPS location'));
+    ['odoPhoto', 'hourPhoto', 'pumpPhoto'].forEach(k => {
+      const m = readState(f, k, t);
+      if (m.state === 'wrong') warnings.push(L(`រូបថតខុស: មិនមែនជារូប${PC_NAME[k][0]}ទេ`, `Wrong photo: this is not the ${PC_NAME[k][1]}`));
+      if (m.state === 'bad') warnings.push(L(`លេខ ${m.typedTxt} មិនត្រូវនឹងរូបថត (រូបថតបង្ហាញ ${m.readTxt})`, `${m.typedTxt} does not match the photo (photo shows ${m.readTxt})`));
+    });
     const needNote = warnings.length > 0;
     if (needNote && !f.note.trim()) errors.push(L('សំគាល់ (ត្រូវការ)', 'Note required for the warning'));
     return { errors, warnings, needNote };
@@ -893,6 +907,7 @@
             <label class="broken ${toNum(f.km) > 0 && !f.meterBroken ? 'off' : ''}"><span>${L('កុងទ័រខូច', 'Meter broken')}</span>
               <input type="checkbox" id="meterBroken" ${f.meterBroken ? 'checked' : ''} ${toNum(f.km) > 0 && !f.meterBroken ? 'disabled' : ''}></label>
           </div>
+          <div class="pc-hint" data-pc="odoPhoto"></div>
           ${plateBroken(f.plate) ? `<div class="hint">🔧 ${L('ឡាននេះកុងទ័រខូច (Driver &amp; Truck)', 'This truck\'s odometer is marked broken (Driver &amp; Truck)')}</div>` : ''}
           ${last && last.km ? `<div class="hint">${L('លើកមុន', 'Last')}: <b>${fmtNum(last.km)} km</b> · ${fmtDate(last.kmAt)}</div>` : ''}
         </div>
@@ -904,6 +919,7 @@
         <div class="field">
           <div class="label"><span>${L('កុងទ័រម៉ោង', 'Hour meter')}${req}</span></div>
           <input type="text" inputmode="decimal" id="hour" class="big-input" value="${esc(f.hour)}" placeholder="0" autocomplete="off">
+          <div class="pc-hint" data-pc="hourPhoto"></div>
           ${last && last.hour ? `<div class="hint">${L('លើកមុន', 'Last')}: <b>${fmtNum(last.hour)} h</b> · ${fmtDate(last.hourAt)}</div>` : ''}
         </div>
       </div>` : ''}
@@ -913,12 +929,13 @@
         <div class="field">
           <div class="label"><span>${L('ចំនួនចាក់ (លីត្រ)', 'Litres')} <span class="req">*</span></span></div>
           <input type="text" inputmode="decimal" id="litres" class="big-input" value="${esc(f.litres)}" placeholder="0" autocomplete="off">
+          <div class="pc-hint" data-pc="pumpPhoto"></div>
         </div>
       </div>
 
       <div class="card">
         <div class="field">
-          <div class="label"><span>${L('សំគាល់', 'Note')} <span class="req" id="noteReq" hidden>*</span></span></div>
+          <div class="label"><span>${L('សំគាល់', 'Note')} <span class="req" id="noteReq" hidden>*</span></span>${voiceOK() ? `<button type="button" class="mic-btn" id="mic"></button>` : ''}</div>
           <textarea id="note" placeholder="${L('ឧ. ទៅកំពង់សោម', 'e.g. trip to Sihanoukville')}">${esc(f.note)}</textarea>
           <div id="warnBox"></div>
         </div>
@@ -1006,6 +1023,7 @@
       const el = $('#' + k);
       if (el) el.oninput = () => { f[k] = el.value; updateWarnings(); };
     });
+    paintReads();
     // Meter broken and a km number exclude each other: ticking clears and locks Km, typing a number locks the tick box.
     const broken = $('#meterBroken');
     if (broken) {
@@ -1019,6 +1037,7 @@
       broken.onchange = () => { f.meterBroken = broken.checked; if (f.meterBroken) f.km = ''; renderForm(); };
     }
     $('#note').oninput = e => { f.note = e.target.value; };
+    if ($('#mic')) { $('#mic').onclick = () => toggleVoice(f); paintMic(); }
 
     $$('[data-photo]').forEach(slot => slot.onclick = () => photoSheet(slot.dataset.photo, slot.dataset.title));
 
@@ -1122,7 +1141,7 @@
       ${f[key] ? `<button type="button" class="sheet-btn danger" data-remove><span class="ic">🗑</span><span>${L('ដករូបចេញ', 'Remove photo')}</span></button>` : ''}`);
     const stillHere = () => state.form === f && current() && (current().s === 'new' || current().s === 'edit');
     const rm = $('[data-remove]', sh.el);
-    if (rm) rm.onclick = () => { f[key] = null; if (f.stamped) delete f.stamped[key]; sh.close(); if (stillHere()) renderForm(); };
+    if (rm) rm.onclick = () => { f[key] = null; if (f.stamped) delete f.stamped[key]; if (f.reads) delete f.reads[key]; sh.close(); if (stillHere()) renderForm(); };
     $$('input[type=file]', sh.el).forEach(input => input.onchange = async () => {
       const file = input.files && input.files[0];
       sh.close();
@@ -1131,6 +1150,7 @@
         f[key] = await resizeImage(file, 1280, 0.72);
         if (f.stamped) delete f.stamped[key];
         if (stillHere()) renderForm();
+        readPhoto(f, key);
       } catch (e) { toast(L('រូបថតមិនត្រឹមត្រូវ', 'Could not read photo')); }
     });
   }
@@ -1141,6 +1161,125 @@
     const { warnings } = check();
     box.innerHTML = warnings.length ? `<div class="alert warn">⚠️ ${L('សូមសរសេរសំគាល់', 'Please add a note')}:<ul>${warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : '';
     $('#noteReq').hidden = !warnings.length;
+    paintReads();
+  }
+
+  // ---------------- Voice note (Kim, 19 Oct 2026) ----------------
+  // 🎤 next to Note: tap to talk, tap again to stop (stops by itself after a minute). Google's AI writes what was
+  // said into the Note box in Khmer, added after anything already typed. The recording itself is not kept.
+  const voice = { rec: null, chunks: [], t0: 0, timer: 0, busy: false };
+  const voiceOK = () => !!(window.MediaRecorder && navigator.mediaDevices && (DEMO || (state.config && state.config.photoCheck)));
+  const blobToDataUrl = blob => new Promise((resolve, reject) => {
+    const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(blob);
+  });
+
+  async function toggleVoice(f) {
+    if (voice.busy) return;
+    if (voice.rec) { voice.rec.stop(); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { toast(L('សូមអនុញ្ញាតឲ្យប្រើមីក្រូហ្វូន', 'Please allow the microphone')); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : {});
+    Object.assign(voice, { rec, chunks: [], t0: Date.now() });
+    rec.ondataavailable = e => { if (e.data && e.data.size) voice.chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(voice.timer);
+      voice.rec = null;
+      const blob = new Blob(voice.chunks, { type: rec.mimeType || mime || 'audio/webm' });
+      if (Date.now() - voice.t0 < 700 || !blob.size) { paintMic(); return; }   // a tap by mistake
+      voice.busy = true; paintMic();
+      try {
+        const audio = await blobToDataUrl(blob);
+        const res = await (DEMO ? demoApi('transcribe', { audio }) : callServer('transcribe', { audio }));
+        if (!res.text) toast(L('មិនឮសំឡេង សូមនិយាយម្តងទៀត', 'No speech heard. Please try again'));
+        else if (state.form === f) {
+          f.note = (f.note.trim() ? f.note.trim() + ' ' : '') + res.text;
+          const el = $('#note'); if (el) el.value = f.note;
+          updateWarnings();
+        }
+      } catch (e) { toast(e.message); }
+      voice.busy = false; paintMic();
+    };
+    rec.start(1000);
+    voice.timer = setInterval(() => { if (Date.now() - voice.t0 >= 60000 && voice.rec) voice.rec.stop(); else paintMic(); }, 500);
+    paintMic();
+  }
+
+  function paintMic() {
+    const b = $('#mic');
+    if (!b) return;
+    const secs = Math.floor((Date.now() - voice.t0) / 1000);
+    b.className = 'mic-btn' + (voice.rec ? ' on' : voice.busy ? ' busy' : '');
+    b.innerHTML = voice.rec ? `<span class="rec-dot"></span> ${L('ឈប់', 'Stop')} 0:${String(secs).padStart(2, '0')}`
+      : voice.busy ? `<span class="spin-sm"></span> ${L('កំពុងសរសេរ…', 'Writing…')}` : `🎤 ${L('និយាយ', 'Speak')}`;
+  }
+
+  // ---------------- Photo check while entering (Kim, 19 Oct 2026) ----------------
+  // As soon as a meter or pump photo is added, Google's AI reads its number in the background (the driver keeps
+  // typing). When the typed number is more than 1 away from the photo, the field turns red and Submit asks for a
+  // note, like the other warnings. No connection or no answer: nothing is shown and the entry goes as normal.
+  const PC_KIND = { odoPhoto: ['km', 'km'], hourPhoto: ['hour', 'h'], pumpPhoto: ['litres', 'L'] };
+  const PC_NAME = { odoPhoto: ['កុងទ័រឡាន', 'odometer'], hourPhoto: ['កុងទ័រម៉ោង', 'hour meter'], pumpPhoto: ['កុងទ័រសាំង', 'fuel pump'] };
+  const photoMark = d => d ? d.length + ':' + d.slice(-40) : '';
+
+  /** The server's own readings of these exact photos, so it doesn't read them again after Submit. */
+  function readTokens(f, t) {
+    const out = {};
+    ['odoPhoto', 'hourPhoto', 'pumpPhoto'].forEach(k => {
+      const r = f.reads && f.reads[k];
+      if (r && r.token && r.mark === photoMark(f[k]) && readState(f, k, t).state !== '') out[k] = r.token;
+    });
+    return out;
+  }
+
+  async function readPhoto(f, key) {
+    if (!DEMO && !(state.config && state.config.photoCheck)) return;
+    const data = f[key];
+    if (!data) return;
+    f.reads = f.reads || {};
+    const r = f.reads[key] = { status: 'reading', mark: photoMark(data) };
+    paintReads();
+    try {
+      const p = { kind: PC_KIND[key][0], photo: data };
+      const res = await (DEMO ? demoApi('readPhoto', p) : callServer('readPhoto', p));
+      if (f.reads[key] !== r) return;   // a newer photo replaced it
+      if (res.off) { delete f.reads[key]; return; }
+      r.status = 'done'; r.value = res.value == null ? null : Number(res.value); r.token = res.token || ''; r.wrong = !!res.wrong;
+      // A wrong photo is told straight away, wherever the driver is on the form.
+      if (r.wrong && state.form === f) toast(`⚠️ ${L(`រូបថតខុស! នេះមិនមែនជារូប${PC_NAME[key][0]}ទេ`, `Wrong photo! This is not the ${PC_NAME[key][1]}`)}`);
+    } catch (e) {
+      if (f.reads[key] === r) r.status = 'fail';
+    }
+    if (state.form === f) updateWarnings();
+  }
+
+  /** {state: ''|'reading'|'ok'|'bad'|'unread', typedTxt, readTxt} for one photo of the form. */
+  function readState(f, key, t) {
+    const r = f.reads && f.reads[key];
+    if (!r || r.mark !== photoMark(f[key]) || !t) return { state: '' };
+    if ((key === 'odoPhoto' && (t.meter !== 'km' || f.meterBroken)) || (key === 'hourPhoto' && t.meter !== 'hour')) return { state: '' };
+    if (r.status === 'reading') return { state: 'reading' };
+    if (r.status !== 'done') return { state: '' };
+    if (r.wrong) return { state: 'wrong' };
+    if (r.value === null) return { state: 'unread' };
+    const [field, unit] = PC_KIND[key], typed = toNum(f[field]);
+    if (!(typed > 0)) return { state: '' };
+    return { state: Math.abs(typed - r.value) <= 1 ? 'ok' : 'bad', typedTxt: fmtNum(typed) + ' ' + unit, readTxt: fmtNum(r.value) + ' ' + unit };
+  }
+
+  function paintReads() {
+    const f = state.form, t = typeInfo(f && f.type);
+    $$('[data-pc]').forEach(el => {
+      const m = readState(f, el.dataset.pc, t);
+      el.className = 'pc-hint ' + m.state;
+      el.innerHTML = m.state === 'reading' ? `<span class="spin-sm"></span> ${L('កំពុងអានលេខពីរូបថត…', 'Reading the photo…')}`
+        : m.state === 'ok' ? `✅ ${L('ត្រូវនឹងរូបថត', 'Matches the photo')}`
+        : m.state === 'bad' ? `⚠️ ${L(`រូបថតបង្ហាញ <b>${m.readTxt}</b> · សូមពិនិត្យលេខ ឬ ថតរូបម្តងទៀត`, `The photo shows <b>${m.readTxt}</b>. Check the number or retake the photo`)}`
+        : m.state === 'wrong' ? `❌ ${L(`រូបថតខុស! នេះមិនមែនជារូប${PC_NAME[el.dataset.pc][0]}ទេ · សូមថតម្តងទៀត`, `Wrong photo! This is not the ${PC_NAME[el.dataset.pc][1]}. Please retake it`)}`
+        : m.state === 'unread' ? `📷 ${L('អានលេខពីរូបមិនបាន · សូមថតឲ្យច្បាស់', 'Could not read the photo. Take a clearer one')}` : '';
+    });
   }
 
   async function submit() {
@@ -1171,6 +1310,7 @@
       hourPhoto: t.meter === 'hour' ? photos.hourPhoto : null,
       pumpPhoto: photos.pumpPhoto, signature: f.signature,
       newDriver: !!f.newDriver, newPlate: !!f.newPlate,
+      reads: readTokens(f, t),
     };
     try {
       if (state.editing) {
@@ -1504,18 +1644,20 @@
     if (years[0] && years[0].months[0] && rv.open[years[0].months[0].key] === undefined) rv.open[years[0].months[0].key] = true;
 
     // The odometer photo (hour meter for machines) instead of the type icon; the icon stays when there is none.
-    const rowIcon = r => {
+    const PC_SIGN = { ok: '✓', bad: '✕', unread: '?' };
+    const rowIcon = (r, pc) => {
       const url = r.odoPhoto || r.hourPhoto;
-      if (!url) return `<span class="rv-ic">${esc(emojiOf(r.type))}</span>`;
+      const badge = pc ? `<span class="pc-b ${pc.mark}">${PC_SIGN[pc.mark]}</span>` : '';
+      if (!url) return `<span class="rv-ic">${esc(emojiOf(r.type))}${badge}</span>`;
       const img = thumbs.get(url);
-      return `<span class="rv-ic thumb-ic ${img ? 'has-img' : ''}" data-thumb="${esc(url)}"${img ? ` style="background-image:url('${img}')"` : ''}>${esc(emojiOf(r.type))}</span>`;
+      return `<span class="rv-ic thumb-ic ${img ? 'has-img' : ''}" data-thumb="${esc(url)}"${img ? ` style="background-image:url('${img}')"` : ''}>${esc(emojiOf(r.type))}${badge}</span>`;
     };
-    const rowHtml = r => `
+    const rowHtml = r => { const pc = pcResult(r); return `
       <button type="button" class="rv-row" data-open="${esc(r.id)}">
-        ${rowIcon(r)}
-        <span class="rv-main"><b>${esc(r.plate || '–')}</b><small>${esc(r.driver || '–')} · ${timeOf(r.dateTime)}</small></span>
+        ${rowIcon(r, pc)}
+        <span class="rv-main"><b>${esc(r.plate || '–')}</b><small>${esc(r.driver || '–')} · ${timeOf(r.dateTime)}</small>${pc && pc.mark === 'bad' ? `<span class="pc-note">⚠ ${pc.parts.filter(x => x.state === 'bad' || x.state === 'wrong').map(x => esc(x.short)).join(' · ')}</span>` : ''}</span>
         <span class="rv-right"><b>${fmtNum(r.litres)} <i>L</i></b>${statusDot(r.status)}</span>
-      </button>`;
+      </button>`; };
 
     $('#view').innerHTML = `
       <div class="rv-head">
@@ -1528,6 +1670,7 @@
           <span class="seg-n">${rv.rows.filter(fn).length}</span><span class="seg-kh">${L(kh, en)}</span>
         </button>`).join('')}
       </div>
+      ${rv.rows.some(r => r.pc) ? `<div class="pc-legend"><span><b class="ok">✓</b> ${L('ត្រូវនឹងរូបថត', 'Matches the photo')}</span><span><b class="bad">✕</b> ${L('មិនត្រូវនឹងរូបថត', 'Does not match')}</span><span><b class="unread">?</b> ${L('អានរូបមិនបាន', 'Photo not readable')}</span></div>` : ''}
       ${years.length ? years.map(y => `
         <section class="rv-year ${rv.open[y.key] ? 'open' : ''}" data-key="${y.key}">
           <button type="button" class="yr-h" data-toggle aria-expanded="${!!rv.open[y.key]}"><span>${y.key}</span><span class="cnt">${y.count}</span><span class="chev" aria-hidden="true"></span></button>
@@ -1559,6 +1702,42 @@
     $$('[data-open]').forEach(b => b.onclick = () => { rv.restoreY = window.scrollY; go({ s: 'detail', id: b.dataset.open }); });
     if (rv.restoreY != null) { window.scrollTo(0, rv.restoreY); rv.restoreY = null; }
     thumbs.watch($('#view'));
+  }
+
+  /**
+   * The AI's readings of an entry's photos (Photo Check tab) against what was typed: one part per photo,
+   * and one mark for the row: ✕ when any part doesn't match or is the wrong photo, ? when one couldn't be read.
+   */
+  function pcResult(r) {
+    const c = r.pc;
+    if (!c) return null;
+    const parts = [];
+    const add = (key, typed, read, wrong) => {
+      const [, unit] = PC_KIND[key];
+      const state = wrong ? 'wrong' : read == null || typed == null ? 'unread' : Math.abs(typed - read) <= 1 ? 'ok' : 'bad';
+      parts.push({ key, state, typed, read, unit,
+        short: wrong ? L(`រូប${PC_NAME[key][0]}ខុស`, `Wrong ${PC_NAME[key][1]} photo`) : L(`រូបថតបង្ហាញ ${fmtNum(read)} ${unit}`, `Photo shows ${fmtNum(read)} ${unit}`) });
+    };
+    const meterKey = r.odoPhoto ? 'odoPhoto' : r.hourPhoto ? 'hourPhoto' : '';
+    if (meterKey && 'meter' in c) add(meterKey, meterKey === 'odoPhoto' ? r.km : r.hour, c.meter, c.meterWrong);
+    if (r.pumpPhoto && 'litres' in c) add('pumpPhoto', r.litres, c.litres, c.pumpWrong);
+    if (!parts.length) return null;
+    const mark = parts.some(x => x.state === 'bad' || x.state === 'wrong') ? 'bad' : parts.some(x => x.state === 'unread') ? 'unread' : 'ok';
+    return { parts, mark };
+  }
+
+  function pcCard(r) {
+    const pc = pcResult(r);
+    if (!pc) {
+      const waiting = state.config && state.config.photoCheck && (r.odoPhoto || r.hourPhoto || r.pumpPhoto) && r.status !== STATUS_BAD;
+      return waiting ? `<div class="pc-card"><h3>🤖 ${L('ពិនិត្យលេខពីរូបថត', 'Photo check')}</h3><div class="hint">⏳ ${L('កំពុងរង់ចាំអានរូបថត (ប្រហែល ៥ នាទី)', 'Waiting for the photos to be read (about 5 minutes)')}</div></div>` : '';
+    }
+    const pill = { ok: ['ok', '✓ ' + L('ត្រូវ', 'Match')], bad: ['bad', '✕ ' + L('មិនត្រូវ', 'No match')], wrong: ['bad', '✕ ' + L('រូបថតខុស', 'Wrong photo')], unread: ['unread', '? ' + L('អានមិនបាន', 'Not readable')] };
+    return `<div class="pc-card"><h3>🤖 ${L('ពិនិត្យលេខពីរូបថត', 'Photo check')}</h3>
+      ${pc.parts.map(x => `<div class="pc-row"><span class="lbl">${L(PC_NAME[x.key][0], PC_NAME[x.key][1].replace(/^./, ch => ch.toUpperCase()))}
+        <small>${L('វាយ', 'Typed')} ${x.typed == null ? '–' : fmtNum(x.typed) + ' ' + x.unit} · ${L('រូបថត', 'Photo')} ${x.state === 'wrong' ? L('មិនមែនរូបកុងទ័រ', 'not a meter') : x.read == null ? '–' : fmtNum(x.read) + ' ' + x.unit}</small></span>
+        <span class="pc-pill ${pill[x.state][0]}">${pill[x.state][1]}</span></div>`).join('')}
+    </div>`;
   }
 
   /** Reviewers, admins and people with the Dashboard ticked may open an entry's details (also from Telegram). */
@@ -1597,6 +1776,7 @@
         <div class="dt-big">${fmtNum(r.litres)}<span>${L('លីត្រ', 'litres')}</span></div>
         <div class="dt-sub">${fmtDate(r.dateTime)} · <span class="mono" lang="en">${esc(r.id)}</span></div>
       </div>
+      ${pcCard(r)}
       <div class="tiles">
         ${tile('ឈ្មោះតៃកុង', 'Driver', esc(r.driver || '–'))}
         ${r.km != null ? tile('លេខកុងទ័រ', 'Odometer', fmtNum(r.km) + ' km') : ''}

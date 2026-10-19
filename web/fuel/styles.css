@@ -409,3 +409,32 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .topbar .theme-btn, .topbar .lang-btn { border: 1px solid rgba(255,255,255,.25); background: transparent; color: #fff; }
 .topbar .theme-btn:hover, .topbar .lang-btn:hover { background: rgba(255,255,255,.1); }
 .topbar .lang-btn { padding: 0 5px; }
+
+/* Photo check (AI reads the meter photos) */
+.pc-hint { font-size: 13px; margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pc-hint:empty { display: none; }
+.pc-hint.reading { color: var(--muted); }
+.pc-hint.ok { color: var(--ok); font-weight: 600; }
+.pc-hint.bad, .pc-hint.wrong { color: var(--bad); background: var(--bad-soft); padding: 8px 10px; border-radius: 10px; font-weight: 600; }
+.pc-hint.unread { color: var(--warn); }
+.spin-sm { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .8s linear infinite; }
+.rv-ic { position: relative; }
+.pc-b { position: absolute; right: -5px; bottom: -5px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 system-ui, sans-serif; color: #fff; border: 2px solid var(--card); }
+.pc-b.ok { background: var(--ok); } .pc-b.bad { background: var(--bad); } .pc-b.unread { background: #9aa0a6; }
+.rv-main .pc-note { display: block; font-size: 12px; color: var(--bad); font-weight: 600; }
+.pc-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 10px 4px 0; }
+.pc-legend b.ok { color: var(--ok); } .pc-legend b.bad { color: var(--bad); } .pc-legend b.unread { color: #9aa0a6; }
+.pc-card { background: var(--card); border-radius: 16px; padding: 12px 16px; margin: 12px 0; box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.08)); }
+.pc-card h3 { margin: 0 0 6px; font-size: 16px; }
+.pc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line, rgba(0,0,0,.08)); }
+.pc-row:first-of-type { border-top: 0; }
+.pc-row .lbl { flex: 1; } .pc-row small { display: block; color: var(--muted); }
+.pc-pill { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+.pc-pill.ok { background: var(--ok-soft); color: var(--ok); } .pc-pill.bad { background: var(--bad-soft); color: var(--bad); } .pc-pill.unread { background: rgba(154,160,166,.18); color: var(--muted); }
+
+/* Voice note button next to Note */
+.mic-btn { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.mic-btn.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+.mic-btn.busy { color: var(--muted); }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; animation: rec-blink 1s infinite; }
+@keyframes rec-blink { 50% { opacity: .3; } }

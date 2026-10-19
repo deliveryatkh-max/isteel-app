@@ -11,6 +11,7 @@ const SHEETS = {
   EQUIPMENT: 'Equipment',
   USERS: 'Users',
   SETTINGS: 'Settings',
+  PHOTO_CHECK: 'Photo Check',
 };
 
 // Column headers in the "Fuel Refill" sheet. Columns are found by header text, so order can change.
@@ -85,6 +86,8 @@ const ACTIONS = {
   review: reviewRefill_,
   photo: getPhoto_,
   thumbs: getThumbs_,
+  readPhoto: readPhoto_,
+  transcribe: transcribe_,
   dashboard: dashboardData_,
   dashboardSave: dashboardSave_,
   home: homeApps_,
@@ -121,6 +124,7 @@ function canUse_(user, key) {
 
 function homeApps_(p, user) {
   ensureRecapTrigger_();
+  ensurePhotoCheckTrigger_();
   ensureTelegramSettings_();
   const out = {
     user: { name: user.name, role: user.role, employeeId: user.employeeId || '' },
@@ -472,13 +476,14 @@ function getConfig_(payload, user) {
     lastReadings: lastReadings_(),
     pendingCount: isReviewer_(user) ? pendingCount_() : undefined,
     canCheck: canCheck_(user),
+    photoCheck: photoCheckReady_(),
   };
 }
 
 function submitRefill_(p, user) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  let tgPost = null;
+  let tgPost = null, pcJob = null;
   try {
     // The phone sends each entry with a ref and may send it again if the answer got lost: save it once.
     const ref = String(p.ref || '').slice(0, 64);
@@ -520,6 +525,11 @@ function submitRefill_(p, user) {
     keepText_(sheet, rowNum, cols, TEXT_COLS);
     sheet.getRange(rowNum, 1, 1, values.length).setValues([values]);
     pendingChanged_();
+    if (photoCheckReady_()) {
+      pcJob = { id: id, meterUrl: values[cols[COL.ODO_PHOTO]] || values[cols[COL.HOUR_PHOTO]] || '',
+        meterData: p.odoPhoto || p.hourPhoto || '', meterKind: clean.hour !== null && !clean.km ? 'hour' : 'km',
+        pumpUrl: values[cols[COL.PUMP_PHOTO]] || '', pumpData: p.pumpPhoto || '' };
+    }
     if (ref) {
       refs[ref] = id;
       const keys = Object.keys(refs);
@@ -539,6 +549,11 @@ function submitRefill_(p, user) {
     if (tgPost) {
       try { alertUnusual_(tgPost, allRefills_(), telegramReady_() ? postRefillToTelegram_(tgPost) : null); }
       catch (e) { console.error('Telegram post failed for ' + tgPost.id + ': ' + e); queueTelegram_(tgPost.id); }
+    }
+    // The meter photos are read straight away too; the 5-minute timer picks up anything missed.
+    if (pcJob) {
+      try { photoCheckSave_(pcJob, readsFromTokens_(pcJob, p.reads, user.email) || readMeters_(pcJob)); }
+      catch (e) { console.error('Photo check failed for ' + pcJob.id + ': ' + e); }
     }
   }
 }
@@ -600,8 +615,9 @@ function listAll_(p, user) {
     const email = String(u['Email'] || '').trim().toLowerCase();
     if (email && u['Name']) names[email] = String(u['Name']).trim();
   });
+  const checks = photoChecks_();
   return allRefills_()
-    .map(r => Object.assign(r, { reviewedByName: names[r.reviewedBy.trim().toLowerCase()] || '' }))
+    .map(r => Object.assign(r, { reviewedByName: names[r.reviewedBy.trim().toLowerCase()] || '', pc: photoCheckFor_(r, checks) }))
     .sort((a, b) => (b.dateTime || 0) - (a.dateTime || 0));
 }
 
@@ -686,6 +702,290 @@ function inFolder_(file, folderId) {
   const parents = file.getParents();
   while (parents.hasNext()) if (parents.next().getId() === folderId) return true;
   return false;
+}
+
+// ---------- Photo check (Kim, 19 Oct 2026) ----------
+// Google's AI (Gemini) reads the number on the odometer / hour meter photo and on the fuel pump photo, and the
+// Reviewer screen marks each entry ✓ (matches what was typed), ✕ (doesn't) or ? (photo could not be read).
+// Readings go to a separate "Photo Check" tab; the Fuel Refill tab is never changed by this.
+// Turn on: put the key from aistudio.google.com (Get API key) in Script Properties as GEMINI_API_KEY.
+// Optional Script Property GEMINI_MODEL, e.g. gemini-2.5-flash. Try it from the editor with photoCheckTest.
+// New entries are read right after saving; a timer every 5 minutes reads anything missed or re-photographed
+// in the last PC_DAYS days. Matching (within 1 km / 1 hour / 1 litre) is worked out when the list is read,
+// so a corrected km or litres updates the mark without reading the photo again.
+
+const PC_HANDLER = 'photoCheckRun';
+const PC_DAYS = 30;
+const PC_HEAD = ['ID_FR', 'Checked At', 'Meter Photo', 'Meter Read', 'Meter Photo OK', 'Pump Photo', 'Pump Read', 'Pump Photo OK', 'Note'];
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta';
+
+function geminiKey_() {
+  return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
+}
+
+function photoCheckReady_() {
+  return !!geminiKey_();
+}
+
+function ensurePhotoCheckTrigger_() {
+  if (!photoCheckReady_()) return;
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('PC_TRIGGER')) return;
+  if (Date.now() - (Number(props.getProperty('PC_TRIGGER_TRIED')) || 0) < 24 * 3600 * 1000) return;
+  try {
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === PC_HANDLER)) {
+      ScriptApp.newTrigger(PC_HANDLER).timeBased().everyMinutes(5).create();
+    }
+    props.setProperty('PC_TRIGGER', String(Date.now()));
+  } catch (e) {
+    props.setProperty('PC_TRIGGER_TRIED', String(Date.now()));
+    console.error('Photo check timer not created: ' + e);
+  }
+}
+
+/** Saved readings by entry ID. */
+function photoChecks_() {
+  const out = {};
+  readTable_(SHEETS.PHOTO_CHECK).forEach(r => { if (r['ID_FR']) out[String(r['ID_FR'])] = r; });
+  return out;
+}
+
+const pcNum_ = v => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+
+/** What the phone needs for one entry: the readings, only while the photos are the ones that were read. */
+function photoCheckFor_(r, checks) {
+  const c = checks[r.id];
+  if (!c) return undefined;
+  const meterUrl = r.odoPhoto || r.hourPhoto || '';
+  const out = {};
+  if (meterUrl && String(c['Meter Photo']) === meterUrl) {
+    out.meter = pcNum_(c['Meter Read']);
+    if (c['Meter Photo OK'] === 'No') out.meterWrong = true;
+  }
+  if (r.pumpPhoto && String(c['Pump Photo']) === r.pumpPhoto) {
+    out.litres = pcNum_(c['Pump Read']);
+    if (c['Pump Photo OK'] === 'No') out.pumpWrong = true;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The phone sends one meter or pump photo as soon as it is taken, so the driver is warned while still entering.
+ * The reading is kept 6 hours under a token; Submit sends the tokens back and the photos are not read again.
+ */
+function readPhoto_(p, user) {
+  if (!photoCheckReady_()) return { off: true };
+  const kind = ['km', 'hour', 'litres'].indexOf(p.kind) >= 0 ? p.kind : 'km';
+  const photo = String(p.photo || '');
+  if (!/^data:image\/(jpeg|png);base64,/.test(photo) || photo.length > 4e6) throw new Error('Invalid photo.');
+  const job = kind === 'litres' ? { pumpUrl: 'phone', pumpData: photo } : { meterUrl: 'phone', meterData: photo, meterKind: kind };
+  const res = readMeters_(job);
+  const value = kind === 'litres' ? res.litres : res.meter;
+  const ok = kind === 'litres' ? res.pumpOk : res.meterOk;
+  const token = Utilities.getUuid();
+  CacheService.getScriptCache().put('pr:' + token, JSON.stringify({ kind: kind, value: value, ok: ok, by: user.email }), 6 * 3600);
+  return { value: value, wrong: ok === false, token: token };
+}
+
+/**
+ * Voice note for the Note box (Kim, 19 Oct 2026): the phone records up to a minute and Gemini writes it as text.
+ * Uses the same GEMINI_API_KEY as the photo check. Nothing is saved here; the text goes back into the Note box.
+ */
+function transcribe_(p, user) {
+  if (!photoCheckReady_()) throw new Error('Voice notes are not set up yet.');
+  const m = /^data:(audio\/[\w.+-]+)(?:;[^,]*)?;base64,(.+)$/.exec(String(p.audio || ''));
+  if (!m || m[2].length > 6e6) throw new Error('Invalid recording.');
+  const mime = { 'audio/mp4': 'audio/m4a', 'audio/x-m4a': 'audio/m4a', 'audio/mp3': 'audio/mpeg' }[m[1]] || m[1];
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: [
+      'Transcribe this short voice note from a driver or fuel attendant in Cambodia about a fuel refill.',
+      'Write exactly what is said in Khmer script; keep English words in English. Write numbers and plate numbers as digits.',
+      'No title, no quotes, no explanation. If there is no speech, answer with nothing.',
+    ].join(' ') }, { inline_data: { mime_type: mime, data: m[2] } }] }],
+    generationConfig: { temperature: 0 },
+  };
+  const res = UrlFetchApp.fetch(GEMINI + '/models/' + geminiModel_() + ':generateContent', {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+    headers: { 'x-goog-api-key': geminiKey_() }, muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Could not turn the voice into text. Please try again.');
+  const data = JSON.parse(res.getContentText());
+  const text = (((data.candidates || [])[0] || {}).content || { parts: [] }).parts.map(x => x.text || '').join('').trim();
+  return { text: text.slice(0, 1000) };
+}
+
+/** Readings the phone already got for these photos (see readPhoto_), or null when one is missing. */
+function readsFromTokens_(job, tokens, email) {
+  if (!tokens) return null;
+  const cache = CacheService.getScriptCache();
+  const get = k => {
+    if (!tokens[k]) return null;
+    try { const v = JSON.parse(cache.get('pr:' + tokens[k]) || 'null'); return v && v.by === email ? v : null; } catch (e) { return null; }
+  };
+  const out = { meter: null, litres: null, meterOk: null, pumpOk: null, note: 'Read on the phone' };
+  if (job.meterUrl) {
+    const m = get(job.meterKind === 'hour' ? 'hourPhoto' : 'odoPhoto');
+    if (!m) return null;
+    out.meter = m.value; out.meterOk = m.ok;
+  }
+  if (job.pumpUrl) {
+    const m = get('pumpPhoto');
+    if (!m) return null;
+    out.litres = m.value; out.pumpOk = m.ok;
+  }
+  return out;
+}
+
+/** Timer: reads the photos of recent entries that have no reading yet (or got new photos), newest first. */
+function photoCheckRun() {
+  if (!photoCheckReady_()) return;
+  // Gemini takes a few seconds per entry, so no sheet lock is held while reading; this flag stops two runs overlapping.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('PC_RUNNING')) return;
+  cache.put('PC_RUNNING', '1', 300);
+  const started = Date.now();
+  const since = started - PC_DAYS * 24 * 3600 * 1000;
+  const checks = photoChecks_();
+  const todo = allRefills_()
+    .filter(r => r.dateTime && r.dateTime >= since && r.status !== STATUS_BAD)
+    .filter(r => {
+      const c = checks[r.id], meterUrl = r.odoPhoto || r.hourPhoto || '';
+      if (!meterUrl && !r.pumpPhoto) return false;
+      return !c || String(c['Meter Photo']) !== meterUrl || String(c['Pump Photo']) !== r.pumpPhoto;
+    })
+    .sort((a, b) => b.dateTime - a.dateTime)
+    .slice(0, 8);
+  for (const r of todo) {
+    if (Date.now() - started > 4 * 60 * 1000) break;
+    const job = { id: r.id, meterUrl: r.odoPhoto || r.hourPhoto || '', meterKind: r.odoPhoto ? 'km' : 'hour', pumpUrl: r.pumpPhoto };
+    try { photoCheckSave_(job, readMeters_(job)); }
+    catch (e) { console.error('Photo check stopped at ' + r.id + ': ' + e); break; }   // quota or key problem: try again later
+  }
+  cache.remove('PC_RUNNING');
+}
+
+/** Writes (or replaces) the entry's row in the Photo Check tab. */
+function photoCheckSave_(job, res) {
+  const ss = SpreadsheetApp.getActive();
+  let sheet = ss.getSheetByName(SHEETS.PHOTO_CHECK);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEETS.PHOTO_CHECK);
+    sheet.getRange(1, 1, 1, PC_HEAD.length).setValues([PC_HEAD]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.getRange('A:A').setNumberFormat('@');
+  }
+  const yn = v => v === true ? 'Yes' : v === false ? 'No' : '';
+  const row = [job.id, new Date(), job.meterUrl || '', res.meter === null ? '' : res.meter, yn(res.meterOk),
+    job.pumpUrl || '', res.litres === null ? '' : res.litres, yn(res.pumpOk), res.note || ''];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const n = sheet.getLastRow() - 1;
+    const ids = n > 0 ? sheet.getRange(2, 1, n, 1).getValues().map(v => String(v[0])) : [];
+    const i = ids.indexOf(String(job.id));
+    sheet.getRange(i >= 0 ? i + 2 : sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    delete tableCache_[SHEETS.PHOTO_CHECK];
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** One Gemini call per entry with both photos. Returns { meter, litres, meterOk, pumpOk, note }; null = could not be read.
+ *  meterOk / pumpOk = false when the photo is not that kind of meter at all (wrong photo). */
+function readMeters_(job) {
+  const parts = [{ text: PC_PROMPT }];
+  const meter = job.meterUrl ? pcImage_(job.meterData, job.meterUrl) : null;
+  const pump = job.pumpUrl ? pcImage_(job.pumpData, job.pumpUrl) : null;
+  if (meter) parts.push({ text: 'Photo A: ' + (job.meterKind === 'hour' ? 'hour meter (hours)' : 'vehicle odometer (km)') }, meter);
+  else parts.push({ text: 'Photo A: none' });
+  if (pump) parts.push({ text: 'Photo B: fuel pump display' }, pump);
+  else parts.push({ text: 'Photo B: none' });
+  const out = { meter: null, litres: null, meterOk: null, pumpOk: null, note: '' };
+  if (!meter && !pump) { out.note = 'Photos not found'; return out; }
+  const body = {
+    contents: [{ role: 'user', parts: parts }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+      responseSchema: { type: 'OBJECT', properties: {
+        meterIsMeter: { type: 'BOOLEAN', nullable: true }, meter: { type: 'NUMBER', nullable: true },
+        pumpIsPump: { type: 'BOOLEAN', nullable: true }, litres: { type: 'NUMBER', nullable: true }, note: { type: 'STRING' } } },
+    },
+  };
+  const res = UrlFetchApp.fetch(GEMINI + '/models/' + geminiModel_() + ':generateContent', {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+    headers: { 'x-goog-api-key': geminiKey_() }, muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code !== 200) throw new Error('Gemini ' + code + ': ' + res.getContentText().slice(0, 300));
+  const data = JSON.parse(res.getContentText());
+  const text = (((data.candidates || [])[0] || {}).content || { parts: [] }).parts.map(x => x.text || '').join('');
+  let got = {};
+  try { got = JSON.parse(text); } catch (e) { out.note = 'Unreadable answer'; return out; }
+  const yes = v => v === true ? true : v === false ? false : null;
+  if (meter) { out.meterOk = yes(got.meterIsMeter); out.meter = out.meterOk === false ? null : pcNum_(got.meter); }
+  if (pump) { out.pumpOk = yes(got.pumpIsPump); out.litres = out.pumpOk === false ? null : pcNum_(got.litres); }
+  out.note = String(got.note || '').slice(0, 300);
+  return out;
+}
+
+const PC_PROMPT = [
+  'You check fuel refill records for a steel company in Cambodia. Read the numbers in the photos.',
+  'Each photo may have a dark blue strip at the bottom with an ID and a date: that is a watermark, ignore it.',
+  'Photo A is a vehicle odometer (return the total distance in whole km; ignore the trip meter and the tenths digit)',
+  'or a machine hour meter (return hours, with the decimal if shown).',
+  'Photo B is a fuel pump. Return the litres of this refill from the main display (often marked LITRE or L).',
+  'Ignore the small running-total counter (TOTAL), the price and any money amount.',
+  'On rolling number wheels a digit between two numbers counts as the lower one.',
+  'First say if each photo really is that kind of meter: meterIsMeter = true only when Photo A shows a vehicle odometer',
+  '(or, when asked, a machine hour meter); pumpIsPump = true only when Photo B shows a fuel pump or fuel meter display.',
+  'A fuel pump in Photo A, an odometer in Photo B, a person, a truck, paper, a screen or anything else is false (wrong photo).',
+  'Return null for a number that is missing, blurred or cut off. Never guess.',
+  'Answer JSON: {"meterIsMeter": bool|null, "meter": number|null, "pumpIsPump": bool|null, "litres": number|null,',
+  '"note": "short reason when something is null or false"}. Use null for a photo marked none.',
+].join(' ');
+
+/** A photo for Gemini: the data URL the phone just sent, or the saved file from Drive. */
+function pcImage_(dataUrl, url) {
+  const m = /^data:(image\/(?:jpeg|png));base64,(.+)$/.exec(String(dataUrl || ''));
+  if (m) return { inline_data: { mime_type: m[1], data: m[2] } };
+  const file = photoFile_(url);
+  if (!file) return null;
+  const blob = file.getBlob();
+  return { inline_data: { mime_type: blob.getContentType() || 'image/jpeg', data: Utilities.base64Encode(blob.getBytes()) } };
+}
+
+/** GEMINI_MODEL, else the newest stable gemini-N-flash this key can use (kept 6 hours). */
+function geminiModel_() {
+  const set = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL');
+  if (set) return set;
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('GEMINI_MODEL');
+  if (hit) return hit;
+  let best = 'gemini-2.5-flash', bestV = 0;
+  try {
+    const res = UrlFetchApp.fetch(GEMINI + '/models?pageSize=1000', { headers: { 'x-goog-api-key': geminiKey_() }, muteHttpExceptions: true });
+    (JSON.parse(res.getContentText()).models || []).forEach(m => {
+      const name = String(m.name || '').replace(/^models\//, '');
+      const v = (name.match(/^gemini-(\d+(?:\.\d+)?)-flash$/) || [])[1];
+      if (v && (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0 && +v > bestV) { best = name; bestV = +v; }
+    });
+  } catch (e) { /* keep the fallback */ }
+  cache.put('GEMINI_MODEL', best, 6 * 3600);
+  return best;
+}
+
+/** Run from the editor: reads the newest entry with photos and shows the result in the log. */
+function photoCheckTest() {
+  if (!photoCheckReady_()) throw new Error('Add GEMINI_API_KEY in Project Settings › Script Properties first.');
+  const r = allRefills_().filter(x => x.odoPhoto || x.hourPhoto || x.pumpPhoto).sort((a, b) => b.dateTime - a.dateTime)[0];
+  if (!r) throw new Error('No entry with photos yet.');
+  const job = { id: r.id, meterUrl: r.odoPhoto || r.hourPhoto || '', meterKind: r.odoPhoto ? 'km' : 'hour', pumpUrl: r.pumpPhoto };
+  const res = readMeters_(job);
+  photoCheckSave_(job, res);
+  ensurePhotoCheckTrigger_();
+  console.log(r.id + ' (' + r.plate + ') model ' + geminiModel_() + ': typed ' + (r.km !== null ? r.km + ' km' : r.hour + ' h') + ', ' + r.litres +
+    ' L. Photo: ' + res.meter + (res.meterOk === false ? ' (wrong photo)' : '') + ' / ' + res.litres + ' L' + (res.pumpOk === false ? ' (wrong photo)' : '') + '. ' + res.note);
 }
 
 // ---------- Fuel dashboard (read only) ----------
