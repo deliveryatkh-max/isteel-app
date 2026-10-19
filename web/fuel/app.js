@@ -614,14 +614,14 @@
     if (t.meter === 'km' && f.plate && plateBroken(f.plate)) { f.meterBroken = true; f.autoBroken = true; }
   }
 
-  /** Puts a truck on the form: its usual driver (when it has only one) and the odometer-broken tick. */
+  /** Puts a truck on the form with its odometer-broken tick. The driver is left empty for the driver to pick (Kim, 19 Oct 2026). */
   function pickPlate(v, isNew) {
-    const f = state.form, cfg = state.config;
+    const f = state.form;
     f.plate = v;
     f.newPlate = !!isNew;
     if (f.remembered) f.remembered.plate = false;
-    const matches = cfg.drivers.filter(d => d.plate === v);
-    if (matches.length === 1) { f.driver = matches[0].name; f.newDriver = false; if (f.remembered) f.remembered.driver = false; }
+    f.driver = ''; f.newDriver = false;
+    if (f.remembered) f.remembered.driver = false;
     // Trucks marked "Odometer Broken? = Yes" in Driver & Truck get Meter broken ticked for them.
     if (plateBroken(v)) { f.meterBroken = true; f.km = ''; f.autoBroken = true; }
     else if (f.autoBroken) { f.meterBroken = false; f.autoBroken = false; }
@@ -629,7 +629,7 @@
 
   // ---------------- Truck QR code ----------------
   // Each truck has a sticker with a link like https://…/fuel/?plate=3F-5849. Scanning it in the app, or
-  // opening the link with the phone camera, fills the truck and its driver.
+  // opening the link with the phone camera, fills the truck.
   function plateFromCode(text) {
     const s = String(text || '').trim();
     let p = '';
