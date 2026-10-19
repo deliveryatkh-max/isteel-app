@@ -723,8 +723,62 @@ function geminiKey_() {
   return PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
 }
 
+// Kim's Google account was refused by Gemini (403, 19 Oct 2026), so the free Cloudflare Workers AI relay at
+// <APP_URL>/fc/ is used whenever FC_SECRET is set (run fcSetup once); Gemini stays as the other way.
+function fcSecret_() {
+  return PropertiesService.getScriptProperties().getProperty('FC_SECRET') || '';
+}
+
 function photoCheckReady_() {
-  return !!geminiKey_();
+  return !!(fcSecret_() || geminiKey_());
+}
+
+/** Run once from the editor: makes the FC_SECRET password and shows where to paste it in Cloudflare. */
+function fcSetup() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('FC_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    props.setProperty('FC_SECRET', secret);
+  }
+  console.log('Copy this password into Cloudflare > isteel-app > Settings > Variables and Secrets as FC_SECRET (type Secret):\n' + secret);
+  const ping = UrlFetchApp.fetch(appUrl_() + '/fc/ping', { muteHttpExceptions: true });
+  console.log('Cloudflare says: ' + ping.getContentText() + '  (needs "ai":true and "secret":true; after adding them, Retry the latest deployment)');
+}
+
+function fcCall_(action, body) {
+  return { url: appUrl_() + '/fc/' + action, method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+    headers: { 'X-FC-Key': fcSecret_() }, muteHttpExceptions: true };
+}
+
+function fcAnswer_(res) {
+  let d = {};
+  try { d = JSON.parse(res.getContentText()); } catch (e) { /* not JSON */ }
+  if (res.getResponseCode() !== 200 || !d.ok) throw new Error('Cloudflare AI ' + res.getResponseCode() + ': ' + (d.error || res.getContentText().slice(0, 300)));
+  return d;
+}
+
+/** Cloudflare way: one call per photo, both photos at the same time. Same answer shape as readMeters_. */
+function readMetersCf_(job) {
+  const out = { meter: null, litres: null, meterOk: null, pumpOk: null, note: '', model: '' };
+  const asks = [];
+  const meter = job.meterUrl ? pcImage_(job.meterData, job.meterUrl) : null;
+  const pump = job.pumpUrl ? pcImage_(job.pumpData, job.pumpUrl) : null;
+  const dataUrl = img => 'data:' + img.inline_data.mime_type + ';base64,' + img.inline_data.data;
+  if (meter) asks.push(['meter', fcCall_('read', { kind: job.meterKind === 'hour' ? 'hour' : 'km', image: dataUrl(meter) })]);
+  if (pump) asks.push(['pump', fcCall_('read', { kind: 'litres', image: dataUrl(pump) })]);
+  if (!asks.length) { out.note = 'Photos not found'; return out; }
+  const answers = UrlFetchApp.fetchAll(asks.map(a => a[1]));
+  const notes = [];
+  asks.forEach((a, i) => {
+    const d = fcAnswer_(answers[i]);
+    out.model = d.model || out.model;
+    if (a[0] === 'meter') { out.meterOk = d.right === false ? false : d.right === true ? true : null; out.meter = out.meterOk === false ? null : pcNum_(d.value); }
+    else { out.pumpOk = d.right === false ? false : d.right === true ? true : null; out.litres = out.pumpOk === false ? null : pcNum_(d.value); }
+    if (d.note) notes.push(a[0] + ': ' + d.note);
+  });
+  out.note = notes.join('; ').slice(0, 300);
+  return out;
 }
 
 function ensurePhotoCheckTrigger_() {
@@ -795,6 +849,15 @@ function transcribe_(p, user) {
   if (!photoCheckReady_()) throw new Error('Voice notes are not set up yet.');
   const m = /^data:(audio\/[\w.+-]+)(?:;[^,]*)?;base64,(.+)$/.exec(String(p.audio || ''));
   if (!m || m[2].length > 6e6) throw new Error('Invalid recording.');
+  if (fcSecret_()) {
+    try {
+      const d = fcAnswer_(UrlFetchApp.fetchAll([fcCall_('transcribe', { audio: String(p.audio) })])[0]);
+      return { text: String(d.text || '').slice(0, 1000) };
+    } catch (e) {
+      console.error(e);
+      throw new Error('Could not turn the voice into text. Please try again.');
+    }
+  }
   const mime = { 'audio/mp4': 'audio/m4a', 'audio/x-m4a': 'audio/m4a', 'audio/mp3': 'audio/mpeg' }[m[1]] || m[1];
   const body = {
     contents: [{ role: 'user', parts: [{ text: [
@@ -893,6 +956,7 @@ function photoCheckSave_(job, res) {
 /** One Gemini call per entry with both photos. Returns { meter, litres, meterOk, pumpOk, note }; null = could not be read.
  *  meterOk / pumpOk = false when the photo is not that kind of meter at all (wrong photo). */
 function readMeters_(job) {
+  if (fcSecret_()) return readMetersCf_(job);
   const parts = [{ text: PC_PROMPT }];
   const meter = job.meterUrl ? pcImage_(job.meterData, job.meterUrl) : null;
   const pump = job.pumpUrl ? pcImage_(job.pumpData, job.pumpUrl) : null;
@@ -926,6 +990,7 @@ function readMeters_(job) {
   if (meter) { out.meterOk = yes(got.meterIsMeter); out.meter = out.meterOk === false ? null : pcNum_(got.meter); }
   if (pump) { out.pumpOk = yes(got.pumpIsPump); out.litres = out.pumpOk === false ? null : pcNum_(got.litres); }
   out.note = String(got.note || '').slice(0, 300);
+  out.model = geminiModel_();
   return out;
 }
 
@@ -977,14 +1042,14 @@ function geminiModel_() {
 
 /** Run from the editor: reads the newest entry with photos and shows the result in the log. */
 function photoCheckTest() {
-  if (!photoCheckReady_()) throw new Error('Add GEMINI_API_KEY in Project Settings › Script Properties first.');
+  if (!photoCheckReady_()) throw new Error('Run fcSetup first (free Cloudflare AI), or add GEMINI_API_KEY in Script Properties.');
   const r = allRefills_().filter(x => x.odoPhoto || x.hourPhoto || x.pumpPhoto).sort((a, b) => b.dateTime - a.dateTime)[0];
   if (!r) throw new Error('No entry with photos yet.');
   const job = { id: r.id, meterUrl: r.odoPhoto || r.hourPhoto || '', meterKind: r.odoPhoto ? 'km' : 'hour', pumpUrl: r.pumpPhoto };
   const res = readMeters_(job);
   photoCheckSave_(job, res);
   ensurePhotoCheckTrigger_();
-  console.log(r.id + ' (' + r.plate + ') model ' + geminiModel_() + ': typed ' + (r.km !== null ? r.km + ' km' : r.hour + ' h') + ', ' + r.litres +
+  console.log(r.id + ' (' + r.plate + ') model ' + res.model + ': typed ' + (r.km !== null ? r.km + ' km' : r.hour + ' h') + ', ' + r.litres +
     ' L. Photo: ' + res.meter + (res.meterOk === false ? ' (wrong photo)' : '') + ' / ' + res.litres + ' L' + (res.pumpOk === false ? ' (wrong photo)' : '') + '. ' + res.note);
 }
 
