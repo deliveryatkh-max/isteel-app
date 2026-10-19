@@ -288,6 +288,8 @@ a.tab { display: block; text-align: center; text-decoration: none; }
 .rv-row:last-child { border-bottom: 0; }
 .rv-row:hover, .rv-row:focus-visible { background: var(--bg); outline: none; }
 .rv-ic { width: 42px; height: 42px; border-radius: 12px; background: var(--brand-soft); display: grid; place-items: center; font-size: 22px; flex: none; }
+.rv-ic.thumb-ic { width: 48px; height: 48px; background-size: cover; background-position: center; }
+.rv-ic.has-img { font-size: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
 .rv-main { flex: 1; min-width: 0; line-height: 1.3; }
 .rv-main b, .rv-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-main b { font-size: 15px; }

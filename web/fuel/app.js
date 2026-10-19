@@ -112,6 +112,70 @@
     if (photoCache.size > 40) photoCache.delete(photoCache.keys().next().value);
   }
 
+  // Odometer previews in the Reviewer list (Kim, 19 Oct 2026). Loaded only for rows on screen,
+  // a few per call and without the busy bar, then shrunk and kept on the phone so each loads once.
+  const thumbs = {
+    KEY: 'fr_thumbs', MAX: 300, map: null, queue: new Set(), timer: 0, saveTimer: 0, running: 0, seen: null,
+    load() {
+      if (this.map) return this.map;
+      try { this.map = new Map(Object.entries(JSON.parse(localStorage.getItem(this.KEY) || '{}'))); } catch (e) { this.map = new Map(); }
+      return this.map;
+    },
+    save() {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(() => {
+        const m = this.load();
+        while (m.size > this.MAX) m.delete(m.keys().next().value);
+        try { localStorage.setItem(this.KEY, JSON.stringify(Object.fromEntries(m))); } catch (e) { /* storage full or blocked */ }
+      }, 400);
+    },
+    get(url) { return this.load().get(url); },
+    // One observer for the list: rows ask for their photo when they scroll into view.
+    watch(root) {
+      if (this.seen) this.seen.disconnect();
+      if (!('IntersectionObserver' in window)) return;
+      this.seen = new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return;
+        this.seen.unobserve(e.target);
+        this.queue.add(e.target.dataset.thumb);
+        clearTimeout(this.timer); this.timer = setTimeout(() => this.fetch(), 120);
+      }), { rootMargin: '200px 0px' });
+      $$('[data-thumb]:not(.has-img)', root).forEach(el => this.seen.observe(el));
+    },
+    async fetch() {
+      if (this.running >= 2 || !this.queue.size) return;
+      const urls = [...this.queue].slice(0, 10);
+      urls.forEach(u => this.queue.delete(u));
+      this.running++;
+      try {
+        const res = await (DEMO ? demoApi('thumbs', { urls }) : callServer('thumbs', { urls }));
+        for (const url of urls) {
+          const data = res.thumbs && res.thumbs[url];
+          if (!data) continue;
+          const small = await shrink(data, 96).catch(() => data);
+          this.load().set(url, small);
+          $$(`[data-thumb="${CSS.escape(url)}"]`).forEach(el => { el.style.backgroundImage = `url('${small}')`; el.classList.add('has-img'); });
+        }
+        this.save();
+      } catch (e) { /* offline or busy: rows keep their icon */ }
+      finally { this.running--; if (this.queue.size) this.fetch(); }
+    },
+  };
+  function shrink(dataUrl, size) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const k = size / Math.min(img.width, img.height), c = document.createElement('canvas');
+        if (k >= 1) return resolve(dataUrl);
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
   // ---------------- Outbox ----------------
   // New entries are kept on the phone and sent in the background, so Submit doesn't wait for Google.
   // They are stored in IndexedDB, so an entry still sending survives closing the app and is sent
@@ -330,6 +394,7 @@
           return resolve({ id: r.id });
         }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
+        if (action === 'thumbs') return resolve({ thumbs: Object.fromEntries(p.urls.map(u => [u, demo.photos[u] || null])) });
         throw new Error('Unknown action');
       } catch (e) { reject(e); }
     }, 150));
@@ -353,7 +418,7 @@
     storeSet(TOKEN_KEY, null);
     if (!DEMO && window.google && google.accounts) google.accounts.id.disableAutoSelect();
     if (!expired) {
-      local.clear(); photoCache.clear();
+      local.clear(); photoCache.clear(); thumbs.map = new Map(); try { localStorage.removeItem(thumbs.KEY); } catch (e) { /* ignore */ }
       state.config = null; state.form = null; state.draft = null; state.editing = null; state.mine = null;
       demo.user = null; rv.rows = null; rv.fetchedAt = 0; nav.stack = []; nav.i = -1;
     }
@@ -1438,9 +1503,16 @@
     if (years[0] && rv.open[years[0].key] === undefined) rv.open[years[0].key] = true;
     if (years[0] && years[0].months[0] && rv.open[years[0].months[0].key] === undefined) rv.open[years[0].months[0].key] = true;
 
+    // The odometer photo (hour meter for machines) instead of the type icon; the icon stays when there is none.
+    const rowIcon = r => {
+      const url = r.odoPhoto || r.hourPhoto;
+      if (!url) return `<span class="rv-ic">${esc(emojiOf(r.type))}</span>`;
+      const img = thumbs.get(url);
+      return `<span class="rv-ic thumb-ic ${img ? 'has-img' : ''}" data-thumb="${esc(url)}"${img ? ` style="background-image:url('${img}')"` : ''}>${esc(emojiOf(r.type))}</span>`;
+    };
     const rowHtml = r => `
       <button type="button" class="rv-row" data-open="${esc(r.id)}">
-        <span class="rv-ic">${esc(emojiOf(r.type))}</span>
+        ${rowIcon(r)}
         <span class="rv-main"><b>${esc(r.plate || '–')}</b><small>${esc(r.driver || '–')} · ${timeOf(r.dateTime)}</small></span>
         <span class="rv-right"><b>${fmtNum(r.litres)} <i>L</i></b>${statusDot(r.status)}</span>
       </button>`;
@@ -1486,6 +1558,7 @@
     });
     $$('[data-open]').forEach(b => b.onclick = () => { rv.restoreY = window.scrollY; go({ s: 'detail', id: b.dataset.open }); });
     if (rv.restoreY != null) { window.scrollTo(0, rv.restoreY); rv.restoreY = null; }
+    thumbs.watch($('#view'));
   }
 
   /** Reviewers, admins and people with the Dashboard ticked may open an entry's details (also from Telegram). */

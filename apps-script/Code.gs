@@ -84,6 +84,7 @@ const ACTIONS = {
   all: listAll_,
   review: reviewRefill_,
   photo: getPhoto_,
+  thumbs: getThumbs_,
   dashboard: dashboardData_,
   dashboardSave: dashboardSave_,
   home: homeApps_,
@@ -636,23 +637,49 @@ function reviewRefill_(p, user) {
  * set as OLD_PHOTO_FOLDER_ID in the Settings sheet. Nothing outside those two folders is served.
  */
 function getPhoto_(p, user) {
-  const url = String(p.url || '');
-  let file = null;
-  const fileId = fileIdFromUrl_(url);
-  if (fileId) {
-    const f = DriveApp.getFileById(fileId);
-    if (inFolder_(f, photoFolder_().getId())) file = f;
-  } else if (url) {
-    const oldId = getSetting_('OLD_PHOTO_FOLDER_ID');
-    if (oldId) {
-      const name = url.split('/').pop();
-      const it = DriveApp.getFolderById(oldId).getFilesByName(name);
-      if (it.hasNext()) file = it.next();
-    }
-  }
+  const file = photoFile_(String(p.url || ''));
   if (!file) return { dataUrl: null };
   const blob = file.getBlob();
   return { dataUrl: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
+}
+
+/**
+ * Small previews for the Reviewer list (Kim, 19 Oct 2026): Drive's own thumbnail of each photo,
+ * kept 6 hours in the script cache so a second reviewer gets them without opening Drive again.
+ * A photo Drive has not made a thumbnail for yet comes back as null and the app keeps its icon.
+ */
+function getThumbs_(p, user) {
+  if (!canCheck_(user)) throw new Error('Only reviewers can see this list.');
+  const urls = (Array.isArray(p.urls) ? p.urls : []).map(String).filter(Boolean).slice(0, 12);
+  const cache = CacheService.getScriptCache();
+  const keys = urls.map(u => 'th:' + (fileIdFromUrl_(u) || u).slice(-200));
+  const hit = keys.length ? cache.getAll(keys) : {};
+  const out = {};
+  urls.forEach((url, i) => {
+    if (hit[keys[i]]) { out[url] = hit[keys[i]]; return; }
+    let data = null;
+    try {
+      const file = photoFile_(url);
+      const blob = file && file.getThumbnail();
+      if (blob) data = 'data:' + (blob.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    } catch (e) { /* missing or not shared with the script: keep the icon */ }
+    out[url] = data;
+    if (data && data.length < 90000) cache.put(keys[i], data, 21600);
+  });
+  return { thumbs: out };
+}
+
+/** The Drive file behind a sheet photo link, only from the app's photo folders. */
+function photoFile_(url) {
+  const fileId = fileIdFromUrl_(url);
+  if (fileId) {
+    const f = DriveApp.getFileById(fileId);
+    return inFolder_(f, photoFolder_().getId()) ? f : null;
+  }
+  const oldId = getSetting_('OLD_PHOTO_FOLDER_ID');
+  if (!url || !oldId) return null;
+  const it = DriveApp.getFolderById(oldId).getFilesByName(url.split('/').pop());
+  return it.hasNext() ? it.next() : null;
 }
 
 function inFolder_(file, folderId) {
