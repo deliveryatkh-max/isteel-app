@@ -552,8 +552,8 @@ function updateRefill_(p, user) {
     const row = sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).getValues()[0];
     // Reviewers and admins can correct any entry; others only their own entries before review.
     if (!isReviewer_(user) && String(row[cols[COL.USER]]).toLowerCase() !== user.email) throw new Error('You can only edit your own entries.');
-    // Reviewed entries are final; only admins can still correct them (Kim, 17 Oct 2026).
-    if (row[cols[COL.STATUS]] && user.role !== 'admin') throw new Error('This entry has already been reviewed and can no longer be edited.');
+    // Reviewed entries are final for everyone (Kim, 19 Oct 2026).
+    if (row[cols[COL.STATUS]]) throw new Error('This entry has already been reviewed and can no longer be edited.');
     const entryTime = row[cols[COL.DATETIME]] instanceof Date ? row[cols[COL.DATETIME]].getTime() : null;
     addNewNames_(p);
     const clean = validate_(p, p.id, entryTime);
@@ -593,7 +593,15 @@ function listMine_(p, user) {
 /** Every entry, newest first, for the reviewer tab (grouped by year / month / day on the phone). */
 function listAll_(p, user) {
   if (!canCheck_(user)) throw new Error('Only reviewers can see this list.');
-  return allRefills_().sort((a, b) => (b.dateTime || 0) - (a.dateTime || 0));
+  // The reviewer's name from the Users tab is shown instead of the email (Kim, 19 Oct 2026).
+  const names = {};
+  readTable_(SHEETS.USERS).forEach(u => {
+    const email = String(u['Email'] || '').trim().toLowerCase();
+    if (email && u['Name']) names[email] = String(u['Name']).trim();
+  });
+  return allRefills_()
+    .map(r => Object.assign(r, { reviewedByName: names[r.reviewedBy.trim().toLowerCase()] || '' }))
+    .sort((a, b) => (b.dateTime || 0) - (a.dateTime || 0));
 }
 
 function reviewRefill_(p, user) {

@@ -1493,7 +1493,6 @@
     const c = state.config || {}, u = c.user || {};
     return c.canCheck != null ? !!c.canCheck : (u.role === 'reviewer' || u.role === 'admin');
   }
-  const isAdmin = () => (((state.config || {}).user || {}).role === 'admin');
   const canReview = () => { const u = (state.config || {}).user || {}; return u.role === 'reviewer' || u.role === 'admin'; };
 
   async function openDetail(id) {
@@ -1529,7 +1528,7 @@
         ${tile('ឈ្មោះតៃកុង', 'Driver', esc(r.driver || '–'))}
         ${r.km != null ? tile('លេខកុងទ័រ', 'Odometer', fmtNum(r.km) + ' km') : ''}
         ${r.hour != null ? tile('កុងទ័រម៉ោង', 'Hour meter', fmtNum(r.hour) + ' h') : ''}
-        ${r.status ? tile('ពិនិត្យដោយ', 'Reviewed by', `${esc(r.reviewedBy)}${r.reviewedAt ? '<small>' + fmtDate(r.reviewedAt) + '</small>' : ''}`) : ''}
+        ${r.status ? tile('ពិនិត្យដោយ', 'Reviewed by', `${esc(r.reviewedByName || String(r.reviewedBy || '').split('@')[0])}${r.reviewedAt ? '<small>' + fmtDate(r.reviewedAt) + '</small>' : ''}`) : ''}
         ${r.updatedAt ? tile('កែចុងក្រោយ', 'Last edited', fmtDate(r.updatedAt)) : ''}
         ${r.note ? tile('សំគាល់', 'Note', esc(r.note), true) : ''}
       </div>
@@ -1540,7 +1539,7 @@
       <div id="dReason"></div>
       <div class="decide ${r.status ? 'done' : ''}" ${canReview() ? '' : 'hidden'}>
         <button type="button" class="btn ok" id="dOk" ${r.status ? 'disabled' : ''}>✔ ${L('ត្រឹមត្រូវ', 'Correct')}</button>
-        <button type="button" class="btn ghost" id="dEdit" ${r.status && !isAdmin() ? 'disabled' : ''}>✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
+        <button type="button" class="btn ghost" id="dEdit" ${r.status ? 'disabled' : ''}>✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
         <button type="button" class="btn bad" id="dCancel" ${r.status ? 'disabled' : ''}>🗑 ${L('លុបចោល', 'Cancel entry')}</button>
       </div>`;
 
@@ -1565,7 +1564,7 @@
     const setStatus = (status, note) => {
       note = (note || '').trim();
       const before = { status: r.status, reviewedBy: r.reviewedBy, reviewedAt: r.reviewedAt, note: r.note };
-      const after = { status, reviewedBy: state.config.user.email, reviewedAt: Date.now(),
+      const after = { status, reviewedBy: state.config.user.email, reviewedByName: state.config.user.name || '', reviewedAt: Date.now(),
         note: note ? (r.note ? r.note + ' | ' : '') + 'Review: ' + note : r.note };
       Object.assign(r, after);
       rv.pending[r.id] = after;
