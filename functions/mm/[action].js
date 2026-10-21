@@ -11,14 +11,18 @@
 //   GEMINI_API_KEY  key from Google AI Studio (aistudio.google.com > Get API key), used when there is no Groq key
 //   MM_SECRET       the same value as MM_SECRET in the Minutes Apps Script (made by setup())
 //   AI_PROVIDER     optional, groq or gemini, to choose when both keys are set (default groq)
-//   GROQ_MODEL, GROQ_STT_MODEL, GEMINI_MODEL  optional model names; empty = the defaults below
+//   GROQ_MODEL, GROQ_VISION_MODEL, GROQ_STT_MODEL, GEMINI_MODEL  optional model names; empty = picked by the relay
 
 const BASE = 'https://generativelanguage.googleapis.com';
 const MAX_UPLOAD = 95 * 1024 * 1024;   // Pages Functions take request bodies up to 100 MB
 const GROQ = 'https://api.groq.com/openai/v1';
 const GROQ_MAX_AUDIO = 25 * 1024 * 1024;   // Groq's free plan takes audio files up to 25 MB
 const GROQ_STT = 'whisper-large-v3';       // the full model: better at Khmer than the turbo one
-const GROQ_LLM = 'meta-llama/llama-4-scout-17b-16e-instruct';   // reads photos too, and has the biggest free per-minute allowance
+// Groq retires models often (Llama 4 Scout went in Oct 2026), so the relay asks Groq which models it has and takes
+// the first of these that is there; if one fails as gone or too small for the meeting, the next one is tried.
+const GROQ_TEXT = ['openai/gpt-oss-120b', 'moonshotai/kimi-k2-instruct-0905', 'moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile',
+  'qwen/qwen3-32b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant'];
+const isVision = id => /llama-4|vision|-vl\b|scout|maverick|gemma-3|pixtral/i.test(id);
 
 export const provider = env => {
   const want = String(env.AI_PROVIDER || '').toLowerCase();
@@ -228,9 +232,12 @@ async function groqFetch(env, path, init) {
 const AUDIO_EXT = { 'audio/webm': 'webm', 'video/webm': 'webm', 'audio/ogg': 'ogg', 'audio/m4a': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/flac': 'flac', 'video/mp4': 'mp4', 'audio/aac': 'm4a' };
 const clock = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0'); };
 
-/** Whisper's pieces joined into lines of up to about 30 seconds, each starting with [mm:ss]. Whisper does not tell speakers apart. */
-export function whisperText(d) {
-  const segs = (d && d.segments) || [];
+/** Whisper's pieces joined into lines of up to about 30 seconds, each starting with [mm:ss]. Whisper does not tell speakers apart.
+ *  Pieces Whisper marks as probably not speech, or that only repeat the hint it was given, are dropped (it makes those up on silence). */
+export function whisperText(d, hint) {
+  const echo = String(hint || '').toLowerCase();
+  const segs = ((d && d.segments) || []).filter(g => !(g.no_speech_prob > 0.8) && !(echo && echo.indexOf(String(g.text || '').trim().toLowerCase()) >= 0));
+  if (d && d.segments && d.segments.length && !segs.length) return '';
   if (!segs.length) return String((d && d.text) || '').trim();
   const lines = [];
   let cur = null;
@@ -258,11 +265,12 @@ async function groqUpload(request, env) {
   form.append('temperature', '0');
   const lang = request.headers.get('X-MM-Lang');
   if (lang === 'km' || lang === 'en') form.append('language', lang);
-  // A short hint helps Whisper spell names and company words.
-  const hint = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 150);
-  form.append('prompt', 'ISI Steel meeting. SAP, SO, DN, MB51, 3PL, truck, warehouse.' + (hint ? ' ' + hint : ''));
+  // The names of the people help Whisper spell them. (A list of company words was tried: on a quiet recording Whisper wrote it back as speech.)
+  const hint = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 150).trim();
+  if (hint) form.append('prompt', hint);
   const r = await groqFetch(env, '/audio/transcriptions', { method: 'POST', body: form });
-  const text = whisperText(await r.json());
+  const text = whisperText(await r.json(), hint);
+  if (!text) return json({ ok: false, error: 'NOSPEECH: No speech was heard in this recording. Check the microphone and record again. || មិនឮសំឡេងនិយាយក្នុងការថតនេះទេ។ សូមពិនិត្យមីក្រូហ្វូន ហើយថតម្តងទៀត។' }, 422);
   return json({ ok: true, data: { provider: 'groq', text, mimeType: mime, size: buf.byteLength } });
 }
 
@@ -274,14 +282,41 @@ const MINUTES_SHAPE = '{"title":"","meetingDate":"YYYY-MM-DD","startTime":"","du
   '"actions":[{"task":"","owner":"","due":"YYYY-MM-DD or TBC","priority":"High, Medium or Low"}],' +
   '"followUp":[""],"openPoints":[""],"nextMeeting":"","glossary":[{"term":"","meaning":""}]}';
 
-async function groqChat(env, messages, extra) {
-  const model = env.GROQ_MODEL || GROQ_LLM;
-  const r = await groqFetch(env, '/chat/completions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(Object.assign({ model, messages, temperature: 0, max_completion_tokens: 8192 }, extra || {})),
-  });
-  const d = await r.json();
-  return { text: String((((d.choices || [])[0] || {}).message || {}).content || ''), model };
+let groqIds = { list: null, at: 0 };
+export const __resetGroq = () => { groqIds = { list: null, at: 0 }; };   // tests only
+async function groqModels(env) {
+  if (groqIds.list && Date.now() - groqIds.at < 3600e3) return groqIds.list;
+  try {
+    const d = await (await groqFetch(env, '/models', { method: 'GET' })).json();
+    groqIds = { list: (d.data || []).filter(m => m && m.id && m.active !== false).map(m => String(m.id)), at: Date.now() };
+  } catch (e) { return []; }
+  return groqIds.list;
+}
+/** Models to try, best first: the one set in Cloudflare, then the known good ones Groq still has (all of them if the list is unknown). */
+export function groqCandidates(ids, kind, env) {
+  const set = kind === 'vision' ? env.GROQ_VISION_MODEL : env.GROQ_MODEL;
+  const known = kind === 'vision' ? (ids || []).filter(isVision) : GROQ_TEXT.filter(m => !ids || !ids.length || ids.indexOf(m) >= 0);
+  return [set].concat(known).filter((m, i, a) => m && a.indexOf(m) === i);
+}
+const MOVE_ON = /does not exist|not found|decommission|deprecat|not supported|do not have access|json_validate_failed|failed to generate json/i;
+
+async function groqChat(env, messages, extra, kind) {
+  const list = groqCandidates(await groqModels(env), kind, env);
+  if (!list.length) throw Object.assign(new Error('Groq has no model that can read photos right now.'), { status: 404 });
+  let last;
+  for (const model of list) {
+    const body = Object.assign({ model, messages, temperature: 0, max_completion_tokens: 8192 }, extra || {});
+    if (/gpt-oss/.test(model)) body.reasoning_effort = 'low';      // thinks less, answers sooner
+    if (/qwen3/.test(model)) body.reasoning_effort = 'none';
+    try {
+      const d = await (await groqFetch(env, '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+      return { text: String((((d.choices || [])[0] || {}).message || {}).content || ''), model };
+    } catch (e) {
+      last = e;
+      if (!(e.status === 404 || e.status === 413 || (e.status === 400 && MOVE_ON.test(e.message)))) throw e;
+    }
+  }
+  throw last;
 }
 
 async function groqGenerate(request, env) {
@@ -293,12 +328,17 @@ async function groqGenerate(request, env) {
   if (p.kind === 'ocr') {
     const imgs = files.filter(f => /^data:image\/(jpeg|png|webp);base64,/.test(String(f.inline || '')));
     const out = [];
-    let model = env.GROQ_MODEL || GROQ_LLM;
+    let model = '';
     for (let i = 0; i < imgs.length; i += 5) {   // Groq takes up to 5 photos in one question
       const batch = imgs.slice(i, i + 5);
       const content = [{ type: 'text', text: buildPrompt(p) + '\nThe first photo here is File ' + (i + 1) + '.' }]
         .concat(batch.map(f => ({ type: 'image_url', image_url: { url: f.inline } })));
-      const r = await groqChat(env, [{ role: 'user', content }]);
+      let r;
+      try { r = await groqChat(env, [{ role: 'user', content }], null, 'vision'); } catch (e) {
+        if (e.status !== 404 && !(e.status === 400 && MOVE_ON.test(e.message))) throw e;
+        out.push('[' + batch.length + ' photo(s) not read: ' + String(e.message).slice(0, 120) + ']');   // the minutes can still be written
+        continue;
+      }
       out.push(r.text.trim()); model = r.model;
     }
     files.filter(f => f.plain).forEach(f => out.push('=== ' + String(f.name || 'Text') + ' ===\n' + String(f.plain).slice(0, 20000)));
@@ -308,6 +348,6 @@ async function groqGenerate(request, env) {
   const r = await groqChat(env, [
     { role: 'system', content: 'Answer with one JSON object only, in exactly this shape: ' + MINUTES_SHAPE },
     { role: 'user', content: buildPrompt(p) },
-  ], { temperature: 0.3, response_format: { type: 'json_object' } });
+  ], { temperature: 0.3, response_format: { type: 'json_object' } }, 'text');
   return sseOf(r.text, r.model);
 }

@@ -196,6 +196,11 @@ async function groqRelay() {
   eq(mod.provider({}), '');
   eq(mod.whisperText({ segments: [{ start: 0, end: 4, text: ' Hello ' }, { start: 4, end: 9, text: 'team.' }, { start: 40, end: 42, text: 'Next.' }, { start: 3725, end: 3727, text: 'Bye.' }] }),
     '[00:00] Hello team.\n[00:40] Next.\n[1:02:05] Bye.', 'Whisper pieces joined into timed lines');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'Kim, Dara' }, { start: 3, end: 5, text: 'Thank you.', no_speech_prob: 0.95 }] }, 'Kim, Dara'), '', 'echoed hint and silence dropped');
+  const E = {};
+  eq(mod.groqCandidates(['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'whisper-large-v3'], 'text', E), ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'], 'only models Groq still has');
+  eq(mod.groqCandidates([], 'text', { GROQ_MODEL: 'x/y' })[0], 'x/y', 'model set in Cloudflare first');
+  eq(mod.groqCandidates(['llama-3.3-70b-versatile', 'meta-llama/llama-4-maverick-17b-128e-instruct'], 'vision', E), ['meta-llama/llama-4-maverick-17b-128e-instruct']);
 
   const crypto = require('crypto');
   const secret = 'abc123';
@@ -203,13 +208,16 @@ async function groqRelay() {
   const tk = body + '.' + crypto.createHmac('sha256', secret).update(body).digest('base64url');
   const env = { GROQ_API_KEY: 'GKEY', MM_SECRET: secret };
   const calls = [];
-  let limited = 1;
+  let limited = 1, models = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'whisper-large-v3'];
   const real = global.fetch;
   global.fetch = async (url, o) => {
     calls.push({ url, o });
     assert.strictEqual(o.headers.Authorization, 'Bearer GKEY');
+    if (/\/models$/.test(url)) return new Response(JSON.stringify({ data: models.map(id => ({ id, active: true })) }));
     if (/audio\/transcriptions$/.test(url)) return new Response(JSON.stringify({ text: 'hi', segments: [{ start: 0, end: 2, text: 'សួស្តី' }] }));
     if (/chat\/completions$/.test(url)) {
+      const b = JSON.parse(o.body);
+      if (b.model === 'openai/gpt-oss-120b' && limited === -5) return new Response(JSON.stringify({ error: { message: 'The model `openai/gpt-oss-120b` does not exist or you do not have access to it.' } }), { status: 404 });
       if (limited-- > 0) return new Response('{"error":{"message":"rate"}}', { status: 429, headers: { 'retry-after': '0.01' } });
       return new Response(JSON.stringify({ choices: [{ message: { content: '{"title":"T"}' } }] }));
     }
@@ -238,15 +246,27 @@ async function groqRelay() {
     eq(one(await gen({ kind: 'transcribe', files: [up.data] })), '[00:00] សួស្តី', 'transcript comes back in the Gemini stream shape');
     const n = calls.length;
     eq(one(await gen({ kind: 'minutes', outLang: 'en', transcript: 'x' })), '{"title":"T"}', 'minutes after a rate-limit wait');
-    eq(calls.length - n, 2, 'tried again once after 429');
+    eq(calls.length - n, 3, 'model list, then tried again once after 429');
     const mb = JSON.parse(calls[calls.length - 1].o.body);
+    eq(mb.model, 'openai/gpt-oss-120b');
+    eq(mb.reasoning_effort, 'low');
     eq(mb.response_format, { type: 'json_object' });
     ok(/"actions"/.test(mb.messages[0].content), 'minutes shape given');
+    limited = -5;
+    const k = calls.length;
+    eq(one(await gen({ kind: 'minutes', outLang: 'km', transcript: 'x' })), '{"title":"T"}', 'a retired model is skipped');
+    eq(calls.slice(k).map(c => JSON.parse(c.o.body).model), ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile']);
+    limited = 0;
     const img = 'data:image/jpeg;base64,AAAA';
     const files = [1, 2, 3, 4, 5, 6].map(() => ({ inline: img })).concat([{ skipped: 'plan.pdf' }, { plain: 'typed note', name: 'n.txt' }]);
+    let ocr = one(await gen({ kind: 'ocr', files }));
+    ok(/5 photo\(s\) not read/.test(ocr) && /typed note/.test(ocr), 'no photo model: minutes still go on: ' + ocr);
+    models.push('meta-llama/llama-4-maverick-17b-128e-instruct');
+    mod.__resetGroq && mod.__resetGroq();
     const m = calls.length;
-    const ocr = one(await gen({ kind: 'ocr', files }));
-    eq(calls.length - m, 2, 'six photos asked in two groups of up to five');
+    ocr = one(await gen({ kind: 'ocr', files }));
+    eq(calls.length - m, 3, 'model list, then six photos asked in two groups of up to five');
+    eq(JSON.parse(calls[calls.length - 1].o.body).model, 'meta-llama/llama-4-maverick-17b-128e-instruct');
     ok(/File 6/.test(JSON.parse(calls[calls.length - 1].o.body).messages[0].content[0].text), 'second group numbered from File 6');
     ok(/typed note/.test(ocr) && /plan\.pdf: not read/.test(ocr), 'text file kept and PDF named: ' + ocr);
   } finally { global.fetch = real; }

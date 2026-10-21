@@ -26,6 +26,7 @@ const GROQ = process.env.MM_AI === 'groq';
 const groqFake = async (url, o) => {
   gemini.calls.push({ url: String(url), body: typeof o.body === 'string' ? o.body : '' });
   await new Promise(r => setTimeout(r, 150));
+  if (/\/models$/.test(url)) return new Response(JSON.stringify({ data: [{ id: 'openai/gpt-oss-120b' }, { id: 'meta-llama/llama-4-maverick-17b-128e-instruct' }, { id: 'whisper-large-v3' }] }));
   if (/audio\/transcriptions$/.test(url)) {
     gemini.uploads++;
     return new Response(JSON.stringify({ text: 'x', segments: [{ start: 0, end: 3, text: 'អរុណសួស្តី។' }, { start: 3, end: 6, text: 'Today we talk about Gate 2.' }, { start: 300, end: 304, text: 'Dara: យល់ព្រម។ OK, print DN before 7.' }] }));
