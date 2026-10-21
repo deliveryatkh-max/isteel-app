@@ -1,6 +1,6 @@
 // Meeting Minutes (ប្រជុំ): record or upload a meeting, add photos of notes or a whiteboard, and get clean minutes
 // (summary, discussion, decisions, action items with owner and due date, follow-up) in Khmer, English or both.
-// Data: the Minutes Apps Script (Google Sheet + Drive). AI: the /mm/* relay on this site (Gemini), which needs a
+// Data: the Minutes Apps Script (Google Sheet + Drive). AI: the /mm/* relay on this site (Groq or Gemini), which needs a
 // ticket from the script, so only people with ប្រជុំ ticked in Users can use it.
 (function () {
   'use strict';
@@ -69,9 +69,34 @@
     return Object.assign(new Error(txt), { code: m.code || 'AI', status });
   };
 
-  /** Uploads one file to Gemini through the relay. Progress 0..1 via onProgress. */
-  async function aiUpload(file, onProgress, retried) {
+  // Which AI the relay uses: 'gemini' takes every file; 'groq' (free) takes sound files, and photos go inside the question.
+  let aiKind = '';
+  async function aiProvider() {
+    if (aiKind) return aiKind;
+    try { const d = await (await fetch(RELAY + 'ping', { cache: 'no-store' })).json(); aiKind = d.provider || 'gemini'; } catch (e) { return 'gemini'; }
+    return aiKind;
+  }
+  /** For the free AI: a photo is made smaller on the phone and sent inside the question; a PDF cannot be read. */
+  async function localDoc(file) {
+    if (/^text\/plain$/.test(file.type)) return { plain: await file.text(), name: file.name };
+    if (!/^image\//.test(file.type)) return { skipped: file.name };
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      let q = 0.85, d = c.toDataURL('image/jpeg', q);
+      while (d.length > 3.5e6 && q > 0.4) { q -= 0.15; d = c.toDataURL('image/jpeg', q); }
+      return { inline: d, mimeType: 'image/jpeg', name: file.name };
+    } catch (e) { return { skipped: file.name }; } finally { URL.revokeObjectURL(url); }
+  }
+
+  /** Sends one file to the AI through the relay. Progress 0..1 via onProgress. opts: { lang, hint } help the speech-to-text. */
+  async function aiUpload(file, onProgress, retried, opts) {
     if (DEMO) return demoUpload(file, onProgress);
+    if (!/^(audio|video)\//.test(file.type) && (await aiProvider()) === 'groq') { const d = await localDoc(file); onProgress(1); return d; }
     const tk = await freshTicket(false);
     const res = await new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
@@ -79,12 +104,14 @@
       x.setRequestHeader('X-MM-Ticket', tk);
       x.setRequestHeader('X-File-Name', encodeURIComponent(file.name || 'file'));
       x.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      if (opts && opts.lang) x.setRequestHeader('X-MM-Lang', opts.lang);
+      if (opts && opts.hint) x.setRequestHeader('X-MM-Hint', encodeURIComponent(String(opts.hint).slice(0, 150)));
       x.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.min(.98, e.loaded / e.total)); };
       x.onload = () => { let b = null; try { b = JSON.parse(x.responseText); } catch (e) { /* not JSON */ } resolve({ status: x.status, body: b }); };
       x.onerror = () => reject(Object.assign(new Error(t('ការផ្ទុកឡើងបានដាច់។ សូមព្យាយាមម្តងទៀត។', 'Upload was cut off. Please try again.')), { code: 'NET' }));
       x.send(file);
     });
-    if (res.status === 401 && !retried) { await freshTicket(true); return aiUpload(file, onProgress, true); }
+    if (res.status === 401 && !retried) { await freshTicket(true); return aiUpload(file, onProgress, true, opts); }
     if (!res.body || !res.body.ok) throw relayErr(res.status, res.body);
     onProgress(1);
     return res.body.data;
@@ -476,7 +503,7 @@
         const total = run.files.reduce((s, f) => s + f.file.size, 0) || 1;
         let doneBytes = 0;
         for (const f of run.files) {
-          if (!f.up) f.up = await aiUpload(f.file, p => { run.pct = (doneBytes + p * f.file.size) / total; paintRunPct(); });
+          if (!f.up) f.up = await aiUpload(f.file, p => { run.pct = (doneBytes + p * f.file.size) / total; paintRunPct(); }, false, { lang: run.lang, hint: run.meta.attendees });
           doneBytes += f.file.size;
           // Photos and documents are also kept in the meeting's Drive folder (recordings stay on the phone).
           if (f.kind === 'doc' && !f.kept && f.file.size <= 15 * 1048576) { await api('attach', { id: run.id, name: f.file.name, mime: f.file.type, b64: await b64(f.file) }).catch(() => null); f.kept = true; }

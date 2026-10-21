@@ -21,9 +21,24 @@ const MIN = lang => ({
   followUp: ['Check next week'], openPoints: ['Branch rollout date?'], nextMeeting: 'Monday 9:00', glossary: [{ term: 'DN', meaning: 'Delivery Note' }],
 });
 const sse = (chunks, finish) => chunks.map((t, i) => 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] }, finishReason: i === chunks.length - 1 ? finish : undefined }] }) + '\r\n\r\n').join('');
+// MM_AI=groq runs the free Groq way instead: Whisper for sound, Llama for photos and minutes.
+const GROQ = process.env.MM_AI === 'groq';
+const groqFake = async (url, o) => {
+  gemini.calls.push({ url: String(url), body: typeof o.body === 'string' ? o.body : '' });
+  await new Promise(r => setTimeout(r, 150));
+  if (/audio\/transcriptions$/.test(url)) {
+    gemini.uploads++;
+    return new Response(JSON.stringify({ text: 'x', segments: [{ start: 0, end: 3, text: 'អរុណសួស្តី។' }, { start: 3, end: 6, text: 'Today we talk about Gate 2.' }, { start: 300, end: 304, text: 'Dara: យល់ព្រម។ OK, print DN before 7.' }] }));
+  }
+  const b = JSON.parse(o.body);
+  const prompt = JSON.stringify(b.messages);
+  const content = /Copy all the text/.test(prompt) ? '=== File 1 ===\nAgenda: Gate 2' : JSON.stringify(MIN(/in English/.test(prompt) ? 'en' : 'km'));
+  return new Response(JSON.stringify({ choices: [{ message: { content } }] }));
+};
 const realFetch = global.fetch;
 global.fetch = async (url, o) => {
   o = o || {};
+  if (GROQ && /api\.groq\.com/.test(String(url))) return groqFake(url, o);
   if (!/generativelanguage|up\.fake/.test(String(url))) return realFetch(url, o);
   gemini.calls.push({ url: String(url), body: typeof o.body === 'string' ? o.body : '' });
   if (/v1beta\/models\?/.test(url)) return new Response(JSON.stringify({ models: [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }] }));
@@ -46,7 +61,7 @@ global.fetch = async (url, o) => {
   throw new Error('unexpected ' + url);
 };
 
-const relayEnv = { GEMINI_API_KEY: 'KEY', MM_SECRET: env.props.MM_SECRET };
+const relayEnv = GROQ ? { GROQ_API_KEY: 'GKEY', MM_SECRET: env.props.MM_SECRET } : { GEMINI_API_KEY: 'KEY', MM_SECRET: env.props.MM_SECRET };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/json' };
 
 (async () => {
