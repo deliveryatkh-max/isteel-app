@@ -15,8 +15,9 @@ Until step 5 is done the app runs in **DEMO** mode (sample data, nothing saved).
 Claude cannot listen to audio, so the relay uses one of two services:
 
 - **Groq (free, no card), used now.** Google refused Gemini for Kim's account (403 "denied access", 20 Oct 2026),
-  so Groq was added on 21 Oct 2026. Whisper large-v3 writes out the speech (Khmer and English), Llama 4 Scout reads
-  photos and writes the minutes. Limits of the free plan: sound files up to 25 MB each (about 1 h 45 min of a phone
+  so Groq was added on 21 Oct 2026. Whisper large-v3 writes out the speech (Khmer and English); a text model
+  (GPT-OSS 120B first, then others Groq has) writes the minutes, and a photo model reads photos when Groq has one.
+  Groq retires models often, so the relay checks Groq's list itself. Limits of the free plan: sound files up to 25 MB each (about 1 h 45 min of a phone
   recording), about 8 hours of audio a day, and a per-minute word allowance (the relay waits and tries again when
   it is hit). It does not tell speakers apart, it cannot read PDF files (take a photo or screenshot of the pages),
   and its Khmer is weaker than Gemini's, so check names and numbers in the minutes.
