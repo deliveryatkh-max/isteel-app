@@ -10,6 +10,7 @@ try { ({ chromium } = require('playwright')); } catch (e) { ({ chromium } = requ
 
 const PORT = 8790, BASE = 'http://localhost:' + PORT;
 const OUT = process.argv[2] || '';
+const GROQ = process.env.MM_AI === 'groq';   // MM_AI=groq node e2e.js tests the free Groq way
 const ROOT = path.join(__dirname, '..', '..');
 
 (async () => {
@@ -58,6 +59,7 @@ const ROOT = path.join(__dirname, '..', '..');
     await page.click('#paneSeg [data-v="src"]');
     const tr = await page.inputValue('#eTranscript');
     assert.ok(/Today we talk about Gate 2/.test(tr) && /\[05:00\] Dara/.test(tr), 'transcript joined: ' + tr);
+    if (GROQ) assert.ok(/^\[00:00\] អរុណសួស្តី។ Today we talk/.test(tr), 'Whisper pieces joined into timed lines: ' + tr);
     await page.click('#paneSeg [data-v="minutes"]');
 
     // edit the summary in English; it saves by itself
@@ -68,8 +70,14 @@ const ROOT = path.join(__dirname, '..', '..');
     let st = await (await fetch(BASE + '/_test')).json();
     const row = st.meetings.find(r => r[0] === id);
     assert.ok(row && row[10] === 'Done', 'meeting saved as Done');
-    assert.ok(st.gemini.calls.some(c => /Continue from exactly/.test(c.body)), 'asked the AI to continue');
-    assert.ok(st.gemini.calls.filter(c => /up\.fake/.test(c.url)).length === 2, 'two files uploaded');
+    if (GROQ) {
+      assert.strictEqual(st.gemini.uploads, 1, 'only the recording is sent; the photo goes inside the question');
+      const ocr = st.gemini.calls.find(c => /Copy all the text/.test(c.body));
+      assert.ok(ocr && /data:image\/jpeg;base64,/.test(ocr.body), 'photo sent inside the question');
+    } else {
+      assert.ok(st.gemini.calls.some(c => /Continue from exactly/.test(c.body)), 'asked the AI to continue');
+      assert.ok(st.gemini.calls.filter(c => /up\.fake/.test(c.url)).length === 2, 'two files uploaded');
+    }
 
     // email
     await page.click('#xEmail');

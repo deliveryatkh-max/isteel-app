@@ -167,7 +167,7 @@ async function relay() {
   try {
     const req = (action, init) => mod.onRequest({ request: new Request('https://isteel-app.pages.dev/mm/' + action, init), env, params: { action } });
     let res = await req('ping', { method: 'GET' });
-    eq(await res.json(), { ok: true, ai: true, ticket: true });
+    eq(await res.json(), { ok: true, ai: true, provider: 'gemini', ticket: true });
     res = await req('generate', { method: 'POST', body: '{}' });
     eq(res.status, 401, 'no ticket');
     res = await req('upload', { method: 'POST', headers: { 'X-MM-Ticket': tk, 'Content-Type': 'audio/webm;codecs=opus', 'X-File-Name': encodeURIComponent('ការថត.webm') }, body: Buffer.from('audio') });
@@ -189,8 +189,72 @@ async function relay() {
   } finally { global.fetch = real; }
 }
 
+async function groqRelay() {
+  const mod = await import(path.join(ROOT, 'functions/mm/[action].js'));
+  eq(mod.provider({ GROQ_API_KEY: 'g', GEMINI_API_KEY: 'k' }), 'groq', 'Groq first when both keys are set');
+  eq(mod.provider({ GROQ_API_KEY: 'g', GEMINI_API_KEY: 'k', AI_PROVIDER: 'gemini' }), 'gemini');
+  eq(mod.provider({}), '');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 4, text: ' Hello ' }, { start: 4, end: 9, text: 'team.' }, { start: 40, end: 42, text: 'Next.' }, { start: 3725, end: 3727, text: 'Bye.' }] }),
+    '[00:00] Hello team.\n[00:40] Next.\n[1:02:05] Bye.', 'Whisper pieces joined into timed lines');
+
+  const crypto = require('crypto');
+  const secret = 'abc123';
+  const body = Buffer.from(JSON.stringify({ e: 'kim@x.com', x: Math.floor(Date.now() / 1000) + 600 })).toString('base64url');
+  const tk = body + '.' + crypto.createHmac('sha256', secret).update(body).digest('base64url');
+  const env = { GROQ_API_KEY: 'GKEY', MM_SECRET: secret };
+  const calls = [];
+  let limited = 1;
+  const real = global.fetch;
+  global.fetch = async (url, o) => {
+    calls.push({ url, o });
+    assert.strictEqual(o.headers.Authorization, 'Bearer GKEY');
+    if (/audio\/transcriptions$/.test(url)) return new Response(JSON.stringify({ text: 'hi', segments: [{ start: 0, end: 2, text: 'សួស្តី' }] }));
+    if (/chat\/completions$/.test(url)) {
+      if (limited-- > 0) return new Response('{"error":{"message":"rate"}}', { status: 429, headers: { 'retry-after': '0.01' } });
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"title":"T"}' } }] }));
+    }
+    throw new Error('unexpected ' + url);
+  };
+  try {
+    const req = (action, init) => mod.onRequest({ request: new Request('https://isteel-app.pages.dev/mm/' + action, init), env, params: { action } });
+    let res = await req('ping', { method: 'GET' });
+    eq(await res.json(), { ok: true, ai: true, provider: 'groq', ticket: true });
+    const H = { 'X-MM-Ticket': tk };
+    res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm;codecs=opus', 'X-File-Name': encodeURIComponent('ការថត'), 'X-MM-Lang': 'km', 'X-MM-Hint': encodeURIComponent('សុខ, Dara') }, H), body: Buffer.from('audio') });
+    const up = await res.json();
+    eq(up.data.text, '[00:00] សួស្តី', 'speech written out on upload');
+    const form = calls[0].o.body;
+    eq(form.get('model'), 'whisper-large-v3');
+    eq(form.get('language'), 'km');
+    ok(/សុខ, Dara/.test(form.get('prompt')), 'names hint passed');
+    ok(/\.webm$/.test(form.get('file').name), 'file name gets a sound extension: ' + form.get('file').name);
+    res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/pdf' }, H), body: Buffer.from('%PDF') });
+    eq(res.status, 415, 'PDF not sent to the free AI');
+    res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/mpeg' }, H), body: Buffer.alloc(26 * 1024 * 1024) });
+    eq(res.status, 413, 'over 25 MB refused');
+    ok(/25 MB/.test((await res.json()).error));
+    const gen = async p => (await req('generate', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify(p) })).text();
+    const one = s => JSON.parse(s.replace(/^data: /, '')).candidates[0].content.parts[0].text;
+    eq(one(await gen({ kind: 'transcribe', files: [up.data] })), '[00:00] សួស្តី', 'transcript comes back in the Gemini stream shape');
+    const n = calls.length;
+    eq(one(await gen({ kind: 'minutes', outLang: 'en', transcript: 'x' })), '{"title":"T"}', 'minutes after a rate-limit wait');
+    eq(calls.length - n, 2, 'tried again once after 429');
+    const mb = JSON.parse(calls[calls.length - 1].o.body);
+    eq(mb.response_format, { type: 'json_object' });
+    ok(/"actions"/.test(mb.messages[0].content), 'minutes shape given');
+    const img = 'data:image/jpeg;base64,AAAA';
+    const files = [1, 2, 3, 4, 5, 6].map(() => ({ inline: img })).concat([{ skipped: 'plan.pdf' }, { plain: 'typed note', name: 'n.txt' }]);
+    const m = calls.length;
+    const ocr = one(await gen({ kind: 'ocr', files }));
+    eq(calls.length - m, 2, 'six photos asked in two groups of up to five');
+    ok(/File 6/.test(JSON.parse(calls[calls.length - 1].o.body).messages[0].content[0].text), 'second group numbered from File 6');
+    ok(/typed note/.test(ocr) && /plan\.pdf: not read/.test(ocr), 'text file kept and PDF named: ' + ocr);
+  } finally { global.fetch = real; }
+}
+
 (async () => {
   await backend();
   await relay();
+  await groqRelay();
   console.log('All ' + pass + ' checks passed');
 })().catch(e => { console.error(e); process.exit(1); });

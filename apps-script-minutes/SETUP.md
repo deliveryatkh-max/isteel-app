@@ -6,17 +6,22 @@ The app has three parts:
 |---|---|---|
 | Web screens (`web/minutes/`) | `https://isteel-app.pages.dev/minutes/` (the ប្រជុំ tile) | record, upload, review, edit, email, Word |
 | Apps Script (`Minutes.gs`, `appsscript.json`) | bound to a new Google Sheet **SSK-MEETING-MINUTES** | saves meetings and action items, Drive folder, Google Doc / Word, email, sign-in check |
-| AI relay (`functions/mm/[action].js`) | Cloudflare Pages Function at `/mm/upload` and `/mm/generate` | holds the Gemini key; turns speech and photos into text and writes the minutes |
+| AI relay (`functions/mm/[action].js`) | Cloudflare Pages Function at `/mm/upload` and `/mm/generate` | holds the AI key; turns speech and photos into text and writes the minutes |
 
 Until step 5 is done the app runs in **DEMO** mode (sample data, nothing saved).
 
-## Why Gemini
+## Which AI
 
-Claude cannot listen to audio, and Khmer speech-to-text is weak in most services. Google Gemini reads Khmer and
-English audio (mixed in one sentence too), photos, handwriting and PDFs with one key, and it is cheap. The relay
-picks the newest stable "flash" model by itself. Rough cost on the paid plan: about US$0.20 to 0.50 per hour of
-meeting (estimate). The free plan works for trying it out, but Google may use free-plan data to improve its
-products, so turn on billing before real company meetings.
+Claude cannot listen to audio, so the relay uses one of two services:
+
+- **Groq (free, no card), used now.** Google refused Gemini for Kim's account (403 "denied access", 20 Oct 2026),
+  so Groq was added on 21 Oct 2026. Whisper large-v3 writes out the speech (Khmer and English), Llama 4 Scout reads
+  photos and writes the minutes. Limits of the free plan: sound files up to 25 MB each (about 1 h 45 min of a phone
+  recording), about 8 hours of audio a day, and a per-minute word allowance (the relay waits and tries again when
+  it is hit). It does not tell speakers apart, it cannot read PDF files (take a photo or screenshot of the pages),
+  and its Khmer is weaker than Gemini's, so check names and numbers in the minutes.
+- **Gemini (Google).** Better Khmer, speaker names and PDFs, and files up to 95 MB. Used when there is no Groq key,
+  or when `AI_PROVIDER` = `gemini`.
 
 ## One-time steps (Kim)
 
@@ -32,13 +37,15 @@ products, so turn on billing before real company meetings.
    folder **Meeting Minutes**, and a new `MM_SECRET` in Script properties.
 4. **Deploy**: Deploy → New deployment → *Web app* → Execute as **Me** → Who has access **Anyone** → Deploy.
    Send the URL ending in `/exec` to Claude in the Meeting Minute Assistant thread (Claude puts it in `web/minutes/config.js`).
-5. **Gemini key**: open https://aistudio.google.com/apikey with deliveryatkh@gmail.com → *Create API key*. Keep it secret.
+5. **Groq key (free)**: open https://console.groq.com, sign in with Google (deliveryatkh@gmail.com), then
+   **API Keys** → **Create API Key** → name `isteel-minutes` → copy the key. Keep it secret; never paste it in a chat.
 6. **Cloudflare**: dash.cloudflare.com → Workers & Pages → **isteel-app** → Settings → Variables and Secrets → Add,
    type **Secret**, for Production:
-   - `GEMINI_API_KEY` = the key from step 5
+   - `GROQ_API_KEY` = the key from step 5
    - `MM_SECRET` = the value `setup()` made in Script properties (step 3)
    Then Deployments → the latest one → ⋯ → *Retry deployment* (secrets only reach the site on the next deployment).
-   Check: `https://isteel-app.pages.dev/mm/ping` shows `{"ok":true,"ai":true,"ticket":true}`.
+   Check: `https://isteel-app.pages.dev/mm/ping` shows `"ai":true,"provider":"groq","ticket":true`.
+   (For Gemini instead: a key from https://aistudio.google.com/apikey saved as `GEMINI_API_KEY`.)
 7. **Home menu tile**: paste the new `apps-script/Code.gs` into the **Fuel** Apps Script and deploy a new version
    (Deploy → Manage deployments → ✎ → New version). A **ប្រជុំ** tick box column appears in Users. Admins see the
    tile at once; tick ប្រជុំ for anyone else who should use it.
@@ -48,8 +55,8 @@ products, so turn on billing before real company meetings.
 1. A person records (phone or computer microphone; on a computer also a Zoom/Teams/Meet tab "with audio"), or
    picks audio/video files, and adds photos or PDFs. Every 10 seconds of a recording is kept on the phone, so a
    closed tab does not lose the meeting; the home screen offers to continue it.
-2. **Create minutes**: the meeting row is saved (status Processing), the files go to Gemini through the relay
-   (kept by Google for 48 hours only), the speech is written out word for word (long meetings are done in
+2. **Create minutes**: the meeting row is saved (status Processing), the files go to the AI through the relay
+   (Gemini keeps them 48 hours), the speech is written out word for word (long meetings are done in
    several parts by themselves), photos and PDFs are read, and the minutes are written in Khmer, English or both
    (both at the same time). Photos and PDFs are also kept in the meeting's Drive folder; recordings stay on the phone
    (the ⬇️ button saves one as a file).
@@ -64,13 +71,14 @@ Everyone with ប្រជុំ ticked sees all meetings. Only the person who m
 
 ## Limits
 
-- Files up to 95 MB each. For a long video, export the audio only (Zoom saves an .m4a next to the video).
+- Files up to 95 MB each with Gemini, 25 MB with Groq. For a long video, export the audio only (Zoom saves an .m4a next to the video).
 - Gmail sends up to 100 emails a day from a free account.
-- Apps Script and Gemini both work in Phnom Penh time (Asia/Phnom_Penh).
+- Apps Script and the AI prompts work in Phnom Penh time (Asia/Phnom_Penh).
 
 ## Tests
 
 `node apps-script-minutes/tests/run.js` (script + relay) and `node apps-script-minutes/tests/e2e.js` (full flow in a
-browser with a fake microphone and a fake Gemini; needs Playwright).
+browser with a fake microphone and a fake Gemini; needs Playwright). `MM_AI=groq node apps-script-minutes/tests/e2e.js`
+runs the same flow the Groq way.
 
 After a change to `Minutes.gs`: paste it, then Deploy → Manage deployments → ✎ → Version: *New version* → Deploy.

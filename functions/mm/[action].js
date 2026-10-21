@@ -1,28 +1,46 @@
 // Meeting Minutes AI relay (Cloudflare Pages Function, served at /mm/upload, /mm/generate and /mm/ping).
-// Holds the Gemini API key, so the key never reaches a phone. Only people the Minutes Apps Script let in can use it:
+// Holds the AI key, so the key never reaches a phone. Only people the Minutes Apps Script let in can use it:
 // every call carries a "ticket" the script signed with MM_SECRET (email + expiry), checked here before anything else.
 //
-// Cloudflare Pages > isteel-app > Settings > Variables and Secrets (type Secret):
-//   GEMINI_API_KEY  key from Google AI Studio (aistudio.google.com > Get API key)
+// Two AI services work. Groq is free with no card (console.groq.com) and is used whenever GROQ_API_KEY is set:
+// Whisper writes out the speech, Llama reads photos and writes the minutes. Gemini (Google) is the other way; Kim's
+// Google account was refused by Gemini (403, 20 Oct 2026), so Groq was added on 21 Oct 2026.
+//
+// Cloudflare Pages > isteel-app > Settings > Variables and Secrets (type Secret, Production):
+//   GROQ_API_KEY    key from console.groq.com > API Keys
+//   GEMINI_API_KEY  key from Google AI Studio (aistudio.google.com > Get API key), used when there is no Groq key
 //   MM_SECRET       the same value as MM_SECRET in the Minutes Apps Script (made by setup())
-//   GEMINI_MODEL    optional, e.g. gemini-2.5-flash; empty = the newest stable "flash" model the key can use
+//   AI_PROVIDER     optional, groq or gemini, to choose when both keys are set (default groq)
+//   GROQ_MODEL, GROQ_STT_MODEL, GEMINI_MODEL  optional model names; empty = the defaults below
 
 const BASE = 'https://generativelanguage.googleapis.com';
 const MAX_UPLOAD = 95 * 1024 * 1024;   // Pages Functions take request bodies up to 100 MB
+const GROQ = 'https://api.groq.com/openai/v1';
+const GROQ_MAX_AUDIO = 25 * 1024 * 1024;   // Groq's free plan takes audio files up to 25 MB
+const GROQ_STT = 'whisper-large-v3';       // the full model: better at Khmer than the turbo one
+const GROQ_LLM = 'meta-llama/llama-4-scout-17b-16e-instruct';   // reads photos too, and has the biggest free per-minute allowance
+
+export const provider = env => {
+  const want = String(env.AI_PROVIDER || '').toLowerCase();
+  if (want === 'gemini' && env.GEMINI_API_KEY) return 'gemini';
+  return env.GROQ_API_KEY ? 'groq' : env.GEMINI_API_KEY ? 'gemini' : '';
+};
 
 export async function onRequest({ request, env, params }) {
   const action = String(params.action || '');
   try {
-    if (action === 'ping') return json({ ok: true, ai: !!env.GEMINI_API_KEY, ticket: !!env.MM_SECRET });
+    const ai = provider(env);
+    if (action === 'ping') return json({ ok: true, ai: !!ai, provider: ai, ticket: !!env.MM_SECRET });
     if (request.method !== 'POST') return json({ ok: false, error: 'BAD: Use POST' }, 405);
-    if (!env.GEMINI_API_KEY || !env.MM_SECRET) return json({ ok: false, error: 'SETUP: GEMINI_API_KEY or MM_SECRET is missing in Cloudflare.' }, 500);
+    if (!ai || !env.MM_SECRET) return json({ ok: false, error: 'SETUP: GROQ_API_KEY (or GEMINI_API_KEY) or MM_SECRET is missing in Cloudflare.' }, 500);
     const who = await checkTicket(request.headers.get('X-MM-Ticket') || '', env.MM_SECRET);
     if (!who) return json({ ok: false, error: 'AUTH: Sign-in expired. Please open the app again.' }, 401);
-    if (action === 'upload') return await upload(request, env);
-    if (action === 'generate') return await generate(request, env);
+    if (action === 'upload') return await (ai === 'groq' ? groqUpload : upload)(request, env);
+    if (action === 'generate') return await (ai === 'groq' ? groqGenerate : generate)(request, env);
     return json({ ok: false, error: 'BAD: Unknown action' }, 404);
   } catch (e) {
-    return json({ ok: false, error: 'AI: ' + String(e && e.message || e).slice(0, 400) }, 502);
+    const code = e && e.status === 429 ? 'LIMIT' : e && e.status === 413 ? 'BIG' : 'AI';
+    return json({ ok: false, error: code + ': ' + String(e && e.message || e).slice(0, 400) }, code === 'LIMIT' ? 429 : code === 'BIG' ? 413 : 502);
   }
 }
 
@@ -189,4 +207,107 @@ async function generate(request, env) {
     return json({ ok: false, error: (r.status === 429 ? 'LIMIT: ' : 'AI: ') + msg }, r.status === 429 ? 429 : 502);
   }
   return new Response(r.body, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-MM-Model': name } });
+}
+
+// ---------- Groq (free): Whisper for speech, Llama for photos and minutes ----------
+// The answers go back in the same "data: {candidates…}" form Gemini streams, so the app reads both the same way.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function groqFetch(env, path, init) {
+  for (let i = 0; ; i++) {
+    const r = await fetch(GROQ + path, Object.assign({}, init, { headers: Object.assign({ Authorization: 'Bearer ' + env.GROQ_API_KEY }, init.headers || {}) }));
+    if (r.ok) return r;
+    // The free plan allows so many words per minute; when two answers run at once, wait for the minute to pass (twice at most).
+    if (r.status === 429 && i < 2) { await sleep(Math.min(20, parseFloat(r.headers.get('retry-after')) || 6) * 1000); continue; }
+    const t = await r.text();
+    let msg = t.slice(0, 300);
+    try { msg = JSON.parse(t).error.message; } catch (e) { /* keep text */ }
+    throw Object.assign(new Error(msg), { status: r.status });
+  }
+}
+
+const AUDIO_EXT = { 'audio/webm': 'webm', 'video/webm': 'webm', 'audio/ogg': 'ogg', 'audio/m4a': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/flac': 'flac', 'video/mp4': 'mp4', 'audio/aac': 'm4a' };
+const clock = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0'); };
+
+/** Whisper's pieces joined into lines of up to about 30 seconds, each starting with [mm:ss]. Whisper does not tell speakers apart. */
+export function whisperText(d) {
+  const segs = (d && d.segments) || [];
+  if (!segs.length) return String((d && d.text) || '').trim();
+  const lines = [];
+  let cur = null;
+  segs.forEach(g => {
+    const txt = String(g.text || '').trim();
+    if (!txt) return;
+    if (!cur || g.start - cur.start > 30 || g.start - cur.end > 2) { cur = { start: g.start, end: g.end, text: [] }; lines.push(cur); }
+    cur.text.push(txt); cur.end = g.end;
+  });
+  return lines.map(l => '[' + clock(l.start) + '] ' + l.text.join(' ')).join('\n');
+}
+
+async function groqUpload(request, env) {
+  const mime = cleanMime(request.headers.get('Content-Type'));
+  if (!/^(audio|video)\//.test(mime)) return json({ ok: false, error: 'TYPE: Only sound files go here; photos are read inside the app.' }, 415);
+  const buf = await request.arrayBuffer();
+  if (!buf.byteLength) return json({ ok: false, error: 'BAD: Empty file' }, 400);
+  if (buf.byteLength > GROQ_MAX_AUDIO) return json({ ok: false, error: 'BIG: The free AI takes sound files up to 25 MB (about 1 hour 45 minutes of a phone recording). Record shorter parts, or save the audio as a smaller file. || AI ឥតគិតថ្លៃ ទទួលឯកសារសំឡេងត្រឹម 25 MB (ប្រហែល 1 ម៉ោង 45 នាទី នៃការថតលើទូរស័ព្ទ)។ សូមថតជាផ្នែកខ្លីៗ ឬរក្សាទុកសំឡេងជាឯកសារតូចជាងនេះ។' }, 413);
+  let name = decodeURIComponent(request.headers.get('X-File-Name') || 'meeting').replace(/[^\w.-]+/g, '_').slice(-80);
+  if (!/\.(webm|ogg|m4a|mp3|mp4|mpeg|mpga|wav|flac|opus)$/i.test(name)) name += '.' + (AUDIO_EXT[mime] || 'webm');
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: mime }), name);
+  form.append('model', env.GROQ_STT_MODEL || GROQ_STT);
+  form.append('response_format', 'verbose_json');
+  form.append('temperature', '0');
+  const lang = request.headers.get('X-MM-Lang');
+  if (lang === 'km' || lang === 'en') form.append('language', lang);
+  // A short hint helps Whisper spell names and company words.
+  const hint = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 150);
+  form.append('prompt', 'ISI Steel meeting. SAP, SO, DN, MB51, 3PL, truck, warehouse.' + (hint ? ' ' + hint : ''));
+  const r = await groqFetch(env, '/audio/transcriptions', { method: 'POST', body: form });
+  const text = whisperText(await r.json());
+  return json({ ok: true, data: { provider: 'groq', text, mimeType: mime, size: buf.byteLength } });
+}
+
+const sseOf = (text, model) => new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] }) + '\r\n\r\n',
+  { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-MM-Model': model } });
+
+const MINUTES_SHAPE = '{"title":"","meetingDate":"YYYY-MM-DD","startTime":"","duration":"","location":"","chair":"",' +
+  '"attendees":[{"name":"","role":""}],"summary":"","discussion":[{"topic":"","points":[""]}],"decisions":[""],' +
+  '"actions":[{"task":"","owner":"","due":"YYYY-MM-DD or TBC","priority":"High, Medium or Low"}],' +
+  '"followUp":[""],"openPoints":[""],"nextMeeting":"","glossary":[{"term":"","meaning":""}]}';
+
+async function groqChat(env, messages, extra) {
+  const model = env.GROQ_MODEL || GROQ_LLM;
+  const r = await groqFetch(env, '/chat/completions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ model, messages, temperature: 0, max_completion_tokens: 8192 }, extra || {})),
+  });
+  const d = await r.json();
+  return { text: String((((d.choices || [])[0] || {}).message || {}).content || ''), model };
+}
+
+async function groqGenerate(request, env) {
+  const p = await request.json();
+  if (['transcribe', 'ocr', 'minutes'].indexOf(p.kind) < 0) return json({ ok: false, error: 'BAD: kind' }, 400);
+  const files = (p.files || []).slice(0, 30).filter(Boolean);
+  // The speech was already written out when the file was sent (Whisper), so it only comes back here.
+  if (p.kind === 'transcribe') return sseOf(files.map(f => String(f.text || '')).join('\n\n').trim(), env.GROQ_STT_MODEL || GROQ_STT);
+  if (p.kind === 'ocr') {
+    const imgs = files.filter(f => /^data:image\/(jpeg|png|webp);base64,/.test(String(f.inline || '')));
+    const out = [];
+    let model = env.GROQ_MODEL || GROQ_LLM;
+    for (let i = 0; i < imgs.length; i += 5) {   // Groq takes up to 5 photos in one question
+      const batch = imgs.slice(i, i + 5);
+      const content = [{ type: 'text', text: buildPrompt(p) + '\nThe first photo here is File ' + (i + 1) + '.' }]
+        .concat(batch.map(f => ({ type: 'image_url', image_url: { url: f.inline } })));
+      const r = await groqChat(env, [{ role: 'user', content }]);
+      out.push(r.text.trim()); model = r.model;
+    }
+    files.filter(f => f.plain).forEach(f => out.push('=== ' + String(f.name || 'Text') + ' ===\n' + String(f.plain).slice(0, 20000)));
+    files.filter(f => f.skipped).forEach(f => out.push('[' + String(f.skipped) + ': not read]'));
+    return sseOf(out.join('\n\n'), model);
+  }
+  const r = await groqChat(env, [
+    { role: 'system', content: 'Answer with one JSON object only, in exactly this shape: ' + MINUTES_SHAPE },
+    { role: 'user', content: buildPrompt(p) },
+  ], { temperature: 0.3, response_format: { type: 'json_object' } });
+  return sseOf(r.text, r.model);
 }
