@@ -195,7 +195,7 @@
   }
 
   // ---------------------------------------------------------------- the form (5 steps)
-  const EMPTY = () => ({ type: '', category: '', shift: new Date().getHours() >= 18 || new Date().getHours() < 6 ? 'Night' : 'Day', date: today(), time: nowHm(),
+  const EMPTY = () => ({ type: '', category: '', shift: 'Day', date: today(), time: nowHm(),
     location: '', warehouse: '', gps: '', road: '', weather: '', driver: '', driverId: '', plate: '', company: '', tripId: '', dn: '', customer: '', load: '',
     people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', cost: '', daysLost: '',
     severity: 0, likelihood: 0, cause: '', whys: ['', '', '', '', ''], immediate: '', actions: [], witnesses: [], evidence: '',
@@ -248,10 +248,13 @@
   const chips = (id, list, multi) => `<div class="chips" data-chips="${id}">${list.map(o => `<button type="button" class="chip ${(multi ? String(f[id]).split(', ').indexOf(o[1]) >= 0 : f[id] === o[1]) ? 'on' : ''}" data-v="${esc(o[1])}">${esc(t(o[0], o[1]))}</button>`).join('')}</div>`;
   const warehouses = () => Array.from(new Set(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean)));
 
+  let paintedStep = 0;
   function paintForm() {
     const s = f.step;
     const sc = f.severity && f.likelihood ? f.severity * f.likelihood : 0;
-    const head = `<div class="steps">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
+    const grow = s !== paintedStep;     // fill the bar only when the step changes, not on every tap
+    paintedStep = s;
+    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
     let body = '';
     if (editId && f.returnNote) body += `<div class="alert warn">↩️ ${t('ប្រធានឃ្លាំងសុំឲ្យកែ៖', 'The supervisor asked for changes:')} <b>${esc(f.returnNote)}</b></div>`;
     if (s === 1) {
@@ -261,7 +264,7 @@
         const cats = CATS.filter(c => !c.types || c.types.indexOf(f.type) >= 0);
         body += `<div class="card"><h2>${t('ប្រភេទរង', 'Category')} <span class="req">*</span></h2>
           <select class="in cat-sel" id="catSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${cats.map(c => `<option value="${esc(c.en)}" ${f.category === c.en ? 'selected' : ''}>${esc(catIcon(c) + '  ' + t(c.km || c.en, c.en))}</option>`).join('')}</select>
-          <label class="f">${t('វេន', 'Shift')}</label>${chips('shift', SHIFTS)}
+          <label class="f">${t('វេន', 'Shift')}</label><div class="ticks">${SHIFTS.map(o => `<label class="check"><input type="checkbox" data-shift="${esc(o[1])}" ${(f.shift || 'Day') === o[1] ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('')}</div>
           ${f.type === 'near' ? `<label class="check"><input type="checkbox" id="anonymous" ${f.anonymous ? 'checked' : ''}> ${t('មិនបង្ហាញឈ្មោះខ្ញុំ (អនាមិក)', 'Don\'t show my name (anonymous)')}</label>
             <div class="hint">${t('ឈ្មោះមិនបង្ហាញក្នុង PDF Telegram ឬអ៊ីមែលទេ។ មិនចាំបាច់ចុះហត្ថលេខា។', 'Your name is not shown in the PDF, Telegram or email. No signature needed.')}</div>` : ''}</div>`;
       }
@@ -352,8 +355,8 @@
       ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div>
       ${!editId ? `<div class="hint center">💾 ${t('រក្សាទុកក្នុងទូរស័ព្ទដោយស្វ័យប្រវត្តិ', 'Saved on this phone as you type')}</div>` : ''}`;
     $('#view').innerHTML = `${PUBLIC ? `<div class="alert ok pubnote">🚚 ${t('រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី', 'Report without signing in')}</div>` : ''}
-      <div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5</small></div>
-      ${head}${body}${nav}`;
+      <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 · ${Math.round(s / 5 * 100)}%</small></div>
+      ${head}</div>${body}${nav}`;
     wireForm();
   }
 
@@ -394,6 +397,7 @@
         saveDraft(); paintForm();
       }; });
     });
+    $$('[data-shift]').forEach(b => { b.onchange = () => { f.shift = b.dataset.shift; $$('[data-shift]').forEach(x => { x.checked = x === b; }); saveDraft(); }; });
     const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
     $$('[data-lik]').forEach(b => { b.onclick = () => { collect(); f.likelihood = +b.dataset.lik; saveDraft(); paintForm(); }; });
