@@ -385,7 +385,7 @@
         <button type="button" class="btn ok big" id="send" ${sending ? 'disabled' : ''}>${sending ? '<span class="sp"></span>' : '📤'} ${t('ចុះហត្ថលេខា និងផ្ញើ', 'Sign and send')}</button></div>`;
     }
     const nav = `<div class="navrow">${s > 1 ? `<button type="button" class="btn" data-go="${s - 1}">‹ ${t('ថយក្រោយ', 'Back')}</button>` : `<a class="btn" href="${PUBLIC ? '#' : '#/'}" id="cancelForm">${PUBLIC ? t('សម្អាត', 'Clear') : t('បោះបង់', 'Cancel')}</a>`}
-      ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div>`;
+      ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div><div class="navspace"></div>`;
     $('#view').innerHTML = `${PUBLIC ? `<div class="alert ok pubnote">🚚 ${t('រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី', 'Report without signing in')}</div>` : ''}
       <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 · ${Math.round(s / 5 * 100)}%</small></div>
       ${head}</div>${body}${nav}`;

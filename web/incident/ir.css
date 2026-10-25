@@ -198,8 +198,9 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .scan-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-frame { position: absolute; left: 10%; right: 10%; top: 32%; bottom: 32%; border: 3px solid #61cbf4; border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 
-/* Back / Next float above the tab bar while scrolling the form */
-.navrow { position: sticky; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 5; margin: 4px 24px 0; padding: 5px; border-radius: 14px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 6px 20px rgba(1, 30, 65, .14); }
-body.public .navrow { bottom: calc(8px + env(safe-area-inset-bottom)); }
-.navrow .btn { min-height: 38px; padding: 4px 12px; font-size: 14.5px; border-radius: 10px; }
+/* Back / Next docked at the bottom, right on top of the tab bar */
+.navrow { position: fixed; left: 0; right: 0; bottom: calc(63px + env(safe-area-inset-bottom)); z-index: 5; margin: 0;
+  padding: 8px max(16px, calc((100% - 640px) / 2)); background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -4px 14px rgba(1, 30, 65, .08); }
+body.public .navrow { bottom: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+.navrow .btn { min-height: 40px; padding: 4px 12px; font-size: 14.5px; border-radius: 10px; }
+.navspace { height: 64px; }
