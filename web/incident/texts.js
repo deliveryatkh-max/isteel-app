@@ -257,7 +257,7 @@ window.IR_TEXTS = [
   ["In progress","One report","វិធានការ","","កំពុងធ្វើ","In progress"],
   ["Done","One report","វិធានការ","","រួចរាល់","Done"],
   ["No actions yet","One report","វិធានការ","","មិនទាន់មានវិធានការ","No actions yet"],
-  ["New action","One report","វិធានការ","","វិធានការថ្មី","New action"],
+  ["Other action (if not in the list)","One report","វិធានការ","","វិធានការផ្សេងទៀត (បើមិនមានក្នុងបញ្ជី)","Other action (if not in the list)"],
   ["Save actions","One report","វិធានការ","","រក្សាទុកវិធានការ","Save actions"],
   ["Close this case","One report","វិធានការ","","បិទករណីនេះ","Close this case"],
   ["History","One report","ប្រវត្តិ","","ប្រវត្តិ","History"],

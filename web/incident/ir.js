@@ -76,6 +76,7 @@
     ['walk', '🦺 ពាក់ឧបករណ៍ការពារ (មួក អាវ ស្បែកជើង)', 'Wear PPE (helmet, vest, safety shoes)'],
     ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
   const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
+  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${RECS.map(r => `<label class="check rec${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? ' off' : ''}"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}" ${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? 'disabled' : ''}> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
   const recHtml = type => `<div class="recs"><small class="hint">💡 ${esc(t('វិធានការណែនាំ (ចុចដើម្បីបន្ថែម)', 'Suggested actions (tap to add)'))}</small>${RECS.map(r => `<button type="button" class="rec" data-rec="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}" ${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? 'disabled' : ''}>${esc(t(r[1], r[2]))}</button>`).join('')}</div>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
@@ -866,9 +867,8 @@
         ${c.actions ? `<select class="in st-sel" data-ai="${i}">${[['បើក', 'Open'], ['កំពុងធ្វើ', 'In progress'], ['រួចរាល់', 'Done']].map(o => `<option value="${o[1]}" ${a.status === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select>`
           : `<span class="badge ${a.status === 'Done' ? 'approved' : a.due && a.due < today() ? 'rejected' : 'pending'}">${esc(t({ Open: 'បើក', 'In progress': 'កំពុងធ្វើ', Done: 'រួចរាល់' }[a.status] || a.status, a.status))}</span>`}</div>`).join('')
         : `<p class="hint">${t('មិនទាន់មានវិធានការ', 'No actions yet')}</p>`}
-      ${c.actions ? `<div class="newact"><input class="in" id="naWhat" placeholder="${esc(t('វិធានការថ្មី', 'New action'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div>
-        <button class="btn sm" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>${recHtml(d.type)}</div>` : ''}
-      ${c.close ? `<button class="btn big mt" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>`;
+      ${c.actions ? `<div class="newact">${recTicks(d.type)}<input class="in opt" id="naWhat" placeholder="${esc(t('វិធានការផ្សេងទៀត (បើមិនមានក្នុងបញ្ជី)', 'Other action (if not in the list)'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div></div>` : ''}
+      ${c.actions || c.close ? `<div class="actbtns${c.actions && c.close ? ' two' : ''}">${c.actions ? `<button class="btn big" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>` : ''}${c.close ? `<button class="btn big" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>` : ''}</div>`;
     if ((d.photoThumbs || []).length) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')}</h2><div class="photos">${d.photoThumbs.map(u => `<a class="ph" href="${u}" target="_blank" rel="noopener"><img src="${u}" alt=""></a>`).join('')}</div></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
     $('#view').innerHTML = html;
@@ -878,7 +878,6 @@
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
   function wireReport() {
     const d = cur;
-    wireRecs();
     $('#pdfBtn').onclick = async () => {
       const b = $('#pdfBtn'); busy(b, true, 'PDF');
       try {
@@ -926,11 +925,10 @@
       catch (e) { toast(e.message); busy(cb, false); }
     };
   }
-  function wireRecs() {
-    $$('.newact [data-rec]').forEach(b => { b.onclick = () => { const w = $('#naWhat'); w.value = b.dataset.rec; w.focus(); }; });
-  }
   function readActs() {
     const acts = (cur.actions || []).map((a, i) => { const s = document.querySelector(`[data-ai="${i}"]`); return Object.assign({}, a, { status: s ? s.value : a.status }); });
+    const own = $('#naOwner') ? $('#naOwner').value.trim() : '', due = $('#naDue') ? $('#naDue').value : '';
+    $$('.newact [data-tick]:checked').forEach(b => acts.push({ what: b.dataset.tick, owner: own, due, status: 'Open' }));
     const w = $('#naWhat');
     if (w && w.value.trim()) acts.push({ what: w.value.trim(), owner: $('#naOwner').value.trim(), due: $('#naDue').value, status: 'Open' });
     return acts;

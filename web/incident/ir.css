@@ -271,3 +271,10 @@ button.stat small::after { content: ' ›'; color: var(--muted); }
 .imm { grid-template-columns: 1fr 1fr; column-gap: 10px; }
 .imm .check { font-size: 14px; align-items: flex-start; }
 .imm .in { grid-column: 1 / -1; }
+.recs.one { grid-template-columns: 1fr; }
+.recs .check.rec { margin: 0; padding: 7px 8px; }
+.recs .check.rec.off { opacity: .35; text-decoration: line-through; }
+.newact .in.opt { border: 1.5px dashed var(--line); }
+.actbtns { display: grid; gap: 8px; margin-top: 12px; }
+.actbtns.two { grid-template-columns: 1fr 1fr; }
+.actbtns .btn { margin: 0; font-size: 15px; padding-left: 6px; padding-right: 6px; }
