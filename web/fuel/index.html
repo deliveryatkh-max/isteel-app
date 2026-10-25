@@ -3,42 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#F3F6FA">
+  <meta name="theme-color" content="#1f4e78">
   <title>Fuel Refill</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Kantumruy+Pro:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@800&text=STEEL&display=swap" rel="stylesheet">
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="apple-touch-icon" href="../icons/app-180.png">
   <link rel="manifest" href="../manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=20261024a">
+  <link rel="stylesheet" href="styles.css?v=20261025a">
   <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
   <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
   <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
 </head>
-<body data-screen="login">
+<body>
   <div class="head">
-    <!-- Glass bento look, same as the Transport Cost Analytics dashboard (Kim, 21 Oct 2026). -->
     <header class="topbar">
-      <div class="brand">
-        <div class="isi-logo" role="button" tabindex="0" aria-label="ISI STEEL · Refresh" title="Refresh">
-          <img class="logo-light" src="../icons/isi-logo.png" alt="ISI" width="34" height="34">
-          <img class="logo-dark" src="../icons/isi-white.png" alt="ISI" width="34" height="34">
-          <span class="word">STEEL</span>
-        </div>
-        <span class="sep" aria-hidden="true"></span><b id="brandName">ចាក់សាំង</b>
-      </div>
+      <div class="brand"><div class="isi-logo"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30"><span class="word">STEEL</span></div><span class="sep" aria-hidden="true"></span><div><b id="brandName">ចាក់សាំង</b></div></div>
       <div class="top-right">
         <div class="who" id="who"></div>
-        <a href="../" class="ibtn" id="menuBtn" aria-label="iSteel" title="iSteel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg></a>
         <button type="button" id="langBtn" class="lang-btn"></button>
-        <button type="button" id="themeBtn" class="ibtn theme-btn" aria-label="Light / Dark" title="Light / Dark"></button>
+        <button type="button" id="themeBtn" class="theme-btn" aria-label="Light / Dark" title="Light / Dark">🌙</button>
       </div>
     </header>
     <nav class="navbar" id="navbar" hidden>
-      <button type="button" id="navBack" class="nav-btn" aria-label="ថយក្រោយ"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ថយក្រោយ</span></button>
+      <button type="button" id="navBack" class="nav-btn" aria-label="ថយក្រោយ"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ថយក្រោយ</span></button>
       <div class="nav-title" id="navTitle"></div>
-      <button type="button" id="navFwd" class="nav-btn fwd" aria-label="ទៅមុខ"><span>ទៅមុខ</span><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" id="navFwd" class="nav-btn fwd" aria-label="ទៅមុខ"><span>ទៅមុខ</span><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </nav>
   </div>
 
@@ -46,21 +38,23 @@
 
   <main id="view"></main>
 
-  <!-- Bottom capsule on phones; a side menu with names on computers. -->
   <nav class="tabs" id="tabs" hidden>
-    <button type="button" data-tab="home" class="tab"><span class="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></span><b class="lb">ទំព័រដើម</b></button>
-    <button type="button" data-tab="new" class="tab"><span class="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><b class="lb">បញ្ចូលថ្មី</b></button>
-    <button type="button" data-act="scan" class="tab" id="scanTab" hidden><span class="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg></span><b class="lb">ស្កេន</b></button>
-    <button type="button" data-tab="mine" class="tab"><span class="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span><b class="lb">របស់ខ្ញុំ</b></button>
-    <button type="button" data-tab="review" class="tab" id="reviewTab" hidden><span class="c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></span><b class="lb">ត្រួតពិនិត្យ</b></button>
+    <a href="../" class="tab home-tab"><span><img src="../icons/home.svg" alt="" width="24" height="24"></span><b class="lb">ទំព័រដើម</b></a>
+    <button data-tab="new" class="tab"><span>➕</span><b class="lb">បញ្ចូលថ្មី</b></button>
+    <button data-tab="mine" class="tab"><span>📋</span><b class="lb">របស់ខ្ញុំ</b></button>
+    <button data-tab="review" class="tab" id="reviewTab" hidden><span>✅</span><b class="lb">អ្នកត្រួតពិនិត្យ</b></button>
   </nav>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <nav class="tabs" id="homeOnly">
+    <a href="../" class="tab home-tab"><span><img src="../icons/home.svg" alt="" width="24" height="24"></span><b class="lb">ទំព័រដើម</b></a>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
 
   <script src="../config.js"></script>
   <script src="../lang.js"></script>
   <script>if (!(window.APP_CONFIG || {}).API_URL) document.write('<script src="demo-data.js"><\/script>');</script>
   <script src="../request.js"></script>
-  <script src="app.js?v=20261024a"></script>
+  <script src="app.js?v=20261025a"></script>
 </body>
 </html>
