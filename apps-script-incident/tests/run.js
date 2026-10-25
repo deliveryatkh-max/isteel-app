@@ -26,7 +26,7 @@ const FORM = {
   plate: '3e 2588', driver: 'ជា វុទ្ធី', story: 'Motorbike cut in.', severity: 3, likelihood: 5, cause: 'People (behaviour, training)',
   people: [{ name: 'Rider', injured: true, injury: 'cut' }, { name: '' }], whys: ['too close', '', '', '', ''], immediate: 'First aid',
   actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08' }, { what: '' }], reporterName: 'Vuthy', reporterPhone: '012',
-  signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com',
+  signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com', insurance: 'Yes',
   voice: 'data:audio/webm;codecs=opus;base64,' + Buffer.from('voice-note').toString('base64'),
 };
 
@@ -64,6 +64,7 @@ eq(b.categories.find(c => c.en === 'Fire').icon, '🔥', 'icons in boot');
 ok(/sign/.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { signature: '' })).error), 'signature needed');
 ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '', voice: '' })).error), 'story or voice needed');
 const r1 = must(call('driver@x.com', 'submit', FORM));
+eq(must(call('driver@x.com', 'get', { id: r1.id })).insurance, 'Yes', 'insurance kept');
 eq(r1.id, 'IR-' + new Date().getFullYear() + '-001', 'report number');
 eq(env.telegrams.length, 1, 'telegram on submit');
 ok(/New incident/.test(env.telegrams[0].payload.text) && /Open and sign/.test(env.telegrams[0].payload.reply_markup), 'telegram text and button');

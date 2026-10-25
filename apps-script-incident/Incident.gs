@@ -439,7 +439,7 @@ function writeRow_(d, folder) {
 // ---------------------------------------------------------------- submit (reporter)
 const FIELDS = ['type', 'category', 'shift', 'date', 'time', 'location', 'warehouse', 'gps', 'road', 'weather', 'driver', 'driverId', 'plate',
   'company', 'tripId', 'dn', 'customer', 'load', 'story', 'couldHappen', 'firstAid', 'hospital', 'vehicleDamage', 'goodsDamage', 'property',
-  'police', 'policeNo', 'cause', 'immediate', 'evidence', 'anyInjured'];
+  'police', 'policeNo', 'insurance', 'cause', 'immediate', 'evidence', 'anyInjured'];
 // people hurt: the injured list (step 3 "Anyone injured?") or, for older reports, people ticked as injured
 const injuredCount_ = d => (d.anyInjured === 'Yes' ? Math.max(1, (d.injuredList || []).length) : 0) || (d.people || []).filter(p => p.injured).length;
 
@@ -644,7 +644,7 @@ function makePdf_(d, folder) {
     if ((d.injuredList || []).length) grid_(body, [['Injured person', 'Type', 'Lost time injury (LTI)']].concat(d.injuredList.map(x => [x.name, x.type, x.lti ? 'Yes' : 'No'])));
     kv_(body, [[two_('ជំនួយបឋម', 'First aid'), d.firstAid, two_('មន្ទីរពេទ្យ', 'Hospital / clinic'), d.hospital],
       [two_('ខូចខាតឡាន', 'Vehicle damage'), d.vehicleDamage, two_('ខូចខាតទំនិញ', 'Goods damage'), d.goodsDamage],
-      [two_('ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party'), d.property, two_('ប៉ូលីស', 'Police'), d.police + (d.policeNo ? ' · ' + d.policeNo : '')],
+      [two_('ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party'), d.property, two_('ធានារ៉ាប់រងមកពិនិត្យ', 'Insurance inspected'), d.insurance || ''],
       [two_('ថ្លៃប៉ាន់ស្មាន', 'Est. cost (USD)'), d.cost ? '$' + d.cost : '', two_('ថ្ងៃឈប់ការងារ', 'Days lost'), d.daysLost ? String(d.daysLost) : '']]);
     section_(body, 'G. ' + two_('កម្រិតហានិភ័យ', 'RISK RATING'));
     kv_(body, [[two_('ភាពធ្ងន់ធ្ងរ', 'Severity'), d.severity ? d.severity + ' ' + SEVERITY[d.severity - 1] : '', two_('លទ្ធភាព', 'Likelihood'), d.likelihood ? d.likelihood + ' ' + LIKELY[d.likelihood - 1] : ''],

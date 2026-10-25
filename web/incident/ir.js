@@ -76,8 +76,9 @@
     ['walk', '🦺 ពាក់ឧបករណ៍ការពារ (មួក អាវ ស្បែកជើង)', 'Wear PPE (helmet, vest, safety shoes)'],
     ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
   const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
-  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${RECS.map(r => `<label class="check rec${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? ' off' : ''}"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}" ${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? 'disabled' : ''}> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
-  const recHtml = type => `<div class="recs"><small class="hint">💡 ${esc(t('វិធានការណែនាំ (ចុចដើម្បីបន្ថែម)', 'Suggested actions (tap to add)'))}</small>${RECS.map(r => `<button type="button" class="rec" data-rec="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}" ${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? 'disabled' : ''}>${esc(t(r[1], r[2]))}</button>`).join('')}</div>`;
+  const fitRecs = type => RECS.filter(r => (REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) >= 0);
+  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${fitRecs(type).map(r => `<label class="check rec"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}"> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
+  const recHtml = type => `<div class="recs"><small class="hint">💡 ${esc(t('វិធានការណែនាំ (ចុចដើម្បីបន្ថែម)', 'Suggested actions (tap to add)'))}</small>${fitRecs(type).map(r => `<button type="button" class="rec" data-rec="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}">${esc(t(r[1], r[2]))}</button>`).join('')}</div>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -238,7 +239,7 @@
   // ---------------------------------------------------------------- the form (5 steps)
   const EMPTY = () => ({ type: '', category: '', shift: 'Day', date: today(), time: nowHm(),
     location: '', warehouse: '', gps: '', road: '', weather: '', driver: '', driverId: '', plate: '', company: '', tripId: '', dn: '', customer: '', load: '',
-    people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', cost: '', daysLost: '',
+    people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', insurance: '', cost: '', daysLost: '',
     severity: 0, likelihood: 0, cause: '', whys: ['', '', '', '', ''], immediate: '', actions: [], witnesses: [], evidence: '',
     reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], voice: '', keepVoice: '', anyInjured: '', injuredList: [], step: 1 });
   let f = null;           // the report being filled in
@@ -407,7 +408,7 @@
         <label class="f">${t('ការខូចខាត', 'Damage')}</label>
         <div class="dmg">${DAMAGES.map(o => `<div class="dmgrow"><label class="check"><input type="checkbox" data-dmg="${esc(o[1])}" ${f.dmg[o[1]] != null ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>
           ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
-        <label class="f">${t('ហៅប៉ូលីស?', 'Police called?')}</label>${one('police', YESNO)}</div>`;
+        <label class="f">${t('មានក្រុមហ៊ុនធានារ៉ាប់រងមកត្រួតពិនិត្យ?', 'Insurance company came to inspect?')}</label>${one('insurance', YESNO)}</div>`;
       body += `<div class="card"><h2>👁️ ${t('សាក្សី និងភស្តុតាង', 'Witnesses and evidence')}</h2>
         ${f.witnesses.map((w, i) => `<div class="row2 wit" data-i="${i}"><input class="in" data-w="name" placeholder="${esc(t('ឈ្មោះសាក្សី', 'Witness name'))}" value="${esc(w.name)}"><input class="in" data-w="phone" inputmode="tel" placeholder="${esc(t('ទូរស័ព្ទ', 'Phone'))}" value="${esc(w.phone)}"></div>`).join('')}
         <button type="button" class="btn sm" id="addWit">＋ ${t('បន្ថែមសាក្សី', 'Add witness')}</button>
@@ -856,7 +857,7 @@
     html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('មានអ្នករងរបួស', 'Anyone injured', pick(YESNO, d.anyInjured)) +
       (d.injuredList || []).map(x => `<div class="kv"><span>🤕 ${esc(x.name)}</span><b>${esc([pick(INJ_TYPES, x.type), x.lti ? 'LTI' : ''].filter(Boolean).join(' · '))}</b></div>`).join('') +
       kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
-      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
+      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('ធានារ៉ាប់រង', 'Insurance', pick(YESNO, d.insurance)) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
       kv('ថ្លៃប៉ាន់ស្មាន', 'Est. cost', d.cost ? '$' + d.cost : '') + kv('ថ្ងៃឈប់ការងារ', 'Days lost', d.daysLost ? String(d.daysLost) : ''));
     html += sec(`🔎 ${t('ហានិភ័យ និងមូលហេតុ', 'Risk and cause')}`, kv('ភាពធ្ងន់ធ្ងរ', 'Severity', d.severity ? d.severity + ' · ' + t(SEV[d.severity - 1][0], SEV[d.severity - 1][1]) : '') +
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
