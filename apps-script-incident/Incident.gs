@@ -33,6 +33,7 @@ const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'គ្រោះថ្នាក់';      // tick box column in the Fuel Refill Users tab (added by the Fuel script)
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+const MAX_VOICE_BYTES = 4 * 1024 * 1024;   // about 3 minutes of voice
 const WHEN = { button: 'Button only', auto: 'Auto after sign-off', high: 'Auto HIGH risk only' };
 
 const TYPES = {
@@ -398,7 +399,9 @@ function view_(d, user) {
       return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
     } catch (e) { return ''; }
   }).filter(Boolean);
-  return Object.assign({}, d, { photoThumbs: thumbs,
+  let voiceData = '';
+  if (d.voice) try { const b = DriveApp.getFileById(d.voice).getBlob(); voiceData = 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) { /* file gone */ }
+  return Object.assign({}, d, { photoThumbs: thumbs, voiceData: voiceData,
     can: {
       edit: d.status === STATUS.back && d.reporter.email === user.email,
       sign: d.status === STATUS.wait && sup,
@@ -444,7 +447,7 @@ function clean_(p) {
   if (!TYPES[d.type]) fail_('BAD', 'Choose the incident type.', 'សូមជ្រើសរើសប្រភេទហេតុការណ៍។');
   if (!d.category) fail_('BAD', 'Choose a category.', 'សូមជ្រើសរើសប្រភេទ។');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) fail_('BAD', 'Enter the date of the incident.', 'សូមបញ្ចូលថ្ងៃកើតហេតុ។');
-  if (!d.story) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
+  if (!d.story && !/^data:audio\//.test(String(p.voice || '')) && !p.keepVoice) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
   d.plate = d.plate.toUpperCase().replace(/\s+/g, '');
   d.severity = Math.min(5, Math.max(0, parseInt(p.severity, 10) || 0));
   d.likelihood = Math.min(5, Math.max(0, parseInt(p.likelihood, 10) || 0));
@@ -464,6 +467,15 @@ function saveImage_(folder, dataUrl, name) {
   const bytes = Utilities.base64Decode(m[3]);
   if (bytes.length > MAX_PHOTO_BYTES) fail_('BIG', 'A photo is too big.', 'រូបថតធំពេក។');
   return folder.createFile(Utilities.newBlob(bytes, m[1], name)).getId();
+}
+/** Voice note of "what happened" (recorded on the phone). */
+function saveVoice_(folder, dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(audio\/(webm|mp4|ogg|mpeg|aac|x-m4a))(?:;[^,]*)?;base64,(.+)$/);
+  if (!m) return null;
+  const bytes = Utilities.base64Decode(m[3]);
+  if (bytes.length > MAX_VOICE_BYTES) fail_('BIG', 'The voice note is too long.', 'សំឡេងវែងពេក។');
+  const ext = { webm: 'webm', mp4: 'm4a', ogg: 'ogg', mpeg: 'mp3', aac: 'aac', 'x-m4a': 'm4a' }[m[2]];
+  return folder.createFile(Utilities.newBlob(bytes, m[1], 'voice-' + Date.now() + '.' + ext)).getId();
 }
 function pickSupervisor_(p, warehouse) {
   const sups = supervisors_().filter(s => s.email);
@@ -502,6 +514,9 @@ function submit_(p, user, publicReporter) {
     if (!anonymous) d.reporter.sig = saveImage_(folder, p.signature, 'signature-reporter-' + Date.now() + '.png');
     const keep = (old && old.photos || []).filter(f => (p.keepPhotos || []).indexOf(f) >= 0);
     d.photos = keep.concat(photos.map((u, i) => saveImage_(folder, u, 'photo-' + Date.now() + '-' + (i + 1) + '.jpg')).filter(Boolean)).slice(0, MAX_PHOTOS);
+    d.voice = saveVoice_(folder, p.voice) || (old && old.voice && p.keepVoice === old.voice ? old.voice : '');
+    if (!d.story && !d.voice) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
+    if (!d.story) d.story = '🎤 (Voice note / សំឡេង)';
     d.history = (d.history || []).concat([{ at: now, by: d.reporter.name, what: old ? 'Sent again' : 'Reported and signed' }]);
     store_(d);
     telegramNew_(d);
@@ -640,6 +655,7 @@ function makePdf_(d, folder) {
       kv_(body, d.witnesses.map(w => [two_('សាក្សី', 'Witness'), w.name + (w.phone ? ' · ' + w.phone : '')]).concat(d.evidence ? [[two_('ភស្តុតាង', 'Evidence'), d.evidence]] : []));
     }
     if (d.supComment) kv_(body, [[two_('មតិប្រធានឃ្លាំង', 'Supervisor comment'), d.supComment]]);
+    if (d.voice) kv_(body, [[two_('សំឡេង', 'Voice note'), 'Saved in the report folder / រក្សាទុកក្នុង Folder របាយការណ៍']]);
     if ((d.photos || []).length) {
       section_(body, two_('រូបថត', 'PHOTOS'));
       const p = body.appendParagraph('');

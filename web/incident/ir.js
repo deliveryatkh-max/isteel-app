@@ -56,6 +56,14 @@
   const LIK = [['កម្រ', 'Rare'], ['មិនសូវកើត', 'Unlikely'], ['អាចកើត', 'Possible'], ['ទំនងកើត', 'Likely'], ['ស្ទើរតែប្រាកដ', 'Almost certain']];
   const CAUSES = [['មនុស្ស (ឥរិយាបថ ការបណ្តុះបណ្តាល)', 'People (behaviour, training)'], ['ឧបករណ៍ / ឡាន', 'Equipment / vehicle'], ['វិធីសាស្ត្រ / នីតិវិធី', 'Method / procedure'],
     ['បរិស្ថាន (ផ្លូវ អាកាសធាតុ ពន្លឺ)', 'Environment (road, weather, light)'], ['ទំនិញ / ការផ្ទុក', 'Material / load'], ['ការគ្រប់គ្រង / ត្រួតពិនិត្យ', 'Management / supervision']];
+  const CAUSE_ICONS = { 'People (behaviour, training)': '🧍', 'Equipment / vehicle': '🚛', 'Method / procedure': '📋', 'Environment (road, weather, light)': '🌧️', 'Material / load': '📦', 'Management / supervision': '👔' };
+  const YESNO = [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']];
+  const HAVE = [['មាន', 'Have'], ['គ្មាន', 'None']];
+  const DAMAGES = [['ខូចខាតឡាន ក្រុមហ៊ុន', 'Company vehicle'], ['ខូចខាតឡាន អ្នកដទៃ', 'Other vehicle'], ['ខូចខាតទំនិញលើឡាន', 'Goods on the truck'], ['ខូចខាតទ្រព្យសម្បត្តិភាគីទី៣', '3rd-party property']];
+  const IMMEDIATE = [['🩹 ផ្តល់ជំនួយបឋម', 'First aid given'], ['🚑 បញ្ជូនទៅមន្ទីរពេទ្យ', 'Sent to hospital / clinic'], ['🛑 បញ្ឈប់ការងារ / ម៉ាស៊ីន', 'Stopped the work / machine'],
+    ['🚧 ធ្វើឲ្យកន្លែងមានសុវត្ថិភាព ដាក់របាំង', 'Made the area safe, blocked it off'], ['⚠️ ដាក់ស្លាកព្រមាន / កោណ', 'Put warning signs / cones'], ['📦 ចងទំនិញឡើងវិញ / រើចេញ', 'Secured or moved the load'],
+    ['🧹 សម្អាតការកំពប់ / ប្រេង', 'Cleaned up the spill / oil'], ['🧯 ពន្លត់ភ្លើង', 'Put out the fire'], ['📷 ថតរូបទីកន្លែង', 'Took photos of the place'],
+    ['📞 រាយការណ៍ប្រធាន', 'Told the supervisor'], ['👮 ហៅប៉ូលីស', 'Called the police'], ['📣 ប្រាប់អតិថិជន', 'Told the customer']];
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -214,11 +222,11 @@
     location: '', warehouse: '', gps: '', road: '', weather: '', driver: '', driverId: '', plate: '', company: '', tripId: '', dn: '', customer: '', load: '',
     people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', cost: '', daysLost: '',
     severity: 0, likelihood: 0, cause: '', whys: ['', '', '', '', ''], immediate: '', actions: [], witnesses: [], evidence: '',
-    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], step: 1 });
+    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], voice: '', keepVoice: '', step: 1 });
   let f = null;           // the report being filled in
   let editId = '';        // a returned report being sent again
   let sending = false;
-  const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3) }))); };
+  const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3), voice: f.voice && f.voice.length < 1500000 ? f.voice : '' }))); };
 
   async function openEdit(id) {
     $('#view').innerHTML = loader('កំពុងបើករបាយការណ៍', 'Opening the report');
@@ -226,7 +234,7 @@
       const d = await api('get', { id });
       if (!d.can || !d.can.edit) { location.hash = '#/r/' + encodeURIComponent(id); return; }
       editId = id;
-      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), step: 1,
+      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), voice: '', keepVoice: d.voice || '', step: 1,
         whys: (d.whys || []).concat(['', '', '', '', '']).slice(0, 5), cost: d.cost || '', daysLost: d.daysLost || '' });
       renderForm(f, true);
     } catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; }
@@ -286,6 +294,24 @@
         : `<input class="in" id="${id}" type="${opts.type || 'text'}" value="${esc(v)}" ${opts.list ? `list="${opts.list}"` : ''} ${opts.mode ? `inputmode="${opts.mode}"` : ''} placeholder="${esc(opts.ph || '')}" autocomplete="off">`;
     return `<div class="field"><label class="f" for="${id}">${esc(t(km, en))}${req}</label>${input}${opts.hint ? `<div class="hint">${esc(opts.hint)}</div>` : ''}</div>`;
   };
+  // one tick box per choice, only one can be ticked (tap it again to untick)
+  const one = (id, list) => `<div class="ticks" data-one="${id}">${list.map(o => `<label class="check"><input type="checkbox" value="${esc(o[1])}" ${f[id] === o[1] ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('')}</div>`;
+  // damage ticks <-> the vehicleDamage / goodsDamage / property fields the sheet already has ("Company vehicle: scratch; Other vehicle: dent")
+  const dmgFrom = d => {
+    const o = {};
+    String(d.vehicleDamage || '').split('; ').filter(Boolean).forEach(x => { const m = x.match(/^(Company vehicle|Other vehicle): ?(.*)$/); o[m ? m[1] : 'Company vehicle'] = (m ? m[2] : x) || ' '; });
+    if (d.goodsDamage) o['Goods on the truck'] = d.goodsDamage;
+    if (d.property) o['3rd-party property'] = d.property;
+    return o;
+  };
+  const dmgTo = () => {
+    const g = k => (f.dmg[k] != null ? String(f.dmg[k]).trim() || 'Yes' : '');
+    f.vehicleDamage = ['Company vehicle', 'Other vehicle'].filter(k => f.dmg[k] != null).map(k => k + ': ' + g(k)).join('; ');
+    f.goodsDamage = g('Goods on the truck'); f.property = g('3rd-party property');
+  };
+  // immediate actions: ticked choices plus "other" text, saved as one line ("First aid given; Told the supervisor; ...")
+  const immFrom = v => { const all = IMMEDIATE.map(o => o[1]), parts = String(v || '').split('; ').filter(Boolean); return { ticks: parts.filter(x => all.indexOf(x) >= 0), other: parts.filter(x => all.indexOf(x) < 0).join('; ') }; };
+  const immText = v => String(v || '').split('; ').map(x => { const o = IMMEDIATE.find(i => i[1] === x); return o ? t(o[0], o[1]) : x; }).join(' · ');
   const chips = (id, list, multi) => `<div class="chips" data-chips="${id}">${list.map(o => `<button type="button" class="chip ${(multi ? String(f[id]).split(', ').indexOf(o[1]) >= 0 : f[id] === o[1]) ? 'on' : ''}" data-v="${esc(o[1])}">${esc(t(o[0], o[1]))}</button>`).join('')}</div>`;
   // Kim's warehouse list first, then any other warehouse named in the Supervisors tab
   const warehouses = () => Array.from(new Set(WAREHOUSES.concat(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean))));
@@ -338,6 +364,7 @@
     } else if (s === 3) {
       body += `<div class="card"><h2>📝 ${t('តើមានអ្វីកើតឡើង', 'What happened')}</h2>
         ${field('story', 'រៀបរាប់មួយជំហានម្តងៗ (អ្វី របៀប នរណា)', 'Describe step by step (what, how, who)', { area: true, rows: 5, req: true })}
+        <div class="voice" id="voiceBox">${voiceHtml()}</div>
         ${f.type === 'near' ? field('couldHappen', 'អ្វីដែលអាចកើតឡើង', 'What could have happened', { area: true, rows: 2 }) : ''}</div>`;
       body += `<div class="card"><h2>👥 ${t('អ្នកពាក់ព័ន្ធ', 'People involved')}</h2>
         ${f.people.map((p, i) => `<div class="person" data-i="${i}">
@@ -348,16 +375,17 @@
           ${p.injured ? `<input class="in" data-p="injury" placeholder="${esc(t('របួស / ផ្នែករាងកាយ', 'Injury / body part'))}" value="${esc(p.injury)}">` : ''}
           <button type="button" class="btn sm ghost" data-delperson="${i}">✕ ${t('លុប', 'Remove')}</button></div>`).join('')}
         <button type="button" class="btn sm" id="addPerson">＋ ${t('បន្ថែមអ្នកពាក់ព័ន្ធ', 'Add person')}</button></div>`;
+      if (!f.dmg) f.dmg = dmgFrom(f);
       body += `<div class="card"><h2>🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}</h2>
-        <div class="row2">${field('firstAid', 'ជំនួយបឋម?', 'First aid given?', { select: [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']] })}${field('hospital', 'មន្ទីរពេទ្យ / គ្លីនិក', 'Hospital / clinic')}</div>
-        ${field('vehicleDamage', 'ការខូចខាតឡាន', 'Vehicle damage')}
-        <div class="row2">${field('goodsDamage', 'ការខូចខាតទំនិញ (DN, kg)', 'Goods damage (DN, kg)')}${field('property', 'ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party')}</div>
-        <div class="row2">${field('police', 'ហៅប៉ូលីស?', 'Police called?', { select: [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']] })}${field('policeNo', 'លេខរបាយការណ៍ប៉ូលីស', 'Police report no.')}</div>
-        <div class="row2">${field('cost', 'ថ្លៃប៉ាន់ស្មាន (USD)', 'Est. cost (USD)', { type: 'number', mode: 'decimal' })}${field('daysLost', 'ចំនួនថ្ងៃឈប់ការងារ', 'Days lost', { type: 'number', mode: 'numeric' })}</div></div>`;
+        <label class="f">${t('ជំនួយបឋម?', 'First aid given?')}</label>${one('firstAid', YESNO)}
+        <label class="f">${t('ការខូចខាត', 'Damage')}</label>
+        <div class="dmg">${DAMAGES.map(o => `<div class="dmgrow"><label class="check"><input type="checkbox" data-dmg="${esc(o[1])}" ${f.dmg[o[1]] != null ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>
+          ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
+        <label class="f">${t('ហៅប៉ូលីស?', 'Police called?')}</label>${one('police', YESNO)}</div>`;
       body += `<div class="card"><h2>👁️ ${t('សាក្សី និងភស្តុតាង', 'Witnesses and evidence')}</h2>
         ${f.witnesses.map((w, i) => `<div class="row2 wit" data-i="${i}"><input class="in" data-w="name" placeholder="${esc(t('ឈ្មោះសាក្សី', 'Witness name'))}" value="${esc(w.name)}"><input class="in" data-w="phone" inputmode="tel" placeholder="${esc(t('ទូរស័ព្ទ', 'Phone'))}" value="${esc(w.phone)}"></div>`).join('')}
         <button type="button" class="btn sm" id="addWit">＋ ${t('បន្ថែមសាក្សី', 'Add witness')}</button>
-        <div class="mt">${field('evidence', 'វីដេអូ / CCTV / កាមេរ៉ាឡាន', 'Video / CCTV / dashcam')}</div></div>`;
+        <label class="f mt">${t('វីដេអូ / CCTV / កាមេរ៉ាឡាន', 'Video / CCTV / dashcam')}</label>${one('evidence', HAVE)}</div>`;
     } else if (s === 4) {
       body += `<div class="card"><h2>⚖️ ${t('កម្រិតហានិភ័យ', 'Risk rating')}</h2>
         <label class="f">${t('ភាពធ្ងន់ធ្ងរ', 'Severity')}</label>
@@ -366,11 +394,13 @@
         <div class="scale five">${LIK.map((x, i) => `<button type="button" class="sc ${f.likelihood === i + 1 ? 'on' : ''}" data-lik="${i + 1}"><b>${i + 1}</b>${esc(t(x[0], x[1]))}</button>`).join('')}</div>
         <div class="score lv-${(level(sc) || 'none').toLowerCase()}"><b>${sc || '–'}</b><span>${sc ? esc(t(levelKm(level(sc)), level(sc))) : t('ជ្រើសភាពធ្ងន់ធ្ងរ និងលទ្ធភាព', 'Pick severity and likelihood')}</span><small>${t('ពិន្ទុ 1–25 · ≥15 ខ្ពស់ · 8–14 មធ្យម', 'Score 1–25 · 15+ high · 8–14 medium')}</small></div></div>`;
       body += `<div class="card"><h2>🔎 ${t('ហេតុអ្វីបានជាកើតឡើង', 'Why did it happen')}</h2>
-        <label class="f">${t('មូលហេតុចម្បង', 'Main cause')}</label>${chips('cause', CAUSES)}
-        ${f.whys.map((w, i) => `<div class="field"><label class="f" for="why${i}">${t('ហេតុអ្វី', 'Why')} ${i + 1}?</label><input class="in" id="why${i}" data-why="${i}" value="${esc(w)}"></div>`).join('')}
+        <div class="field"><label class="f" for="causeSel">${t('មូលហេតុចម្បង', 'Main cause')}</label><select class="in cat-sel" id="causeSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${CAUSES.map(o => `<option value="${esc(o[1])}" ${f.cause === o[1] ? 'selected' : ''}>${CAUSE_ICONS[o[1]] || '•'}  ${esc(t(o[0], o[1]))}</option>`).join('')}</select></div>
+        <div class="field"><label class="f" for="why0">${t('ហេតុអ្វី?', 'Why?')}</label><input class="in" id="why0" data-why="0" value="${esc(f.whys[0] || '')}"></div>
         <div class="hint">${t('សួរ "ហេតុអ្វី?" ម្តងហើយម្តងទៀត រហូតដល់ឫសគល់', 'Keep asking "why?" until you reach the root cause')}</div></div>`;
       body += `<div class="card"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
-        ${field('immediate', 'វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken', { area: true, rows: 2 })}
+        <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
+        <div class="imm">${(() => { const im = immFrom(f.immediate); return IMMEDIATE.map(o => `<label class="check"><input type="checkbox" data-imm="${esc(o[1])}" ${im.ticks.indexOf(o[1]) >= 0 ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('') +
+          `<input class="in mt" id="immOther" value="${esc(im.other)}" placeholder="${esc(t('ផ្សេងទៀត (វាយបន្ថែម)', 'Other (type here)'))}">`; })()}</div>
         <label class="f">${t('វិធានការកែតម្រូវ / បង្ការ', 'Corrective / preventive actions')}</label>
         ${f.actions.map((a, i) => `<div class="act" data-i="${i}"><input class="in" data-a="what" placeholder="${esc(t('វិធានការ', 'Action'))}" value="${esc(a.what)}">
           <div class="row2"><input class="in" data-a="owner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}" value="${esc(a.owner)}"><input class="in" data-a="due" type="date" value="${esc(a.due)}"></div>
@@ -414,6 +444,8 @@
     $$('.wit').forEach(row => { const w = f.witnesses[+row.dataset.i]; if (!w) return; row.querySelectorAll('[data-w]').forEach(el => { w[el.dataset.w] = el.value; }); });
     $$('.act').forEach(row => { const a = f.actions[+row.dataset.i]; if (!a) return; row.querySelectorAll('[data-a]').forEach(el => { a[el.dataset.a] = el.value; }); });
     const an = $('#anonymous'); if (an) f.anonymous = an.checked;
+    if ($('[data-dmg]')) { $$('[data-dmgnote]').forEach(el => { f.dmg[el.dataset.dmgnote] = el.value; }); dmgTo(); }
+    if ($('[data-imm]')) f.immediate = $$('[data-imm]').filter(el => el.checked).map(el => el.dataset.imm).concat(($('#immOther').value || '').trim() ? [$('#immOther').value.trim()] : []).join('; ');
     if (f.plate) f.plate = f.plate.toUpperCase().replace(/\s+/g, '');
     saveDraft();
   }
@@ -425,7 +457,7 @@
     else if (n === 1 && !f.category) m = t('សូមជ្រើសរើសប្រភេទរង', 'Choose a category');
     else if (n === 2 && !f.date) m = t('សូមបញ្ចូលថ្ងៃកើតហេតុ', 'Enter the date');
     else if (n === 2 && !f.location) m = t('សូមបញ្ចូលទីកន្លែង', 'Enter the location');
-    else if (n === 3 && !String(f.story).trim()) m = t('សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង', 'Describe what happened');
+    else if (n === 3 && !String(f.story).trim() && !f.voice && !f.keepVoice) m = t('សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង', 'Describe what happened');
     if (quiet) return !m;
     return m || null;
   }
@@ -448,7 +480,7 @@
   function stepOkEn(n) {
     if (n === 1) return !f.type ? 'Choose the incident type' : !f.category ? 'Choose a category' : '';
     if (n === 2) return !f.date ? 'Enter the date' : !f.location ? 'Enter the location' : '';
-    if (n === 3) return !String(f.story).trim() ? 'Describe what happened' : '';
+    if (n === 3) return !String(f.story).trim() && !f.voice && !f.keepVoice ? 'Describe what happened' : '';
     return '';
   }
 
@@ -468,6 +500,10 @@
     });
     $$('[data-shift]').forEach(b => { b.onchange = () => { f.shift = b.dataset.shift; $$('[data-shift]').forEach(x => { x.checked = x === b; }); saveDraft(); }; });
     const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
+    const cz = $('#causeSel'); if (cz) cz.onchange = () => { f.cause = cz.value; saveDraft(); };
+    $$('[data-one]').forEach(box => { const all = box.querySelectorAll('input'); all.forEach(b => { b.onchange = () => { f[box.dataset.one] = b.checked ? b.value : ''; all.forEach(x => { if (x !== b) x.checked = false; }); saveDraft(); }; }); });
+    $$('[data-dmg]').forEach(b => { b.onchange = () => { collect(); if (b.checked) f.dmg[b.dataset.dmg] = ''; else delete f.dmg[b.dataset.dmg]; dmgTo(); saveDraft(); paintForm(); const n = $(`[data-dmgnote="${b.dataset.dmg}"]`); if (n) n.focus(); }; });
+    wireVoice();
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
     $$('[data-lik]').forEach(b => { b.onclick = () => { collect(); f.likelihood = +b.dataset.lik; saveDraft(); paintForm(); }; });
     const add = (id, fn) => { const b = $(id); if (b) b.onclick = () => { collect(); fn(); saveDraft(); paintForm(); }; };
@@ -544,6 +580,40 @@
     el.dataset.sure = '1'; el.dataset.txt = el.textContent; el.textContent = q; el.classList.add('danger');
     setTimeout(() => { if (el.isConnected) { delete el.dataset.sure; el.textContent = el.dataset.txt; el.classList.remove('danger'); } }, 3500);
     return false;
+  }
+
+  // ---- voice note for "what happened": record on the phone (up to 3 minutes), play it back, sent with the report
+  const VOICE_MAX = 180;
+  let rec = null;
+  function voiceHtml() {
+    if (rec) return `<button type="button" class="btn sm danger" id="vStop">⏹ ${t('ឈប់ថត', 'Stop')} <span id="vTime">0:00</span></button> <span class="vdot"></span>`;
+    if (f.voice || f.keepVoice) return `<div class="vrow">${f.voice ? `<audio controls src="${f.voice}"></audio>` : `<span class="hint">🎤 ${t('មានសំឡេងពីមុន', 'Voice note already saved')}</span>`}<button type="button" class="btn sm ghost" id="vDel">✕ ${t('លុប', 'Delete')}</button></div>`;
+    return `<button type="button" class="btn sm" id="vRec">🎤 ${t('ថតសំឡេងជំនួសការវាយ', 'Record voice instead of typing')}</button>`;
+  }
+  function wireVoice() {
+    const box = $('#voiceBox');
+    if (!box) return;
+    const redraw = () => { box.innerHTML = voiceHtml(); wireVoice(); };
+    const r = $('#vRec'), st = $('#vStop'), del = $('#vDel');
+    if (r) r.onclick = async () => {
+      if (!navigator.mediaDevices || !window.MediaRecorder) { toast(t('ទូរស័ព្ទនេះមិនអាចថតសំឡេងបានទេ', 'This phone cannot record voice')); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { toast(t('សូមអនុញ្ញាតមីក្រូហ្វូន', 'Please allow the microphone')); return; }
+      const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(x => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(x)) || '';
+      const mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined);
+      const chunks = [], t0 = Date.now();
+      rec = { mr, timer: setInterval(() => { const sec = Math.round((Date.now() - t0) / 1000), el = $('#vTime'); if (el) el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); if (sec >= VOICE_MAX) mr.stop(); }, 500) };
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        clearInterval(rec.timer); rec = null; stream.getTracks().forEach(x => x.stop());
+        const fr = new FileReader();
+        fr.onload = () => { if (!f) return; f.voice = fr.result; f.keepVoice = ''; saveDraft(); redraw(); };
+        fr.readAsDataURL(new Blob(chunks, { type: (mr.mimeType || 'audio/webm').split(';')[0] }));
+      };
+      mr.start(1000); redraw();
+    };
+    if (st) st.onclick = () => { if (rec) rec.mr.stop(); };
+    if (del) del.onclick = () => { f.voice = ''; f.keepVoice = ''; saveDraft(); redraw(); };
   }
 
   /** Searchable list in a bottom sheet, like the Fuel app. groups: [{label?, items: [{value, sub?}]}]. Text that matches nothing can be added as new. */
@@ -692,7 +762,7 @@
     sending = true;
     const btn = $('#send'); btn.disabled = true; btn.innerHTML = `<span class="sp"></span> ${t('កំពុងផ្ញើ...', 'Sending...')}`;
     const payload = Object.assign({}, f, { id: editId || undefined, signature: f.anonymous ? '' : sigData, key: PUBLIC_KEY || undefined });
-    delete payload.step; delete payload.can; delete payload.history;
+    delete payload.step; delete payload.can; delete payload.history; delete payload.dmg; delete payload.voiceData;
     try {
       const r = await api(PUBLIC ? 'publicSubmit' : 'submit', payload);
       set(PUBLIC ? 'ir_pdraft' : 'ir_draft', null);
@@ -745,14 +815,14 @@
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
-    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
+    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.voiceData ? `<div class="kv"><span>🎤 ${t('សំឡេង', 'Voice')}</span></div><audio controls preload="none" src="${d.voiceData}"></audio>` : ''}${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
       ${(d.people || []).map(p => `<div class="kv"><span>${p.injured ? '🤕' : '👤'} ${esc(p.name)}</span><b>${esc([pick(ROLES, p.role), pick(COMPANIES, p.company), p.injury].filter(Boolean).join(' · '))}</b></div>`).join('')}`);
-    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('ជំនួយបឋម', 'First aid', d.firstAid) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
-      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [d.police, d.policeNo].filter(Boolean).join(' · ')) +
+    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
+      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
       kv('ថ្លៃប៉ាន់ស្មាន', 'Est. cost', d.cost ? '$' + d.cost : '') + kv('ថ្ងៃឈប់ការងារ', 'Days lost', d.daysLost ? String(d.daysLost) : ''));
     html += sec(`🔎 ${t('ហានិភ័យ និងមូលហេតុ', 'Risk and cause')}`, kv('ភាពធ្ងន់ធ្ងរ', 'Severity', d.severity ? d.severity + ' · ' + t(SEV[d.severity - 1][0], SEV[d.severity - 1][1]) : '') +
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
-      (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', d.immediate));
+      (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', immText(d.immediate)));
     const acts = d.actions || [];
     html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
       ${acts.length ? acts.map((a, i) => `<div class="actrow" data-i="${i}"><div><b>${esc(a.what)}</b><small>${esc([a.owner, a.due].filter(Boolean).join(' · '))}${a.done ? ' · ✅ ' + esc(a.done) : ''}</small></div>
@@ -1016,7 +1086,8 @@
         const d = Object.assign(old || { created: now(), history: [] }, p, { id, status: 'Waiting supervisor', returnNote: '', photoThumbs: (old && old.photoThumbs || []).concat(p.photos || []).slice(0, 6),
           reporter: { name: p.anonymous ? 'Anonymous' : p.reporterName, phone: p.reporterPhone, email: action === 'publicSubmit' ? '' : me.email, at: now(), anonymous: !!p.anonymous },
           supervisor: { name: sup.name, email: sup.email, at: '' } });
-        ['photos', 'signature', 'reporterName', 'reporterPhone', 'keepPhotos', 'key'].forEach(k => delete d[k]);
+        d.voiceData = p.voice || (old && p.keepVoice ? old.voiceData : '') || ''; d.voice = d.voiceData ? 'demo' : '';
+        ['photos', 'signature', 'reporterName', 'reporterPhone', 'keepPhotos', 'keepVoice', 'key'].forEach(k => delete d[k]);
         d.history.push({ at: now(), by: d.reporter.name, what: old ? 'Sent again' : 'Reported and signed' });
         if (!old) db.reports.push(d);
         keep(); return { id, status: d.status };

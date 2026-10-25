@@ -27,6 +27,7 @@ const FORM = {
   people: [{ name: 'Rider', injured: true, injury: 'cut' }, { name: '' }], whys: ['too close', '', '', '', ''], immediate: 'First aid',
   actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08' }, { what: '' }], reporterName: 'Vuthy', reporterPhone: '012',
   signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com',
+  voice: 'data:audio/webm;codecs=opus;base64,' + Buffer.from('voice-note').toString('base64'),
 };
 
 const env = makeEnv({ file: path.join(ROOT, 'apps-script-incident/Incident.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
@@ -61,7 +62,7 @@ eq(b.categories.find(c => c.en === 'Fire').icon, '🔥', 'icons in boot');
 
 // submit
 ok(/sign/.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { signature: '' })).error), 'signature needed');
-ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '' })).error), 'story needed');
+ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '', voice: '' })).error), 'story or voice needed');
 const r1 = must(call('driver@x.com', 'submit', FORM));
 eq(r1.id, 'IR-' + new Date().getFullYear() + '-001', 'report number');
 eq(env.telegrams.length, 1, 'telegram on submit');
@@ -81,6 +82,7 @@ ok(supList[0].toSign, 'supervisor has it to sign');
 ok(/^DENIED/.test(call('other@x.com', 'get', { id: r1.id }).error), 'other cannot open');
 let d = must(call('driver@x.com', 'get', { id: r1.id }));
 eq(d.photos.length, 2); eq(d.photoThumbs.length, 2, 'photos come back');
+ok(d.voice && /^data:audio\/webm;base64,/.test(d.voiceData), 'voice note saved and comes back');
 ok(!d.can.sign && !d.can.edit, 'reporter cannot sign');
 ok(/^DENIED/.test(call('driver@x.com', 'sign', { id: r1.id, signature: SIG }).error), 'reporter cannot sign');
 
@@ -89,9 +91,10 @@ ok(/change/.test(call('sup@x.com', 'sendBack', { id: r1.id, note: '' }).error), 
 must(call('sup@x.com', 'sendBack', { id: r1.id, note: 'Add the DN' }));
 d = must(call('driver@x.com', 'get', { id: r1.id }));
 ok(d.can.edit && d.status === 'Returned', 'returned to reporter');
-must(call('driver@x.com', 'submit', Object.assign({}, FORM, { id: r1.id, dn: '8100452231', photos: [], keepPhotos: [d.photos[0]] })));
+must(call('driver@x.com', 'submit', Object.assign({}, FORM, { id: r1.id, dn: '8100452231', photos: [], keepPhotos: [d.photos[0]], voice: '' })));
 d = must(call('sup@x.com', 'get', { id: r1.id }));
 eq(d.dn, '8100452231'); eq(d.photos.length, 1, 'kept one photo'); ok(d.can.sign, 'waiting again');
+ok(!d.voice, 'voice dropped when not kept');
 eq(env.ss.getSheetByName('Incidents').rows.length, 2, 'still one row');
 
 // sign -> PDF, telegram document, auto emails (Management auto + HSE because HIGH)

@@ -216,3 +216,28 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 body.public .navrow { bottom: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
 .navrow .btn { min-height: 40px; padding: 4px 12px; font-size: 14.5px; border-radius: 10px; }
 .navspace { height: 64px; }
+
+/* Colour to make the form easier to read (Kim, 25 Oct 2026): each card heading has its own colour and a coloured bar,
+   field labels are ISI blue, choices that are ticked turn blue and bold */
+:root { --c1: #0b76a0; --c2: #1e7b46; --c3: #c25e00; --c4: #7b3fb5; --c5: #00838f; --lab: #084f6a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c1: #61cbf4; --c2: #5cc98a; --c3: #ffb067; --c4: #c9a3f2; --c5: #4dd0e1; --lab: #8fd8f7; } }
+:root[data-theme="dark"] { --c1: #61cbf4; --c2: #5cc98a; --c3: #ffb067; --c4: #c9a3f2; --c5: #4dd0e1; --lab: #8fd8f7; }
+#view > .card h2 { color: var(--hc, var(--c1)); border-left: 4px solid currentColor; padding-left: 10px; margin-left: -4px; }
+#view > .card:nth-of-type(5n+2) { --hc: var(--c2); }
+#view > .card:nth-of-type(5n+3) { --hc: var(--c3); }
+#view > .card:nth-of-type(5n+4) { --hc: var(--c4); }
+#view > .card:nth-of-type(5n+5) { --hc: var(--c5); }
+#view > .card h2 small, #view > .card h2 .il { color: var(--muted); }
+label.f { color: var(--lab); }
+.check:has(input:checked) { color: var(--accent); font-weight: 700; }
+.hint { color: var(--muted); }
+
+/* damage ticks with a detail box, immediate action ticks, voice note */
+.dmgrow .in { margin: 0 0 8px 28px; width: calc(100% - 28px); }
+.imm { display: grid; gap: 0; }
+.imm .check { margin: 6px 0; }
+.voice { margin: 4px 0 6px; }
+.vrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vrow audio, .story + .kv + audio, .card audio { max-width: 100%; height: 40px; }
+.vdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); vertical-align: middle; animation: vblink 1s infinite; }
+@keyframes vblink { 50% { opacity: .2; } }
