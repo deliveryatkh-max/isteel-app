@@ -64,6 +64,19 @@
     ['🚧 ធ្វើឲ្យកន្លែងមានសុវត្ថិភាព ដាក់របាំង', 'Made the area safe, blocked it off'], ['⚠️ ដាក់ស្លាកព្រមាន / កោណ', 'Put warning signs / cones'], ['📦 ចងទំនិញឡើងវិញ / រើចេញ', 'Secured or moved the load'],
     ['🧹 សម្អាតការកំពប់ / ប្រេង', 'Cleaned up the spill / oil'], ['🧯 ពន្លត់ភ្លើង', 'Put out the fire'], ['📷 ថតរូបទីកន្លែង', 'Took photos of the place'],
     ['📞 រាយការណ៍ប្រធាន', 'Told the supervisor'], ['👮 ហៅប៉ូលីស', 'Called the police'], ['📣 ប្រាប់អតិថិជន', 'Told the customer']];
+  const INJ_TYPES = [['បុគ្គលិក ISI', 'ISI Employee'], ['បុគ្គលិក 3PL', '3PL Employee'], ['ភាគីទី៣', 'Third-party']];
+  // recommended corrective actions; a group that does not fit the incident type is greyed out (e.g. driving for a near miss in the warehouse)
+  const RECS = [
+    ['drive', '🚗 បណ្តុះបណ្តាលបើកបរដោយសុវត្ថិភាពឡើងវិញ', 'Defensive driving refresher for the driver'], ['drive', '⏱️ ពិនិត្យម៉ោងបើកបរ និងការសម្រាក', 'Check driving hours and rest breaks'],
+    ['drive', '🛣️ ជូនដំណឹងតៃកុងពីផ្លូវ / ចំណុចគ្រោះថ្នាក់នេះ', 'Warn drivers about this road / spot'], ['drive', '🔧 ពិនិត្យ និងជួសជុលឡាន', 'Inspect and repair the truck'],
+    ['load', '⛓️ ចងទំនិញ / ខ្សែដែកឲ្យរឹងមាំ (ច្រវាក់ ឈើទប់)', 'Secure coils / load with chains and wedges'], ['load', '📋 ពិនិត្យការផ្ទុកមុនចេញដំណើរ', 'Check the load before leaving'],
+    ['crane', '🏗️ បណ្តុះបណ្តាលអ្នកបើកស្ទូច / ហ្វកលីហ្វឡើងវិញ', 'Crane / forklift operator refresher'], ['crane', '🔍 ពិនិត្យខ្សែស្លីង ទំពក់ និងស្ទូចមុនប្រើ', 'Check slings, hooks and crane before use'],
+    ['crane', '👷 ប្រើអ្នកណែនាំពេលលើក និងថយក្រោយ', 'Use a spotter when lifting and reversing'],
+    ['walk', '🚶 ដើរតាមផ្លូវដែលបានគូសសម្គាល់', 'Keep to the marked walkway'], ['walk', '🚧 គូស / ខ័ណ្ឌតំបន់គ្រោះថ្នាក់', 'Mark / fence off the danger zone'],
+    ['walk', '🦺 ពាក់ឧបករណ៍ការពារ (មួក អាវ ស្បែកជើង)', 'Wear PPE (helmet, vest, safety shoes)'],
+    ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
+  const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
+  const recHtml = type => `<div class="recs"><small class="hint">💡 ${esc(t('វិធានការណែនាំ (ចុចដើម្បីបន្ថែម)', 'Suggested actions (tap to add)'))}</small>${RECS.map(r => `<button type="button" class="rec" data-rec="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}" ${(REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) < 0 ? 'disabled' : ''}>${esc(t(r[1], r[2]))}</button>`).join('')}</div>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -175,6 +188,9 @@
 
   // ---------------------------------------------------------------- list screens
   let filter = getJ('ir_filter', 'all');
+  // tapping a number or a bar (list, summary) opens the reports behind it; ✕ on its chip goes back to the normal filters
+  let drill = null;
+  const openDrill = (label, fn) => { drill = { label, fn }; if (location.hash === '#/' || location.hash === '') renderList(); else location.hash = '#/'; window.scrollTo(0, 0); };
   function renderList(mode) {
     screen = () => renderList(mode);
     const all = mode === 'sign' ? toSign() : reports();
@@ -183,7 +199,7 @@
     const year = reports().filter(r => String(r.date || r.reported).slice(0, 4) === yr);
     const open = reports().filter(r => r.status !== 'Closed').length;
     const F = { all: () => true, open: r => r.status !== 'Closed', mine: r => r.mine, high: r => r.score >= 15 };
-    const shown = mode === 'sign' ? all : all.filter(F[filter] || F.all);
+    const shown = mode === 'sign' ? all : drill ? all.filter(drill.fn) : all.filter(F[filter] || F.all);
     const q = ($('#q') && $('#q').value || '').trim().toLowerCase();
     const list = q ? shown.filter(r => [r.id, r.category, r.location, r.warehouse, r.plate, r.driver, r.reporter, r.status].join(' ').toLowerCase().includes(q)) : shown;
     $('#view').innerHTML = mode === 'sign' ? `
@@ -194,17 +210,18 @@
       ${draft && draft.type ? `<a class="item draftrow" href="#/new"><b>📝 ${t('សេចក្តីព្រាងមិនទាន់ផ្ញើ', 'Draft not sent yet')}</b><div class="meta">${esc(typeName(draft.type))} · ${esc(catName(draft.category))} · ${t('ចុចដើម្បីបន្ត', 'tap to continue')}</div></a>` : ''}
       ${toSign().length ? `<a class="alert warn signrow" href="#/sign">✍️ ${t('មានរបាយការណ៍', 'You have')} <b>${toSign().length}</b> ${t('រង់ចាំហត្ថលេខារបស់អ្នក', 'report(s) waiting for your signature')}</a>` : ''}
       <div class="stats">
-        <div class="stat"><small>${t('ឆ្នាំនេះ', 'This year')}</small><b>${year.length}</b></div>
-        <div class="stat"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${open}</b></div>
-        <div class="stat"><small>${t('ហានិភ័យខ្ពស់', 'High risk')}</small><b class="bad">${year.filter(r => r.score >= 15).length}</b></div>
+        <button type="button" class="stat" data-drill="year"><small>${t('ឆ្នាំនេះ', 'This year')}</small><b>${year.length}</b></button>
+        <button type="button" class="stat" data-f="open"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${open}</b></button>
+        <button type="button" class="stat" data-f="high"><small>${t('ហានិភ័យខ្ពស់', 'High risk')}</small><b class="bad">${year.filter(r => r.score >= 15).length}</b></button>
       </div>
       <div class="chips">${[['all', 'ទាំងអស់', 'All'], ['open', 'មិនទាន់បិទ', 'Open'], ['mine', 'របស់ខ្ញុំ', 'Mine'], ['high', 'ហានិភ័យខ្ពស់', 'High risk']]
-        .map(c => `<button type="button" class="chip ${filter === c[0] ? 'on' : ''}" data-f="${c[0]}">${esc(t(c[1], c[2]))}</button>`).join('')}</div>
+        .map(c => `<button type="button" class="chip ${!drill && filter === c[0] ? 'on' : ''}" data-f="${c[0]}">${esc(t(c[1], c[2]))}</button>`).join('')}${drill ? `<button type="button" class="chip on" data-f="${esc(filter)}">${esc(drill.label)} ✕</button>` : ''}</div>
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ លេខ ផ្លាក តៃកុង ទីកន្លែង', 'Search: number, plate, driver, place'))}" value="${esc(q)}">
       <div class="head2"><h2>${seesAll() ? t('របាយការណ៍ទាំងអស់', 'All reports') : t('របាយការណ៍', 'Reports')}</h2><small>${list.length}</small></div>
       ${list.length ? '' : `<div class="card empty">${t('មិនទាន់មានរបាយការណ៍ទេ', 'No reports yet')}</div>`}
       <div class="list">${list.map(item).join('')}</div>`;
-    $$('[data-f]').forEach(b => { b.onclick = () => { filter = b.dataset.f; set('ir_filter', JSON.stringify(filter)); renderList(mode); }; });
+    $$('[data-f]').forEach(b => { b.onclick = () => { drill = null; filter = b.dataset.f; set('ir_filter', JSON.stringify(filter)); renderList(mode); }; });
+    $$('[data-drill="year"]').forEach(b => { b.onclick = () => { const y = String(new Date().getFullYear()); openDrill(t('ឆ្នាំនេះ', 'This year'), r => String(r.date || r.reported).slice(0, 4) === y); }; });
     const qi = $('#q');
     if (qi) { qi.oninput = () => { const pos = qi.selectionStart; renderList(mode); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); }; if (q) qi.focus(); }
   }
@@ -222,7 +239,7 @@
     location: '', warehouse: '', gps: '', road: '', weather: '', driver: '', driverId: '', plate: '', company: '', tripId: '', dn: '', customer: '', load: '',
     people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', cost: '', daysLost: '',
     severity: 0, likelihood: 0, cause: '', whys: ['', '', '', '', ''], immediate: '', actions: [], witnesses: [], evidence: '',
-    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], voice: '', keepVoice: '', step: 1 });
+    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], voice: '', keepVoice: '', anyInjured: '', injuredList: [], step: 1 });
   let f = null;           // the report being filled in
   let editId = '';        // a returned report being sent again
   let sending = false;
@@ -234,7 +251,7 @@
       const d = await api('get', { id });
       if (!d.can || !d.can.edit) { location.hash = '#/r/' + encodeURIComponent(id); return; }
       editId = id;
-      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), voice: '', keepVoice: d.voice || '', step: 1,
+      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), voice: '', keepVoice: d.voice || '', injuredList: (d.injuredList || []).map(x => Object.assign({}, x)), step: 1,
         whys: (d.whys || []).concat(['', '', '', '', '']).slice(0, 5), cost: d.cost || '', daysLost: d.daysLost || '' });
       renderForm(f, true);
     } catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; }
@@ -379,7 +396,13 @@
         <button type="button" class="btn sm" id="addPerson">＋ ${t('បន្ថែមអ្នកពាក់ព័ន្ធ', 'Add person')}</button></div>`;
       if (!f.dmg) f.dmg = dmgFrom(f);
       body += `<div class="card"><h2>🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}</h2>
-        <label class="f">${t('ជំនួយបឋម?', 'First aid given?')}</label>${one('firstAid', YESNO)}
+        <label class="f">${t('មានអ្នករងរបួស?', 'Anyone injured?')}</label>${one('anyInjured', YESNO)}
+        ${f.anyInjured === 'Yes' ? `<div class="injlist">${f.injuredList.map((x, i) => `<div class="inj" data-i="${i}">
+          <div class="row2"><input class="in" data-j="name" placeholder="${esc(t('ឈ្មោះអ្នករងរបួស', 'Injured person name'))}" value="${esc(x.name)}">
+          <select class="in" data-j="type"><option value="">${esc(t('ប្រភេទ', 'Type'))}</option>${INJ_TYPES.map(o => `<option value="${esc(o[1])}" ${x.type === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select></div>
+          <div class="injfoot"><label class="check"><input type="checkbox" data-j="lti" ${x.lti ? 'checked' : ''}> ${t('របួសបាត់បង់ពេលការងារ (LTI)', 'Lost time injury (LTI)')}</label>
+          <button type="button" class="btn sm ghost" data-delinj="${i}">✕</button></div></div>`).join('')}
+          <button type="button" class="btn sm" id="addInj">＋ ${t('បន្ថែមអ្នករងរបួស', 'Add injured person')}</button></div>` : ''}
         <label class="f">${t('ការខូចខាត', 'Damage')}</label>
         <div class="dmg">${DAMAGES.map(o => `<div class="dmgrow"><label class="check"><input type="checkbox" data-dmg="${esc(o[1])}" ${f.dmg[o[1]] != null ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>
           ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
@@ -407,7 +430,7 @@
         ${f.actions.map((a, i) => `<div class="act" data-i="${i}"><input class="in" data-a="what" placeholder="${esc(t('វិធានការ', 'Action'))}" value="${esc(a.what)}">
           <div class="row2"><input class="in" data-a="owner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}" value="${esc(a.owner)}"><input class="in" data-a="due" type="date" value="${esc(a.due)}"></div>
           <button type="button" class="btn sm ghost" data-delact="${i}">✕ ${t('លុប', 'Remove')}</button></div>`).join('')}
-        <button type="button" class="btn sm" id="addAct">＋ ${t('បន្ថែមវិធានការ', 'Add action')}</button></div>`;
+        <button type="button" class="btn sm" id="addAct">＋ ${t('បន្ថែមវិធានការ', 'Add action')}</button>${recHtml(f.type)}</div>`;
     } else {
       const sups = (B && B.supervisors) || [];
       const auto = f.supervisor || ((sups.find(x => x.warehouse === f.warehouse) || {}).email) || (sups.length === 1 ? sups[0].email : '');
@@ -445,6 +468,7 @@
     $$('.person').forEach(row => { const p = f.people[+row.dataset.i]; if (!p) return; row.querySelectorAll('[data-p]').forEach(el => { p[el.dataset.p] = el.type === 'checkbox' ? el.checked : el.value; }); });
     $$('.wit').forEach(row => { const w = f.witnesses[+row.dataset.i]; if (!w) return; row.querySelectorAll('[data-w]').forEach(el => { w[el.dataset.w] = el.value; }); });
     $$('.act').forEach(row => { const a = f.actions[+row.dataset.i]; if (!a) return; row.querySelectorAll('[data-a]').forEach(el => { a[el.dataset.a] = el.value; }); });
+    $$('.inj').forEach(row => { const x = f.injuredList[+row.dataset.i]; if (!x) return; row.querySelectorAll('[data-j]').forEach(el => { x[el.dataset.j] = el.type === 'checkbox' ? el.checked : el.value; }); });
     const an = $('#anonymous'); if (an) f.anonymous = an.checked;
     if ($('[data-dmg]')) { $$('[data-dmgnote]').forEach(el => { f.dmg[el.dataset.dmgnote] = el.value; }); dmgTo(); }
     if ($('[data-imm]')) f.immediate = $$('[data-imm]').filter(el => el.checked).map(el => el.dataset.imm).concat(($('#immOther').value || '').trim() ? [$('#immOther').value.trim()] : []).join('; ');
@@ -503,7 +527,12 @@
     $$('[data-shift]').forEach(b => { b.onchange = () => { f.shift = b.dataset.shift; $$('[data-shift]').forEach(x => { x.checked = x === b; }); saveDraft(); }; });
     const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
     const cz = $('#causeSel'); if (cz) cz.onchange = () => { f.cause = cz.value; saveDraft(); };
-    $$('[data-one]').forEach(box => { const all = box.querySelectorAll('input'); all.forEach(b => { b.onchange = () => { f[box.dataset.one] = b.checked ? b.value : ''; all.forEach(x => { if (x !== b) x.checked = false; }); saveDraft(); }; }); });
+    $$('[data-one]').forEach(box => { const all = box.querySelectorAll('input'); all.forEach(b => { b.onchange = () => {
+      collect(); f[box.dataset.one] = b.checked ? b.value : ''; all.forEach(x => { if (x !== b) x.checked = false; }); saveDraft();
+      if (box.dataset.one === 'anyInjured') { if (f.anyInjured === 'Yes' && !f.injuredList.length) f.injuredList.push({ name: '', type: '', lti: false }); paintForm(); }
+    }; }); });
+    $$('[data-delinj]').forEach(b => { b.onclick = () => { collect(); f.injuredList.splice(+b.dataset.delinj, 1); saveDraft(); paintForm(); }; });
+    $$('#view .recs [data-rec]').forEach(b => { b.onclick = () => { collect(); const e = f.actions.find(a => !a.what); if (e) e.what = b.dataset.rec; else f.actions.push({ what: b.dataset.rec, owner: '', due: '', status: 'Open' }); saveDraft(); paintForm(); }; });
     $$('[data-dmg]').forEach(b => { b.onchange = () => { collect(); if (b.checked) f.dmg[b.dataset.dmg] = ''; else delete f.dmg[b.dataset.dmg]; dmgTo(); saveDraft(); paintForm(); const n = $(`[data-dmgnote="${b.dataset.dmg}"]`); if (n) n.focus(); }; });
     wireVoice();
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
@@ -512,6 +541,7 @@
     add('#addPerson', () => f.people.push({ name: '', empId: '', company: '', role: '', injured: false, injury: '' }));
     add('#addWit', () => f.witnesses.push({ name: '', phone: '' }));
     add('#addAct', () => f.actions.push({ what: '', owner: '', due: '', status: 'Open' }));
+    add('#addInj', () => f.injuredList.push({ name: '', type: '', lti: false }));
     $$('[data-delperson]').forEach(b => { b.onclick = () => { collect(); f.people.splice(+b.dataset.delperson, 1); saveDraft(); paintForm(); }; });
     $$('[data-delact]').forEach(b => { b.onclick = () => { collect(); f.actions.splice(+b.dataset.delact, 1); saveDraft(); paintForm(); }; });
     $$('.person [data-p="injured"]').forEach(b => { b.onchange = () => { collect(); paintForm(); }; });
@@ -822,7 +852,9 @@
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
     html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.voiceData ? `<div class="kv"><span>🎤 ${t('សំឡេង', 'Voice')}</span></div><audio controls preload="none" src="${d.voiceData}"></audio>` : ''}${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
       ${(d.people || []).map(p => `<div class="kv"><span>${p.injured ? '🤕' : '👤'} ${esc(p.name)}</span><b>${esc([pick(ROLES, p.role), pick(COMPANIES, p.company), p.injury].filter(Boolean).join(' · '))}</b></div>`).join('')}`);
-    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
+    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('មានអ្នករងរបួស', 'Anyone injured', pick(YESNO, d.anyInjured)) +
+      (d.injuredList || []).map(x => `<div class="kv"><span>🤕 ${esc(x.name)}</span><b>${esc([pick(INJ_TYPES, x.type), x.lti ? 'LTI' : ''].filter(Boolean).join(' · '))}</b></div>`).join('') +
+      kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
       kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
       kv('ថ្លៃប៉ាន់ស្មាន', 'Est. cost', d.cost ? '$' + d.cost : '') + kv('ថ្ងៃឈប់ការងារ', 'Days lost', d.daysLost ? String(d.daysLost) : ''));
     html += sec(`🔎 ${t('ហានិភ័យ និងមូលហេតុ', 'Risk and cause')}`, kv('ភាពធ្ងន់ធ្ងរ', 'Severity', d.severity ? d.severity + ' · ' + t(SEV[d.severity - 1][0], SEV[d.severity - 1][1]) : '') +
@@ -835,7 +867,7 @@
           : `<span class="badge ${a.status === 'Done' ? 'approved' : a.due && a.due < today() ? 'rejected' : 'pending'}">${esc(t({ Open: 'បើក', 'In progress': 'កំពុងធ្វើ', Done: 'រួចរាល់' }[a.status] || a.status, a.status))}</span>`}</div>`).join('')
         : `<p class="hint">${t('មិនទាន់មានវិធានការ', 'No actions yet')}</p>`}
       ${c.actions ? `<div class="newact"><input class="in" id="naWhat" placeholder="${esc(t('វិធានការថ្មី', 'New action'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div>
-        <button class="btn sm" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button></div>` : ''}
+        <button class="btn sm" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>${recHtml(d.type)}</div>` : ''}
       ${c.close ? `<button class="btn big mt" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>`;
     if ((d.photoThumbs || []).length) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')}</h2><div class="photos">${d.photoThumbs.map(u => `<a class="ph" href="${u}" target="_blank" rel="noopener"><img src="${u}" alt=""></a>`).join('')}</div></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
@@ -846,6 +878,7 @@
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
   function wireReport() {
     const d = cur;
+    wireRecs();
     $('#pdfBtn').onclick = async () => {
       const b = $('#pdfBtn'); busy(b, true, 'PDF');
       try {
@@ -893,6 +926,9 @@
       catch (e) { toast(e.message); busy(cb, false); }
     };
   }
+  function wireRecs() {
+    $$('.newact [data-rec]').forEach(b => { b.onclick = () => { const w = $('#naWhat'); w.value = b.dataset.rec; w.focus(); }; });
+  }
   function readActs() {
     const acts = (cur.actions || []).map((a, i) => { const s = document.querySelector(`[data-ai="${i}"]`); return Object.assign({}, a, { status: s ? s.value : a.status }); });
     const w = $('#naWhat');
@@ -930,30 +966,33 @@
     const years = Array.from(new Set(all.map(r => +String(r.date).slice(0, 4)).filter(Boolean).concat([new Date().getFullYear()]))).sort((a, b) => b - a);
     const rs = all.filter(r => +String(r.date).slice(0, 4) === yr);
     const cnt = fn => { const m = {}; rs.forEach(r => { const k = fn(r) || '–'; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
-    const bars = (rows, name) => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(r => `<div class="bar-row"><span>${esc(name ? name(r[0]) : r[0])}</span><div><i style="width:${(r[1] / max) * 100}%"></i></div><b>${r[1]}</b></div>`).join('') || `<p class="hint">${t('គ្មានទិន្នន័យ', 'No data')}</p>`; };
+    const bars = (rows, name, key) => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(r => `<div class="bar-row" ${key ? `data-bk="${key}" data-bv="${esc(r[0])}" data-bl="${esc(name ? name(r[0]) : r[0])}" role="button" tabindex="0"` : ''}><span>${esc(name ? name(r[0]) : r[0])}</span><div><i style="width:${(r[1] / max) * 100}%"></i></div><b>${r[1]}</b></div>`).join('') || `<p class="hint">${t('គ្មានទិន្នន័យ', 'No data')}</p>`; };
     const months = new Array(12).fill(0);
     rs.forEach(r => { const m = +String(r.date).slice(5, 7); if (m) months[m - 1]++; });
     const mmax = Math.max(1, ...months);
     const MN = t('មករា កុម្ភៈ មីនា មេសា ឧសភា មិថុនា កក្កដា សីហា កញ្ញា តុលា វិច្ឆិកា ធ្នូ', 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec').split(' ');
     const injured = rs.reduce((s, r) => s + (+r.injured || 0), 0);
-    const cost = rs.reduce((s, r) => s + (r.cost || 0), 0);
     $('#view').innerHTML = `<div class="head2"><h2>📊 ${t('សង្ខេប', 'Summary')}</h2><select class="in yearsel" id="yearSel">${years.map(y => `<option ${y === yr ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
       ${seesAll() ? '' : `<p class="hint">${t('បង្ហាញតែរបាយការណ៍ដែលអ្នកអាចមើលបាន', 'Shows only the reports you can see')}</p>`}
-      <div class="stats four">
-        <div class="stat"><small>${t('ហេតុការណ៍', 'Incidents')}</small><b>${rs.length}</b></div>
-        <div class="stat"><small>${t('អ្នករបួស', 'Injured')}</small><b class="bad">${injured}</b></div>
-        <div class="stat"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${rs.filter(r => r.status !== 'Closed').length}</b></div>
-        <div class="stat"><small>${t('ថ្លៃប៉ាន់ស្មាន', 'Est. cost')}</small><b>$${Math.round(cost).toLocaleString()}</b></div>
+      <div class="stats">
+        <button type="button" class="stat" data-sd="all"><small>${t('ហេតុការណ៍', 'Incidents')}</small><b>${rs.length}</b></button>
+        <button type="button" class="stat" data-sd="injured"><small>${t('អ្នករបួស', 'Injured')}</small><b class="bad">${injured}</b></button>
+        <button type="button" class="stat" data-sd="open"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${rs.filter(r => r.status !== 'Closed').length}</b></button>
       </div>
       <div class="card"><h2>${t('តាមខែ', 'By month')}</h2><div class="months">${months.map((n, i) => `<div><i style="height:${(n / mmax) * 100}%"></i><b>${n || ''}</b><small>${esc(MN[i])}</small></div>`).join('')}</div></div>
-      <div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k)}</div>
-      <div class="card"><h2>${t('តាមកម្រិតហានិភ័យ', 'By risk level')}</h2>${bars(cnt(r => level(r.score)), k => (k === '–' ? t('មិនទាន់វាយតម្លៃ', 'Not rated') : t(levelKm(k), k)))}</div>
-      <div class="card"><h2>${t('តាមប្រភេទរង', 'By category')}</h2>${bars(cnt(r => r.category), catName)}</div>
-      <div class="card"><h2>${t('តាមមូលហេតុ', 'By main cause')}</h2>${bars(cnt(r => r.cause), k => pick(CAUSES, k))}</div>
-      <div class="card"><h2>${t('តាមក្រុមហ៊ុន', 'By company')}</h2>${bars(cnt(r => r.company), k => pick(COMPANIES, k))}</div>
-      <div class="card"><h2>${t('តាមឃ្លាំង', 'By warehouse')}</h2>${bars(cnt(r => r.warehouse))}</div>
-      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8))}</div>`;
+      <div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k, 'type')}</div>
+      <div class="card"><h2>${t('តាមកម្រិតហានិភ័យ', 'By risk level')}</h2>${bars(cnt(r => level(r.score)), k => (k === '–' ? t('មិនទាន់វាយតម្លៃ', 'Not rated') : t(levelKm(k), k)), 'level')}</div>
+      <div class="card"><h2>${t('តាមប្រភេទរង', 'By category')}</h2>${bars(cnt(r => r.category), catName, 'category')}</div>
+      <div class="card"><h2>${t('តាមមូលហេតុ', 'By main cause')}</h2>${bars(cnt(r => r.cause), k => pick(CAUSES, k), 'cause')}</div>
+      <div class="card"><h2>${t('តាមក្រុមហ៊ុន', 'By company')}</h2>${bars(cnt(r => r.company), k => pick(COMPANIES, k), 'company')}</div>
+      <div class="card"><h2>${t('តាមឃ្លាំង', 'By warehouse')}</h2>${bars(cnt(r => r.warehouse), null, 'warehouse')}</div>
+      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8), null, 'plate')}</div>`;
     $('#yearSel').onchange = e => { set('ir_year', e.target.value); renderSummary(); };
+    const inYr = r => +String(r.date).slice(0, 4) === yr;
+    const SD = { all: [t('ហេតុការណ៍', 'Incidents'), r => true], injured: [t('អ្នករបួស', 'Injured'), r => +r.injured > 0], open: [t('មិនទាន់បិទ', 'Open'), r => r.status !== 'Closed'] };
+    $$('[data-sd]').forEach(b => { b.onclick = () => { const x = SD[b.dataset.sd]; openDrill(x[0] + ' · ' + yr, r => inYr(r) && x[1](r)); }; });
+    const BK = { type: r => typeOfEn(r.type), level: r => level(r.score), category: r => r.category, cause: r => r.cause, company: r => r.company, warehouse: r => r.warehouse, plate: r => r.plate };
+    $$('[data-bk]').forEach(b => { b.onclick = () => { const k = b.dataset.bk, v = b.dataset.bv; openDrill(b.dataset.bl + ' · ' + yr, r => inYr(r) && (BK[k](r) || '–') === v); }; });
   }
 
   // ---------------------------------------------------------------- settings (admins)

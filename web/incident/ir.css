@@ -243,3 +243,31 @@ label.f { color: var(--lab); }
 @keyframes vblink { 50% { opacity: .2; } }
 .vehbox.off { opacity: .45; pointer-events: none; }
 .picker { font-size: 14px; font-weight: 600; }
+
+/* numbers you can tap to open the reports behind them */
+button.stat { font: inherit; color: var(--text); text-align: left; cursor: pointer; display: block; width: 100%; }
+button.stat:active, .bar-row[data-bk]:active { transform: scale(.98); }
+button.stat small::after { content: ' ›'; color: var(--muted); }
+.bar-row[data-bk] { cursor: pointer; border-radius: 8px; }
+.bar-row[data-bk]:hover { background: var(--soft); }
+
+/* injured people under "Anyone injured?" */
+.injlist { display: grid; gap: 8px; margin: 4px 0 10px; }
+.inj { border: 1.5px solid var(--line); border-radius: 12px; padding: 8px; }
+.injfoot { display: flex; justify-content: space-between; align-items: center; }
+.injfoot .check { margin: 4px 0 0; }
+
+/* actions: two columns with the same text size, red box where the next action is typed, suggested actions */
+.actrow { display: grid; grid-template-columns: minmax(0, 1fr) 128px; }
+.actrow b, .actrow .st-sel, .actrow .badge { font-size: 14px !important; }
+.actrow .st-sel { width: 100% !important; }
+.newact .in, .act .in:placeholder-shown { border: 2px solid var(--bad); }
+.newact .in:focus, .act .in:focus { border-color: var(--accent); }
+.recs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.recs .hint { grid-column: 1 / -1; }
+.rec { font: inherit; font-size: 13px; line-height: 1.3; text-align: left; color: var(--text); background: var(--bg); border: 1.5px solid var(--line); border-radius: 10px; padding: 7px 8px; cursor: pointer; }
+.rec:hover { border-color: var(--accent); }
+.rec:disabled { opacity: .35; cursor: not-allowed; text-decoration: line-through; }
+.imm { grid-template-columns: 1fr 1fr; column-gap: 10px; }
+.imm .check { font-size: 14px; align-items: flex-start; }
+.imm .in { grid-column: 1 / -1; }

@@ -423,7 +423,7 @@ function nextId_() {
 function writeRow_(d, folder) {
   const sh = sheet_(SH.LOG, LOG_COLS);
   const score = d.severity && d.likelihood ? d.severity * d.likelihood : '';
-  const injured = (d.people || []).filter(p => p.injured).length;
+  const injured = injuredCount_(d);
   const open = (d.actions || []).filter(a => a.what && a.status !== 'Done').length;
   const row = [d.id, d.created, d.status, (TYPES[d.type] || {}).en || d.type, d.category, d.date, d.time, d.shift, d.location, d.warehouse,
     d.plate, d.driver, d.company, d.tripId, d.dn, d.customer, String(injured), d.severity ? SEVERITY[d.severity - 1] : '',
@@ -439,7 +439,9 @@ function writeRow_(d, folder) {
 // ---------------------------------------------------------------- submit (reporter)
 const FIELDS = ['type', 'category', 'shift', 'date', 'time', 'location', 'warehouse', 'gps', 'road', 'weather', 'driver', 'driverId', 'plate',
   'company', 'tripId', 'dn', 'customer', 'load', 'story', 'couldHappen', 'firstAid', 'hospital', 'vehicleDamage', 'goodsDamage', 'property',
-  'police', 'policeNo', 'cause', 'immediate', 'evidence'];
+  'police', 'policeNo', 'cause', 'immediate', 'evidence', 'anyInjured'];
+// people hurt: the injured list (step 3 "Anyone injured?") or, for older reports, people ticked as injured
+const injuredCount_ = d => (d.anyInjured === 'Yes' ? Math.max(1, (d.injuredList || []).length) : 0) || (d.people || []).filter(p => p.injured).length;
 
 function clean_(p) {
   const d = {};
@@ -458,6 +460,7 @@ function clean_(p) {
     company: clip_(x.company, 60), role: clip_(x.role, 60), injured: !!x.injured, injury: clip_(x.injury, 200) })).filter(x => x.name);
   d.actions = (Array.isArray(p.actions) ? p.actions : []).slice(0, 10).map(x => ({ what: clip_(x.what, 500), owner: clip_(x.owner, 100),
     due: clip_(x.due, 10), status: x.status === 'Done' ? 'Done' : x.status === 'In progress' ? 'In progress' : 'Open', done: clip_(x.done, 10) })).filter(x => x.what);
+  d.injuredList = d.anyInjured === 'Yes' ? (Array.isArray(p.injuredList) ? p.injuredList : []).slice(0, 10).map(x => ({ name: clip_(x.name, 100), type: clip_(x.type, 40), lti: !!x.lti })).filter(x => x.name) : [];
   d.witnesses = (Array.isArray(p.witnesses) ? p.witnesses : []).slice(0, 5).map(x => ({ name: clip_(x.name, 100), phone: clip_(x.phone, 40) })).filter(x => x.name);
   return d;
 }
@@ -637,6 +640,8 @@ function makePdf_(d, folder) {
     body.appendParagraph(d.story || '-');
     if (d.couldHappen) body.appendParagraph(two_('អ្វីដែលអាចកើតឡើង', 'What could have happened') + ': ' + d.couldHappen).editAsText().setItalic(true);
     section_(body, 'F. ' + two_('របួស និងការខូចខាត', 'INJURY AND DAMAGE'));
+    if (d.anyInjured) kv_(body, [[two_('មានអ្នករងរបួស?', 'Anyone injured?'), d.anyInjured, two_('LTI', 'Lost time injury'), (d.injuredList || []).some(x => x.lti) ? 'Yes' : 'No']]);
+    if ((d.injuredList || []).length) grid_(body, [['Injured person', 'Type', 'Lost time injury (LTI)']].concat(d.injuredList.map(x => [x.name, x.type, x.lti ? 'Yes' : 'No'])));
     kv_(body, [[two_('ជំនួយបឋម', 'First aid'), d.firstAid, two_('មន្ទីរពេទ្យ', 'Hospital / clinic'), d.hospital],
       [two_('ខូចខាតឡាន', 'Vehicle damage'), d.vehicleDamage, two_('ខូចខាតទំនិញ', 'Goods damage'), d.goodsDamage],
       [two_('ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party'), d.property, two_('ប៉ូលីស', 'Police'), d.police + (d.policeNo ? ' · ' + d.policeNo : '')],
@@ -738,7 +743,7 @@ function sendMail_(d, pdfFile, to, by, note) {
     '<div style="font-size:18px;font-weight:700">' + esc_(d.id) + ' · ' + esc_((TYPES[d.type] || {}).en) + '</div><div style="font-size:12px;opacity:.85">' +
     esc_([d.category, d.date + ' ' + d.time, d.location].filter(String).join(' · ')) + '</div></div>' +
     '<table style="border-collapse:collapse;width:100%;margin-top:10px;font-size:13px">' +
-    row('Status', d.status) + row('Truck / driver', [d.plate, d.driver].filter(String).join(' · ')) + row('Injured', String((d.people || []).filter(x => x.injured).length)) +
+    row('Status', d.status) + row('Truck / driver', [d.plate, d.driver].filter(String).join(' · ')) + row('Injured', String(injuredCount_(d))) +
     row('Risk', sc ? sc + ' ' + level_(sc) : '') + row('What happened', d.story) + row('Main cause', d.cause) +
     row('Actions', (d.actions || []).map(a => a.what + ' (' + (a.owner || '-') + ', ' + (a.due || '-') + ', ' + a.status + ')').join('\n')) +
     row('Signed', [d.reporter.name + ' ' + (d.reporter.at || ''), d.supervisor.at ? d.supervisor.name + ' ' + d.supervisor.at : ''].filter(String).join(' · ')) + '</table>' +
@@ -795,7 +800,7 @@ function appLink_(d) { const u = setting_('APP_URL'); return u ? u + '#/r/' + en
 function telegramNew_(d) {
   const sc = d.severity && d.likelihood ? d.severity * d.likelihood : 0;
   const icon = { road: '🚚', wh: '🏭', near: '👀' }[d.type] || '⚠️';
-  const injured = (d.people || []).filter(x => x.injured).length;
+  const injured = injuredCount_(d);
   const lines = ['⚠️ <b>New incident ' + esc_(d.id) + '</b>', icon + ' ' + esc_((TYPES[d.type] || {}).en) + ' · ' + esc_(d.category),
     '📍 ' + esc_([d.location || d.warehouse, d.date + ' ' + d.time].filter(String).join(' · ')),
     d.plate || d.driver ? '🚛 ' + esc_([d.plate, d.driver].filter(String).join(' · ')) : '', injured ? '🤕 ' + injured + ' injured' : '',
