@@ -59,7 +59,7 @@
   const CAUSE_ICONS = { 'People (behaviour, training)': '🧍', 'Equipment / vehicle': '🚛', 'Method / procedure': '📋', 'Environment (road, weather, light)': '🌧️', 'Material / load': '📦', 'Management / supervision': '👔' };
   const YESNO = [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']];
   const HAVE = [['មាន', 'Have'], ['គ្មាន', 'None']];
-  const DAMAGES = [['ខូចខាតឡាន ក្រុមហ៊ុន', 'Company vehicle'], ['ខូចខាតឡាន អ្នកដទៃ', 'Other vehicle'], ['ខូចខាតទំនិញលើឡាន', 'Goods on the truck'], ['ខូចខាតទ្រព្យសម្បត្តិភាគីទី៣', '3rd-party property']];
+  const DAMAGES = [['ខូចខាតឡាន ក្រុមហ៊ុន', 'Company vehicle'], ['ខូចខាតឡាន អ្នកដទៃ', 'Other vehicle'], ['ខូចខាតទំនិញលើឡាន', 'Goods on the truck'], ['ខូចខាតទ្រព្យសម្បត្តិភាគីទី៣', '3rd-party property'], ['ខូចខាត ទ្រព្យសម្បត្តិក្រុមហ៊ុន', 'Company property'], ['ផ្សេងទៀត', 'Other damage']];
   const IMMEDIATE = [['🩹 ផ្តល់ជំនួយបឋម', 'First aid given'], ['🚑 បញ្ជូនទៅមន្ទីរពេទ្យ', 'Sent to hospital / clinic'], ['🛑 បញ្ឈប់ការងារ / ម៉ាស៊ីន', 'Stopped the work / machine'],
     ['🚧 ធ្វើឲ្យកន្លែងមានសុវត្ថិភាព ដាក់របាំង', 'Made the area safe, blocked it off'], ['⚠️ ដាក់ស្លាកព្រមាន / កោណ', 'Put warning signs / cones'], ['📦 ចងទំនិញឡើងវិញ / រើចេញ', 'Secured or moved the load'],
     ['🧹 សម្អាតការកំពប់ / ប្រេង', 'Cleaned up the spill / oil'], ['🧯 ពន្លត់ភ្លើង', 'Put out the fire'], ['📷 ថតរូបទីកន្លែង', 'Took photos of the place'],
@@ -319,13 +319,16 @@
     const o = {};
     String(d.vehicleDamage || '').split('; ').filter(Boolean).forEach(x => { const m = x.match(/^(Company vehicle|Other vehicle): ?(.*)$/); o[m ? m[1] : 'Company vehicle'] = (m ? m[2] : x) || ' '; });
     if (d.goodsDamage) o['Goods on the truck'] = d.goodsDamage;
-    if (d.property) o['3rd-party property'] = d.property;
+    String(d.property || '').split('; ').filter(Boolean).forEach(x => { const m = x.match(/^(3rd-party property|Company property|Other damage): ?(.*)$/); o[m ? m[1] : '3rd-party property'] = (m ? m[2] : x) || ' '; });
     return o;
   };
+  // "Company property: wall" -> "ខូចខាត ទ្រព្យសម្បត្តិក្រុមហ៊ុន: wall" in Khmer
+  const dmgText = v => String(v || '').split('; ').filter(Boolean).map(x => { const o = DAMAGES.find(d => x.indexOf(d[1] + ':') === 0); return o ? t(o[0], o[1]) + ((x.slice(o[1].length + 1).trim() === 'Yes') ? '' : ':' + x.slice(o[1].length + 1)) : x; }).join(' · ');
   const dmgTo = () => {
     const g = k => (f.dmg[k] != null ? String(f.dmg[k]).trim() || 'Yes' : '');
     f.vehicleDamage = ['Company vehicle', 'Other vehicle'].filter(k => f.dmg[k] != null).map(k => k + ': ' + g(k)).join('; ');
-    f.goodsDamage = g('Goods on the truck'); f.property = g('3rd-party property');
+    f.goodsDamage = g('Goods on the truck');
+    f.property = ['3rd-party property', 'Company property', 'Other damage'].filter(k => f.dmg[k] != null).map(k => k + ': ' + g(k)).join('; ');
   };
   // immediate actions: ticked choices plus "other" text, saved as one line ("First aid given; Told the supervisor; ...")
   const immFrom = v => { const all = IMMEDIATE.map(o => o[1]), parts = String(v || '').split('; ').filter(Boolean); return { ticks: parts.filter(x => all.indexOf(x) >= 0), other: parts.filter(x => all.indexOf(x) < 0).join('; ') }; };
@@ -406,7 +409,7 @@
           <button type="button" class="btn sm" id="addInj">＋ ${t('បន្ថែមអ្នករងរបួស', 'Add injured person')}</button></div>` : ''}
         <label class="f">${t('ការខូចខាត', 'Damage')}</label>
         <div class="dmg">${DAMAGES.map(o => `<div class="dmgrow"><label class="check"><input type="checkbox" data-dmg="${esc(o[1])}" ${f.dmg[o[1]] != null ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>
-          ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
+          ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${o[1] === 'Other damage' ? esc(t('សរសេរការខូចខាតផ្សេងទៀត', 'Describe the other damage')) : esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
         <label class="f">${t('មានក្រុមហ៊ុនធានារ៉ាប់រងមកត្រួតពិនិត្យ?', 'Insurance company came to inspect?')}</label>${one('insurance', YESNO)}</div>`;
       body += `<div class="card"><h2>👁️ ${t('សាក្សី និងភស្តុតាង', 'Witnesses and evidence')}</h2>
         ${f.witnesses.map((w, i) => `<div class="row2 wit" data-i="${i}"><input class="in" data-w="name" placeholder="${esc(t('ឈ្មោះសាក្សី', 'Witness name'))}" value="${esc(w.name)}"><input class="in" data-w="phone" inputmode="tel" placeholder="${esc(t('ទូរស័ព្ទ', 'Phone'))}" value="${esc(w.phone)}"></div>`).join('')}
@@ -424,7 +427,7 @@
         <div class="field"><label class="f" for="why0">${t('ហេតុអ្វី?', 'Why?')}</label><input class="in" id="why0" data-why="0" value="${esc(f.whys[0] || '')}"></div>
         <div class="hint">${t('ពន្យល់ពីមូលហេតុបន្ថែមបើអាច', 'Explain the cause in more detail if you can')}</div></div>`;
       body += `<div class="card"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
-        <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
+        <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ ក្រោយកើតហេតុ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
         <div class="imm">${(() => { const im = immFrom(f.immediate); return IMMEDIATE.map(o => `<label class="check"><input type="checkbox" data-imm="${esc(o[1])}" ${im.ticks.indexOf(o[1]) >= 0 ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('') +
           `<input class="in mt" id="immOther" value="${esc(im.other)}" placeholder="${esc(t('ផ្សេងទៀត (វាយបន្ថែម)', 'Other (type here)'))}">`; })()}</div>
 </div>`;
@@ -850,8 +853,8 @@
       ${(d.people || []).map(p => `<div class="kv"><span>${p.injured ? '🤕' : '👤'} ${esc(p.name)}</span><b>${esc([pick(ROLES, p.role), pick(COMPANIES, p.company), p.injury].filter(Boolean).join(' · '))}</b></div>`).join('')}`);
     html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('មានអ្នករងរបួស', 'Anyone injured', pick(YESNO, d.anyInjured)) +
       (d.injuredList || []).map(x => `<div class="kv"><span>🤕 ${esc(x.name)}</span><b>${esc([pick(INJ_TYPES, x.type), x.lti ? 'LTI' : ''].filter(Boolean).join(' · '))}</b></div>`).join('') +
-      kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
-      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('ធានារ៉ាប់រង', 'Insurance', pick(YESNO, d.insurance)) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
+      kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', dmgText(d.vehicleDamage)) +
+      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ទ្រព្យសម្បត្តិ', 'Property', dmgText(d.property)) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('ធានារ៉ាប់រង', 'Insurance', pick(YESNO, d.insurance)) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
       kv('ថ្លៃប៉ាន់ស្មាន', 'Est. cost', d.cost ? '$' + d.cost : '') + kv('ថ្ងៃឈប់ការងារ', 'Days lost', d.daysLost ? String(d.daysLost) : ''));
     html += sec(`🔎 ${t('ហានិភ័យ និងមូលហេតុ', 'Risk and cause')}`, kv('ភាពធ្ងន់ធ្ងរ', 'Severity', d.severity ? d.severity + ' · ' + t(SEV[d.severity - 1][0], SEV[d.severity - 1][1]) : '') +
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
