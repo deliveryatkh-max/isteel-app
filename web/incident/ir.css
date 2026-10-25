@@ -241,3 +241,5 @@ label.f { color: var(--lab); }
 .vrow audio, .story + .kv + audio, .card audio { max-width: 100%; height: 40px; }
 .vdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--bad); vertical-align: middle; animation: vblink 1s infinite; }
 @keyframes vblink { 50% { opacity: .2; } }
+.vehbox.off { opacity: .45; pointer-events: none; }
+.picker { font-size: 14px; font-weight: 600; }

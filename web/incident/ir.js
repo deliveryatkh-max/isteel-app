@@ -69,7 +69,7 @@
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
   const SHIFTS = [['ថ្ងៃ', 'Day'], ['យប់', 'Night']];
   const WAREHOUSES = ['Warehouse A-D', 'Warehouse E', 'Warehouse G', 'Warehouse H', 'Warehouse I'];
-  const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['រន្ធ / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
+  const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['គ្រហុក / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចង្អៀត', 'Narrow road'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
   const WEATHER = [['ថ្ងៃភ្លឺ', 'Daylight'], ['ភ្លៀង', 'Rain'], ['យប់', 'Night'], ['ងងឹត / ពន្លឺតិច', 'Poor light']];
   // choices that contradict each other: ticking one unticks the others (Kim, 25 Oct 2026)
   const CLASH = { Dry: ['Wet', 'Mud'], Wet: ['Dry'], Mud: ['Dry'], Daylight: ['Night', 'Poor light'], Night: ['Daylight'], 'Poor light': ['Daylight'] };
@@ -284,7 +284,7 @@
     } catch (e) { return ''; }
   }
 
-  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['មូលហេតុ', 'Cause'], ['ហត្ថលេខា', 'Sign']];
+  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['ហានិភ័យ', 'Risk'], ['ហត្ថលេខា', 'Sign']];
   const field = (id, km, en, opts) => {
     opts = opts || {};
     const v = f[id] == null ? '' : f[id];
@@ -351,11 +351,13 @@
         <label class="f">${t('ស្ថានភាពផ្លូវ / ទីតាំង', 'Road / site condition')}</label>${chips('road', ROADS, true)}
         <label class="f">${t('អាកាសធាតុ / ពន្លឺ', 'Weather / light')}</label>${chips('weather', WEATHER, true)}</div>`;
       body += `<div class="card"><h2>🚛 ${t('តៃកុង ឡាន និងជើងដឹក', 'Driver, truck and trip')}${f.type === 'near' ? ` <small class="il">(${t('បើមាន', 'if any')})</small>` : ''}</h2>
+        <label class="check"><input type="checkbox" id="noVeh" ${f.noVehicle ? 'checked' : ''}> ${t('គ្រោះថ្នាក់មិនពាក់ព័ន្ធឡាន', 'No vehicle involved')}</label>
+        <div class="vehbox ${f.noVehicle ? 'off' : ''}">
         <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label>${pickBtn('plate')}</div>
         <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label>${pickBtn('driver')}</div></div>
         <div id="tripInfo"></div>
         ${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}
-        <div class="field"><label class="f" for="dn">${t('លេខ DN', 'DN No(s).')}</label><div class="locrow"><input class="in" id="dn" value="${esc(f.dn)}" autocomplete="off"><button type="button" class="btn sm" id="scanDn" aria-label="${esc(t('ស្កេនបាកូដ', 'Scan barcode'))}">📷 ${t('ស្កេន', 'Scan')}</button></div></div></div>`;
+        <div class="field"><label class="f" for="dn">${t('លេខដឹកជញ្ជូន (DN #)', 'Delivery no. (DN #)')}</label><div class="locrow"><input class="in" id="dn" value="${esc(f.dn)}" autocomplete="off"><button type="button" class="btn sm" id="scanDn" aria-label="${esc(t('ស្កេនបាកូដ', 'Scan barcode'))}">📷 ${t('ស្កេន', 'Scan')}</button></div></div></div></div>`;
       body += `<div class="card"><h2>📷 ${t('រូបថត', 'Photos')} <small class="il">(${t('ច្រើនបំផុត', 'up to')} ${MAX_PHOTOS})</small></h2>
         <div class="photos">${(f.keepPhotos || []).map((id, i) => `<div class="ph kept"><span>📎 ${i + 1}</span><button type="button" data-unkeep="${i}" aria-label="Remove">✕</button></div>`).join('')}
         ${f.photos.map((u, i) => `<div class="ph"><img src="${u}" alt=""><button type="button" data-unphoto="${i}" aria-label="Remove">✕</button></div>`).join('')}
@@ -365,7 +367,7 @@
       body += `<div class="card"><h2>📝 ${t('តើមានអ្វីកើតឡើង', 'What happened')}</h2>
         ${field('story', 'រៀបរាប់មួយជំហានម្តងៗ (អ្វី របៀប នរណា)', 'Describe step by step (what, how, who)', { area: true, rows: 5, req: true })}
         <div class="voice" id="voiceBox">${voiceHtml()}</div>
-        ${f.type === 'near' ? field('couldHappen', 'អ្វីដែលអាចកើតឡើង', 'What could have happened', { area: true, rows: 2 }) : ''}</div>`;
+</div>`;
       body += `<div class="card"><h2>👥 ${t('អ្នកពាក់ព័ន្ធ', 'People involved')}</h2>
         ${f.people.map((p, i) => `<div class="person" data-i="${i}">
           <div class="row2"><input class="in" data-p="name" placeholder="${esc(t('ឈ្មោះ', 'Name'))}" value="${esc(p.name)}"><input class="in" data-p="empId" placeholder="${esc(t('លេខបុគ្គលិក', 'Employee ID'))}" value="${esc(p.empId)}"></div>
@@ -396,7 +398,7 @@
       body += `<div class="card"><h2>🔎 ${t('ហេតុអ្វីបានជាកើតឡើង', 'Why did it happen')}</h2>
         <div class="field"><label class="f" for="causeSel">${t('មូលហេតុចម្បង', 'Main cause')}</label><select class="in cat-sel" id="causeSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${CAUSES.map(o => `<option value="${esc(o[1])}" ${f.cause === o[1] ? 'selected' : ''}>${CAUSE_ICONS[o[1]] || '•'}  ${esc(t(o[0], o[1]))}</option>`).join('')}</select></div>
         <div class="field"><label class="f" for="why0">${t('ហេតុអ្វី?', 'Why?')}</label><input class="in" id="why0" data-why="0" value="${esc(f.whys[0] || '')}"></div>
-        <div class="hint">${t('សួរ "ហេតុអ្វី?" ម្តងហើយម្តងទៀត រហូតដល់ឫសគល់', 'Keep asking "why?" until you reach the root cause')}</div></div>`;
+        <div class="hint">${t('ពន្យល់ពីមូលហេតុបន្ថែមបើអាច', 'Explain the cause in more detail if you can')}</div></div>`;
       body += `<div class="card"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
         <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
         <div class="imm">${(() => { const im = immFrom(f.immediate); return IMMEDIATE.map(o => `<label class="check"><input type="checkbox" data-imm="${esc(o[1])}" ${im.ticks.indexOf(o[1]) >= 0 ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('') +
@@ -564,6 +566,9 @@
         },
       });
     };
+    const nv = $('#noVeh');
+    if (nv) nv.onchange = () => { collect(); f.noVehicle = nv.checked; if (nv.checked) ['plate', 'driver', 'company', 'dn', 'tripId', 'customer', 'new_plate', 'new_driver'].forEach(k => { f[k] = k.indexOf('new_') ? '' : false; }); saveDraft(); paintForm(); };
+    if (f && f.noVehicle) $$('.vehbox button, .vehbox input, .vehbox select').forEach(el => { el.disabled = true; });
     const sd = $('#scanDn');
     if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
     const gb = $('#gpsBtn');
