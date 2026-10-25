@@ -11,6 +11,7 @@
     { key: 'overtime', kh: 'ថែមម៉ោង', en: 'Overtime', url: 'overtime/' },
     { key: 'location', kh: 'ទីតាំងថ្មី', en: 'New Location', url: '' },
     { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
+    { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Fuel Dashboard', url: 'dashboard/' },
   ];
 
