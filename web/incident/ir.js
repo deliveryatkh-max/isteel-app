@@ -78,7 +78,6 @@
   const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
   const fitRecs = type => RECS.filter(r => (REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) >= 0);
   const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${fitRecs(type).map(r => `<label class="check rec"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}"> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
-  const recHtml = type => `<div class="recs"><small class="hint">💡 ${esc(t('វិធានការណែនាំ (ចុចដើម្បីបន្ថែម)', 'Suggested actions (tap to add)'))}</small>${fitRecs(type).map(r => `<button type="button" class="rec" data-rec="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}">${esc(t(r[1], r[2]))}</button>`).join('')}</div>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -428,11 +427,7 @@
         <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
         <div class="imm">${(() => { const im = immFrom(f.immediate); return IMMEDIATE.map(o => `<label class="check"><input type="checkbox" data-imm="${esc(o[1])}" ${im.ticks.indexOf(o[1]) >= 0 ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('') +
           `<input class="in mt" id="immOther" value="${esc(im.other)}" placeholder="${esc(t('ផ្សេងទៀត (វាយបន្ថែម)', 'Other (type here)'))}">`; })()}</div>
-        <label class="f">${t('វិធានការកែតម្រូវ / បង្ការ', 'Corrective / preventive actions')}</label>
-        ${f.actions.map((a, i) => `<div class="act" data-i="${i}"><input class="in" data-a="what" placeholder="${esc(t('វិធានការ', 'Action'))}" value="${esc(a.what)}">
-          <div class="row2"><input class="in" data-a="owner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}" value="${esc(a.owner)}"><input class="in" data-a="due" type="date" value="${esc(a.due)}"></div>
-          <button type="button" class="btn sm ghost" data-delact="${i}">✕ ${t('លុប', 'Remove')}</button></div>`).join('')}
-        <button type="button" class="btn sm" id="addAct">＋ ${t('បន្ថែមវិធានការ', 'Add action')}</button>${recHtml(f.type)}</div>`;
+</div>`;
     } else {
       const sups = (B && B.supervisors) || [];
       const auto = f.supervisor || ((sups.find(x => x.warehouse === f.warehouse) || {}).email) || (sups.length === 1 ? sups[0].email : '');
@@ -534,7 +529,6 @@
       if (box.dataset.one === 'anyInjured') { if (f.anyInjured === 'Yes' && !f.injuredList.length) f.injuredList.push({ name: '', type: '', lti: false }); paintForm(); }
     }; }); });
     $$('[data-delinj]').forEach(b => { b.onclick = () => { collect(); f.injuredList.splice(+b.dataset.delinj, 1); saveDraft(); paintForm(); }; });
-    $$('#view .recs [data-rec]').forEach(b => { b.onclick = () => { collect(); const e = f.actions.find(a => !a.what); if (e) e.what = b.dataset.rec; else f.actions.push({ what: b.dataset.rec, owner: '', due: '', status: 'Open' }); saveDraft(); paintForm(); }; });
     $$('[data-dmg]').forEach(b => { b.onchange = () => { collect(); if (b.checked) f.dmg[b.dataset.dmg] = ''; else delete f.dmg[b.dataset.dmg]; dmgTo(); saveDraft(); paintForm(); const n = $(`[data-dmgnote="${b.dataset.dmg}"]`); if (n) n.focus(); }; });
     wireVoice();
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
