@@ -63,6 +63,8 @@
   const WAREHOUSES = ['Warehouse A-D', 'Warehouse E', 'Warehouse G', 'Warehouse H', 'Warehouse I'];
   const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['រន្ធ / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
   const WEATHER = [['ថ្ងៃភ្លឺ', 'Daylight'], ['ភ្លៀង', 'Rain'], ['យប់', 'Night'], ['ងងឹត / ពន្លឺតិច', 'Poor light']];
+  // choices that contradict each other: ticking one unticks the others (Kim, 25 Oct 2026)
+  const CLASH = { Dry: ['Wet', 'Mud'], Wet: ['Dry'], Mud: ['Dry'], Daylight: ['Night', 'Poor light'], Night: ['Daylight'], 'Poor light': ['Daylight'] };
   const STATUS = {
     'Waiting supervisor': ['រង់ចាំប្រធានឃ្លាំង', 'Waiting supervisor', 'pending'], Returned: ['បានបញ្ជូនត្រឡប់', 'Returned', 'rejected'],
     Signed: ['ចុះហត្ថលេខារួច', 'Signed', 'approved'], Closed: ['បានបិទ', 'Closed', 'recorded'],
@@ -459,7 +461,7 @@
       const id = box.dataset.chips, multi = id === 'road' || id === 'weather';
       box.querySelectorAll('.chip').forEach(c => { c.onclick = () => {
         collect();
-        if (multi) { const cur = String(f[id] || '').split(', ').filter(Boolean); const i = cur.indexOf(c.dataset.v); if (i >= 0) cur.splice(i, 1); else cur.push(c.dataset.v); f[id] = cur.join(', '); }
+        if (multi) { const cur = String(f[id] || '').split(', ').filter(Boolean); const i = cur.indexOf(c.dataset.v); if (i >= 0) cur.splice(i, 1); else { cur.splice(0, cur.length, ...cur.filter(v => (CLASH[c.dataset.v] || []).indexOf(v) < 0)); cur.push(c.dataset.v); } f[id] = cur.join(', '); }
         else f[id] = f[id] === c.dataset.v ? '' : c.dataset.v;
         saveDraft(); paintForm();
       }; });
