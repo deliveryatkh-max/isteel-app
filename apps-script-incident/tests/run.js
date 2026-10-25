@@ -159,7 +159,9 @@ eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS.concat([TEXTS[0]]) })).adde
 eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS })).added, 0, 'no duplicates');
 const tx = env.ss.getSheetByName('Texts');
 const nr = tx.rows.findIndex(r => r[0] === 'New report');
-tx.rows[nr][2] = 'របាយការណ៍ថ្មី!'; tx.rows[nr][3] = 'Report an incident';
+tx.rows[nr][4] = 'របាយការណ៍ថ្មី!'; tx.rows[nr][5] = 'Report an incident';
+eq(tx.rows[0], ['Key (do not change)', 'Screen', 'Sub-screen', 'Step', 'Khmer', 'English'], 'texts headings');
+eq(tx.rows[nr].slice(1, 4), TEXTS.find(r => r[0] === 'New report').slice(1, 4), 'screen, sub-screen, step written');
 b = must(call('driver@x.com', 'boot', {}));
 eq(b.texts['New report'], ['របាយការណ៍ថ្មី!', 'Report an incident'], 'edited text in boot');
 

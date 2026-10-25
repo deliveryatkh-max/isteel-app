@@ -28,7 +28,7 @@ const LOG_COLS = ['Report No', 'Date Reported', 'Status', 'Type', 'Category', 'I
 const MAIL_COLS = ['List', 'Emails', 'When', 'Active'];
 const SUP_COLS = ['Warehouse', 'Name', 'Email', 'Backup Email'];
 const CAT_COLS = ['Category', 'Khmer', 'Types', 'Active', 'Icon'];
-const TXT_COLS = ['Key (do not change)', 'Screen', 'Khmer', 'English'];
+const TXT_COLS = ['Key (do not change)', 'Screen', 'Sub-screen', 'Step', 'Khmer', 'English'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'គ្រោះថ្នាក់';      // tick box column in the Fuel Refill Users tab (added by the Fuel script)
 const MAX_PHOTOS = 6;
@@ -285,12 +285,16 @@ function syncTexts_(p, user) {
   if (!user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
   return withLock_(() => {
     const have = texts_();
+    // rows from the app: [key, screen, sub-screen, step, Khmer, English]; written under the tab's own headings
     const add = (Array.isArray(p.rows) ? p.rows : []).slice(0, 3000)
-      .map(r => [clip_(r[0], 1000), clip_(r[1], 60), clip_(r[2], 1000), clip_(r[3], 1000)])
+      .map(r => r.length === 4 ? [r[0], r[1], '', '', r[2], r[3]] : r)
+      .map(r => TXT_COLS.map((c, i) => clip_(r[i], i === 1 || i === 3 ? 60 : 1000)))
       .filter(r => r[0] && !(r[0] in have) && (have[r[0]] = 1));
     if (add.length) {
       const sh = sheet_(SH.TXT, TXT_COLS);
-      sh.getRange(sh.getLastRow() + 1, 1, add.length, TXT_COLS.length).setNumberFormat('@').setValues(add);
+      const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+      const rows = add.map(r => head.map(h => { const i = TXT_COLS.indexOf(h); return i >= 0 ? r[i] : ''; }));
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, head.length).setNumberFormat('@').setValues(rows);
     }
     return { added: add.length };
   });
