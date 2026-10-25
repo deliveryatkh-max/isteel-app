@@ -127,7 +127,8 @@ eq(env.mails[1].to, 'p@x.com,x@y.com');
 // actions and close
 ok(/^DENIED/.test(call('driver@x.com', 'actions', { id: r1.id, actions: [] }).error), 'reporter cannot change actions');
 ok(/^OPEN/.test(call('sup@x.com', 'close', { id: r1.id }).error), 'open actions block closing');
-d = must(call('sup@x.com', 'actions', { id: r1.id, actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08', status: 'Done' }] }));
+ok(/^DENIED/.test(call('sup@x.com', 'actions', { id: r1.id, actions: [] }).error), 'supervisor cannot change actions');
+d = must(call('hse@x.com', 'actions', { id: r1.id, actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08', status: 'Done' }] }));
 ok(d.actions[0].done, 'done date set');
 d = must(call('sup@x.com', 'close', { id: r1.id }));
 eq(d.status, 'Closed');

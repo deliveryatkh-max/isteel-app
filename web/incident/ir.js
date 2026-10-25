@@ -1108,7 +1108,7 @@
     const keep = () => set('ir_demo_db', JSON.stringify(db));
     const me = { email: 'kim@demo', name: 'Kim (demo)', phone: '012 345 678', admin: true, reviewer: true, supervisorOf: ['SSK Warehouse'] };
     const row = d => { const sc = d.severity * d.likelihood || 0; return { id: d.id, reported: d.created, status: d.status, type: (TYPES[d.type] || {}).en + ' (' + (TYPES[d.type] || { who: ['', ''] }).who[1] + ')', category: d.category, date: d.date, time: d.time, location: d.location, warehouse: d.warehouse, plate: d.plate, driver: d.driver, company: d.company, injured: String((d.people || []).filter(x => x.injured).length), score: sc, level: level(sc), cause: d.cause, cost: +d.cost || 0, open: (d.actions || []).filter(a => a.status !== 'Done').length, reporter: d.reporter.name, mine: d.reporter.email === me.email, toSign: d.status === 'Waiting supervisor' }; };
-    const can = d => ({ edit: d.status === 'Returned' && d.reporter.email === me.email, sign: d.status === 'Waiting supervisor', actions: d.status === 'Signed' || d.status === 'Waiting supervisor', close: d.status === 'Signed', email: d.status === 'Signed' || d.status === 'Closed' });
+    const can = d => ({ edit: d.status === 'Returned' && d.reporter.email === me.email, sign: d.status === 'Waiting supervisor', actions: (d.status === 'Signed' || d.status === 'Waiting supervisor') && (me.admin || me.reviewer), close: d.status === 'Signed', email: d.status === 'Signed' || d.status === 'Closed' });
     const now = () => today() + ' ' + nowHm();
     const fail = (en, km) => { throw Object.assign(new Error(t(km, en)), { code: 'BAD' }); };
     return new Promise(r => setTimeout(r, action === 'boot' || action === 'get' || action === 'settings' ? 1200 : 200)).then(() => {

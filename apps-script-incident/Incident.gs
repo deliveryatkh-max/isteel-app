@@ -405,7 +405,7 @@ function view_(d, user) {
     can: {
       edit: d.status === STATUS.back && d.reporter.email === user.email,
       sign: d.status === STATUS.wait && sup,
-      actions: (d.status === STATUS.signed || d.status === STATUS.wait) && (sup || user.admin),
+      actions: (d.status === STATUS.signed || d.status === STATUS.wait) && canSeeAll_(user),
       close: d.status === STATUS.signed && (sup || user.admin),
       email: d.status === STATUS.signed || d.status === STATUS.closed,
     },
@@ -536,7 +536,7 @@ function sign_(p, user) {
     if (!/^data:image\/png;base64,/.test(String(p.signature || ''))) fail_('BAD', 'Please sign first.', 'សូមចុះហត្ថលេខាជាមុនសិន។');
     const folder = folder_(d.id, true);
     const now = now_();
-    if (Array.isArray(p.actions)) d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions;
+    if (Array.isArray(p.actions) && canSeeAll_(user)) d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions;
     if (p.comment) d.supComment = clip_(p.comment, 1000);
     d.supervisor = { name: user.name, email: user.email, at: now, sig: saveImage_(folder, p.signature, 'signature-supervisor-' + Date.now() + '.png') };
     d.status = STATUS.signed;
@@ -567,7 +567,7 @@ function sendBack_(p, user) {
 function setActions_(p, user) {
   return withLock_(() => {
     const d = load_(p.id);
-    if (!isSupervisorFor_(d, user) && !user.admin) fail_('DENIED', 'Only the Warehouse Supervisor or an admin can update actions.', 'មានតែប្រធានឃ្លាំង ឬ Admin ទេដែលអាចកែវិធានការបាន។');
+    if (!canSeeAll_(user)) fail_('DENIED', 'Only an admin or reviewer can update actions.', 'មានតែ Admin ឬអ្នកត្រួតពិនិត្យទេដែលអាចកែវិធានការបាន។');
     if (d.status === STATUS.closed) fail_('BAD', 'This report is closed.', 'របាយការណ៍នេះបានបិទហើយ។');
     const today = fmt_(new Date(), 'yyyy-MM-dd');
     d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions.map(a => Object.assign(a, { done: a.status === 'Done' ? (a.done || today) : '' }));
