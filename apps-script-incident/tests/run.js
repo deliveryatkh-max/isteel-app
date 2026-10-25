@@ -26,7 +26,8 @@ const FORM = {
   plate: '3e 2588', driver: 'ជា វុទ្ធី', story: 'Motorbike cut in.', severity: 3, likelihood: 5, cause: 'People (behaviour, training)',
   people: [{ name: 'Rider', injured: true, injury: 'cut' }, { name: '' }], whys: ['too close', '', '', '', ''], immediate: 'First aid',
   actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08' }, { what: '' }], reporterName: 'Vuthy', reporterPhone: '012',
-  signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com',
+  signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com', insurance: 'Yes',
+  voice: 'data:audio/webm;codecs=opus;base64,' + Buffer.from('voice-note').toString('base64'),
 };
 
 const env = makeEnv({ file: path.join(ROOT, 'apps-script-incident/Incident.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
@@ -61,8 +62,9 @@ eq(b.categories.find(c => c.en === 'Fire').icon, '🔥', 'icons in boot');
 
 // submit
 ok(/sign/.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { signature: '' })).error), 'signature needed');
-ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '' })).error), 'story needed');
+ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '', voice: '' })).error), 'story or voice needed');
 const r1 = must(call('driver@x.com', 'submit', FORM));
+eq(must(call('driver@x.com', 'get', { id: r1.id })).insurance, 'Yes', 'insurance kept');
 eq(r1.id, 'IR-' + new Date().getFullYear() + '-001', 'report number');
 eq(env.telegrams.length, 1, 'telegram on submit');
 ok(/New incident/.test(env.telegrams[0].payload.text) && /Open and sign/.test(env.telegrams[0].payload.reply_markup), 'telegram text and button');
@@ -81,6 +83,7 @@ ok(supList[0].toSign, 'supervisor has it to sign');
 ok(/^DENIED/.test(call('other@x.com', 'get', { id: r1.id }).error), 'other cannot open');
 let d = must(call('driver@x.com', 'get', { id: r1.id }));
 eq(d.photos.length, 2); eq(d.photoThumbs.length, 2, 'photos come back');
+ok(d.voice && /^data:audio\/webm;base64,/.test(d.voiceData), 'voice note saved and comes back');
 ok(!d.can.sign && !d.can.edit, 'reporter cannot sign');
 ok(/^DENIED/.test(call('driver@x.com', 'sign', { id: r1.id, signature: SIG }).error), 'reporter cannot sign');
 
@@ -89,9 +92,10 @@ ok(/change/.test(call('sup@x.com', 'sendBack', { id: r1.id, note: '' }).error), 
 must(call('sup@x.com', 'sendBack', { id: r1.id, note: 'Add the DN' }));
 d = must(call('driver@x.com', 'get', { id: r1.id }));
 ok(d.can.edit && d.status === 'Returned', 'returned to reporter');
-must(call('driver@x.com', 'submit', Object.assign({}, FORM, { id: r1.id, dn: '8100452231', photos: [], keepPhotos: [d.photos[0]] })));
+must(call('driver@x.com', 'submit', Object.assign({}, FORM, { id: r1.id, dn: '8100452231', photos: [], keepPhotos: [d.photos[0]], voice: '' })));
 d = must(call('sup@x.com', 'get', { id: r1.id }));
 eq(d.dn, '8100452231'); eq(d.photos.length, 1, 'kept one photo'); ok(d.can.sign, 'waiting again');
+ok(!d.voice, 'voice dropped when not kept');
 eq(env.ss.getSheetByName('Incidents').rows.length, 2, 'still one row');
 
 // sign -> PDF, telegram document, auto emails (Management auto + HSE because HIGH)
@@ -124,7 +128,8 @@ eq(env.mails[1].to, 'p@x.com,x@y.com');
 // actions and close
 ok(/^DENIED/.test(call('driver@x.com', 'actions', { id: r1.id, actions: [] }).error), 'reporter cannot change actions');
 ok(/^OPEN/.test(call('sup@x.com', 'close', { id: r1.id }).error), 'open actions block closing');
-d = must(call('sup@x.com', 'actions', { id: r1.id, actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08', status: 'Done' }] }));
+ok(/^DENIED/.test(call('sup@x.com', 'actions', { id: r1.id, actions: [] }).error), 'supervisor cannot change actions');
+d = must(call('hse@x.com', 'actions', { id: r1.id, actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08', status: 'Done' }] }));
 ok(d.actions[0].done, 'done date set');
 d = must(call('sup@x.com', 'close', { id: r1.id }));
 eq(d.status, 'Closed');
@@ -159,7 +164,9 @@ eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS.concat([TEXTS[0]]) })).adde
 eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS })).added, 0, 'no duplicates');
 const tx = env.ss.getSheetByName('Texts');
 const nr = tx.rows.findIndex(r => r[0] === 'New report');
-tx.rows[nr][2] = 'របាយការណ៍ថ្មី!'; tx.rows[nr][3] = 'Report an incident';
+tx.rows[nr][4] = 'របាយការណ៍ថ្មី!'; tx.rows[nr][5] = 'Report an incident';
+eq(tx.rows[0], ['Key (do not change)', 'Screen', 'Sub-screen', 'Step', 'Khmer', 'English'], 'texts headings');
+eq(tx.rows[nr].slice(1, 4), TEXTS.find(r => r[0] === 'New report').slice(1, 4), 'screen, sub-screen, step written');
 b = must(call('driver@x.com', 'boot', {}));
 eq(b.texts['New report'], ['របាយការណ៍ថ្មី!', 'Report an incident'], 'edited text in boot');
 

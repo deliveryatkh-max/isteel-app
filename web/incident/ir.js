@@ -26,8 +26,20 @@
   const isDesk = () => window.matchMedia && matchMedia('(min-width: 1000px)').matches;
 
   // Animated progress while the Apps Script answers (Kim, 25 Oct 2026: progress instead of a spinner).
-  const loader = (km, en) => `<div class="loading" role="status"><div class="lmsg"><span class="ldots">${esc(t(km || 'កំពុងផ្ទុក', en || 'Loading'))}</span></div>
-    <div class="lbar"><i></i></div><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div>`;
+  // loading card: a % that counts up with the bar (fast, then slower), like Kim's picture B
+  const loader = (km, en) => { lpctStart(); return `<div class="loading" role="status"><div class="lcard"><span class="lic">⏳</span><div class="lbody"><div><b class="lpct">0%</b> <small class="ldots">${esc(t(km || 'កំពុងផ្ទុក', en || 'Loading'))}</small></div>
+    <div class="lbar"><i></i></div></div></div><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div>`; };
+  let lpctTimer = 0;
+  function lpctStart() {
+    const t0 = Date.now();
+    clearInterval(lpctTimer);
+    lpctTimer = setInterval(() => {
+      const els = document.querySelectorAll('.lpct');
+      if (!els.length && Date.now() - t0 > 500) { clearInterval(lpctTimer); return; }
+      const v = Math.round(95 * (1 - Math.exp(-(Date.now() - t0) / 1800)));
+      els.forEach(el => { el.textContent = v + '%'; });
+    }, 80);
+  }
   let toastTimer = 0;
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
 
@@ -44,12 +56,37 @@
   const LIK = [['កម្រ', 'Rare'], ['មិនសូវកើត', 'Unlikely'], ['អាចកើត', 'Possible'], ['ទំនងកើត', 'Likely'], ['ស្ទើរតែប្រាកដ', 'Almost certain']];
   const CAUSES = [['មនុស្ស (ឥរិយាបថ ការបណ្តុះបណ្តាល)', 'People (behaviour, training)'], ['ឧបករណ៍ / ឡាន', 'Equipment / vehicle'], ['វិធីសាស្ត្រ / នីតិវិធី', 'Method / procedure'],
     ['បរិស្ថាន (ផ្លូវ អាកាសធាតុ ពន្លឺ)', 'Environment (road, weather, light)'], ['ទំនិញ / ការផ្ទុក', 'Material / load'], ['ការគ្រប់គ្រង / ត្រួតពិនិត្យ', 'Management / supervision']];
+  const CAUSE_ICONS = { 'People (behaviour, training)': '🧍', 'Equipment / vehicle': '🚛', 'Method / procedure': '📋', 'Environment (road, weather, light)': '🌧️', 'Material / load': '📦', 'Management / supervision': '👔' };
+  const YESNO = [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']];
+  const HAVE = [['មាន', 'Have'], ['គ្មាន', 'None']];
+  const DAMAGES = [['ខូចខាតឡាន ក្រុមហ៊ុន', 'Company vehicle'], ['ខូចខាតឡាន អ្នកដទៃ', 'Other vehicle'], ['ខូចខាតទំនិញលើឡាន', 'Goods on the truck'], ['ខូចខាតទ្រព្យសម្បត្តិភាគីទី៣', '3rd-party property']];
+  const IMMEDIATE = [['🩹 ផ្តល់ជំនួយបឋម', 'First aid given'], ['🚑 បញ្ជូនទៅមន្ទីរពេទ្យ', 'Sent to hospital / clinic'], ['🛑 បញ្ឈប់ការងារ / ម៉ាស៊ីន', 'Stopped the work / machine'],
+    ['🚧 ធ្វើឲ្យកន្លែងមានសុវត្ថិភាព ដាក់របាំង', 'Made the area safe, blocked it off'], ['⚠️ ដាក់ស្លាកព្រមាន / កោណ', 'Put warning signs / cones'], ['📦 ចងទំនិញឡើងវិញ / រើចេញ', 'Secured or moved the load'],
+    ['🧹 សម្អាតការកំពប់ / ប្រេង', 'Cleaned up the spill / oil'], ['🧯 ពន្លត់ភ្លើង', 'Put out the fire'], ['📷 ថតរូបទីកន្លែង', 'Took photos of the place'],
+    ['📞 រាយការណ៍ប្រធាន', 'Told the supervisor'], ['👮 ហៅប៉ូលីស', 'Called the police'], ['📣 ប្រាប់អតិថិជន', 'Told the customer']];
+  const INJ_TYPES = [['បុគ្គលិក ISI', 'ISI Employee'], ['បុគ្គលិក 3PL', '3PL Employee'], ['ភាគីទី៣', 'Third-party']];
+  // recommended corrective actions; a group that does not fit the incident type is greyed out (e.g. driving for a near miss in the warehouse)
+  const RECS = [
+    ['drive', '🚗 បណ្តុះបណ្តាលបើកបរដោយសុវត្ថិភាពឡើងវិញ', 'Defensive driving refresher for the driver'], ['drive', '⏱️ ពិនិត្យម៉ោងបើកបរ និងការសម្រាក', 'Check driving hours and rest breaks'],
+    ['drive', '🛣️ ជូនដំណឹងតៃកុងពីផ្លូវ / ចំណុចគ្រោះថ្នាក់នេះ', 'Warn drivers about this road / spot'], ['drive', '🔧 ពិនិត្យ និងជួសជុលឡាន', 'Inspect and repair the truck'],
+    ['load', '⛓️ ចងទំនិញ / ខ្សែដែកឲ្យរឹងមាំ (ច្រវាក់ ឈើទប់)', 'Secure coils / load with chains and wedges'], ['load', '📋 ពិនិត្យការផ្ទុកមុនចេញដំណើរ', 'Check the load before leaving'],
+    ['crane', '🏗️ បណ្តុះបណ្តាលអ្នកបើកស្ទូច / ហ្វកលីហ្វឡើងវិញ', 'Crane / forklift operator refresher'], ['crane', '🔍 ពិនិត្យខ្សែស្លីង ទំពក់ និងស្ទូចមុនប្រើ', 'Check slings, hooks and crane before use'],
+    ['crane', '👷 ប្រើអ្នកណែនាំពេលលើក និងថយក្រោយ', 'Use a spotter when lifting and reversing'],
+    ['walk', '🚶 ដើរតាមផ្លូវដែលបានគូសសម្គាល់', 'Keep to the marked walkway'], ['walk', '🚧 គូស / ខ័ណ្ឌតំបន់គ្រោះថ្នាក់', 'Mark / fence off the danger zone'],
+    ['walk', '🦺 ពាក់ឧបករណ៍ការពារ (មួក អាវ ស្បែកជើង)', 'Wear PPE (helmet, vest, safety shoes)'],
+    ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
+  const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
+  const fitRecs = type => RECS.filter(r => (REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) >= 0);
+  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${fitRecs(type).map(r => `<label class="check rec"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}"> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
   const SHIFTS = [['ថ្ងៃ', 'Day'], ['យប់', 'Night']];
-  const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['រន្ធ / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
+  const WAREHOUSES = ['Warehouse A-D', 'Warehouse E', 'Warehouse G', 'Warehouse H', 'Warehouse I'];
+  const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['គ្រហុក / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចង្អៀត', 'Narrow road'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
   const WEATHER = [['ថ្ងៃភ្លឺ', 'Daylight'], ['ភ្លៀង', 'Rain'], ['យប់', 'Night'], ['ងងឹត / ពន្លឺតិច', 'Poor light']];
+  // choices that contradict each other: ticking one unticks the others (Kim, 25 Oct 2026)
+  const CLASH = { Dry: ['Wet', 'Mud'], Wet: ['Dry'], Mud: ['Dry'], Daylight: ['Night', 'Poor light'], Night: ['Daylight'], 'Poor light': ['Daylight'] };
   const STATUS = {
     'Waiting supervisor': ['រង់ចាំប្រធានឃ្លាំង', 'Waiting supervisor', 'pending'], Returned: ['បានបញ្ជូនត្រឡប់', 'Returned', 'rejected'],
     Signed: ['ចុះហត្ថលេខារួច', 'Signed', 'approved'], Closed: ['បានបិទ', 'Closed', 'recorded'],
@@ -152,6 +189,9 @@
 
   // ---------------------------------------------------------------- list screens
   let filter = getJ('ir_filter', 'all');
+  // tapping a number or a bar (list, summary) opens the reports behind it; ✕ on its chip goes back to the normal filters
+  let drill = null;
+  const openDrill = (label, fn) => { drill = { label, fn }; if (location.hash === '#/' || location.hash === '') renderList(); else location.hash = '#/'; window.scrollTo(0, 0); };
   function renderList(mode) {
     screen = () => renderList(mode);
     const all = mode === 'sign' ? toSign() : reports();
@@ -160,7 +200,7 @@
     const year = reports().filter(r => String(r.date || r.reported).slice(0, 4) === yr);
     const open = reports().filter(r => r.status !== 'Closed').length;
     const F = { all: () => true, open: r => r.status !== 'Closed', mine: r => r.mine, high: r => r.score >= 15 };
-    const shown = mode === 'sign' ? all : all.filter(F[filter] || F.all);
+    const shown = mode === 'sign' ? all : drill ? all.filter(drill.fn) : all.filter(F[filter] || F.all);
     const q = ($('#q') && $('#q').value || '').trim().toLowerCase();
     const list = q ? shown.filter(r => [r.id, r.category, r.location, r.warehouse, r.plate, r.driver, r.reporter, r.status].join(' ').toLowerCase().includes(q)) : shown;
     $('#view').innerHTML = mode === 'sign' ? `
@@ -171,17 +211,18 @@
       ${draft && draft.type ? `<a class="item draftrow" href="#/new"><b>📝 ${t('សេចក្តីព្រាងមិនទាន់ផ្ញើ', 'Draft not sent yet')}</b><div class="meta">${esc(typeName(draft.type))} · ${esc(catName(draft.category))} · ${t('ចុចដើម្បីបន្ត', 'tap to continue')}</div></a>` : ''}
       ${toSign().length ? `<a class="alert warn signrow" href="#/sign">✍️ ${t('មានរបាយការណ៍', 'You have')} <b>${toSign().length}</b> ${t('រង់ចាំហត្ថលេខារបស់អ្នក', 'report(s) waiting for your signature')}</a>` : ''}
       <div class="stats">
-        <div class="stat"><small>${t('ឆ្នាំនេះ', 'This year')}</small><b>${year.length}</b></div>
-        <div class="stat"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${open}</b></div>
-        <div class="stat"><small>${t('ហានិភ័យខ្ពស់', 'High risk')}</small><b class="bad">${year.filter(r => r.score >= 15).length}</b></div>
+        <button type="button" class="stat" data-drill="year"><small>${t('ឆ្នាំនេះ', 'This year')}</small><b>${year.length}</b></button>
+        <button type="button" class="stat" data-f="open"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${open}</b></button>
+        <button type="button" class="stat" data-f="high"><small>${t('ហានិភ័យខ្ពស់', 'High risk')}</small><b class="bad">${year.filter(r => r.score >= 15).length}</b></button>
       </div>
       <div class="chips">${[['all', 'ទាំងអស់', 'All'], ['open', 'មិនទាន់បិទ', 'Open'], ['mine', 'របស់ខ្ញុំ', 'Mine'], ['high', 'ហានិភ័យខ្ពស់', 'High risk']]
-        .map(c => `<button type="button" class="chip ${filter === c[0] ? 'on' : ''}" data-f="${c[0]}">${esc(t(c[1], c[2]))}</button>`).join('')}</div>
+        .map(c => `<button type="button" class="chip ${!drill && filter === c[0] ? 'on' : ''}" data-f="${c[0]}">${esc(t(c[1], c[2]))}</button>`).join('')}${drill ? `<button type="button" class="chip on" data-f="${esc(filter)}">${esc(drill.label)} ✕</button>` : ''}</div>
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ លេខ ផ្លាក តៃកុង ទីកន្លែង', 'Search: number, plate, driver, place'))}" value="${esc(q)}">
       <div class="head2"><h2>${seesAll() ? t('របាយការណ៍ទាំងអស់', 'All reports') : t('របាយការណ៍', 'Reports')}</h2><small>${list.length}</small></div>
       ${list.length ? '' : `<div class="card empty">${t('មិនទាន់មានរបាយការណ៍ទេ', 'No reports yet')}</div>`}
       <div class="list">${list.map(item).join('')}</div>`;
-    $$('[data-f]').forEach(b => { b.onclick = () => { filter = b.dataset.f; set('ir_filter', JSON.stringify(filter)); renderList(mode); }; });
+    $$('[data-f]').forEach(b => { b.onclick = () => { drill = null; filter = b.dataset.f; set('ir_filter', JSON.stringify(filter)); renderList(mode); }; });
+    $$('[data-drill="year"]').forEach(b => { b.onclick = () => { const y = String(new Date().getFullYear()); openDrill(t('ឆ្នាំនេះ', 'This year'), r => String(r.date || r.reported).slice(0, 4) === y); }; });
     const qi = $('#q');
     if (qi) { qi.oninput = () => { const pos = qi.selectionStart; renderList(mode); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); }; if (q) qi.focus(); }
   }
@@ -195,15 +236,15 @@
   }
 
   // ---------------------------------------------------------------- the form (5 steps)
-  const EMPTY = () => ({ type: '', category: '', shift: new Date().getHours() >= 18 || new Date().getHours() < 6 ? 'Night' : 'Day', date: today(), time: nowHm(),
+  const EMPTY = () => ({ type: '', category: '', shift: 'Day', date: today(), time: nowHm(),
     location: '', warehouse: '', gps: '', road: '', weather: '', driver: '', driverId: '', plate: '', company: '', tripId: '', dn: '', customer: '', load: '',
-    people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', cost: '', daysLost: '',
+    people: [], story: '', couldHappen: '', firstAid: '', hospital: '', vehicleDamage: '', goodsDamage: '', property: '', police: '', policeNo: '', insurance: '', cost: '', daysLost: '',
     severity: 0, likelihood: 0, cause: '', whys: ['', '', '', '', ''], immediate: '', actions: [], witnesses: [], evidence: '',
-    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], step: 1 });
+    reporterName: '', reporterPhone: '', supervisor: '', anonymous: false, photos: [], keepPhotos: [], voice: '', keepVoice: '', anyInjured: '', injuredList: [], step: 1 });
   let f = null;           // the report being filled in
   let editId = '';        // a returned report being sent again
   let sending = false;
-  const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3) }))); };
+  const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3), voice: f.voice && f.voice.length < 1500000 ? f.voice : '' }))); };
 
   async function openEdit(id) {
     $('#view').innerHTML = loader('កំពុងបើករបាយការណ៍', 'Opening the report');
@@ -211,7 +252,7 @@
       const d = await api('get', { id });
       if (!d.can || !d.can.edit) { location.hash = '#/r/' + encodeURIComponent(id); return; }
       editId = id;
-      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), step: 1,
+      f = Object.assign(EMPTY(), d, { reporterName: d.reporter.name, reporterPhone: d.reporter.phone, supervisor: d.supervisor.email, photos: [], keepPhotos: (d.photos || []).slice(), voice: '', keepVoice: d.voice || '', injuredList: (d.injuredList || []).map(x => Object.assign({}, x)), step: 1,
         whys: (d.whys || []).concat(['', '', '', '', '']).slice(0, 5), cost: d.cost || '', daysLost: d.daysLost || '' });
       renderForm(f, true);
     } catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; }
@@ -230,12 +271,38 @@
     paintForm();
   }
 
-  function locate() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(p => { if (f && !f.gps) { f.gps = p.coords.latitude.toFixed(5) + ', ' + p.coords.longitude.toFixed(5); const g = $('#gps'); if (g) g.value = f.gps; saveDraft(); } }, () => {}, { timeout: 8000, maximumAge: 300000 });
+  /** GPS of the phone, then the place name from OpenStreetMap (free) into Location when it is empty. Tap 📍 GPS to fetch it again. */
+  function locate(force) {
+    const hint = msg => { const h = $('#gpsHint'); if (h) h.textContent = msg; };
+    if (force) hint('⏳ ' + t('កំពុងរកទីតាំង...', 'Finding the place...'));
+    const got = async (lat, lon) => {
+      if (!f) return;
+      f.gps = lat.toFixed(5) + ', ' + lon.toFixed(5);
+      saveDraft();
+      const name = await placeName(lat, lon);
+      if (!f) return;
+      if (name && (force || !f.location)) { f.location = name; const el = $('#location'); if (el) el.value = name; saveDraft(); }
+      hint(name ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + f.gps : '📍 ' + f.gps + (force ? ' · ' + t('រកឈ្មោះទីកន្លែងមិនឃើញ សូមវាយ', 'No place name found, please type it') : ''));
+    };
+    if (DEMO) { setTimeout(() => got(11.9521, 104.6632), force ? 700 : 1500); return; }
+    if (!navigator.geolocation) { if (force) hint(t('ទូរស័ព្ទនេះមិនមាន GPS', 'This phone has no GPS')); return; }
+    navigator.geolocation.getCurrentPosition(p => got(p.coords.latitude, p.coords.longitude),
+      () => { if (force) hint('⚠️ ' + t('សូមបើក Location ក្នុងទូរស័ព្ទ', 'Turn on Location on the phone')); },
+      { timeout: 10000, maximumAge: force ? 0 : 300000, enableHighAccuracy: !!force });
   }
 
-  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['ហានិភ័យ មូលហេតុ', 'Risk, cause'], ['ហត្ថលេខា', 'Sign']];
+  async function placeName(lat, lon) {
+    if (DEMO) return t('ផ្លូវជាតិលេខ 5, កំពង់ឆ្នាំង', 'National Road 5, Kampong Chhnang');
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + lat + '&lon=' + lon + '&accept-language=' + (window.LANG && LANG.get() === 'en' ? 'en' : 'km,en'));
+      const j = await r.json(), a = j.address || {};
+      const parts = [a.road || a.pedestrian || a.industrial || a.amenity, a.village || a.suburb || a.neighbourhood || a.quarter, a.city_district || a.county || a.town || a.city, a.state || a.province];
+      const name = Array.from(new Set(parts.filter(Boolean))).join(', ');
+      return name || String(j.display_name || '').split(', ').slice(0, 3).join(', ');
+    } catch (e) { return ''; }
+  }
+
+  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['ហានិភ័យ', 'Risk'], ['ហត្ថលេខា', 'Sign']];
   const field = (id, km, en, opts) => {
     opts = opts || {};
     const v = f[id] == null ? '' : f[id];
@@ -245,13 +312,40 @@
         : `<input class="in" id="${id}" type="${opts.type || 'text'}" value="${esc(v)}" ${opts.list ? `list="${opts.list}"` : ''} ${opts.mode ? `inputmode="${opts.mode}"` : ''} placeholder="${esc(opts.ph || '')}" autocomplete="off">`;
     return `<div class="field"><label class="f" for="${id}">${esc(t(km, en))}${req}</label>${input}${opts.hint ? `<div class="hint">${esc(opts.hint)}</div>` : ''}</div>`;
   };
+  // one tick box per choice, only one can be ticked (tap it again to untick)
+  const one = (id, list) => `<div class="ticks" data-one="${id}">${list.map(o => `<label class="check"><input type="checkbox" value="${esc(o[1])}" ${f[id] === o[1] ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('')}</div>`;
+  // damage ticks <-> the vehicleDamage / goodsDamage / property fields the sheet already has ("Company vehicle: scratch; Other vehicle: dent")
+  const dmgFrom = d => {
+    const o = {};
+    String(d.vehicleDamage || '').split('; ').filter(Boolean).forEach(x => { const m = x.match(/^(Company vehicle|Other vehicle): ?(.*)$/); o[m ? m[1] : 'Company vehicle'] = (m ? m[2] : x) || ' '; });
+    if (d.goodsDamage) o['Goods on the truck'] = d.goodsDamage;
+    if (d.property) o['3rd-party property'] = d.property;
+    return o;
+  };
+  const dmgTo = () => {
+    const g = k => (f.dmg[k] != null ? String(f.dmg[k]).trim() || 'Yes' : '');
+    f.vehicleDamage = ['Company vehicle', 'Other vehicle'].filter(k => f.dmg[k] != null).map(k => k + ': ' + g(k)).join('; ');
+    f.goodsDamage = g('Goods on the truck'); f.property = g('3rd-party property');
+  };
+  // immediate actions: ticked choices plus "other" text, saved as one line ("First aid given; Told the supervisor; ...")
+  const immFrom = v => { const all = IMMEDIATE.map(o => o[1]), parts = String(v || '').split('; ').filter(Boolean); return { ticks: parts.filter(x => all.indexOf(x) >= 0), other: parts.filter(x => all.indexOf(x) < 0).join('; ') }; };
+  const immText = v => String(v || '').split('; ').map(x => { const o = IMMEDIATE.find(i => i[1] === x); return o ? t(o[0], o[1]) : x; }).join(' · ');
   const chips = (id, list, multi) => `<div class="chips" data-chips="${id}">${list.map(o => `<button type="button" class="chip ${(multi ? String(f[id]).split(', ').indexOf(o[1]) >= 0 : f[id] === o[1]) ? 'on' : ''}" data-v="${esc(o[1])}">${esc(t(o[0], o[1]))}</button>`).join('')}</div>`;
-  const warehouses = () => Array.from(new Set(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean)));
+  // Kim's warehouse list first, then any other warehouse named in the Supervisors tab
+  const warehouses = () => Array.from(new Set(WAREHOUSES.concat(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean))));
+  // step 1 already says where it happened: the warehouse box is open for warehouse incidents and near misses, greyed for road incidents
+  const inWh = () => f.type !== 'road';
+  const pickBtn = id => `<button type="button" class="picker" id="${id}">${pickIn(id)}</button>`;
+  const pickIn = id => `<span class="${f[id] ? '' : 'pph'}">${esc(f[id] || t('— ជ្រើសរើស —', '— Select —'))}${f[id] && f['new_' + id] ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span>`;
+  const showPick = id => { const b = $('#' + id); if (b && b.tagName === 'BUTTON') b.innerHTML = pickIn(id); };
 
+  let paintedStep = 0;
   function paintForm() {
     const s = f.step;
     const sc = f.severity && f.likelihood ? f.severity * f.likelihood : 0;
-    const head = `<div class="steps">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
+    const grow = s !== paintedStep;     // fill the bar only when the step changes, not on every tap
+    paintedStep = s;
+    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''} ${i + 1 > openStep() ? 'lock' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span>${i + 1 < s ? '✓' : i + 1 === s ? i + 1 : ''}</span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
     let body = '';
     if (editId && f.returnNote) body += `<div class="alert warn">↩️ ${t('ប្រធានឃ្លាំងសុំឲ្យកែ៖', 'The supervisor asked for changes:')} <b>${esc(f.returnNote)}</b></div>`;
     if (s === 1) {
@@ -261,25 +355,27 @@
         const cats = CATS.filter(c => !c.types || c.types.indexOf(f.type) >= 0);
         body += `<div class="card"><h2>${t('ប្រភេទរង', 'Category')} <span class="req">*</span></h2>
           <select class="in cat-sel" id="catSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${cats.map(c => `<option value="${esc(c.en)}" ${f.category === c.en ? 'selected' : ''}>${esc(catIcon(c) + '  ' + t(c.km || c.en, c.en))}</option>`).join('')}</select>
-          <label class="f">${t('វេន', 'Shift')}</label>${chips('shift', SHIFTS)}
+          <label class="f">${t('វេន', 'Shift')}</label><div class="ticks">${SHIFTS.map(o => `<label class="check"><input type="checkbox" data-shift="${esc(o[1])}" ${(f.shift || 'Day') === o[1] ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('')}</div>
           ${f.type === 'near' ? `<label class="check"><input type="checkbox" id="anonymous" ${f.anonymous ? 'checked' : ''}> ${t('មិនបង្ហាញឈ្មោះខ្ញុំ (អនាមិក)', 'Don\'t show my name (anonymous)')}</label>
             <div class="hint">${t('ឈ្មោះមិនបង្ហាញក្នុង PDF Telegram ឬអ៊ីមែលទេ។ មិនចាំបាច់ចុះហត្ថលេខា។', 'Your name is not shown in the PDF, Telegram or email. No signature needed.')}</div>` : ''}</div>`;
       }
     } else if (s === 2) {
       body += `<div class="card"><h2>📍 ${t('ពេលវេលា និងទីកន្លែង', 'When and where')}</h2>
         <div class="row2">${field('date', 'ថ្ងៃកើតហេតុ', 'Date', { type: 'date', req: true })}${field('time', 'ម៉ោង', 'Time', { type: 'time' })}</div>
-        ${field('location', 'ទីកន្លែង / អាសយដ្ឋាន', 'Location / address', { req: true, ph: t('ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82', 'e.g. NR5 km 82') })}
-        <div class="row2"><div class="field"><label class="f" for="warehouse">${t('ឃ្លាំង / តំបន់', 'Warehouse / area')}</label><input class="in" id="warehouse" list="whList" value="${esc(f.warehouse)}" autocomplete="off"><datalist id="whList">${warehouses().map(w => `<option value="${esc(w)}">`).join('')}</datalist></div>
-        ${field('gps', 'GPS', 'GPS', { ph: t('យកដោយស្វ័យប្រវត្តិ', 'filled by itself') })}</div>
+        <div class="field"><label class="f" for="location">${t('ទីកន្លែង / អាសយដ្ឋាន', 'Location / address')} <span class="req">*</span></label>
+          <div class="locrow"><input class="in" id="location" value="${esc(f.location)}" placeholder="${esc(t('ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82', 'e.g. NR5 km 82'))}" autocomplete="off"><button type="button" class="btn sm" id="gpsBtn">📍 GPS</button></div>
+          <div class="hint" id="gpsHint">${f.gps ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + esc(f.gps) : ''}</div></div>
+        <div class="field ${inWh() ? '' : 'off'}"><label class="f" for="warehouse">${t('ឃ្លាំង / តំបន់', 'Warehouse / area')}</label><select class="in" id="warehouse" ${inWh() ? '' : 'disabled'}><option value=""></option>${warehouses().map(w => `<option value="${esc(w)}" ${w === f.warehouse ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select></div>
         <label class="f">${t('ស្ថានភាពផ្លូវ / ទីតាំង', 'Road / site condition')}</label>${chips('road', ROADS, true)}
         <label class="f">${t('អាកាសធាតុ / ពន្លឺ', 'Weather / light')}</label>${chips('weather', WEATHER, true)}</div>`;
       body += `<div class="card"><h2>🚛 ${t('តៃកុង ឡាន និងជើងដឹក', 'Driver, truck and trip')}${f.type === 'near' ? ` <small class="il">(${t('បើមាន', 'if any')})</small>` : ''}</h2>
-        <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label><input class="in" id="plate" list="plateList" value="${esc(f.plate)}" autocomplete="off" style="text-transform:uppercase"><datalist id="plateList">${((B && B.plates) || []).map(p => `<option value="${esc(p)}">`).join('')}</datalist></div>
-        <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label><input class="in" id="driver" list="driverList" value="${esc(f.driver)}" autocomplete="off"><datalist id="driverList">${((B && B.drivers) || []).map(d => `<option value="${esc(d.name)}">`).join('')}</datalist></div></div>
+        <label class="check"><input type="checkbox" id="noVeh" ${f.noVehicle ? 'checked' : ''}> ${t('គ្រោះថ្នាក់មិនពាក់ព័ន្ធឡាន', 'No vehicle involved')}</label>
+        <div class="vehbox ${f.noVehicle ? 'off' : ''}">
+        <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label>${pickBtn('plate')}</div>
+        <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label>${pickBtn('driver')}</div></div>
         <div id="tripInfo"></div>
-        <div class="row2">${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}${field('driverId', 'លេខបុគ្គលិក / ប័ណ្ណបើកបរ', 'Driver ID / licence')}</div>
-        <div class="row2">${field('tripId', 'Trip ID', 'Trip ID')}${field('dn', 'លេខ DN', 'DN No(s).')}</div>
-        <div class="row2">${field('customer', 'អតិថិជន', 'Customer')}${field('load', 'ទំនិញ / ទម្ងន់ (kg)', 'Load (kg) / goods')}</div></div>`;
+        ${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}
+        <div class="field"><label class="f" for="dn">${t('លេខដឹកជញ្ជូន (DN #)', 'Delivery no. (DN #)')}</label><div class="locrow"><input class="in" id="dn" value="${esc(f.dn)}" autocomplete="off"><button type="button" class="btn sm" id="scanDn" aria-label="${esc(t('ស្កេនបាកូដ', 'Scan barcode'))}">📷 ${t('ស្កេន', 'Scan')}</button></div></div></div></div>`;
       body += `<div class="card"><h2>📷 ${t('រូបថត', 'Photos')} <small class="il">(${t('ច្រើនបំផុត', 'up to')} ${MAX_PHOTOS})</small></h2>
         <div class="photos">${(f.keepPhotos || []).map((id, i) => `<div class="ph kept"><span>📎 ${i + 1}</span><button type="button" data-unkeep="${i}" aria-label="Remove">✕</button></div>`).join('')}
         ${f.photos.map((u, i) => `<div class="ph"><img src="${u}" alt=""><button type="button" data-unphoto="${i}" aria-label="Remove">✕</button></div>`).join('')}
@@ -288,7 +384,8 @@
     } else if (s === 3) {
       body += `<div class="card"><h2>📝 ${t('តើមានអ្វីកើតឡើង', 'What happened')}</h2>
         ${field('story', 'រៀបរាប់មួយជំហានម្តងៗ (អ្វី របៀប នរណា)', 'Describe step by step (what, how, who)', { area: true, rows: 5, req: true })}
-        ${f.type === 'near' ? field('couldHappen', 'អ្វីដែលអាចកើតឡើង', 'What could have happened', { area: true, rows: 2 }) : ''}</div>`;
+        <div class="voice" id="voiceBox">${voiceHtml()}</div>
+</div>`;
       body += `<div class="card"><h2>👥 ${t('អ្នកពាក់ព័ន្ធ', 'People involved')}</h2>
         ${f.people.map((p, i) => `<div class="person" data-i="${i}">
           <div class="row2"><input class="in" data-p="name" placeholder="${esc(t('ឈ្មោះ', 'Name'))}" value="${esc(p.name)}"><input class="in" data-p="empId" placeholder="${esc(t('លេខបុគ្គលិក', 'Employee ID'))}" value="${esc(p.empId)}"></div>
@@ -298,16 +395,23 @@
           ${p.injured ? `<input class="in" data-p="injury" placeholder="${esc(t('របួស / ផ្នែករាងកាយ', 'Injury / body part'))}" value="${esc(p.injury)}">` : ''}
           <button type="button" class="btn sm ghost" data-delperson="${i}">✕ ${t('លុប', 'Remove')}</button></div>`).join('')}
         <button type="button" class="btn sm" id="addPerson">＋ ${t('បន្ថែមអ្នកពាក់ព័ន្ធ', 'Add person')}</button></div>`;
+      if (!f.dmg) f.dmg = dmgFrom(f);
       body += `<div class="card"><h2>🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}</h2>
-        <div class="row2">${field('firstAid', 'ជំនួយបឋម?', 'First aid given?', { select: [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']] })}${field('hospital', 'មន្ទីរពេទ្យ / គ្លីនិក', 'Hospital / clinic')}</div>
-        ${field('vehicleDamage', 'ការខូចខាតឡាន', 'Vehicle damage')}
-        <div class="row2">${field('goodsDamage', 'ការខូចខាតទំនិញ (DN, kg)', 'Goods damage (DN, kg)')}${field('property', 'ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party')}</div>
-        <div class="row2">${field('police', 'ហៅប៉ូលីស?', 'Police called?', { select: [['បាទ/ចាស', 'Yes'], ['ទេ', 'No']] })}${field('policeNo', 'លេខរបាយការណ៍ប៉ូលីស', 'Police report no.')}</div>
-        <div class="row2">${field('cost', 'ថ្លៃប៉ាន់ស្មាន (USD)', 'Est. cost (USD)', { type: 'number', mode: 'decimal' })}${field('daysLost', 'ចំនួនថ្ងៃឈប់ការងារ', 'Days lost', { type: 'number', mode: 'numeric' })}</div></div>`;
+        <label class="f">${t('មានអ្នករងរបួស?', 'Anyone injured?')}</label>${one('anyInjured', YESNO)}
+        ${f.anyInjured === 'Yes' ? `<div class="injlist">${f.injuredList.map((x, i) => `<div class="inj" data-i="${i}">
+          <div class="row2"><input class="in" data-j="name" placeholder="${esc(t('ឈ្មោះអ្នករងរបួស', 'Injured person name'))}" value="${esc(x.name)}">
+          <select class="in" data-j="type"><option value="">${esc(t('ប្រភេទ', 'Type'))}</option>${INJ_TYPES.map(o => `<option value="${esc(o[1])}" ${x.type === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select></div>
+          <div class="injfoot"><label class="check"><input type="checkbox" data-j="lti" ${x.lti ? 'checked' : ''}> ${t('របួសបាត់បង់ពេលការងារ (LTI)', 'Lost time injury (LTI)')}</label>
+          <button type="button" class="btn sm ghost" data-delinj="${i}">✕</button></div></div>`).join('')}
+          <button type="button" class="btn sm" id="addInj">＋ ${t('បន្ថែមអ្នករងរបួស', 'Add injured person')}</button></div>` : ''}
+        <label class="f">${t('ការខូចខាត', 'Damage')}</label>
+        <div class="dmg">${DAMAGES.map(o => `<div class="dmgrow"><label class="check"><input type="checkbox" data-dmg="${esc(o[1])}" ${f.dmg[o[1]] != null ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>
+          ${f.dmg[o[1]] != null ? `<input class="in" data-dmgnote="${esc(o[1])}" value="${esc(String(f.dmg[o[1]]).trim())}" placeholder="${esc(t('ខូចអ្វីខ្លះ (ឧ. ប៉ារ៉ាសុកក្រោយ, DN, kg)', 'What is damaged (e.g. rear bumper, DN, kg)'))}">` : ''}</div>`).join('')}</div>
+        <label class="f">${t('មានក្រុមហ៊ុនធានារ៉ាប់រងមកត្រួតពិនិត្យ?', 'Insurance company came to inspect?')}</label>${one('insurance', YESNO)}</div>`;
       body += `<div class="card"><h2>👁️ ${t('សាក្សី និងភស្តុតាង', 'Witnesses and evidence')}</h2>
         ${f.witnesses.map((w, i) => `<div class="row2 wit" data-i="${i}"><input class="in" data-w="name" placeholder="${esc(t('ឈ្មោះសាក្សី', 'Witness name'))}" value="${esc(w.name)}"><input class="in" data-w="phone" inputmode="tel" placeholder="${esc(t('ទូរស័ព្ទ', 'Phone'))}" value="${esc(w.phone)}"></div>`).join('')}
         <button type="button" class="btn sm" id="addWit">＋ ${t('បន្ថែមសាក្សី', 'Add witness')}</button>
-        <div class="mt">${field('evidence', 'វីដេអូ / CCTV / កាមេរ៉ាឡាន', 'Video / CCTV / dashcam')}</div></div>`;
+        <label class="f mt">${t('វីដេអូ / CCTV / កាមេរ៉ាឡាន', 'Video / CCTV / dashcam')}</label>${one('evidence', HAVE)}</div>`;
     } else if (s === 4) {
       body += `<div class="card"><h2>⚖️ ${t('កម្រិតហានិភ័យ', 'Risk rating')}</h2>
         <label class="f">${t('ភាពធ្ងន់ធ្ងរ', 'Severity')}</label>
@@ -316,16 +420,14 @@
         <div class="scale five">${LIK.map((x, i) => `<button type="button" class="sc ${f.likelihood === i + 1 ? 'on' : ''}" data-lik="${i + 1}"><b>${i + 1}</b>${esc(t(x[0], x[1]))}</button>`).join('')}</div>
         <div class="score lv-${(level(sc) || 'none').toLowerCase()}"><b>${sc || '–'}</b><span>${sc ? esc(t(levelKm(level(sc)), level(sc))) : t('ជ្រើសភាពធ្ងន់ធ្ងរ និងលទ្ធភាព', 'Pick severity and likelihood')}</span><small>${t('ពិន្ទុ 1–25 · ≥15 ខ្ពស់ · 8–14 មធ្យម', 'Score 1–25 · 15+ high · 8–14 medium')}</small></div></div>`;
       body += `<div class="card"><h2>🔎 ${t('ហេតុអ្វីបានជាកើតឡើង', 'Why did it happen')}</h2>
-        <label class="f">${t('មូលហេតុចម្បង', 'Main cause')}</label>${chips('cause', CAUSES)}
-        ${f.whys.map((w, i) => `<div class="field"><label class="f" for="why${i}">${t('ហេតុអ្វី', 'Why')} ${i + 1}?</label><input class="in" id="why${i}" data-why="${i}" value="${esc(w)}"></div>`).join('')}
-        <div class="hint">${t('សួរ "ហេតុអ្វី?" ម្តងហើយម្តងទៀត រហូតដល់ឫសគល់', 'Keep asking "why?" until you reach the root cause')}</div></div>`;
+        <div class="field"><label class="f" for="causeSel">${t('មូលហេតុចម្បង', 'Main cause')}</label><select class="in cat-sel" id="causeSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${CAUSES.map(o => `<option value="${esc(o[1])}" ${f.cause === o[1] ? 'selected' : ''}>${CAUSE_ICONS[o[1]] || '•'}  ${esc(t(o[0], o[1]))}</option>`).join('')}</select></div>
+        <div class="field"><label class="f" for="why0">${t('ហេតុអ្វី?', 'Why?')}</label><input class="in" id="why0" data-why="0" value="${esc(f.whys[0] || '')}"></div>
+        <div class="hint">${t('ពន្យល់ពីមូលហេតុបន្ថែមបើអាច', 'Explain the cause in more detail if you can')}</div></div>`;
       body += `<div class="card"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
-        ${field('immediate', 'វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken', { area: true, rows: 2 })}
-        <label class="f">${t('វិធានការកែតម្រូវ / បង្ការ', 'Corrective / preventive actions')}</label>
-        ${f.actions.map((a, i) => `<div class="act" data-i="${i}"><input class="in" data-a="what" placeholder="${esc(t('វិធានការ', 'Action'))}" value="${esc(a.what)}">
-          <div class="row2"><input class="in" data-a="owner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}" value="${esc(a.owner)}"><input class="in" data-a="due" type="date" value="${esc(a.due)}"></div>
-          <button type="button" class="btn sm ghost" data-delact="${i}">✕ ${t('លុប', 'Remove')}</button></div>`).join('')}
-        <button type="button" class="btn sm" id="addAct">＋ ${t('បន្ថែមវិធានការ', 'Add action')}</button></div>`;
+        <label class="f">${t('វិធានការភ្លាមៗដែលបានធ្វើ', 'Immediate action taken')} <small class="il">(${t('ជ្រើសបានច្រើន', 'tick all that apply')})</small></label>
+        <div class="imm">${(() => { const im = immFrom(f.immediate); return IMMEDIATE.map(o => `<label class="check"><input type="checkbox" data-imm="${esc(o[1])}" ${im.ticks.indexOf(o[1]) >= 0 ? 'checked' : ''}> ${esc(t(o[0], o[1]))}</label>`).join('') +
+          `<input class="in mt" id="immOther" value="${esc(im.other)}" placeholder="${esc(t('ផ្សេងទៀត (វាយបន្ថែម)', 'Other (type here)'))}">`; })()}</div>
+</div>`;
     } else {
       const sups = (B && B.supervisors) || [];
       const auto = f.supervisor || ((sups.find(x => x.warehouse === f.warehouse) || {}).email) || (sups.length === 1 ? sups[0].email : '');
@@ -349,11 +451,10 @@
         <button type="button" class="btn ok big" id="send" ${sending ? 'disabled' : ''}>${sending ? '<span class="sp"></span>' : '📤'} ${t('ចុះហត្ថលេខា និងផ្ញើ', 'Sign and send')}</button></div>`;
     }
     const nav = `<div class="navrow">${s > 1 ? `<button type="button" class="btn" data-go="${s - 1}">‹ ${t('ថយក្រោយ', 'Back')}</button>` : `<a class="btn" href="${PUBLIC ? '#' : '#/'}" id="cancelForm">${PUBLIC ? t('សម្អាត', 'Clear') : t('បោះបង់', 'Cancel')}</a>`}
-      ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div>
-      ${!editId ? `<div class="hint center">💾 ${t('រក្សាទុកក្នុងទូរស័ព្ទដោយស្វ័យប្រវត្តិ', 'Saved on this phone as you type')}</div>` : ''}`;
+      ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div><div class="navspace"></div>`;
     $('#view').innerHTML = `${PUBLIC ? `<div class="alert ok pubnote">🚚 ${t('រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី', 'Report without signing in')}</div>` : ''}
-      <div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5</small></div>
-      ${head}${body}${nav}`;
+      <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 <b class="pct">${Math.round(s / 5 * 100)}%</b></small></div>
+      ${head}</div>${body}${nav}`;
     wireForm();
   }
 
@@ -364,7 +465,10 @@
     $$('.person').forEach(row => { const p = f.people[+row.dataset.i]; if (!p) return; row.querySelectorAll('[data-p]').forEach(el => { p[el.dataset.p] = el.type === 'checkbox' ? el.checked : el.value; }); });
     $$('.wit').forEach(row => { const w = f.witnesses[+row.dataset.i]; if (!w) return; row.querySelectorAll('[data-w]').forEach(el => { w[el.dataset.w] = el.value; }); });
     $$('.act').forEach(row => { const a = f.actions[+row.dataset.i]; if (!a) return; row.querySelectorAll('[data-a]').forEach(el => { a[el.dataset.a] = el.value; }); });
+    $$('.inj').forEach(row => { const x = f.injuredList[+row.dataset.i]; if (!x) return; row.querySelectorAll('[data-j]').forEach(el => { x[el.dataset.j] = el.type === 'checkbox' ? el.checked : el.value; }); });
     const an = $('#anonymous'); if (an) f.anonymous = an.checked;
+    if ($('[data-dmg]')) { $$('[data-dmgnote]').forEach(el => { f.dmg[el.dataset.dmgnote] = el.value; }); dmgTo(); }
+    if ($('[data-imm]')) f.immediate = $$('[data-imm]').filter(el => el.checked).map(el => el.dataset.imm).concat(($('#immOther').value || '').trim() ? [$('#immOther').value.trim()] : []).join('; ');
     if (f.plate) f.plate = f.plate.toUpperCase().replace(/\s+/g, '');
     saveDraft();
   }
@@ -375,32 +479,65 @@
     if (n === 1 && !f.type) m = t('សូមជ្រើសរើសប្រភេទហេតុការណ៍', 'Choose the incident type');
     else if (n === 1 && !f.category) m = t('សូមជ្រើសរើសប្រភេទរង', 'Choose a category');
     else if (n === 2 && !f.date) m = t('សូមបញ្ចូលថ្ងៃកើតហេតុ', 'Enter the date');
-    else if (n === 2 && !f.location && !f.warehouse) m = t('សូមបញ្ចូលទីកន្លែង', 'Enter the location');
-    else if (n === 3 && !String(f.story).trim()) m = t('សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង', 'Describe what happened');
+    else if (n === 2 && !f.location) m = t('សូមបញ្ចូលទីកន្លែង', 'Enter the location');
+    else if (n === 3 && !String(f.story).trim() && !f.voice && !f.keepVoice) m = t('សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង', 'Describe what happened');
     if (quiet) return !m;
     return m || null;
   }
 
+  // The first step with a required field still empty: steps after it can't be opened (Kim, 25 Oct 2026).
+  const openStep = () => [1, 2, 3, 4].find(n => !stepOk(n, true)) || 5;
+  const MISS = { 'Choose the incident type': '.types', 'Choose a category': '#catSel', 'Enter the date': '#date', 'Enter the location': '#location', 'Describe what happened': '#story' };
+  function stopAt(n) {
+    const m = stepOk(n);
+    if (f.step !== n) { f.step = n; paintForm(); }
+    toast(m);
+    const sel = MISS[stepOkEn(n)], el = sel && $(sel);
+    if (!el) return;
+    el.classList.add('miss');
+    const clear = () => el.classList.remove('miss');
+    ['input', 'change', 'click'].forEach(ev => el.addEventListener(ev, clear, { once: true }));
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (el.tagName !== 'DIV') el.focus({ preventScroll: true });
+  }
+  function stepOkEn(n) {
+    if (n === 1) return !f.type ? 'Choose the incident type' : !f.category ? 'Choose a category' : '';
+    if (n === 2) return !f.date ? 'Enter the date' : !f.location ? 'Enter the location' : '';
+    if (n === 3) return !String(f.story).trim() && !f.voice && !f.keepVoice ? 'Describe what happened' : '';
+    return '';
+  }
+
   function wireForm() {
-    $$('[data-go]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); f.step = +b.dataset.go; paintForm(); window.scrollTo(0, 0); }; });
-    $$('[data-next]').forEach(b => { b.onclick = () => { collect(); const m = stepOk(f.step); if (m) { toast(m); return; } f.step++; paintForm(); window.scrollTo(0, 0); }; });
-    $$('[data-type]').forEach(b => { b.onclick = () => { collect(); f.type = b.dataset.type; if (f.type !== 'near') f.anonymous = false; const cat = CATS.find(c => c.en === f.category); if (cat && cat.types && cat.types.indexOf(f.type) < 0) f.category = ''; paintForm(); }; });
+    const goTo = n => { collect(); const o = openStep(); if (n > f.step && n > o) { stopAt(o); return; } f.step = n; paintForm(); window.scrollTo(0, 0); };
+    $$('[data-go]').forEach(b => { b.onclick = e => { e.preventDefault(); goTo(+b.dataset.go); }; });
+    $$('[data-next]').forEach(b => { b.onclick = () => goTo(f.step + 1); });
+    $$('[data-type]').forEach(b => { b.onclick = () => { collect(); f.type = b.dataset.type; if (f.type !== 'near') f.anonymous = false; if (f.type === 'road') f.warehouse = ''; const cat = CATS.find(c => c.en === f.category); if (cat && cat.types && cat.types.indexOf(f.type) < 0) f.category = ''; paintForm(); }; });
     $$('[data-chips]').forEach(box => {
       const id = box.dataset.chips, multi = id === 'road' || id === 'weather';
       box.querySelectorAll('.chip').forEach(c => { c.onclick = () => {
         collect();
-        if (multi) { const cur = String(f[id] || '').split(', ').filter(Boolean); const i = cur.indexOf(c.dataset.v); if (i >= 0) cur.splice(i, 1); else cur.push(c.dataset.v); f[id] = cur.join(', '); }
+        if (multi) { const cur = String(f[id] || '').split(', ').filter(Boolean); const i = cur.indexOf(c.dataset.v); if (i >= 0) cur.splice(i, 1); else { cur.splice(0, cur.length, ...cur.filter(v => (CLASH[c.dataset.v] || []).indexOf(v) < 0)); cur.push(c.dataset.v); } f[id] = cur.join(', '); }
         else f[id] = f[id] === c.dataset.v ? '' : c.dataset.v;
         saveDraft(); paintForm();
       }; });
     });
+    $$('[data-shift]').forEach(b => { b.onchange = () => { f.shift = b.dataset.shift; $$('[data-shift]').forEach(x => { x.checked = x === b; }); saveDraft(); }; });
     const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
+    const cz = $('#causeSel'); if (cz) cz.onchange = () => { f.cause = cz.value; saveDraft(); };
+    $$('[data-one]').forEach(box => { const all = box.querySelectorAll('input'); all.forEach(b => { b.onchange = () => {
+      collect(); f[box.dataset.one] = b.checked ? b.value : ''; all.forEach(x => { if (x !== b) x.checked = false; }); saveDraft();
+      if (box.dataset.one === 'anyInjured') { if (f.anyInjured === 'Yes' && !f.injuredList.length) f.injuredList.push({ name: '', type: '', lti: false }); paintForm(); }
+    }; }); });
+    $$('[data-delinj]').forEach(b => { b.onclick = () => { collect(); f.injuredList.splice(+b.dataset.delinj, 1); saveDraft(); paintForm(); }; });
+    $$('[data-dmg]').forEach(b => { b.onchange = () => { collect(); if (b.checked) f.dmg[b.dataset.dmg] = ''; else delete f.dmg[b.dataset.dmg]; dmgTo(); saveDraft(); paintForm(); const n = $(`[data-dmgnote="${b.dataset.dmg}"]`); if (n) n.focus(); }; });
+    wireVoice();
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
     $$('[data-lik]').forEach(b => { b.onclick = () => { collect(); f.likelihood = +b.dataset.lik; saveDraft(); paintForm(); }; });
     const add = (id, fn) => { const b = $(id); if (b) b.onclick = () => { collect(); fn(); saveDraft(); paintForm(); }; };
     add('#addPerson', () => f.people.push({ name: '', empId: '', company: '', role: '', injured: false, injury: '' }));
     add('#addWit', () => f.witnesses.push({ name: '', phone: '' }));
     add('#addAct', () => f.actions.push({ what: '', owner: '', due: '', status: 'Open' }));
+    add('#addInj', () => f.injuredList.push({ name: '', type: '', lti: false }));
     $$('[data-delperson]').forEach(b => { b.onclick = () => { collect(); f.people.splice(+b.dataset.delperson, 1); saveDraft(); paintForm(); }; });
     $$('[data-delact]').forEach(b => { b.onclick = () => { collect(); f.actions.splice(+b.dataset.delact, 1); saveDraft(); paintForm(); }; });
     $$('.person [data-p="injured"]').forEach(b => { b.onchange = () => { collect(); paintForm(); }; });
@@ -420,9 +557,48 @@
       if (PUBLIC) { e.preventDefault(); renderForm(null); }
     };
     const pl = $('#plate');
-    if (pl) pl.onchange = () => { collect(); fillFromPlate(); };
+    if (pl) pl.onclick = () => {
+      collect();
+      const plates = ((B && B.plates) || []).slice();
+      if (f.plate && plates.indexOf(f.plate) < 0) plates.unshift(f.plate);
+      const items = plates.map(x => ({ value: x, sub: ((B && B.drivers) || []).filter(d => d.plate === x).map(d => d.name).join(', ') }));
+      openPicker({
+        title: t('ផ្លាកលេខឡាន', 'Truck plate'), groups: [{ items }], value: f.plate,
+        addNew: {
+          label: t('បន្ថែមឡានថ្មី', 'Add new truck'),
+          clean: q => { const v = q.toUpperCase().trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-'); const m = v.match(/^(\d[A-Z]{1,2})-?(\d{4})$/); return m ? m[1] + '-' + m[2] : v; },
+        },
+        onPick: (v, isNew) => { f.plate = v; f.new_plate = !!isNew; showPick('plate'); saveDraft(); fillFromPlate(); },
+      });
+    };
     const dr = $('#driver');
-    if (dr) dr.onchange = () => { collect(); const d = ((B && B.drivers) || []).find(x => x.name === f.driver); if (d && !f.plate) { f.plate = d.plate; $('#plate').value = d.plate; fillFromPlate(); } };
+    if (dr) dr.onclick = () => {
+      collect();
+      // one row per driver name; drivers of the chosen truck come first
+      const byName = new Map();
+      ((B && B.drivers) || []).forEach(d => { const it = byName.get(d.name) || { value: d.name, plates: [] }; if (d.plate && it.plates.indexOf(d.plate) < 0) it.plates.push(d.plate); byName.set(d.name, it); });
+      const all = Array.from(byName.values()).map(it => ({ value: it.value, sub: it.plates.join(', '), mine: !!f.plate && it.plates.indexOf(f.plate) >= 0 }));
+      if (f.driver && !byName.has(f.driver)) all.unshift({ value: f.driver, sub: '' });
+      const mine = all.filter(x => x.mine);
+      openPicker({
+        title: t('ឈ្មោះតៃកុង', 'Driver name'), value: f.driver,
+        groups: mine.length ? [{ label: t('ឡាន ', 'Truck ') + f.plate, items: mine }, { label: t('តៃកុងទាំងអស់', 'All drivers'), items: all.filter(x => !x.mine) }] : [{ items: all }],
+        addNew: { label: t('បន្ថែមតៃកុងថ្មី', 'Add new driver'), clean: q => q.replace(/\s+/g, ' ').trim() },
+        onPick: (v, isNew) => {
+          f.driver = v; f.new_driver = !!isNew; showPick('driver');
+          const d = ((B && B.drivers) || []).find(x => x.name === v);
+          if (d && d.plate && !f.plate) { f.plate = d.plate; f.new_plate = false; showPick('plate'); fillFromPlate(); }
+          saveDraft();
+        },
+      });
+    };
+    const nv = $('#noVeh');
+    if (nv) nv.onchange = () => { collect(); f.noVehicle = nv.checked; if (nv.checked) ['plate', 'driver', 'company', 'dn', 'tripId', 'customer', 'new_plate', 'new_driver'].forEach(k => { f[k] = k.indexOf('new_') ? '' : false; }); saveDraft(); paintForm(); };
+    if (f && f.noVehicle) $$('.vehbox button, .vehbox input, .vehbox select').forEach(el => { el.disabled = true; });
+    const sd = $('#scanDn');
+    if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
+    const gb = $('#gpsBtn');
+    if (gb) gb.onclick = () => { collect(); locate(true); };
     $$('#view input.in, #view textarea.in, #view select.in').forEach(el => { el.addEventListener('change', collect); });
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
     const send = $('#send');
@@ -437,10 +613,120 @@
     return false;
   }
 
+  // ---- voice note for "what happened": record on the phone (up to 3 minutes), play it back, sent with the report
+  const VOICE_MAX = 180;
+  let rec = null;
+  function voiceHtml() {
+    if (rec) return `<button type="button" class="btn sm danger" id="vStop">⏹ ${t('ឈប់ថត', 'Stop')} <span id="vTime">0:00</span></button> <span class="vdot"></span>`;
+    if (f.voice || f.keepVoice) return `<div class="vrow">${f.voice ? `<audio controls src="${f.voice}"></audio>` : `<span class="hint">🎤 ${t('មានសំឡេងពីមុន', 'Voice note already saved')}</span>`}<button type="button" class="btn sm ghost" id="vDel">✕ ${t('លុប', 'Delete')}</button></div>`;
+    return `<button type="button" class="btn sm" id="vRec">🎤 ${t('ថតសំឡេងជំនួសការវាយ', 'Record voice instead of typing')}</button>`;
+  }
+  function wireVoice() {
+    const box = $('#voiceBox');
+    if (!box) return;
+    const redraw = () => { box.innerHTML = voiceHtml(); wireVoice(); };
+    const r = $('#vRec'), st = $('#vStop'), del = $('#vDel');
+    if (r) r.onclick = async () => {
+      if (!navigator.mediaDevices || !window.MediaRecorder) { toast(t('ទូរស័ព្ទនេះមិនអាចថតសំឡេងបានទេ', 'This phone cannot record voice')); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { toast(t('សូមអនុញ្ញាតមីក្រូហ្វូន', 'Please allow the microphone')); return; }
+      const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(x => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(x)) || '';
+      const mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined);
+      const chunks = [], t0 = Date.now();
+      rec = { mr, timer: setInterval(() => { const sec = Math.round((Date.now() - t0) / 1000), el = $('#vTime'); if (el) el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); if (sec >= VOICE_MAX) mr.stop(); }, 500) };
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        clearInterval(rec.timer); rec = null; stream.getTracks().forEach(x => x.stop());
+        const fr = new FileReader();
+        fr.onload = () => { if (!f) return; f.voice = fr.result; f.keepVoice = ''; saveDraft(); redraw(); };
+        fr.readAsDataURL(new Blob(chunks, { type: (mr.mimeType || 'audio/webm').split(';')[0] }));
+      };
+      mr.start(1000); redraw();
+    };
+    if (st) st.onclick = () => { if (rec) rec.mr.stop(); };
+    if (del) del.onclick = () => { f.voice = ''; f.keepVoice = ''; saveDraft(); redraw(); };
+  }
+
+  /** Searchable list in a bottom sheet, like the Fuel app. groups: [{label?, items: [{value, sub?}]}]. Text that matches nothing can be added as new. */
+  function openPicker(o) {
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet picker-sheet" role="dialog" aria-modal="true" aria-label="${esc(o.title)}">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(o.title)}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <label class="search"><span aria-hidden="true">🔍</span><input type="search" placeholder="${esc(t('ស្វែងរក ឬវាយឈ្មោះថ្មី', 'Search or type a new one'))}" autocomplete="off" enterkeyhint="search"></label>
+        <div class="pick-list"></div></div>`;
+    const input = bg.querySelector('input'), list = bg.querySelector('.pick-list');
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    const close = () => { document.removeEventListener('keydown', onKey); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const norm = v => String(v || '').toLowerCase().replace(/[\s\-.]/g, '');
+    const draw = () => {
+      const q = norm(input.value);
+      const html = o.groups.map(g => {
+        const items = g.items.filter(it => !q || norm(it.value).includes(q) || norm(it.sub).includes(q));
+        if (!items.length) return '';
+        return (g.label ? `<div class="pick-group">${esc(g.label)}</div>` : '') + items.map(it => `<button type="button" class="pick-item ${it.value === o.value ? 'on' : ''}" data-v="${esc(it.value)}"><span><b>${esc(it.value)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span>${it.value === o.value ? '<span class="tick">✓</span>' : ''}</button>`).join('');
+      }).join('');
+      const add = o.addNew && o.addNew.clean(input.value);
+      const exists = add && o.groups.some(g => g.items.some(it => norm(it.value) === norm(add)));
+      const addRow = add && !exists ? `<button type="button" class="pick-item pick-add" data-add="${esc(add)}"><span><b>➕ ${esc(o.addNew.label)}: ${esc(add)}</b></span></button>` : '';
+      list.innerHTML = html + addRow || `<div class="empty">${esc(t('រកមិនឃើញ', 'No match'))}${o.addNew ? `<br><small>${esc(t('វាយឈ្មោះ ដើម្បីបន្ថែមថ្មី', 'Type a name to add a new one'))}</small>` : ''}</div>`;
+    };
+    input.oninput = draw;
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-close]')) { close(); return; }
+      const a = e.target.closest('[data-add]'), b = e.target.closest('[data-v]');
+      if (a) { close(); o.onPick(a.dataset.add, true); } else if (b) { close(); o.onPick(b.dataset.v, false); }
+    };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(bg);
+    draw();
+    requestAnimationFrame(() => bg.classList.add('open'));
+    const on = list.querySelector('.pick-item.on');
+    if (on) on.scrollIntoView({ block: 'center' });
+  }
+
+  /** Camera barcode scan (DN). Android uses the built-in BarcodeDetector; other phones load the zxing reader. The number can always be typed instead. */
+  function scanCode(onCode) {
+    let stream = null, stopped = false, timer = 0, ctrl = null;
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(t('ស្កេនបាកូដ DN', 'Scan the DN barcode'))}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <div class="scan-view"><video playsinline muted></video><div class="scan-frame"></div></div>
+        <p class="hint center" id="scanMsg">${esc(t('ដាក់បាកូដក្នុងប្រអប់', 'Hold the barcode inside the box'))}</p></div>`;
+    const video = bg.querySelector('video'), msg = bg.querySelector('#scanMsg');
+    const close = () => { stopped = true; clearTimeout(timer); if (ctrl) try { ctrl.stop(); } catch (e) { /* already stopped */ } if (stream) stream.getTracks().forEach(x => x.stop()); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const done = code => { if (stopped || !code) return; code = String(code).trim(); close(); onCode(code); };
+    bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) close(); };
+    document.body.appendChild(bg);
+    requestAnimationFrame(() => bg.classList.add('open'));
+    const fail = () => { if (stopped) return; msg.textContent = t('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយលេខ DN។', 'Camera not available. Please type the DN number.'); bg.querySelector('.scan-view').hidden = true; };
+    if (DEMO) { timer = setTimeout(() => done('8100452231'), 1500); return; }
+    (async () => {
+      try {
+        if ('BarcodeDetector' in window) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+          if (stopped) { stream.getTracks().forEach(x => x.stop()); return; }
+          video.srcObject = stream; await video.play();
+          const det = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'codabar'] });
+          const tick = async () => { if (stopped) return; try { const r = await det.detect(video); if (r && r[0] && r[0].rawValue) return done(r[0].rawValue); } catch (e) { /* next frame */ } timer = setTimeout(tick, 150); };
+          tick();
+        } else {
+          const z = await import('../vendor/zxing-browser.min.js');
+          if (stopped) return;
+          ctrl = await new z.BrowserMultiFormatReader().decodeFromVideoDevice(undefined, video, r => { if (r) done(r.getText()); });
+          if (stopped) ctrl.stop();
+        }
+      } catch (e) { fail(); }
+    })();
+  }
+
   async function fillFromPlate() {
     const box = $('#tripInfo');
     const d = ((B && B.drivers) || []).find(x => x.plate === f.plate);
-    if (d && !f.driver) { f.driver = d.name; const el = $('#driver'); if (el) el.value = d.name; }
+    if (d && !f.driver) { f.driver = d.name; f.new_driver = false; showPick('driver'); }
     if (d && !f.company) { f.company = d.company && !/isi/i.test(d.company) ? '3PL / Rented' : 'ISI Steel'; const el = $('#company'); if (el) el.value = f.company; }
     if (!f.plate || PUBLIC || !box) return;
     box.innerHTML = `<div class="hint">⏳ ${t('កំពុងរកជើងដឹក...', 'Looking for the trip...')}</div>`;
@@ -448,7 +734,7 @@
       const tr = await api('trip', { plate: f.plate, date: f.date });
       if (!tr || !tr.tripId) { box.innerHTML = ''; return; }
       ['tripId', 'dn', 'customer'].forEach(k => { if (tr[k] && !f[k]) { f[k] = tr[k]; const el = $('#' + k); if (el) el.value = tr[k]; } });
-      if (tr.driver && !f.driver) { f.driver = tr.driver; const el = $('#driver'); if (el) el.value = tr.driver; }
+      if (tr.driver && !f.driver) { f.driver = tr.driver; showPick('driver'); }
       box.innerHTML = `<div class="tripbox">🔗 ${t('ពីជើងដឹក', 'From Delivery trip')} <b>${esc(tr.tripId)}</b><div class="meta">${esc([tr.driver, tr.dn, tr.customer].filter(Boolean).join(' · '))}</div></div>`;
       saveDraft();
     } catch (e) { box.innerHTML = ''; }
@@ -507,7 +793,7 @@
     sending = true;
     const btn = $('#send'); btn.disabled = true; btn.innerHTML = `<span class="sp"></span> ${t('កំពុងផ្ញើ...', 'Sending...')}`;
     const payload = Object.assign({}, f, { id: editId || undefined, signature: f.anonymous ? '' : sigData, key: PUBLIC_KEY || undefined });
-    delete payload.step; delete payload.can; delete payload.history;
+    delete payload.step; delete payload.can; delete payload.history; delete payload.dmg; delete payload.voiceData;
     try {
       const r = await api(PUBLIC ? 'publicSubmit' : 'submit', payload);
       set(PUBLIC ? 'ir_pdraft' : 'ir_draft', null);
@@ -560,23 +846,24 @@
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
-    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
+    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.voiceData ? `<div class="kv"><span>🎤 ${t('សំឡេង', 'Voice')}</span></div><audio controls preload="none" src="${d.voiceData}"></audio>` : ''}${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
       ${(d.people || []).map(p => `<div class="kv"><span>${p.injured ? '🤕' : '👤'} ${esc(p.name)}</span><b>${esc([pick(ROLES, p.role), pick(COMPANIES, p.company), p.injury].filter(Boolean).join(' · '))}</b></div>`).join('')}`);
-    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('ជំនួយបឋម', 'First aid', d.firstAid) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
-      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [d.police, d.policeNo].filter(Boolean).join(' · ')) +
+    html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('មានអ្នករងរបួស', 'Anyone injured', pick(YESNO, d.anyInjured)) +
+      (d.injuredList || []).map(x => `<div class="kv"><span>🤕 ${esc(x.name)}</span><b>${esc([pick(INJ_TYPES, x.type), x.lti ? 'LTI' : ''].filter(Boolean).join(' · '))}</b></div>`).join('') +
+      kv('ជំនួយបឋម', 'First aid', pick(YESNO, d.firstAid)) + kv('មន្ទីរពេទ្យ', 'Hospital', d.hospital) + kv('ឡាន', 'Vehicle', d.vehicleDamage) +
+      kv('ទំនិញ', 'Goods', d.goodsDamage) + kv('ភាគីទី៣', '3rd party', d.property) + kv('ប៉ូលីស', 'Police', [pick(YESNO, d.police), d.policeNo].filter(Boolean).join(' · ')) + kv('ធានារ៉ាប់រង', 'Insurance', pick(YESNO, d.insurance)) + kv('វីដេអូ / CCTV', 'Video / CCTV', pick(HAVE, d.evidence)) +
       kv('ថ្លៃប៉ាន់ស្មាន', 'Est. cost', d.cost ? '$' + d.cost : '') + kv('ថ្ងៃឈប់ការងារ', 'Days lost', d.daysLost ? String(d.daysLost) : ''));
     html += sec(`🔎 ${t('ហានិភ័យ និងមូលហេតុ', 'Risk and cause')}`, kv('ភាពធ្ងន់ធ្ងរ', 'Severity', d.severity ? d.severity + ' · ' + t(SEV[d.severity - 1][0], SEV[d.severity - 1][1]) : '') +
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
-      (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', d.immediate));
+      (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', immText(d.immediate)));
     const acts = d.actions || [];
     html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
       ${acts.length ? acts.map((a, i) => `<div class="actrow" data-i="${i}"><div><b>${esc(a.what)}</b><small>${esc([a.owner, a.due].filter(Boolean).join(' · '))}${a.done ? ' · ✅ ' + esc(a.done) : ''}</small></div>
         ${c.actions ? `<select class="in st-sel" data-ai="${i}">${[['បើក', 'Open'], ['កំពុងធ្វើ', 'In progress'], ['រួចរាល់', 'Done']].map(o => `<option value="${o[1]}" ${a.status === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select>`
           : `<span class="badge ${a.status === 'Done' ? 'approved' : a.due && a.due < today() ? 'rejected' : 'pending'}">${esc(t({ Open: 'បើក', 'In progress': 'កំពុងធ្វើ', Done: 'រួចរាល់' }[a.status] || a.status, a.status))}</span>`}</div>`).join('')
         : `<p class="hint">${t('មិនទាន់មានវិធានការ', 'No actions yet')}</p>`}
-      ${c.actions ? `<div class="newact"><input class="in" id="naWhat" placeholder="${esc(t('វិធានការថ្មី', 'New action'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div>
-        <button class="btn sm" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button></div>` : ''}
-      ${c.close ? `<button class="btn big mt" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>`;
+      ${c.actions ? `<div class="newact">${recTicks(d.type)}<input class="in opt" id="naWhat" placeholder="${esc(t('វិធានការផ្សេងទៀត (បើមិនមានក្នុងបញ្ជី)', 'Other action (if not in the list)'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div></div>` : ''}
+      ${c.actions || c.close ? `<div class="actbtns${c.actions && c.close ? ' two' : ''}">${c.actions ? `<button class="btn big" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>` : ''}${c.close ? `<button class="btn big" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>` : ''}</div>`;
     if ((d.photoThumbs || []).length) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')}</h2><div class="photos">${d.photoThumbs.map(u => `<a class="ph" href="${u}" target="_blank" rel="noopener"><img src="${u}" alt=""></a>`).join('')}</div></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
     $('#view').innerHTML = html;
@@ -635,6 +922,8 @@
   }
   function readActs() {
     const acts = (cur.actions || []).map((a, i) => { const s = document.querySelector(`[data-ai="${i}"]`); return Object.assign({}, a, { status: s ? s.value : a.status }); });
+    const own = $('#naOwner') ? $('#naOwner').value.trim() : '', due = $('#naDue') ? $('#naDue').value : '';
+    $$('.newact [data-tick]:checked').forEach(b => acts.push({ what: b.dataset.tick, owner: own, due, status: 'Open' }));
     const w = $('#naWhat');
     if (w && w.value.trim()) acts.push({ what: w.value.trim(), owner: $('#naOwner').value.trim(), due: $('#naDue').value, status: 'Open' });
     return acts;
@@ -670,30 +959,33 @@
     const years = Array.from(new Set(all.map(r => +String(r.date).slice(0, 4)).filter(Boolean).concat([new Date().getFullYear()]))).sort((a, b) => b - a);
     const rs = all.filter(r => +String(r.date).slice(0, 4) === yr);
     const cnt = fn => { const m = {}; rs.forEach(r => { const k = fn(r) || '–'; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
-    const bars = (rows, name) => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(r => `<div class="bar-row"><span>${esc(name ? name(r[0]) : r[0])}</span><div><i style="width:${(r[1] / max) * 100}%"></i></div><b>${r[1]}</b></div>`).join('') || `<p class="hint">${t('គ្មានទិន្នន័យ', 'No data')}</p>`; };
+    const bars = (rows, name, key) => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(r => `<div class="bar-row" ${key ? `data-bk="${key}" data-bv="${esc(r[0])}" data-bl="${esc(name ? name(r[0]) : r[0])}" role="button" tabindex="0"` : ''}><span>${esc(name ? name(r[0]) : r[0])}</span><div><i style="width:${(r[1] / max) * 100}%"></i></div><b>${r[1]}</b></div>`).join('') || `<p class="hint">${t('គ្មានទិន្នន័យ', 'No data')}</p>`; };
     const months = new Array(12).fill(0);
     rs.forEach(r => { const m = +String(r.date).slice(5, 7); if (m) months[m - 1]++; });
     const mmax = Math.max(1, ...months);
     const MN = t('មករា កុម្ភៈ មីនា មេសា ឧសភា មិថុនា កក្កដា សីហា កញ្ញា តុលា វិច្ឆិកា ធ្នូ', 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec').split(' ');
     const injured = rs.reduce((s, r) => s + (+r.injured || 0), 0);
-    const cost = rs.reduce((s, r) => s + (r.cost || 0), 0);
     $('#view').innerHTML = `<div class="head2"><h2>📊 ${t('សង្ខេប', 'Summary')}</h2><select class="in yearsel" id="yearSel">${years.map(y => `<option ${y === yr ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
       ${seesAll() ? '' : `<p class="hint">${t('បង្ហាញតែរបាយការណ៍ដែលអ្នកអាចមើលបាន', 'Shows only the reports you can see')}</p>`}
-      <div class="stats four">
-        <div class="stat"><small>${t('ហេតុការណ៍', 'Incidents')}</small><b>${rs.length}</b></div>
-        <div class="stat"><small>${t('អ្នករបួស', 'Injured')}</small><b class="bad">${injured}</b></div>
-        <div class="stat"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${rs.filter(r => r.status !== 'Closed').length}</b></div>
-        <div class="stat"><small>${t('ថ្លៃប៉ាន់ស្មាន', 'Est. cost')}</small><b>$${Math.round(cost).toLocaleString()}</b></div>
+      <div class="stats">
+        <button type="button" class="stat" data-sd="all"><small>${t('ហេតុការណ៍', 'Incidents')}</small><b>${rs.length}</b></button>
+        <button type="button" class="stat" data-sd="injured"><small>${t('អ្នករបួស', 'Injured')}</small><b class="bad">${injured}</b></button>
+        <button type="button" class="stat" data-sd="open"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${rs.filter(r => r.status !== 'Closed').length}</b></button>
       </div>
       <div class="card"><h2>${t('តាមខែ', 'By month')}</h2><div class="months">${months.map((n, i) => `<div><i style="height:${(n / mmax) * 100}%"></i><b>${n || ''}</b><small>${esc(MN[i])}</small></div>`).join('')}</div></div>
-      <div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k)}</div>
-      <div class="card"><h2>${t('តាមកម្រិតហានិភ័យ', 'By risk level')}</h2>${bars(cnt(r => level(r.score)), k => (k === '–' ? t('មិនទាន់វាយតម្លៃ', 'Not rated') : t(levelKm(k), k)))}</div>
-      <div class="card"><h2>${t('តាមប្រភេទរង', 'By category')}</h2>${bars(cnt(r => r.category), catName)}</div>
-      <div class="card"><h2>${t('តាមមូលហេតុ', 'By main cause')}</h2>${bars(cnt(r => r.cause), k => pick(CAUSES, k))}</div>
-      <div class="card"><h2>${t('តាមក្រុមហ៊ុន', 'By company')}</h2>${bars(cnt(r => r.company), k => pick(COMPANIES, k))}</div>
-      <div class="card"><h2>${t('តាមឃ្លាំង', 'By warehouse')}</h2>${bars(cnt(r => r.warehouse))}</div>
-      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8))}</div>`;
+      <div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k, 'type')}</div>
+      <div class="card"><h2>${t('តាមកម្រិតហានិភ័យ', 'By risk level')}</h2>${bars(cnt(r => level(r.score)), k => (k === '–' ? t('មិនទាន់វាយតម្លៃ', 'Not rated') : t(levelKm(k), k)), 'level')}</div>
+      <div class="card"><h2>${t('តាមប្រភេទរង', 'By category')}</h2>${bars(cnt(r => r.category), catName, 'category')}</div>
+      <div class="card"><h2>${t('តាមមូលហេតុ', 'By main cause')}</h2>${bars(cnt(r => r.cause), k => pick(CAUSES, k), 'cause')}</div>
+      <div class="card"><h2>${t('តាមក្រុមហ៊ុន', 'By company')}</h2>${bars(cnt(r => r.company), k => pick(COMPANIES, k), 'company')}</div>
+      <div class="card"><h2>${t('តាមឃ្លាំង', 'By warehouse')}</h2>${bars(cnt(r => r.warehouse), null, 'warehouse')}</div>
+      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8), null, 'plate')}</div>`;
     $('#yearSel').onchange = e => { set('ir_year', e.target.value); renderSummary(); };
+    const inYr = r => +String(r.date).slice(0, 4) === yr;
+    const SD = { all: [t('ហេតុការណ៍', 'Incidents'), r => true], injured: [t('អ្នករបួស', 'Injured'), r => +r.injured > 0], open: [t('មិនទាន់បិទ', 'Open'), r => r.status !== 'Closed'] };
+    $$('[data-sd]').forEach(b => { b.onclick = () => { const x = SD[b.dataset.sd]; openDrill(x[0] + ' · ' + yr, r => inYr(r) && x[1](r)); }; });
+    const BK = { type: r => typeOfEn(r.type), level: r => level(r.score), category: r => r.category, cause: r => r.cause, company: r => r.company, warehouse: r => r.warehouse, plate: r => r.plate };
+    $$('[data-bk]').forEach(b => { b.onclick = () => { const k = b.dataset.bk, v = b.dataset.bv; openDrill(b.dataset.bl + ' · ' + yr, r => inYr(r) && (BK[k](r) || '–') === v); }; });
   }
 
   // ---------------------------------------------------------------- settings (admins)
@@ -811,7 +1103,7 @@
     const keep = () => set('ir_demo_db', JSON.stringify(db));
     const me = { email: 'kim@demo', name: 'Kim (demo)', phone: '012 345 678', admin: true, reviewer: true, supervisorOf: ['SSK Warehouse'] };
     const row = d => { const sc = d.severity * d.likelihood || 0; return { id: d.id, reported: d.created, status: d.status, type: (TYPES[d.type] || {}).en + ' (' + (TYPES[d.type] || { who: ['', ''] }).who[1] + ')', category: d.category, date: d.date, time: d.time, location: d.location, warehouse: d.warehouse, plate: d.plate, driver: d.driver, company: d.company, injured: String((d.people || []).filter(x => x.injured).length), score: sc, level: level(sc), cause: d.cause, cost: +d.cost || 0, open: (d.actions || []).filter(a => a.status !== 'Done').length, reporter: d.reporter.name, mine: d.reporter.email === me.email, toSign: d.status === 'Waiting supervisor' }; };
-    const can = d => ({ edit: d.status === 'Returned' && d.reporter.email === me.email, sign: d.status === 'Waiting supervisor', actions: d.status === 'Signed' || d.status === 'Waiting supervisor', close: d.status === 'Signed', email: d.status === 'Signed' || d.status === 'Closed' });
+    const can = d => ({ edit: d.status === 'Returned' && d.reporter.email === me.email, sign: d.status === 'Waiting supervisor', actions: (d.status === 'Signed' || d.status === 'Waiting supervisor') && (me.admin || me.reviewer), close: d.status === 'Signed', email: d.status === 'Signed' || d.status === 'Closed' });
     const now = () => today() + ' ' + nowHm();
     const fail = (en, km) => { throw Object.assign(new Error(t(km, en)), { code: 'BAD' }); };
     return new Promise(r => setTimeout(r, action === 'boot' || action === 'get' || action === 'settings' ? 1200 : 200)).then(() => {
@@ -831,7 +1123,8 @@
         const d = Object.assign(old || { created: now(), history: [] }, p, { id, status: 'Waiting supervisor', returnNote: '', photoThumbs: (old && old.photoThumbs || []).concat(p.photos || []).slice(0, 6),
           reporter: { name: p.anonymous ? 'Anonymous' : p.reporterName, phone: p.reporterPhone, email: action === 'publicSubmit' ? '' : me.email, at: now(), anonymous: !!p.anonymous },
           supervisor: { name: sup.name, email: sup.email, at: '' } });
-        ['photos', 'signature', 'reporterName', 'reporterPhone', 'keepPhotos', 'key'].forEach(k => delete d[k]);
+        d.voiceData = p.voice || (old && p.keepVoice ? old.voiceData : '') || ''; d.voice = d.voiceData ? 'demo' : '';
+        ['photos', 'signature', 'reporterName', 'reporterPhone', 'keepPhotos', 'keepVoice', 'key'].forEach(k => delete d[k]);
         d.history.push({ at: now(), by: d.reporter.name, what: old ? 'Sent again' : 'Reported and signed' });
         if (!old) db.reports.push(d);
         keep(); return { id, status: d.status };

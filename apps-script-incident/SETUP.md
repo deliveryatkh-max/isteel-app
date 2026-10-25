@@ -41,7 +41,7 @@ Until step 4 is done the app runs in **DEMO** mode (sample reports kept on the p
 
 ## Change the app's words (Texts tab)
 
-Every label, button and choice of the app is a row in the **Texts** tab: *Key (do not change)*, *Screen*, *Khmer*,
+Every label, button and choice of the app is a row in the **Texts** tab, in screen order: *Key (do not change)*, *Screen*, *Sub-screen* (the card), *Step*, *Khmer*,
 *English*. The tab fills itself the first time an admin opens the app after an update. Change the **Khmer** or
 **English** cell and the new words show on every phone the next time the app refreshes (no deploy needed). Leave the
 Key as it is; an empty cell keeps the original words. Categories stay in the **Categories** tab.

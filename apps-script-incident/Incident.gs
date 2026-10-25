@@ -28,11 +28,12 @@ const LOG_COLS = ['Report No', 'Date Reported', 'Status', 'Type', 'Category', 'I
 const MAIL_COLS = ['List', 'Emails', 'When', 'Active'];
 const SUP_COLS = ['Warehouse', 'Name', 'Email', 'Backup Email'];
 const CAT_COLS = ['Category', 'Khmer', 'Types', 'Active', 'Icon'];
-const TXT_COLS = ['Key (do not change)', 'Screen', 'Khmer', 'English'];
+const TXT_COLS = ['Key (do not change)', 'Screen', 'Sub-screen', 'Step', 'Khmer', 'English'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'គ្រោះថ្នាក់';      // tick box column in the Fuel Refill Users tab (added by the Fuel script)
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+const MAX_VOICE_BYTES = 4 * 1024 * 1024;   // about 3 minutes of voice
 const WHEN = { button: 'Button only', auto: 'Auto after sign-off', high: 'Auto HIGH risk only' };
 
 const TYPES = {
@@ -285,12 +286,16 @@ function syncTexts_(p, user) {
   if (!user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
   return withLock_(() => {
     const have = texts_();
+    // rows from the app: [key, screen, sub-screen, step, Khmer, English]; written under the tab's own headings
     const add = (Array.isArray(p.rows) ? p.rows : []).slice(0, 3000)
-      .map(r => [clip_(r[0], 1000), clip_(r[1], 60), clip_(r[2], 1000), clip_(r[3], 1000)])
+      .map(r => r.length === 4 ? [r[0], r[1], '', '', r[2], r[3]] : r)
+      .map(r => TXT_COLS.map((c, i) => clip_(r[i], i === 1 || i === 3 ? 60 : 1000)))
       .filter(r => r[0] && !(r[0] in have) && (have[r[0]] = 1));
     if (add.length) {
       const sh = sheet_(SH.TXT, TXT_COLS);
-      sh.getRange(sh.getLastRow() + 1, 1, add.length, TXT_COLS.length).setNumberFormat('@').setValues(add);
+      const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+      const rows = add.map(r => head.map(h => { const i = TXT_COLS.indexOf(h); return i >= 0 ? r[i] : ''; }));
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, head.length).setNumberFormat('@').setValues(rows);
     }
     return { added: add.length };
   });
@@ -394,11 +399,13 @@ function view_(d, user) {
       return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
     } catch (e) { return ''; }
   }).filter(Boolean);
-  return Object.assign({}, d, { photoThumbs: thumbs,
+  let voiceData = '';
+  if (d.voice) try { const b = DriveApp.getFileById(d.voice).getBlob(); voiceData = 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) { /* file gone */ }
+  return Object.assign({}, d, { photoThumbs: thumbs, voiceData: voiceData,
     can: {
       edit: d.status === STATUS.back && d.reporter.email === user.email,
       sign: d.status === STATUS.wait && sup,
-      actions: (d.status === STATUS.signed || d.status === STATUS.wait) && (sup || user.admin),
+      actions: (d.status === STATUS.signed || d.status === STATUS.wait) && canSeeAll_(user),
       close: d.status === STATUS.signed && (sup || user.admin),
       email: d.status === STATUS.signed || d.status === STATUS.closed,
     },
@@ -416,7 +423,7 @@ function nextId_() {
 function writeRow_(d, folder) {
   const sh = sheet_(SH.LOG, LOG_COLS);
   const score = d.severity && d.likelihood ? d.severity * d.likelihood : '';
-  const injured = (d.people || []).filter(p => p.injured).length;
+  const injured = injuredCount_(d);
   const open = (d.actions || []).filter(a => a.what && a.status !== 'Done').length;
   const row = [d.id, d.created, d.status, (TYPES[d.type] || {}).en || d.type, d.category, d.date, d.time, d.shift, d.location, d.warehouse,
     d.plate, d.driver, d.company, d.tripId, d.dn, d.customer, String(injured), d.severity ? SEVERITY[d.severity - 1] : '',
@@ -432,7 +439,9 @@ function writeRow_(d, folder) {
 // ---------------------------------------------------------------- submit (reporter)
 const FIELDS = ['type', 'category', 'shift', 'date', 'time', 'location', 'warehouse', 'gps', 'road', 'weather', 'driver', 'driverId', 'plate',
   'company', 'tripId', 'dn', 'customer', 'load', 'story', 'couldHappen', 'firstAid', 'hospital', 'vehicleDamage', 'goodsDamage', 'property',
-  'police', 'policeNo', 'cause', 'immediate', 'evidence'];
+  'police', 'policeNo', 'insurance', 'cause', 'immediate', 'evidence', 'anyInjured'];
+// people hurt: the injured list (step 3 "Anyone injured?") or, for older reports, people ticked as injured
+const injuredCount_ = d => (d.anyInjured === 'Yes' ? Math.max(1, (d.injuredList || []).length) : 0) || (d.people || []).filter(p => p.injured).length;
 
 function clean_(p) {
   const d = {};
@@ -440,7 +449,7 @@ function clean_(p) {
   if (!TYPES[d.type]) fail_('BAD', 'Choose the incident type.', 'សូមជ្រើសរើសប្រភេទហេតុការណ៍។');
   if (!d.category) fail_('BAD', 'Choose a category.', 'សូមជ្រើសរើសប្រភេទ។');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) fail_('BAD', 'Enter the date of the incident.', 'សូមបញ្ចូលថ្ងៃកើតហេតុ។');
-  if (!d.story) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
+  if (!d.story && !/^data:audio\//.test(String(p.voice || '')) && !p.keepVoice) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
   d.plate = d.plate.toUpperCase().replace(/\s+/g, '');
   d.severity = Math.min(5, Math.max(0, parseInt(p.severity, 10) || 0));
   d.likelihood = Math.min(5, Math.max(0, parseInt(p.likelihood, 10) || 0));
@@ -451,6 +460,7 @@ function clean_(p) {
     company: clip_(x.company, 60), role: clip_(x.role, 60), injured: !!x.injured, injury: clip_(x.injury, 200) })).filter(x => x.name);
   d.actions = (Array.isArray(p.actions) ? p.actions : []).slice(0, 10).map(x => ({ what: clip_(x.what, 500), owner: clip_(x.owner, 100),
     due: clip_(x.due, 10), status: x.status === 'Done' ? 'Done' : x.status === 'In progress' ? 'In progress' : 'Open', done: clip_(x.done, 10) })).filter(x => x.what);
+  d.injuredList = d.anyInjured === 'Yes' ? (Array.isArray(p.injuredList) ? p.injuredList : []).slice(0, 10).map(x => ({ name: clip_(x.name, 100), type: clip_(x.type, 40), lti: !!x.lti })).filter(x => x.name) : [];
   d.witnesses = (Array.isArray(p.witnesses) ? p.witnesses : []).slice(0, 5).map(x => ({ name: clip_(x.name, 100), phone: clip_(x.phone, 40) })).filter(x => x.name);
   return d;
 }
@@ -460,6 +470,15 @@ function saveImage_(folder, dataUrl, name) {
   const bytes = Utilities.base64Decode(m[3]);
   if (bytes.length > MAX_PHOTO_BYTES) fail_('BIG', 'A photo is too big.', 'រូបថតធំពេក។');
   return folder.createFile(Utilities.newBlob(bytes, m[1], name)).getId();
+}
+/** Voice note of "what happened" (recorded on the phone). */
+function saveVoice_(folder, dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(audio\/(webm|mp4|ogg|mpeg|aac|x-m4a))(?:;[^,]*)?;base64,(.+)$/);
+  if (!m) return null;
+  const bytes = Utilities.base64Decode(m[3]);
+  if (bytes.length > MAX_VOICE_BYTES) fail_('BIG', 'The voice note is too long.', 'សំឡេងវែងពេក។');
+  const ext = { webm: 'webm', mp4: 'm4a', ogg: 'ogg', mpeg: 'mp3', aac: 'aac', 'x-m4a': 'm4a' }[m[2]];
+  return folder.createFile(Utilities.newBlob(bytes, m[1], 'voice-' + Date.now() + '.' + ext)).getId();
 }
 function pickSupervisor_(p, warehouse) {
   const sups = supervisors_().filter(s => s.email);
@@ -498,6 +517,9 @@ function submit_(p, user, publicReporter) {
     if (!anonymous) d.reporter.sig = saveImage_(folder, p.signature, 'signature-reporter-' + Date.now() + '.png');
     const keep = (old && old.photos || []).filter(f => (p.keepPhotos || []).indexOf(f) >= 0);
     d.photos = keep.concat(photos.map((u, i) => saveImage_(folder, u, 'photo-' + Date.now() + '-' + (i + 1) + '.jpg')).filter(Boolean)).slice(0, MAX_PHOTOS);
+    d.voice = saveVoice_(folder, p.voice) || (old && old.voice && p.keepVoice === old.voice ? old.voice : '');
+    if (!d.story && !d.voice) fail_('BAD', 'Describe what happened.', 'សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង។');
+    if (!d.story) d.story = '🎤 (Voice note / សំឡេង)';
     d.history = (d.history || []).concat([{ at: now, by: d.reporter.name, what: old ? 'Sent again' : 'Reported and signed' }]);
     store_(d);
     telegramNew_(d);
@@ -514,7 +536,7 @@ function sign_(p, user) {
     if (!/^data:image\/png;base64,/.test(String(p.signature || ''))) fail_('BAD', 'Please sign first.', 'សូមចុះហត្ថលេខាជាមុនសិន។');
     const folder = folder_(d.id, true);
     const now = now_();
-    if (Array.isArray(p.actions)) d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions;
+    if (Array.isArray(p.actions) && canSeeAll_(user)) d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions;
     if (p.comment) d.supComment = clip_(p.comment, 1000);
     d.supervisor = { name: user.name, email: user.email, at: now, sig: saveImage_(folder, p.signature, 'signature-supervisor-' + Date.now() + '.png') };
     d.status = STATUS.signed;
@@ -545,7 +567,7 @@ function sendBack_(p, user) {
 function setActions_(p, user) {
   return withLock_(() => {
     const d = load_(p.id);
-    if (!isSupervisorFor_(d, user) && !user.admin) fail_('DENIED', 'Only the Warehouse Supervisor or an admin can update actions.', 'មានតែប្រធានឃ្លាំង ឬ Admin ទេដែលអាចកែវិធានការបាន។');
+    if (!canSeeAll_(user)) fail_('DENIED', 'Only an admin or reviewer can update actions.', 'មានតែ Admin ឬអ្នកត្រួតពិនិត្យទេដែលអាចកែវិធានការបាន។');
     if (d.status === STATUS.closed) fail_('BAD', 'This report is closed.', 'របាយការណ៍នេះបានបិទហើយ។');
     const today = fmt_(new Date(), 'yyyy-MM-dd');
     d.actions = clean_(Object.assign({}, d, { actions: p.actions })).actions.map(a => Object.assign(a, { done: a.status === 'Done' ? (a.done || today) : '' }));
@@ -618,9 +640,11 @@ function makePdf_(d, folder) {
     body.appendParagraph(d.story || '-');
     if (d.couldHappen) body.appendParagraph(two_('អ្វីដែលអាចកើតឡើង', 'What could have happened') + ': ' + d.couldHappen).editAsText().setItalic(true);
     section_(body, 'F. ' + two_('របួស និងការខូចខាត', 'INJURY AND DAMAGE'));
+    if (d.anyInjured) kv_(body, [[two_('មានអ្នករងរបួស?', 'Anyone injured?'), d.anyInjured, two_('LTI', 'Lost time injury'), (d.injuredList || []).some(x => x.lti) ? 'Yes' : 'No']]);
+    if ((d.injuredList || []).length) grid_(body, [['Injured person', 'Type', 'Lost time injury (LTI)']].concat(d.injuredList.map(x => [x.name, x.type, x.lti ? 'Yes' : 'No'])));
     kv_(body, [[two_('ជំនួយបឋម', 'First aid'), d.firstAid, two_('មន្ទីរពេទ្យ', 'Hospital / clinic'), d.hospital],
       [two_('ខូចខាតឡាន', 'Vehicle damage'), d.vehicleDamage, two_('ខូចខាតទំនិញ', 'Goods damage'), d.goodsDamage],
-      [two_('ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party'), d.property, two_('ប៉ូលីស', 'Police'), d.police + (d.policeNo ? ' · ' + d.policeNo : '')],
+      [two_('ទ្រព្យសម្បត្តិ / ភាគីទី៣', 'Property / 3rd party'), d.property, two_('ធានារ៉ាប់រងមកពិនិត្យ', 'Insurance inspected'), d.insurance || ''],
       [two_('ថ្លៃប៉ាន់ស្មាន', 'Est. cost (USD)'), d.cost ? '$' + d.cost : '', two_('ថ្ងៃឈប់ការងារ', 'Days lost'), d.daysLost ? String(d.daysLost) : '']]);
     section_(body, 'G. ' + two_('កម្រិតហានិភ័យ', 'RISK RATING'));
     kv_(body, [[two_('ភាពធ្ងន់ធ្ងរ', 'Severity'), d.severity ? d.severity + ' ' + SEVERITY[d.severity - 1] : '', two_('លទ្ធភាព', 'Likelihood'), d.likelihood ? d.likelihood + ' ' + LIKELY[d.likelihood - 1] : ''],
@@ -636,6 +660,7 @@ function makePdf_(d, folder) {
       kv_(body, d.witnesses.map(w => [two_('សាក្សី', 'Witness'), w.name + (w.phone ? ' · ' + w.phone : '')]).concat(d.evidence ? [[two_('ភស្តុតាង', 'Evidence'), d.evidence]] : []));
     }
     if (d.supComment) kv_(body, [[two_('មតិប្រធានឃ្លាំង', 'Supervisor comment'), d.supComment]]);
+    if (d.voice) kv_(body, [[two_('សំឡេង', 'Voice note'), 'Saved in the report folder / រក្សាទុកក្នុង Folder របាយការណ៍']]);
     if ((d.photos || []).length) {
       section_(body, two_('រូបថត', 'PHOTOS'));
       const p = body.appendParagraph('');
@@ -718,7 +743,7 @@ function sendMail_(d, pdfFile, to, by, note) {
     '<div style="font-size:18px;font-weight:700">' + esc_(d.id) + ' · ' + esc_((TYPES[d.type] || {}).en) + '</div><div style="font-size:12px;opacity:.85">' +
     esc_([d.category, d.date + ' ' + d.time, d.location].filter(String).join(' · ')) + '</div></div>' +
     '<table style="border-collapse:collapse;width:100%;margin-top:10px;font-size:13px">' +
-    row('Status', d.status) + row('Truck / driver', [d.plate, d.driver].filter(String).join(' · ')) + row('Injured', String((d.people || []).filter(x => x.injured).length)) +
+    row('Status', d.status) + row('Truck / driver', [d.plate, d.driver].filter(String).join(' · ')) + row('Injured', String(injuredCount_(d))) +
     row('Risk', sc ? sc + ' ' + level_(sc) : '') + row('What happened', d.story) + row('Main cause', d.cause) +
     row('Actions', (d.actions || []).map(a => a.what + ' (' + (a.owner || '-') + ', ' + (a.due || '-') + ', ' + a.status + ')').join('\n')) +
     row('Signed', [d.reporter.name + ' ' + (d.reporter.at || ''), d.supervisor.at ? d.supervisor.name + ' ' + d.supervisor.at : ''].filter(String).join(' · ')) + '</table>' +
@@ -775,7 +800,7 @@ function appLink_(d) { const u = setting_('APP_URL'); return u ? u + '#/r/' + en
 function telegramNew_(d) {
   const sc = d.severity && d.likelihood ? d.severity * d.likelihood : 0;
   const icon = { road: '🚚', wh: '🏭', near: '👀' }[d.type] || '⚠️';
-  const injured = (d.people || []).filter(x => x.injured).length;
+  const injured = injuredCount_(d);
   const lines = ['⚠️ <b>New incident ' + esc_(d.id) + '</b>', icon + ' ' + esc_((TYPES[d.type] || {}).en) + ' · ' + esc_(d.category),
     '📍 ' + esc_([d.location || d.warehouse, d.date + ' ' + d.time].filter(String).join(' · ')),
     d.plate || d.driver ? '🚛 ' + esc_([d.plate, d.driver].filter(String).join(' · ')) : '', injured ? '🤕 ' + injured + ' injured' : '',
