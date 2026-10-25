@@ -39,6 +39,15 @@ Until step 4 is done the app runs in **DEMO** mode (sample reports kept on the p
      number prefix (default `IR` → `IR-2026-001`), and the **driver QR / link** for drivers and 3PL drivers who
      have no account. Print the QR for the gate. *New link* stops old QR codes.
 
+## Change the app's words (Texts tab)
+
+Every label, button and choice of the app is a row in the **Texts** tab: *Key (do not change)*, *Screen*, *Khmer*,
+*English*. The tab fills itself the first time an admin opens the app after an update. Change the **Khmer** or
+**English** cell and the new words show on every phone the next time the app refreshes (no deploy needed). Leave the
+Key as it is; an empty cell keeps the original words. Categories stay in the **Categories** tab.
+
+After a developer changes the app's words: `node apps-script-incident/tools/make-texts.js` (updates `web/incident/texts.js`).
+
 ## Who sees what
 
 | Person | Sees | Can do |

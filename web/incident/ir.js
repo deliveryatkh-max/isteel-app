@@ -13,7 +13,9 @@
   const MAX_PHOTOS = 6;
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
-  const t = (km, en) => (window.LANG ? LANG.t(km, en) : km);
+  // Words the admin changed in the Texts tab of the sheet, by the original English text: { key: [Khmer, English] }.
+  let TX = {};
+  const t = (km, en) => { const o = TX[en]; if (o) { km = o[0] || km; en = o[1] || en; } return window.LANG ? LANG.t(km, en) : km; };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
@@ -82,6 +84,7 @@
 
   // ---------------------------------------------------------------- state
   let B = getJ('ir_boot', null);           // boot data, kept on the phone so the app opens at once
+  TX = getJ('ir_texts', {});
   let screen = () => {};
   const isAdmin = () => !!(B && B.user && B.user.admin);
   const seesAll = () => !!(B && B.user && (B.user.admin || B.user.reviewer));
@@ -93,6 +96,7 @@
       const d = PUBLIC ? await api('publicBoot', { key: PUBLIC_KEY }) : await api('boot');
       B = PUBLIC ? Object.assign({ user: null, reports: [] }, d) : d;
       CATS = B.categories || [];
+      useTexts(B.texts);
       if (!PUBLIC) set('ir_boot', JSON.stringify(B));
       paintTabs();
       screen();
@@ -102,6 +106,17 @@
       else toast(e.message);
     }
   }
+
+  function useTexts(map) {
+    if (!map) return;
+    TX = map;
+    set('ir_texts', JSON.stringify(map));
+    paintStatic();
+    // An admin's phone adds the app's new texts to the Texts tab, so they can be edited there.
+    const missing = (window.IR_TEXTS || []).filter(r => !(r[0] in map));
+    if (missing.length && isAdmin() && !DEMO) api('syncTexts', { rows: missing }).catch(() => {});
+  }
+  function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
 
   // ---------------------------------------------------------------- router
   function route() {
@@ -768,8 +783,8 @@
   }
   if (DEMO) { $('#demo').hidden = false; $('#demo').textContent = t('DEMO · ឧទាហរណ៍ប៉ុណ្ណោះ មិនរក្សាទុកក្នុង Google Sheet ទេ', 'DEMO · sample only, nothing is saved to the Google Sheet'); }
   if (PUBLIC) { document.body.classList.add('public'); $('.tabs').hidden = true; }
-  if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); screen(); }); }
-  $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); });
+  if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); screen(); }); }
+  paintStatic();
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   const paintTheme = () => { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; };
   $('#themeBtn').onclick = () => { const now = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); const next = now === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', next); set('fr_theme', next); paintTheme(); };

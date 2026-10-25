@@ -11,7 +11,7 @@ const SHELL = [
   'icons/meeting.svg', 'icons/incident.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg',
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'minutes/', 'minutes/mm.js', 'minutes/mm.css', 'minutes/config.js',
-  'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js',
+  'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js', 'incident/texts.js',
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
   'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css',

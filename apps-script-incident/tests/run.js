@@ -32,7 +32,7 @@ const FORM = {
 const env = makeEnv({ file: path.join(ROOT, 'apps-script-incident/Incident.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
   props: { SESSION_SECRET: 's3cret', USERS_SHEET_ID: 'USERS', GOOGLE_CLIENT_ID: 'cid', TELEGRAM_BOT_TOKEN: 'bot' } });
 env.g.setup();
-eq(env.ss.getSheets().map(s => s.getName()), ['Incidents', 'Email Lists', 'Supervisors', 'Categories', 'IR Settings'], 'tabs (empty Sheet1 removed)');
+eq(env.ss.getSheets().map(s => s.getName()), ['Incidents', 'Email Lists', 'Supervisors', 'Categories', 'IR Settings', 'Texts'], 'tabs (empty Sheet1 removed)');
 ok(env.props.IR_FOLDER_ID && env.props.IR_PUBLIC_KEY, 'folder and public key made');
 const call = (who, action, payload) => env.post({ action, token: env.session(who), payload });
 const must = r => { if (!r.ok) throw new Error(r.error); return r.data; };
@@ -145,6 +145,21 @@ must(call('kim@x.com', 'saveSettings', { publicOn: false }));
 ok(/^NOACCESS/.test(env.post({ action: 'publicBoot', payload: { key: env.props.IR_PUBLIC_KEY } }).error), 'public link can be turned off');
 must(call('kim@x.com', 'saveSettings', { prefix: 'SSK-IR' }));
 eq(must(call('other@x.com', 'submit', Object.assign({}, FORM, { photos: [] }))).id, 'SSKIR-' + new Date().getFullYear() + '-004', 'prefix setting');
+
+// Texts tab: an admin's phone adds the app's words; edits there come back in boot
+const fs = require('fs');
+const mk = require('../tools/make-texts');
+const TEXTS = mk.collect();
+eq(fs.readFileSync(path.join(ROOT, 'web/incident/texts.js'), 'utf8'), mk.source(TEXTS), 'texts.js up to date (node apps-script-incident/tools/make-texts.js)');
+ok(TEXTS.length > 200 && TEXTS.some(r => r[0] === 'Send by email' || r[0] === 'New report'), 'texts collected');
+ok(/^DENIED/.test(call('sup@x.com', 'syncTexts', { rows: TEXTS }).error), 'only admins add texts');
+eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS.concat([TEXTS[0]]) })).added, TEXTS.length, 'texts added once');
+eq(must(call('kim@x.com', 'syncTexts', { rows: TEXTS })).added, 0, 'no duplicates');
+const tx = env.ss.getSheetByName('Texts');
+const nr = tx.rows.findIndex(r => r[0] === 'New report');
+tx.rows[nr][2] = 'របាយការណ៍ថ្មី!'; tx.rows[nr][3] = 'Report an incident';
+b = must(call('driver@x.com', 'boot', {}));
+eq(b.texts['New report'], ['របាយការណ៍ថ្មី!', 'Report an incident'], 'edited text in boot');
 
 ok(!env.errors.length, 'no server errors: ' + env.errors.join('; '));
 console.log('incident tests passed: ' + pass);
