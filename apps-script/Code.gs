@@ -108,9 +108,11 @@ const HOME_APPS = [
   { key: 'location', col: 'ទីតាំងថ្មី' },
   { key: 'dashboard', col: 'Dashboard' },
   { key: 'meeting', col: 'ប្រជុំ' },
+  { key: 'incident', col: 'គ្រោះថ្នាក់' },
 ];
 // Ticked for every user by default (Kim, 10 Oct 2026). Dashboard stays for reviewers and admins.
-const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location'];
+// Incident Report: anyone can report, so it starts ticked too (Kim, 25 Oct 2026); untick to hide it.
+const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
   config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel',
   ads: 'fuel', adMedia: 'fuel', adSave: 'fuel', adDelete: 'fuel', adSeen: 'fuel',

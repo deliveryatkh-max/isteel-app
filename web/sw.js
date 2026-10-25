@@ -8,9 +8,10 @@ const FONTS = 'steel-fonts-v1';
 const SHELL = [
   './', 'home.css', 'home.js', 'lang.js', 'request.js', 'config.js', 'manifest.webmanifest',
   'icons/isi-logo.png', 'icons/isi-white.png', 'icons/banner-pattern.png', 'icons/favicon.png', 'icons/app-192.png', 'icons/flag-kh.svg', 'icons/flag-gb.svg',
-  'icons/meeting.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg',
+  'icons/meeting.svg', 'icons/incident.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg',
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'minutes/', 'minutes/mm.js', 'minutes/mm.css', 'minutes/config.js',
+  'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js',
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
   'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css',

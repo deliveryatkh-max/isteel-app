@@ -1,0 +1,150 @@
+// Tests for Incident.gs with the Apps Script mock. Run: node apps-script-incident/tests/run.js
+'use strict';
+const path = require('path');
+const assert = require('assert');
+const { makeEnv } = require('./gas-ir');
+
+const ROOT = path.join(__dirname, '..', '..');
+let pass = 0;
+const ok = (c, m) => { assert.ok(c, m); pass++; };
+const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); pass++; };
+
+const USERS = [
+  ['Email', 'Name', 'Role', 'Active', 'គ្រោះថ្នាក់'],
+  ['kim@x.com', 'Kim', 'admin', 'Yes', false],
+  ['sup@x.com', 'Pisey', 'user', 'Yes', true],
+  ['driver@x.com', 'Vuthy', 'user', 'Yes', true],
+  ['other@x.com', 'Other', 'user', 'Yes', true],
+  ['hse@x.com', 'HSE', 'reviewer', 'Yes', true],
+  ['nobody@x.com', 'Nobody', 'user', 'Yes', false],
+];
+const TRUCKS = [['CODE', 'ឈ្មោះតៃកុង', 'ក្រុមហ៊ុន'], ['3E-2588', '1.ជា វុទ្ធី', 'ISI'], ['3A-2102', '2.សុខ ដារា', '']];
+const SIG = 'data:image/png;base64,' + Buffer.from('png-signature').toString('base64');
+const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpeg-photo').toString('base64');
+const FORM = {
+  type: 'road', category: 'Collision with vehicle', date: '2026-10-24', time: '14:20', location: 'NR5 km 82', warehouse: 'SSK Warehouse',
+  plate: '3e 2588', driver: 'ជា វុទ្ធី', story: 'Motorbike cut in.', severity: 3, likelihood: 5, cause: 'People (behaviour, training)',
+  people: [{ name: 'Rider', injured: true, injury: 'cut' }, { name: '' }], whys: ['too close', '', '', '', ''], immediate: 'First aid',
+  actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08' }, { what: '' }], reporterName: 'Vuthy', reporterPhone: '012',
+  signature: SIG, photos: [PHOTO, PHOTO], supervisor: 'sup@x.com',
+};
+
+const env = makeEnv({ file: path.join(ROOT, 'apps-script-incident/Incident.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
+  props: { SESSION_SECRET: 's3cret', USERS_SHEET_ID: 'USERS', GOOGLE_CLIENT_ID: 'cid', TELEGRAM_BOT_TOKEN: 'bot' } });
+env.g.setup();
+eq(env.ss.getSheets().map(s => s.getName()), ['Incidents', 'Email Lists', 'Supervisors', 'Categories', 'IR Settings'], 'tabs (empty Sheet1 removed)');
+ok(env.props.IR_FOLDER_ID && env.props.IR_PUBLIC_KEY, 'folder and public key made');
+const call = (who, action, payload) => env.post({ action, token: env.session(who), payload });
+const must = r => { if (!r.ok) throw new Error(r.error); return r.data; };
+
+// admin sets supervisors, lists, telegram
+let s = must(call('kim@x.com', 'settings', {}));
+eq(s.categories.length, 14, '14 default categories');
+s = must(call('kim@x.com', 'saveSettings', {
+  supervisors: [{ warehouse: 'SSK Warehouse', name: 'Pisey', email: 'SUP@x.com', backup: '' }],
+  lists: [{ name: 'Management', emails: 'm1@x.com, m2@x.com', when: 'auto' }, { name: 'HSE', emails: ['h@x.com'], when: 'high' }, { name: '3PL', emails: ['p@x.com'], when: 'button' }],
+  telegramChat: '-100123',
+}));
+eq(s.supervisors[0].email, 'sup@x.com', 'emails lower-cased');
+eq(s.lists.map(l => l.when), ['auto', 'high', 'button']);
+ok(!call('kim@x.com', 'saveSettings', { lists: [{ name: 'Bad', emails: 'nope' }] }).ok, 'bad email refused');
+ok(!call('sup@x.com', 'settings', {}).ok, 'settings admin only');
+
+// access
+ok(/^NOACCESS/.test(call('nobody@x.com', 'boot', {}).error), 'unticked user refused');
+let b = must(call('driver@x.com', 'boot', {}));
+eq(b.plates, ['3A-2102', '3E-2588'], 'plates from Driver & Truck');
+eq(b.lists.map(l => l.name), ['Management', 'HSE', '3PL']);
+eq(b.supervisors.length, 1);
+
+// submit
+ok(/sign/.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { signature: '' })).error), 'signature needed');
+ok(/story|happened/i.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { story: '' })).error), 'story needed');
+const r1 = must(call('driver@x.com', 'submit', FORM));
+eq(r1.id, 'IR-' + new Date().getFullYear() + '-001', 'report number');
+eq(env.telegrams.length, 1, 'telegram on submit');
+ok(/New incident/.test(env.telegrams[0].payload.text) && /Open and sign/.test(env.telegrams[0].payload.reply_markup), 'telegram text and button');
+let row = env.ss.getSheetByName('Incidents').rows[1];
+const H = env.ss.getSheetByName('Incidents').rows[0];
+const col = n => row[H.indexOf(n)];
+eq(col('Truck Plate'), '3E2588', 'plate cleaned');
+eq(col('Risk Score'), '15'); eq(col('Risk Level'), 'HIGH'); eq(col('Injured'), '1'); eq(col('Open Actions'), '1');
+eq(col('Status'), 'Waiting supervisor');
+
+// visibility
+eq(must(call('other@x.com', 'list', {})).length, 0, 'others do not see it');
+eq(must(call('hse@x.com', 'list', {})).length, 1, 'reviewer sees all');
+const supList = must(call('sup@x.com', 'list', {}));
+ok(supList[0].toSign, 'supervisor has it to sign');
+ok(/^DENIED/.test(call('other@x.com', 'get', { id: r1.id }).error), 'other cannot open');
+let d = must(call('driver@x.com', 'get', { id: r1.id }));
+eq(d.photos.length, 2); eq(d.photoThumbs.length, 2, 'photos come back');
+ok(!d.can.sign && !d.can.edit, 'reporter cannot sign');
+ok(/^DENIED/.test(call('driver@x.com', 'sign', { id: r1.id, signature: SIG }).error), 'reporter cannot sign');
+
+// send back, edit, send again
+ok(/change/.test(call('sup@x.com', 'sendBack', { id: r1.id, note: '' }).error), 'note needed');
+must(call('sup@x.com', 'sendBack', { id: r1.id, note: 'Add the DN' }));
+d = must(call('driver@x.com', 'get', { id: r1.id }));
+ok(d.can.edit && d.status === 'Returned', 'returned to reporter');
+must(call('driver@x.com', 'submit', Object.assign({}, FORM, { id: r1.id, dn: '8100452231', photos: [], keepPhotos: [d.photos[0]] })));
+d = must(call('sup@x.com', 'get', { id: r1.id }));
+eq(d.dn, '8100452231'); eq(d.photos.length, 1, 'kept one photo'); ok(d.can.sign, 'waiting again');
+eq(env.ss.getSheetByName('Incidents').rows.length, 2, 'still one row');
+
+// sign -> PDF, telegram document, auto emails (Management auto + HSE because HIGH)
+const sg = must(call('sup@x.com', 'sign', { id: r1.id, signature: SIG, comment: 'OK' }));
+eq(sg.status, 'Signed');
+eq(sg.emailed, 3, 'auto lists emailed (2 + HIGH 1)');
+eq(env.mails.length, 1);
+ok(env.mails[0].attachments[0].getName() === r1.id + '.pdf', 'PDF attached');
+ok(/HIGH RISK/.test(env.mails[0].subject), 'subject says high risk');
+const tgDoc = env.telegrams.find(x => x.method === 'sendDocument');
+ok(tgDoc && /signed/.test(tgDoc.payload.caption), 'PDF to Telegram');
+const pdfDoc = Object.values(env.docs).pop();
+const text = pdfDoc.parts.join('\n');
+ok(/INCIDENT & NEAR MISS REPORT/.test(text) && /ប្រភេទហេតុការណ៍/.test(text) && /Refresher training/.test(text) && /Immediate action/.test(text), 'PDF has sections in both languages');
+ok(pdfDoc.images >= 3, 'PDF has photo + 2 signatures');
+ok(Object.values(env.files).filter(f => f.name === r1.id + '.pdf' && !f.trashed).length === 1, 'one PDF kept');
+ok(Object.values(env.files).filter(f => /document/.test(f.mime)).every(f => f.trashed), 'temp Doc trashed');
+row = env.ss.getSheetByName('Incidents').rows[1];
+eq(col('Supervisor'), 'Pisey'); ok(col('PDF Link'), 'PDF link in sheet');
+
+// pdf for the app
+const pdf = must(call('driver@x.com', 'pdf', { id: r1.id }));
+ok(Buffer.from(pdf.b64, 'base64').toString().startsWith('%PDF'), 'pdf bytes');
+
+// email button
+ok(/list|email/i.test(call('driver@x.com', 'email', { id: r1.id, lists: [] }).error), 'needs a list');
+eq(must(call('driver@x.com', 'email', { id: r1.id, lists: ['3PL'], extra: 'x@y.com' })).sent, 2);
+eq(env.mails[1].to, 'p@x.com,x@y.com');
+
+// actions and close
+ok(/^DENIED/.test(call('driver@x.com', 'actions', { id: r1.id, actions: [] }).error), 'reporter cannot change actions');
+ok(/^OPEN/.test(call('sup@x.com', 'close', { id: r1.id }).error), 'open actions block closing');
+d = must(call('sup@x.com', 'actions', { id: r1.id, actions: [{ what: 'Refresher training', owner: 'Transport', due: '2026-11-08', status: 'Done' }] }));
+ok(d.actions[0].done, 'done date set');
+d = must(call('sup@x.com', 'close', { id: r1.id }));
+eq(d.status, 'Closed');
+row = env.ss.getSheetByName('Incidents').rows[1];
+eq(col('Open Actions'), '0'); ok(col('Closed At'));
+
+// anonymous near miss, public link
+const r2 = must(call('other@x.com', 'submit', { type: 'near', category: 'Forklift / crane', date: '2026-10-25', story: 'Close call', anonymous: true, supervisor: 'sup@x.com' }));
+d = must(call('sup@x.com', 'get', { id: r2.id }));
+eq(d.reporter.name, 'Anonymous'); ok(!d.reporter.sig, 'no signature needed');
+ok(/^NOACCESS/.test(env.post({ action: 'publicSubmit', payload: Object.assign({}, FORM, { key: 'wrong' }) }).error), 'wrong key refused');
+const pub = env.post({ action: 'publicBoot', payload: { key: env.props.IR_PUBLIC_KEY } });
+ok(pub.ok && pub.data.plates.length === 2 && !pub.data.reports, 'public boot has lists, no reports');
+const r3 = env.post({ action: 'publicSubmit', payload: Object.assign({}, FORM, { key: env.props.IR_PUBLIC_KEY, reporterName: '3PL driver', reporterPhone: '099 111' }) });
+ok(r3.ok, 'public submit ' + r3.error);
+ok(/^BUSY/.test(env.post({ action: 'publicSubmit', payload: Object.assign({}, FORM, { key: env.props.IR_PUBLIC_KEY, reporterName: 'x', reporterPhone: '099111' }) }).error), 'one per minute per phone');
+ok(/driver link/.test(call('sup@x.com', 'sendBack', { id: r3.data.id, note: 'x' }).error), 'link report cannot be sent back');
+eq(must(call('hse@x.com', 'list', {})).map(x => x.id).length, 3);
+must(call('kim@x.com', 'saveSettings', { publicOn: false }));
+ok(/^NOACCESS/.test(env.post({ action: 'publicBoot', payload: { key: env.props.IR_PUBLIC_KEY } }).error), 'public link can be turned off');
+must(call('kim@x.com', 'saveSettings', { prefix: 'SSK-IR' }));
+eq(must(call('other@x.com', 'submit', Object.assign({}, FORM, { photos: [] }))).id, 'SSKIR-' + new Date().getFullYear() + '-004', 'prefix setting');
+
+ok(!env.errors.length, 'no server errors: ' + env.errors.join('; '));
+console.log('incident tests passed: ' + pass);
