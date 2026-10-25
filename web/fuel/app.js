@@ -1928,7 +1928,9 @@
   const ads = { list: null, version: null, syncing: null };
   const adList = () => ads.list || (ads.list = (local.get('ads') || {}).ads || null);
   const adActive = (a, now) => a.show && (!a.start || now >= a.start) && (!a.end || now <= a.end);
-  const currentAd = () => (adList() || []).filter(a => adActive(a, Date.now())).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+  // Every ad that is switched on and in its dates takes turns at random (Kim, 25 Oct 2026).
+  const liveAds = () => (adList() || []).filter(a => adActive(a, Date.now()));
+  const AD_LAST = 'fr_ad_last';
   const adsOn = () => !!state.config && state.config.adsVersion !== undefined;
   const dayStr = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
   const dayShow = ms => { if (!ms) return ''; const d = new Date(ms); return `${pad2(d.getDate())}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
@@ -2009,8 +2011,8 @@
         const c = current();
         if (c && (c.s === 'gallery' || c.s === 'ads')) paint(c);
       }
-      const next = currentAd();
-      if (next) await adBlob(next, true);
+      // One at a time, so a phone on 4G is never busy with several big videos at once.
+      for (const a of liveAds()) await adBlob(a, true).catch(() => {});
     })().catch(() => { /* offline: try again next time */ }).finally(() => { ads.syncing = null; });
     return ads.syncing;
   }
@@ -2021,11 +2023,16 @@
     async start() {
       if (this.shown) return;
       this.shown = true;
-      const ad = adsOn() && currentAd();
-      if (!ad) return;
-      const blob = await adStore.get(ad.key);
-      if (!blob) return;   // not downloaded yet: it shows from the next open
-      this.show(ad, blob);
+      if (!adsOn()) return;
+      // Only ads already on the phone can show; one still downloading joins from a later open.
+      const ready = [];
+      for (const a of liveAds()) { const blob = await adStore.get(a.key); if (blob) ready.push({ a, blob }); }
+      if (!ready.length) return;
+      const last = storeGet(AD_LAST);
+      const pool = ready.length > 1 ? ready.filter(r => r.a.id !== last) : ready;   // never the same one twice in a row
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      storeSet(AD_LAST, pick.a.id);
+      this.show(pick.a, pick.blob);
     },
     show(ad, blob) {
       const url = URL.createObjectURL(blob), secs = ad.seconds || 7;
@@ -2080,11 +2087,11 @@
     const draw = () => {
       if (current() !== me) return;
       const list = adList();
-      const cur = currentAd();
+      const now = Date.now();
       $('#view').innerHTML = `<h2>🖼️ ${L('វិចិត្រសាល', 'Gallery')}</h2>` + (!list ? '<div class="spinner"></div>'
         : list.length ? `<div class="ad-gal">${list.map(a => `
           <button type="button" class="ad-gi" data-ad="${esc(a.id)}">${adThumb(a)}
-            ${cur && cur.id === a.id ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
+            ${adActive(a, now) ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
             <span class="ad-gtx">${a.text ? `<b>${esc(a.text)}</b>` : ''}<small>${dayShow(a.createdAt)}</small></span></button>`).join('')}</div>`
         : `<div class="empty"><div class="big">🖼️</div>${L('មិនទាន់មានរូបភាព ឬ វីដេអូ', 'No images or videos yet')}</div>`);
       $$('[data-ad]').forEach(b => b.onclick = () => { const a = adList().find(x => x.id === b.dataset.ad); if (a) viewAd(a); });
@@ -2129,7 +2136,7 @@
             <div class="ad-acts"><button type="button" class="btn small" data-edit="${esc(a.id)}">✏️ ${L('កែ', 'Edit')}</button><button type="button" class="btn small ghost" data-del="${esc(a.id)}">🗑 ${L('លុប', 'Delete')}</button></div></div>
           <button type="button" class="ad-sw ${a.show ? 'on' : ''}" data-sw="${esc(a.id)}" role="switch" aria-checked="${a.show}" aria-label="${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}"></button>
         </div>`;
-      const live = (list || []).filter(a => adActive(a, now)), cur = currentAd();
+      const live = (list || []).filter(a => adActive(a, now));
       const rest = (list || []).filter(a => !live.includes(a));
       $('#view').innerHTML = `
         <h2>📣 ${L('ផ្សព្វផ្សាយ', 'Ads')} <small style="display:inline">· ${L('សម្រាប់តែ Admin', 'Admins only')}</small></h2>
@@ -2137,7 +2144,7 @@
         ${!list ? '<div class="spinner"></div>' : `
         <div class="card" style="margin-top:14px"><div class="sec-h" style="margin:0 0 4px">${L('កំពុងបង្ហាញ', 'Showing now')} <small>(${live.length})</small></div>
           ${live.length ? live.map(row).join('') : `<div class="hint">${L('គ្មាន · បើក មួយខាងក្រោម', 'None · switch one on below')}</div>`}
-          ${live.length > 1 ? `<div class="hint">ℹ️ ${L('បង្ហាញតែមួយដែលថ្មីបំផុតប៉ុណ្ណោះ', 'Only the newest one shows')}: ${esc((cur && (cur.text || cur.name)) || '')}</div>` : ''}</div>
+          ${live.length > 1 ? `<div class="hint">🔀 ${L('បង្ហាញម្តងមួយ ដោយចៃដន្យ រាល់ពេលបើកកម្មវិធី', 'One of these shows at random each time the app opens')}</div>` : ''}</div>
         ${rest.length ? `<div class="card"><div class="sec-h" style="margin:0 0 4px">${L('ផ្សេងៗ', 'Others')} <small>(${rest.length})</small></div>${rest.map(row).join('')}</div>` : ''}`}`;
       $('#adNew').onclick = () => go({ s: 'adEdit' });
       $$('[data-edit]').forEach(b => b.onclick = () => go({ s: 'adEdit', id: b.dataset.edit }));
