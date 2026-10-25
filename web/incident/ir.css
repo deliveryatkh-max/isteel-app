@@ -34,21 +34,29 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .badge.lv-low { background: var(--ok-soft); color: var(--ok); }
 
 /* form */
-.steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px; }
-.st { border: 0; background: none; padding: 0; cursor: pointer; display: grid; gap: 4px; text-align: center; color: var(--muted); }
-.st span { position: relative; height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; }
-/* the steps row stays at the top while the form scrolls (Kim, 25 Oct 2026) and fills with an animation */
-.formhead { position: sticky; top: calc(54px + env(safe-area-inset-top)); z-index: 4; background: var(--bg); margin: -16px -16px 0; padding: 12px 16px 2px; box-shadow: 0 6px 8px -8px rgba(1, 30, 65, .25); }
-.st span::after { content: ''; position: absolute; inset: 0; border-radius: inherit; transform-origin: left; transform: scaleX(0);
-  background: linear-gradient(90deg, #0b76a0, #61cbf4, #0b76a0) 0 0 / 200% 100%; }
-.st.d span::after, .st.on span::after { transform: scaleX(1); }
-.st.on span::after { animation: lshine 1.4s linear infinite; }
-.steps.grow .st.on span::after { animation: stfill .7s cubic-bezier(.2, .8, .2, 1) both, lshine 1.4s linear infinite; }
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-bottom: 12px; }
+/* step circles joined by a line (Kim's picture A): done = filled ✓, current = filled number, next = ring with a dot */
+.st { position: relative; border: 0; background: none; padding: 0; cursor: pointer; display: grid; justify-items: center; gap: 5px; text-align: center; color: var(--muted); font: inherit; }
+.st span { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700;
+  background: var(--card); border: 2px solid var(--line); color: var(--on-brand); transition: background .3s, border-color .3s; }
+.st span:empty::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .75; }
+.st.d span, .st.on span { background: var(--accent); border-color: var(--accent); }
+.st.on span { box-shadow: 0 0 0 5px rgba(11, 118, 160, .18); }
+.steps.grow .st.on span { animation: stpop .45s .35s cubic-bezier(.3, 1.6, .5, 1) both; }
+@keyframes stpop { from { transform: scale(.6); } to { transform: scale(1); } }
+.st:not(:first-child)::before, .st:not(:first-child)::after { content: ''; position: absolute; top: 13px; left: -50%; right: 50%; height: 2px; background: var(--line); }
+.st:not(:first-child)::after { background: var(--accent); transform-origin: left; transform: scaleX(0); }
+.st.d::after, .st.on::after { transform: scaleX(1) !important; }
+.steps.grow .st.on::after { animation: stfill .45s cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes stfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* the steps row stays at the top while the form scrolls (Kim, 25 Oct 2026) */
+.formhead { position: sticky; top: calc(54px + env(safe-area-inset-top)); z-index: 4; background: var(--bg); margin: -16px -16px 0; padding: 12px 16px 2px; box-shadow: 0 6px 8px -8px rgba(1, 30, 65, .25); }
+.formhead .head2 small { color: var(--muted); }
+.formhead .pct { color: var(--accent); font-size: 20px; margin-left: 4px; }
 .ticks { display: flex; gap: 24px; }
 .ticks .check { margin: 4px 0 8px; }
 .st small { font-size: 11px; line-height: 1.2; }
-.st.on small { color: var(--brand); font-weight: 700; }
+.st.on small { color: var(--accent); font-weight: 700; }
 .types { display: grid; gap: 10px; }
 .typ { display: flex; align-items: center; gap: 12px; text-align: left; border: 1.5px solid var(--line); background: var(--card); border-radius: 14px; padding: 12px; cursor: pointer; color: var(--text); }
 .typ .e { font-size: 30px; }
@@ -132,21 +140,25 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .icon-in { text-align: center; font-size: 20px; padding-left: 4px; padding-right: 4px; }
 
 /* loading: progress bar that fills (fast, then slower) with a moving shine, and shimmering placeholder cards */
-.loading { padding: 18px 0; }
-.lmsg { text-align: center; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+.loading { padding: 14px 0; }
+.lcard { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.lic { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: #1fb88a; color: #fff; font-size: 18px; }
+.lbody { flex: 1; min-width: 0; }
+.lpct { font-size: 18px; font-variant-numeric: tabular-nums; }
+.lbody small { color: var(--muted); font-size: 14px; }
 .ldots::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: ldots 1.2s steps(4) infinite; }
 @keyframes ldots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
-.lbar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 0 4px 18px; }
-.lbar i { display: block; height: 100%; width: 92%; border-radius: inherit; transform-origin: left; transform: scaleX(.04);
-  background: linear-gradient(90deg, #0b76a0, #61cbf4, #0b76a0) 0 0 / 200% 100%;
-  animation: lfill 7s cubic-bezier(.1, .7, .2, 1) forwards, lshine 1.2s linear infinite; }
+.lbar { height: 9px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 8px; }
+.lbar i { display: block; height: 100%; width: 95%; border-radius: inherit; transform-origin: left; transform: scaleX(0);
+  background: linear-gradient(90deg, #17a67b, #3fd6a6, #17a67b) 0 0 / 200% 100%;
+  animation: lfill 5.4s cubic-bezier(.1, .7, .2, 1) forwards, lshine 1.2s linear infinite; }
 @keyframes lfill { to { transform: scaleX(1); } }
 @keyframes lshine { to { background-position: -200% 0; } }
 .skel { height: 84px; border-radius: 16px; margin-bottom: 12px; border: 1px solid var(--line);
   background: linear-gradient(100deg, var(--card) 30%, var(--line) 50%, var(--card) 70%) 0 0 / 300% 100%; animation: lskel 1.4s ease-in-out infinite; }
 .skel.short { width: 60%; height: 54px; }
 @keyframes lskel { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) { .lbar i, .skel, .ldots::after, .st.on span::after, .steps.grow .st.on span::after { animation: none; } .lbar i { transform: scaleX(.6); } }
+@media (prefers-reduced-motion: reduce) { .lbar i, .skel, .ldots::after, .steps.grow .st.on span, .steps.grow .st.on::after { animation: none; } .lbar i { transform: scaleX(.6); } }
 /* steps that can't be opened yet, and the required field that is still empty */
 .st.lock { opacity: .45; }
 .miss { border-color: #c62828 !important; box-shadow: 0 0 0 3px rgba(198, 40, 40, .18); border-radius: 14px; animation: shake .35s; }

@@ -26,8 +26,20 @@
   const isDesk = () => window.matchMedia && matchMedia('(min-width: 1000px)').matches;
 
   // Animated progress while the Apps Script answers (Kim, 25 Oct 2026: progress instead of a spinner).
-  const loader = (km, en) => `<div class="loading" role="status"><div class="lmsg"><span class="ldots">${esc(t(km || 'កំពុងផ្ទុក', en || 'Loading'))}</span></div>
-    <div class="lbar"><i></i></div><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div>`;
+  // loading card: a % that counts up with the bar (fast, then slower), like Kim's picture B
+  const loader = (km, en) => { lpctStart(); return `<div class="loading" role="status"><div class="lcard"><span class="lic">⏳</span><div class="lbody"><div><b class="lpct">0%</b> <small class="ldots">${esc(t(km || 'កំពុងផ្ទុក', en || 'Loading'))}</small></div>
+    <div class="lbar"><i></i></div></div></div><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div>`; };
+  let lpctTimer = 0;
+  function lpctStart() {
+    const t0 = Date.now();
+    clearInterval(lpctTimer);
+    lpctTimer = setInterval(() => {
+      const els = document.querySelectorAll('.lpct');
+      if (!els.length && Date.now() - t0 > 500) { clearInterval(lpctTimer); return; }
+      const v = Math.round(95 * (1 - Math.exp(-(Date.now() - t0) / 1800)));
+      els.forEach(el => { el.textContent = v + '%'; });
+    }, 80);
+  }
   let toastTimer = 0;
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
 
@@ -287,7 +299,7 @@
     const sc = f.severity && f.likelihood ? f.severity * f.likelihood : 0;
     const grow = s !== paintedStep;     // fill the bar only when the step changes, not on every tap
     paintedStep = s;
-    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''} ${i + 1 > openStep() ? 'lock' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
+    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''} ${i + 1 > openStep() ? 'lock' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span>${i + 1 < s ? '✓' : i + 1 === s ? i + 1 : ''}</span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
     let body = '';
     if (editId && f.returnNote) body += `<div class="alert warn">↩️ ${t('ប្រធានឃ្លាំងសុំឲ្យកែ៖', 'The supervisor asked for changes:')} <b>${esc(f.returnNote)}</b></div>`;
     if (s === 1) {
@@ -387,7 +399,7 @@
     const nav = `<div class="navrow">${s > 1 ? `<button type="button" class="btn" data-go="${s - 1}">‹ ${t('ថយក្រោយ', 'Back')}</button>` : `<a class="btn" href="${PUBLIC ? '#' : '#/'}" id="cancelForm">${PUBLIC ? t('សម្អាត', 'Clear') : t('បោះបង់', 'Cancel')}</a>`}
       ${s < 5 ? `<button type="button" class="btn ok" data-next="1">${t('បន្ទាប់', 'Next')} ›</button>` : ''}</div><div class="navspace"></div>`;
     $('#view').innerHTML = `${PUBLIC ? `<div class="alert ok pubnote">🚚 ${t('រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី', 'Report without signing in')}</div>` : ''}
-      <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 · ${Math.round(s / 5 * 100)}%</small></div>
+      <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 <b class="pct">${Math.round(s / 5 * 100)}%</b></small></div>
       ${head}</div>${body}${nav}`;
     wireForm();
   }
