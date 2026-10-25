@@ -276,7 +276,7 @@
     } catch (e) { return ''; }
   }
 
-  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['ហានិភ័យ មូលហេតុ', 'Risk, cause'], ['ហត្ថលេខា', 'Sign']];
+  const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['មូលហេតុ', 'Cause'], ['ហត្ថលេខា', 'Sign']];
   const field = (id, km, en, opts) => {
     opts = opts || {};
     const v = f[id] == null ? '' : f[id];

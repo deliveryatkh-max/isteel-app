@@ -36,7 +36,7 @@ window.IR_TEXTS = [
   ["Type","New report","","","ប្រភេទ","Type"],
   ["When, where","New report","","","ពេល ទីកន្លែង","When, where"],
   ["What happened","New report","","","អ្វីកើតឡើង","What happened"],
-  ["Risk, cause","New report","","","ហានិភ័យ មូលហេតុ","Risk, cause"],
+  ["Cause","New report","","","មូលហេតុ","Cause"],
   ["Sign","New report","","","ហត្ថលេខា","Sign"],
   ["— Select —","New report","","","— ជ្រើសរើស —","— Select —"],
   ["New","New report","","","ថ្មី","New"],
