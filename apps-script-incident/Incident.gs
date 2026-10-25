@@ -616,6 +616,7 @@ function makePdf_(d, folder) {
     const head = body.appendTable([['ISI STEEL · INCIDENT & NEAR MISS REPORT\nរបាយការណ៍គ្រោះថ្នាក់ និងហេតុការណ៍ជិតកើតគ្រោះថ្នាក់',
       d.id + '\n' + two_('រាយការណ៍', 'Reported') + ' ' + d.created + '\n' + two_('ស្ថានភាព', 'Status') + ': ' + d.status]]);
     head.setBorderColor(NAVY);
+    head.editAsText().setBackgroundColor(null);
     [0, 1].forEach(i => head.getRow(0).getCell(i).setBackgroundColor(NAVY).editAsText().setForegroundColor('#ffffff').setBold(true).setFontSize(10));
 
     const sc = d.severity && d.likelihood ? d.severity * d.likelihood : 0;
@@ -670,6 +671,7 @@ function makePdf_(d, folder) {
     const t = body.appendTable([[two_('អ្នករាយការណ៍', 'Reported by'), two_('ប្រធានឃ្លាំង', 'Warehouse Supervisor')], ['', ''],
       [d.reporter.name, d.supervisor.name || ''], [d.reporter.at || '', d.supervisor.at || two_('រង់ចាំ', 'Waiting')]]);
     t.setBorderColor(LINE);
+    t.editAsText().setBackgroundColor(null);
     [0, 1].forEach(i => t.getRow(0).getCell(i).setBackgroundColor(SOFT).editAsText().setBold(true));
     [[d.reporter.sig, 0], [d.supervisor.sig, 1]].forEach(s => {
       if (!s[0]) return;
@@ -693,7 +695,7 @@ function fit_(img, w, h) {
 }
 function section_(body, title) {
   const p = body.appendParagraph(title);
-  p.editAsText().setForegroundColor(NAVY).setBold(true).setFontSize(9.5).setBackgroundColor(SOFT);
+  p.editAsText().setForegroundColor(NAVY).setBold(true).setFontSize(9.5).setBackgroundColor(null);   // no highlight behind the words
   p.setSpacingBefore(8).setSpacingAfter(2);
 }
 /** Label / value rows: 2 or 4 cells per row; empty values print as "-". */
@@ -703,11 +705,13 @@ function kv_(body, rows) {
   const w = Math.max.apply(null, rows.map(r => r.length));
   const t = body.appendTable(rows.map(r => { const o = r.map((x, i) => (i % 2 === 1 ? String(x || '-') : String(x || ''))); while (o.length < w) o.push(''); return o; }));
   t.setBorderColor(LINE);
+  t.editAsText().setBackgroundColor(null);   // cells are shaded; the words themselves are never highlighted
   for (let i = 0; i < t.getNumRows(); i++) for (let j = 0; j < w; j += 2) t.getRow(i).getCell(j).setBackgroundColor('#f2f5f9').editAsText().setBold(true);
 }
 function grid_(body, rows) {
   const t = body.appendTable(rows.map(r => r.map(x => String(x || ''))));
   t.setBorderColor(LINE);
+  t.editAsText().setBackgroundColor(null);
   const r = t.getRow(0);
   for (let i = 0; i < r.getNumCells(); i++) r.getCell(i).setBackgroundColor(SOFT).editAsText().setBold(true);
 }
