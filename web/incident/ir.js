@@ -315,7 +315,8 @@
         <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label>${pickBtn('plate')}</div>
         <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label>${pickBtn('driver')}</div></div>
         <div id="tripInfo"></div>
-        <div class="row2">${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}${field('dn', 'លេខ DN', 'DN No(s).')}</div></div>`;
+        ${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}
+        <div class="field"><label class="f" for="dn">${t('លេខ DN', 'DN No(s).')}</label><div class="locrow"><input class="in" id="dn" value="${esc(f.dn)}" autocomplete="off"><button type="button" class="btn sm" id="scanDn" aria-label="${esc(t('ស្កេនបាកូដ', 'Scan barcode'))}">📷 ${t('ស្កេន', 'Scan')}</button></div></div></div>`;
       body += `<div class="card"><h2>📷 ${t('រូបថត', 'Photos')} <small class="il">(${t('ច្រើនបំផុត', 'up to')} ${MAX_PHOTOS})</small></h2>
         <div class="photos">${(f.keepPhotos || []).map((id, i) => `<div class="ph kept"><span>📎 ${i + 1}</span><button type="button" data-unkeep="${i}" aria-label="Remove">✕</button></div>`).join('')}
         ${f.photos.map((u, i) => `<div class="ph"><img src="${u}" alt=""><button type="button" data-unphoto="${i}" aria-label="Remove">✕</button></div>`).join('')}
@@ -515,6 +516,8 @@
         },
       });
     };
+    const sd = $('#scanDn');
+    if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
     const gb = $('#gpsBtn');
     if (gb) gb.onclick = () => { collect(); locate(true); };
     const iw = $('#inWh');
@@ -570,6 +573,43 @@
     requestAnimationFrame(() => bg.classList.add('open'));
     const on = list.querySelector('.pick-item.on');
     if (on) on.scrollIntoView({ block: 'center' });
+  }
+
+  /** Camera barcode scan (DN). Android uses the built-in BarcodeDetector; other phones load the zxing reader. The number can always be typed instead. */
+  function scanCode(onCode) {
+    let stream = null, stopped = false, timer = 0, ctrl = null;
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(t('ស្កេនបាកូដ DN', 'Scan the DN barcode'))}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <div class="scan-view"><video playsinline muted></video><div class="scan-frame"></div></div>
+        <p class="hint center" id="scanMsg">${esc(t('ដាក់បាកូដក្នុងប្រអប់', 'Hold the barcode inside the box'))}</p></div>`;
+    const video = bg.querySelector('video'), msg = bg.querySelector('#scanMsg');
+    const close = () => { stopped = true; clearTimeout(timer); if (ctrl) try { ctrl.stop(); } catch (e) { /* already stopped */ } if (stream) stream.getTracks().forEach(x => x.stop()); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const done = code => { if (stopped || !code) return; code = String(code).trim(); close(); onCode(code); };
+    bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) close(); };
+    document.body.appendChild(bg);
+    requestAnimationFrame(() => bg.classList.add('open'));
+    const fail = () => { if (stopped) return; msg.textContent = t('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយលេខ DN។', 'Camera not available. Please type the DN number.'); bg.querySelector('.scan-view').hidden = true; };
+    if (DEMO) { timer = setTimeout(() => done('8100452231'), 1500); return; }
+    (async () => {
+      try {
+        if ('BarcodeDetector' in window) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+          if (stopped) { stream.getTracks().forEach(x => x.stop()); return; }
+          video.srcObject = stream; await video.play();
+          const det = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'codabar'] });
+          const tick = async () => { if (stopped) return; try { const r = await det.detect(video); if (r && r[0] && r[0].rawValue) return done(r[0].rawValue); } catch (e) { /* next frame */ } timer = setTimeout(tick, 150); };
+          tick();
+        } else {
+          const z = await import('../vendor/zxing-browser.min.js');
+          if (stopped) return;
+          ctrl = await new z.BrowserMultiFormatReader().decodeFromVideoDevice(undefined, video, r => { if (r) done(r.getText()); });
+          if (stopped) ctrl.stop();
+        }
+      } catch (e) { fail(); }
+    })();
   }
 
   async function fillFromPlate() {
