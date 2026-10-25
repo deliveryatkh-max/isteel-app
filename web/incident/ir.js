@@ -56,6 +56,11 @@
   const level = s => (!s ? '' : s >= 15 ? 'HIGH' : s >= 8 ? 'MEDIUM' : 'LOW');
   const levelKm = l => ({ HIGH: 'ខ្ពស់', MEDIUM: 'មធ្យម', LOW: 'ទាប' }[l] || '');
   const levelBadge = s => { const l = level(s); return l ? `<span class="badge lv-${l.toLowerCase()}">${s} · ${esc(t(levelKm(l), l))}</span>` : ''; };
+  // Emoji before each category in the dropdown (the Icon column of the Categories tab wins).
+  const CAT_ICONS = { 'Collision with vehicle': '🚗', 'Collision with object / building': '🧱', Rollover: '🔄', 'Load fell / shifted': '📦',
+    'Goods damaged': '💔', 'Injury to person': '🤕', 'Slip / trip / fall': '🚶', 'Forklift / crane': '🏗️', 'Lifting / websling': '⛓️',
+    'Speeding / unsafe driving': '⚡', 'Fuel / oil spill': '🛢️', Fire: '🔥', 'Theft / security': '🔒', Other: '🏷️' };
+  const catIcon = c => (c && (c.icon || CAT_ICONS[c.en])) || '🏷️';
   let CATS = [];
   const catName = en => { const c = CATS.find(x => x.en === en); return c ? t(c.km || c.en, c.en) : en || ''; };
 
@@ -252,7 +257,7 @@
       if (f.type) {
         const cats = CATS.filter(c => !c.types || c.types.indexOf(f.type) >= 0);
         body += `<div class="card"><h2>${t('ប្រភេទរង', 'Category')} <span class="req">*</span></h2>
-          <div class="chips" data-chips="category">${cats.map(c => `<button type="button" class="chip ${f.category === c.en ? 'on' : ''}" data-v="${esc(c.en)}">${esc(t(c.km || c.en, c.en))}</button>`).join('')}</div>
+          <select class="in cat-sel" id="catSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${cats.map(c => `<option value="${esc(c.en)}" ${f.category === c.en ? 'selected' : ''}>${esc(catIcon(c) + '  ' + t(c.km || c.en, c.en))}</option>`).join('')}</select>
           <label class="f">${t('វេន', 'Shift')}</label>${chips('shift', SHIFTS)}
           ${f.type === 'near' ? `<label class="check"><input type="checkbox" id="anonymous" ${f.anonymous ? 'checked' : ''}> ${t('មិនបង្ហាញឈ្មោះខ្ញុំ (អនាមិក)', 'Don\'t show my name (anonymous)')}</label>
             <div class="hint">${t('ឈ្មោះមិនបង្ហាញក្នុង PDF Telegram ឬអ៊ីមែលទេ។ មិនចាំបាច់ចុះហត្ថលេខា។', 'Your name is not shown in the PDF, Telegram or email. No signature needed.')}</div>` : ''}</div>`;
@@ -386,6 +391,7 @@
         saveDraft(); paintForm();
       }; });
     });
+    const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
     $$('[data-lik]').forEach(b => { b.onclick = () => { collect(); f.likelihood = +b.dataset.lik; saveDraft(); paintForm(); }; });
     const add = (id, fn) => { const b = $(id); if (b) b.onclick = () => { collect(); fn(); saveDraft(); paintForm(); }; };
@@ -717,7 +723,7 @@
         <p class="hint">${t('ពួកគេត្រូវមានធីក គ្រោះថ្នាក់ ក្នុង Users ផងដែរ។', 'They also need គ្រោះថ្នាក់ ticked in Users.')}</p>`;
     } else if (setTab === 'cat') {
       body = `${S.categories.map((c, i) => `<div class="card setrow" data-i="${i}">
-          <div class="row2"><input class="in" data-k="en" value="${esc(c.en)}" placeholder="English"><input class="in" data-k="km" value="${esc(c.km)}" placeholder="ខ្មែរ"></div>
+          <div class="catrow"><input class="in icon-in" data-k="icon" value="${esc(catIcon(c))}" placeholder="🏷️" maxlength="8" aria-label="Icon"><input class="in" data-k="en" value="${esc(c.en)}" placeholder="English"><input class="in" data-k="km" value="${esc(c.km)}" placeholder="ខ្មែរ"></div>
           <div class="setfoot">${Object.keys(TYPES).map(k => `<label class="check"><input type="checkbox" data-type-k="${k}" ${String(c.types || 'road,wh,near').split(',').indexOf(k) >= 0 ? 'checked' : ''}> ${TYPES[k].ic}</label>`).join('')}
           <label class="check"><input type="checkbox" data-k="active" ${c.active !== false ? 'checked' : ''}> ${t('ប្រើ', 'Active')}</label><button class="btn sm ghost" data-del="${i}">✕</button></div></div>`).join('')}
         <button class="btn" id="addRow">＋ ${t('ប្រភេទរងថ្មី', 'New category')}</button>
@@ -741,7 +747,7 @@
       ${body}<button class="btn ok big mt" id="saveSet">💾 ${t('រក្សាទុក', 'Save')}</button>`;
     $$('[data-st]').forEach(b => { b.onclick = () => { readSettings(); setTab = b.dataset.st; paintSettings(); }; });
     const key = { mail: 'lists', sup: 'supervisors', cat: 'categories' }[setTab];
-    const blank = { mail: { name: '', emails: [], when: 'button', active: true }, sup: { warehouse: '', name: '', email: '', backup: '' }, cat: { en: '', km: '', types: 'road,wh,near', active: true } }[setTab];
+    const blank = { mail: { name: '', emails: [], when: 'button', active: true }, sup: { warehouse: '', name: '', email: '', backup: '' }, cat: { icon: '', en: '', km: '', types: 'road,wh,near', active: true } }[setTab];
     const ar = $('#addRow'); if (ar) ar.onclick = () => { readSettings(); S[key].push(Object.assign({}, blank)); paintSettings(); };
     $$('[data-del]').forEach(b => { b.onclick = () => { readSettings(); S[key].splice(+b.dataset.del, 1); paintSettings(); }; });
     const qr = $('#qr');
@@ -837,7 +843,7 @@
       if (action === 'settings') return { lists: db.lists, supervisors: db.supervisors, categories: db.categories.map(c => Object.assign({ active: true }, c, { types: (c.types || []).join ? c.types.join(',') : c.types })), telegramChat: db.tg || '', telegramBot: false, prefix: 'IR', publicLink: db.pub === false ? '' : 'demo123', delivery: true };
       if (action === 'saveSettings') {
         if (p.lists) db.lists = p.lists; if (p.supervisors) db.supervisors = p.supervisors;
-        if (p.categories) db.categories = p.categories.filter(c => c.active !== false).map(c => ({ en: c.en, km: c.km, types: String(c.types).split(',') }));
+        if (p.categories) db.categories = p.categories.filter(c => c.active !== false).map(c => ({ en: c.en, km: c.km, icon: c.icon, types: String(c.types).split(',') }));
         if (p.telegramChat !== undefined) db.tg = p.telegramChat; if (p.publicOn !== undefined) db.pub = p.publicOn;
         keep(); return demoApi('settings', {});
       }

@@ -40,6 +40,7 @@ const must = r => { if (!r.ok) throw new Error(r.error); return r.data; };
 // admin sets supervisors, lists, telegram
 let s = must(call('kim@x.com', 'settings', {}));
 eq(s.categories.length, 14, '14 default categories');
+eq(s.categories[0].icon, '🚗', 'category icon');
 s = must(call('kim@x.com', 'saveSettings', {
   supervisors: [{ warehouse: 'SSK Warehouse', name: 'Pisey', email: 'SUP@x.com', backup: '' }],
   lists: [{ name: 'Management', emails: 'm1@x.com, m2@x.com', when: 'auto' }, { name: 'HSE', emails: ['h@x.com'], when: 'high' }, { name: '3PL', emails: ['p@x.com'], when: 'button' }],
@@ -56,6 +57,7 @@ let b = must(call('driver@x.com', 'boot', {}));
 eq(b.plates, ['3A-2102', '3E-2588'], 'plates from Driver & Truck');
 eq(b.lists.map(l => l.name), ['Management', 'HSE', '3PL']);
 eq(b.supervisors.length, 1);
+eq(b.categories.find(c => c.en === 'Fire').icon, '🔥', 'icons in boot');
 
 // submit
 ok(/sign/.test(call('driver@x.com', 'submit', Object.assign({}, FORM, { signature: '' })).error), 'signature needed');

@@ -81,6 +81,7 @@ window.IR_TEXTS = [
   ["The supervisor asked for changes:","the form","ប្រធានឃ្លាំងសុំឲ្យកែ៖","The supervisor asked for changes:"],
   ["What kind of incident?","the form","តើជាហេតុការណ៍ប្រភេទអ្វី?","What kind of incident?"],
   ["Category","the form","ប្រភេទរង","Category"],
+  ["— Choose —","the form","— ជ្រើសរើស —","— Choose —"],
   ["Shift","the form","វេន","Shift"],
   ["Don't show my name (anonymous)","the form","មិនបង្ហាញឈ្មោះខ្ញុំ (អនាមិក)","Don't show my name (anonymous)"],
   ["Your name is not shown in the PDF, Telegram or email. No signature needed.","the form","ឈ្មោះមិនបង្ហាញក្នុង PDF Telegram ឬអ៊ីមែលទេ។ មិនចាំបាច់ចុះហត្ថលេខា។","Your name is not shown in the PDF, Telegram or email. No signature needed."],
