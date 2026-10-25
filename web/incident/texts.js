@@ -167,7 +167,6 @@ window.IR_TEXTS = [
   ["Back","New report","","","ថយក្រោយ","Back"],
   ["Cancel","New report","","","បោះបង់","Cancel"],
   ["Next","New report","","","បន្ទាប់","Next"],
-  ["Saved on this phone as you type","New report","","","រក្សាទុកក្នុងទូរស័ព្ទដោយស្វ័យប្រវត្តិ","Saved on this phone as you type"],
   ["Report without signing in","New report","","","រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី","Report without signing in"],
   ["Edit and send again","New report","កែ និងផ្ញើម្តងទៀត","","កែ និងផ្ញើម្តងទៀត","Edit and send again"],
   ["Step","New report","កែ និងផ្ញើម្តងទៀត","","ជំហាន","Step"],
