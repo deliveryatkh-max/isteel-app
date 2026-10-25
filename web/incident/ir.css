@@ -147,3 +147,7 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .skel.short { width: 60%; height: 54px; }
 @keyframes lskel { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .lbar i, .skel, .ldots::after, .st.on span::after, .steps.grow .st.on span::after { animation: none; } .lbar i { transform: scaleX(.6); } }
+/* steps that can't be opened yet, and the required field that is still empty */
+.st.lock { opacity: .45; }
+.miss { border-color: #c62828 !important; box-shadow: 0 0 0 3px rgba(198, 40, 40, .18); border-radius: 14px; animation: shake .35s; }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }

@@ -254,7 +254,7 @@
     const sc = f.severity && f.likelihood ? f.severity * f.likelihood : 0;
     const grow = s !== paintedStep;     // fill the bar only when the step changes, not on every tap
     paintedStep = s;
-    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
+    const head = `<div class="steps ${grow ? 'grow' : ''}">${STEPS.map((x, i) => `<button type="button" class="st ${i + 1 < s ? 'd' : ''} ${i + 1 === s ? 'on' : ''} ${i + 1 > openStep() ? 'lock' : ''}" data-go="${i + 1}" aria-label="${esc(t(x[0], x[1]))}"><span></span><small>${esc(t(x[0], x[1]))}</small></button>`).join('')}</div>`;
     let body = '';
     if (editId && f.returnNote) body += `<div class="alert warn">↩️ ${t('ប្រធានឃ្លាំងសុំឲ្យកែ៖', 'The supervisor asked for changes:')} <b>${esc(f.returnNote)}</b></div>`;
     if (s === 1) {
@@ -384,9 +384,32 @@
     return m || null;
   }
 
+  // The first step with a required field still empty: steps after it can't be opened (Kim, 25 Oct 2026).
+  const openStep = () => [1, 2, 3, 4].find(n => !stepOk(n, true)) || 5;
+  const MISS = { 'Choose the incident type': '.types', 'Choose a category': '#catSel', 'Enter the date': '#date', 'Enter the location': '#location', 'Describe what happened': '#story' };
+  function stopAt(n) {
+    const m = stepOk(n);
+    if (f.step !== n) { f.step = n; paintForm(); }
+    toast(m);
+    const sel = MISS[stepOkEn(n)], el = sel && $(sel);
+    if (!el) return;
+    el.classList.add('miss');
+    const clear = () => el.classList.remove('miss');
+    ['input', 'change', 'click'].forEach(ev => el.addEventListener(ev, clear, { once: true }));
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (el.tagName !== 'DIV') el.focus({ preventScroll: true });
+  }
+  function stepOkEn(n) {
+    if (n === 1) return !f.type ? 'Choose the incident type' : !f.category ? 'Choose a category' : '';
+    if (n === 2) return !f.date ? 'Enter the date' : !f.location && !f.warehouse ? 'Enter the location' : '';
+    if (n === 3) return !String(f.story).trim() ? 'Describe what happened' : '';
+    return '';
+  }
+
   function wireForm() {
-    $$('[data-go]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); f.step = +b.dataset.go; paintForm(); window.scrollTo(0, 0); }; });
-    $$('[data-next]').forEach(b => { b.onclick = () => { collect(); const m = stepOk(f.step); if (m) { toast(m); return; } f.step++; paintForm(); window.scrollTo(0, 0); }; });
+    const goTo = n => { collect(); const o = openStep(); if (n > f.step && n > o) { stopAt(o); return; } f.step = n; paintForm(); window.scrollTo(0, 0); };
+    $$('[data-go]').forEach(b => { b.onclick = e => { e.preventDefault(); goTo(+b.dataset.go); }; });
+    $$('[data-next]').forEach(b => { b.onclick = () => goTo(f.step + 1); });
     $$('[data-type]').forEach(b => { b.onclick = () => { collect(); f.type = b.dataset.type; if (f.type !== 'near') f.anonymous = false; const cat = CATS.find(c => c.en === f.category); if (cat && cat.types && cat.types.indexOf(f.type) < 0) f.category = ''; paintForm(); }; });
     $$('[data-chips]').forEach(box => {
       const id = box.dataset.chips, multi = id === 'road' || id === 'weather';
