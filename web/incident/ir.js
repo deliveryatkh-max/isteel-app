@@ -25,6 +25,9 @@
   const nowHm = () => { const d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
   const isDesk = () => window.matchMedia && matchMedia('(min-width: 1000px)').matches;
 
+  // Animated progress while the Apps Script answers (Kim, 25 Oct 2026: progress instead of a spinner).
+  const loader = (km, en) => `<div class="loading" role="status"><div class="lmsg"><span class="ldots">${esc(t(km || 'កំពុងផ្ទុក', en || 'Loading'))}</span></div>
+    <div class="lbar"><i></i></div><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div>`;
   let toastTimer = 0;
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
 
@@ -128,7 +131,7 @@
     const h = location.hash.replace(/^#\/?/, '');
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', (h.split('/')[0] || 'home') === a.dataset.r));
     if (PUBLIC) return renderForm(null);
-    if (!B) { $('#view').innerHTML = '<div class="spinner" aria-label="Loading"></div>'; screen = route; return; }
+    if (!B) { $('#view').innerHTML = loader('កំពុងផ្ទុករបាយការណ៍', 'Loading reports'); screen = route; return; }
     if (h === 'new') return renderForm(null);
     if (h.startsWith('edit/')) return openEdit(decodeURIComponent(h.slice(5)));
     if (h.startsWith('r/')) return openReport(decodeURIComponent(h.slice(2)));
@@ -203,7 +206,7 @@
   const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3) }))); };
 
   async function openEdit(id) {
-    $('#view').innerHTML = '<div class="spinner"></div>';
+    $('#view').innerHTML = loader('កំពុងបើករបាយការណ៍', 'Opening the report');
     try {
       const d = await api('get', { id });
       if (!d.can || !d.can.edit) { location.hash = '#/r/' + encodeURIComponent(id); return; }
@@ -528,7 +531,7 @@
   async function openReport(id) {
     screen = () => (cur && cur.id === id ? paintReport() : openReport(id));
     const brief = reports().find(r => r.id === id);
-    $('#view').innerHTML = brief ? `<div class="item">${item(brief).replace(/^<a[^>]*>|<\/a>$/g, '')}</div><div class="spinner"></div>` : '<div class="spinner"></div>';
+    $('#view').innerHTML = brief ? `<div class="item">${item(brief).replace(/^<a[^>]*>|<\/a>$/g, '')}</div>${loader('កំពុងបើករបាយការណ៍', 'Opening the report')}` : loader('កំពុងបើករបាយការណ៍', 'Opening the report');
     try { cur = await api('get', { id }); paintReport(); }
     catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><a class="btn mt" href="#/">${t('ទៅបញ្ជី', 'Back to the list')}</a></div>`; }
   }
@@ -698,7 +701,7 @@
   async function renderSettings() {
     screen = () => (S ? paintSettings() : renderSettings());
     if (!isAdmin()) { $('#view').innerHTML = `<div class="card empty">🔒 ${t('សម្រាប់ Admin ប៉ុណ្ណោះ', 'Admins only')}</div>`; return; }
-    $('#view').innerHTML = '<div class="spinner"></div>';
+    $('#view').innerHTML = loader('កំពុងផ្ទុកការកំណត់', 'Loading settings');
     try { S = await api('settings'); paintSettings(); } catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; }
   }
   let setTab = 'mail';
@@ -811,7 +814,7 @@
     const can = d => ({ edit: d.status === 'Returned' && d.reporter.email === me.email, sign: d.status === 'Waiting supervisor', actions: d.status === 'Signed' || d.status === 'Waiting supervisor', close: d.status === 'Signed', email: d.status === 'Signed' || d.status === 'Closed' });
     const now = () => today() + ' ' + nowHm();
     const fail = (en, km) => { throw Object.assign(new Error(t(km, en)), { code: 'BAD' }); };
-    return new Promise(r => setTimeout(r, 200)).then(() => {
+    return new Promise(r => setTimeout(r, action === 'boot' || action === 'get' || action === 'settings' ? 1200 : 200)).then(() => {
       const boot = () => ({ user: me, categories: db.categories, supervisors: db.supervisors.map(s => ({ warehouse: s.warehouse, name: s.name, email: s.email })),
         lists: db.lists.filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length, when: l.when })),
         plates: ['3A-2102', '3E-2588', '3F-8691', '3C-4471'], drivers: [{ name: 'ជា វុទ្ធី', plate: '3E-2588', company: 'ISI' }, { name: 'សុខ ដារា', plate: '3A-2102', company: 'ISI' }],
