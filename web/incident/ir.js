@@ -13,7 +13,9 @@
   const MAX_PHOTOS = 6;
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
-  const t = (km, en) => (window.LANG ? LANG.t(km, en) : km);
+  // Words the admin changed in the Texts tab of the sheet, by the original English text: { key: [Khmer, English] }.
+  let TX = {};
+  const t = (km, en) => { const o = TX[en]; if (o) { km = o[0] || km; en = o[1] || en; } return window.LANG ? LANG.t(km, en) : km; };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
@@ -54,6 +56,11 @@
   const level = s => (!s ? '' : s >= 15 ? 'HIGH' : s >= 8 ? 'MEDIUM' : 'LOW');
   const levelKm = l => ({ HIGH: 'ខ្ពស់', MEDIUM: 'មធ្យម', LOW: 'ទាប' }[l] || '');
   const levelBadge = s => { const l = level(s); return l ? `<span class="badge lv-${l.toLowerCase()}">${s} · ${esc(t(levelKm(l), l))}</span>` : ''; };
+  // Emoji before each category in the dropdown (the Icon column of the Categories tab wins).
+  const CAT_ICONS = { 'Collision with vehicle': '🚗', 'Collision with object / building': '🧱', Rollover: '🔄', 'Load fell / shifted': '📦',
+    'Goods damaged': '💔', 'Injury to person': '🤕', 'Slip / trip / fall': '🚶', 'Forklift / crane': '🏗️', 'Lifting / websling': '⛓️',
+    'Speeding / unsafe driving': '⚡', 'Fuel / oil spill': '🛢️', Fire: '🔥', 'Theft / security': '🔒', Other: '🏷️' };
+  const catIcon = c => (c && (c.icon || CAT_ICONS[c.en])) || '🏷️';
   let CATS = [];
   const catName = en => { const c = CATS.find(x => x.en === en); return c ? t(c.km || c.en, c.en) : en || ''; };
 
@@ -82,6 +89,7 @@
 
   // ---------------------------------------------------------------- state
   let B = getJ('ir_boot', null);           // boot data, kept on the phone so the app opens at once
+  TX = getJ('ir_texts', {});
   let screen = () => {};
   const isAdmin = () => !!(B && B.user && B.user.admin);
   const seesAll = () => !!(B && B.user && (B.user.admin || B.user.reviewer));
@@ -93,6 +101,7 @@
       const d = PUBLIC ? await api('publicBoot', { key: PUBLIC_KEY }) : await api('boot');
       B = PUBLIC ? Object.assign({ user: null, reports: [] }, d) : d;
       CATS = B.categories || [];
+      useTexts(B.texts);
       if (!PUBLIC) set('ir_boot', JSON.stringify(B));
       paintTabs();
       screen();
@@ -102,6 +111,17 @@
       else toast(e.message);
     }
   }
+
+  function useTexts(map) {
+    if (!map) return;
+    TX = map;
+    set('ir_texts', JSON.stringify(map));
+    paintStatic();
+    // An admin's phone adds the app's new texts to the Texts tab, so they can be edited there.
+    const missing = (window.IR_TEXTS || []).filter(r => !(r[0] in map));
+    if (missing.length && isAdmin() && !DEMO) api('syncTexts', { rows: missing }).catch(() => {});
+  }
+  function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
 
   // ---------------------------------------------------------------- router
   function route() {
@@ -237,7 +257,7 @@
       if (f.type) {
         const cats = CATS.filter(c => !c.types || c.types.indexOf(f.type) >= 0);
         body += `<div class="card"><h2>${t('ប្រភេទរង', 'Category')} <span class="req">*</span></h2>
-          <div class="chips" data-chips="category">${cats.map(c => `<button type="button" class="chip ${f.category === c.en ? 'on' : ''}" data-v="${esc(c.en)}">${esc(t(c.km || c.en, c.en))}</button>`).join('')}</div>
+          <select class="in cat-sel" id="catSel"><option value="">${esc(t('— ជ្រើសរើស —', '— Choose —'))}</option>${cats.map(c => `<option value="${esc(c.en)}" ${f.category === c.en ? 'selected' : ''}>${esc(catIcon(c) + '  ' + t(c.km || c.en, c.en))}</option>`).join('')}</select>
           <label class="f">${t('វេន', 'Shift')}</label>${chips('shift', SHIFTS)}
           ${f.type === 'near' ? `<label class="check"><input type="checkbox" id="anonymous" ${f.anonymous ? 'checked' : ''}> ${t('មិនបង្ហាញឈ្មោះខ្ញុំ (អនាមិក)', 'Don\'t show my name (anonymous)')}</label>
             <div class="hint">${t('ឈ្មោះមិនបង្ហាញក្នុង PDF Telegram ឬអ៊ីមែលទេ។ មិនចាំបាច់ចុះហត្ថលេខា។', 'Your name is not shown in the PDF, Telegram or email. No signature needed.')}</div>` : ''}</div>`;
@@ -371,6 +391,7 @@
         saveDraft(); paintForm();
       }; });
     });
+    const cs = $('#catSel'); if (cs) cs.onchange = () => { f.category = cs.value; saveDraft(); };
     $$('[data-sev]').forEach(b => { b.onclick = () => { collect(); f.severity = +b.dataset.sev; saveDraft(); paintForm(); }; });
     $$('[data-lik]').forEach(b => { b.onclick = () => { collect(); f.likelihood = +b.dataset.lik; saveDraft(); paintForm(); }; });
     const add = (id, fn) => { const b = $(id); if (b) b.onclick = () => { collect(); fn(); saveDraft(); paintForm(); }; };
@@ -702,7 +723,7 @@
         <p class="hint">${t('ពួកគេត្រូវមានធីក គ្រោះថ្នាក់ ក្នុង Users ផងដែរ។', 'They also need គ្រោះថ្នាក់ ticked in Users.')}</p>`;
     } else if (setTab === 'cat') {
       body = `${S.categories.map((c, i) => `<div class="card setrow" data-i="${i}">
-          <div class="row2"><input class="in" data-k="en" value="${esc(c.en)}" placeholder="English"><input class="in" data-k="km" value="${esc(c.km)}" placeholder="ខ្មែរ"></div>
+          <div class="catrow"><input class="in icon-in" data-k="icon" value="${esc(catIcon(c))}" placeholder="🏷️" maxlength="8" aria-label="Icon"><input class="in" data-k="en" value="${esc(c.en)}" placeholder="English"><input class="in" data-k="km" value="${esc(c.km)}" placeholder="ខ្មែរ"></div>
           <div class="setfoot">${Object.keys(TYPES).map(k => `<label class="check"><input type="checkbox" data-type-k="${k}" ${String(c.types || 'road,wh,near').split(',').indexOf(k) >= 0 ? 'checked' : ''}> ${TYPES[k].ic}</label>`).join('')}
           <label class="check"><input type="checkbox" data-k="active" ${c.active !== false ? 'checked' : ''}> ${t('ប្រើ', 'Active')}</label><button class="btn sm ghost" data-del="${i}">✕</button></div></div>`).join('')}
         <button class="btn" id="addRow">＋ ${t('ប្រភេទរងថ្មី', 'New category')}</button>
@@ -726,7 +747,7 @@
       ${body}<button class="btn ok big mt" id="saveSet">💾 ${t('រក្សាទុក', 'Save')}</button>`;
     $$('[data-st]').forEach(b => { b.onclick = () => { readSettings(); setTab = b.dataset.st; paintSettings(); }; });
     const key = { mail: 'lists', sup: 'supervisors', cat: 'categories' }[setTab];
-    const blank = { mail: { name: '', emails: [], when: 'button', active: true }, sup: { warehouse: '', name: '', email: '', backup: '' }, cat: { en: '', km: '', types: 'road,wh,near', active: true } }[setTab];
+    const blank = { mail: { name: '', emails: [], when: 'button', active: true }, sup: { warehouse: '', name: '', email: '', backup: '' }, cat: { icon: '', en: '', km: '', types: 'road,wh,near', active: true } }[setTab];
     const ar = $('#addRow'); if (ar) ar.onclick = () => { readSettings(); S[key].push(Object.assign({}, blank)); paintSettings(); };
     $$('[data-del]').forEach(b => { b.onclick = () => { readSettings(); S[key].splice(+b.dataset.del, 1); paintSettings(); }; });
     const qr = $('#qr');
@@ -768,8 +789,8 @@
   }
   if (DEMO) { $('#demo').hidden = false; $('#demo').textContent = t('DEMO · ឧទាហរណ៍ប៉ុណ្ណោះ មិនរក្សាទុកក្នុង Google Sheet ទេ', 'DEMO · sample only, nothing is saved to the Google Sheet'); }
   if (PUBLIC) { document.body.classList.add('public'); $('.tabs').hidden = true; }
-  if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); screen(); }); }
-  $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); });
+  if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); screen(); }); }
+  paintStatic();
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   const paintTheme = () => { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; };
   $('#themeBtn').onclick = () => { const now = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); const next = now === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', next); set('fr_theme', next); paintTheme(); };
@@ -822,7 +843,7 @@
       if (action === 'settings') return { lists: db.lists, supervisors: db.supervisors, categories: db.categories.map(c => Object.assign({ active: true }, c, { types: (c.types || []).join ? c.types.join(',') : c.types })), telegramChat: db.tg || '', telegramBot: false, prefix: 'IR', publicLink: db.pub === false ? '' : 'demo123', delivery: true };
       if (action === 'saveSettings') {
         if (p.lists) db.lists = p.lists; if (p.supervisors) db.supervisors = p.supervisors;
-        if (p.categories) db.categories = p.categories.filter(c => c.active !== false).map(c => ({ en: c.en, km: c.km, types: String(c.types).split(',') }));
+        if (p.categories) db.categories = p.categories.filter(c => c.active !== false).map(c => ({ en: c.en, km: c.km, icon: c.icon, types: String(c.types).split(',') }));
         if (p.telegramChat !== undefined) db.tg = p.telegramChat; if (p.publicOn !== undefined) db.pub = p.publicOn;
         keep(); return demoApi('settings', {});
       }

@@ -20,14 +20,15 @@
  *   IR_PUBLIC_KEY      made by setup(); the key in the no-sign-in link for drivers (change it to stop old QR codes)
  */
 
-const SH = { LOG: 'Incidents', MAIL: 'Email Lists', SUP: 'Supervisors', CAT: 'Categories', SET: 'IR Settings' };
+const SH = { LOG: 'Incidents', MAIL: 'Email Lists', SUP: 'Supervisors', CAT: 'Categories', SET: 'IR Settings', TXT: 'Texts' };
 const LOG_COLS = ['Report No', 'Date Reported', 'Status', 'Type', 'Category', 'Incident Date', 'Time', 'Shift', 'Location', 'Warehouse',
   'Truck Plate', 'Driver', 'Company', 'Trip ID', 'DN', 'Customer', 'Injured', 'Severity', 'Likelihood', 'Risk Score', 'Risk Level',
   'Main Cause', 'Est. Cost (USD)', 'Days Lost', 'Open Actions', 'Reporter', 'Reporter Email', 'Supervisor', 'Supervisor Email',
   'Signed At', 'Closed At', 'PDF Link', 'Folder Link', 'Updated'];
 const MAIL_COLS = ['List', 'Emails', 'When', 'Active'];
 const SUP_COLS = ['Warehouse', 'Name', 'Email', 'Backup Email'];
-const CAT_COLS = ['Category', 'Khmer', 'Types', 'Active'];
+const CAT_COLS = ['Category', 'Khmer', 'Types', 'Active', 'Icon'];
+const TXT_COLS = ['Key (do not change)', 'Screen', 'Khmer', 'English'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'គ្រោះថ្នាក់';      // tick box column in the Fuel Refill Users tab (added by the Fuel script)
 const MAX_PHOTOS = 6;
@@ -48,6 +49,11 @@ const DEFAULT_CATS = [
   ['Fuel / oil spill', 'សាំង ឬប្រេងកំពប់', 'road,wh,near'], ['Fire', 'អគ្គិភ័យ', 'road,wh,near'],
   ['Theft / security', 'លួច / សន្តិសុខ', 'road,wh,near'], ['Other', 'ផ្សេងៗ', 'road,wh,near'],
 ];
+// Emoji shown before each category in the app's dropdown; change it in the Icon column of the Categories tab.
+const CAT_ICONS = { 'Collision with vehicle': '🚗', 'Collision with object / building': '🧱', Rollover: '🔄', 'Load fell / shifted': '📦',
+  'Goods damaged': '💔', 'Injury to person': '🤕', 'Slip / trip / fall': '🚶', 'Forklift / crane': '🏗️', 'Lifting / websling': '⛓️',
+  'Speeding / unsafe driving': '⚡', 'Fuel / oil spill': '🛢️', Fire: '🔥', 'Theft / security': '🔒', Other: '🏷️' };
+const catIcon_ = (en, icon) => clip_(icon, 8) || CAT_ICONS[en] || '🏷️';
 const SEVERITY = ['Near miss (no injury)', 'Minor (first aid)', 'Moderate (medical / lost time)', 'Major (hospital / big damage)', 'Critical (fatal / very big loss)'];
 const SEVERITY_KM = ['ជិតកើត (គ្មានរបួស)', 'ស្រាល (ជំនួយបឋម)', 'មធ្យម (ពេទ្យ / ឈប់ការងារ)', 'ធ្ងន់ (មន្ទីរពេទ្យ / ខូចខាតធំ)', 'ធ្ងន់ធ្ងរបំផុត (ស្លាប់ / ខាតធំណាស់)'];
 const LIKELY = ['Rare', 'Unlikely', 'Possible', 'Likely', 'Almost certain'];
@@ -91,6 +97,7 @@ function route_(action, p, user) {
     case 'settings': return settings_(user);
     case 'saveSettings': return saveSettings_(p, user);
     case 'testTelegram': return testTelegram_(user);
+    case 'syncTexts': return syncTexts_(p, user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -123,6 +130,10 @@ function sheet_(name, cols, seed) {
     sh.setFrozenRows(1);
     sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@');   // plain text: plates like 3E-2588 stay as typed
     if (seed && seed.length) sh.getRange(2, 1, seed.length, cols.length).setValues(seed);
+  } else if (sh.getLastColumn() < cols.length && sh.getRange(1, 1).getValue() === cols[0]) {
+    // a column added in an update (e.g. Icon in Categories): add its heading to an older tab
+    const n = sh.getLastColumn();
+    sh.getRange(1, n + 1, 1, cols.length - n).setValues([cols.slice(n)]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
   }
   return sh;
 }
@@ -148,13 +159,14 @@ function setup() {
   sheet_(SH.LOG, LOG_COLS);
   sheet_(SH.MAIL, MAIL_COLS, [['W&L Management', '', WHEN.auto, 'Yes'], ['HSE team', '', WHEN.high, 'Yes'], ['Transport / 3PL', '', WHEN.button, 'Yes']]);
   sheet_(SH.SUP, SUP_COLS, [['SSK Warehouse', '', '', '']]);
-  sheet_(SH.CAT, CAT_COLS, DEFAULT_CATS.map(c => c.concat(['Yes'])));
+  sheet_(SH.CAT, CAT_COLS, DEFAULT_CATS.map(c => c.concat(['Yes', catIcon_(c[0])])));
   sheet_(SH.SET, SET_COLS, [
     ['NUMBER_PREFIX', 'IR', 'Report number = prefix-year-number, e.g. IR-2026-001'],
     ['TELEGRAM_CHAT_ID', '', 'Telegram group for new and signed reports (the Fuel app\'s TELEGRAM_CHAT_ID works). Empty = off.'],
     ['APP_URL', 'https://isteel-app.pages.dev/incident/', 'Address of the app, used in Telegram buttons and emails'],
     ['PUBLIC_LINK', 'Yes', 'Yes = drivers can report through the QR / link without signing in'],
   ]);
+  sheet_(SH.TXT, TXT_COLS);
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('IR_FOLDER_ID')) props.setProperty('IR_FOLDER_ID', DriveApp.createFolder('Incident Reports').getId());
   if (!props.getProperty('IR_PUBLIC_KEY')) props.setProperty('IR_PUBLIC_KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 16));
@@ -261,7 +273,27 @@ function supervisors_() {
 }
 function categories_() {
   return objs_(SH.CAT, CAT_COLS).filter(o => o.Category && (o.Active === '' || yes_(o.Active))).map(o => ({
-    en: o.Category, km: o.Khmer || o.Category, types: (o.Types || 'road,wh,near').split(/[\s,]+/).filter(Boolean) }));
+    en: o.Category, km: o.Khmer || o.Category, icon: catIcon_(o.Category, o.Icon), types: (o.Types || 'road,wh,near').split(/[\s,]+/).filter(Boolean) }));
+}
+// Texts tab: every word of the app (filled by an admin's phone). Change Khmer / English there; leave the Key as it is.
+function texts_() {
+  const out = {};
+  objs_(SH.TXT, TXT_COLS).forEach(o => { const k = o[TXT_COLS[0]]; if (k && !(k in out)) out[k] = [o.Khmer, o.English]; });
+  return out;
+}
+function syncTexts_(p, user) {
+  if (!user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
+  return withLock_(() => {
+    const have = texts_();
+    const add = (Array.isArray(p.rows) ? p.rows : []).slice(0, 3000)
+      .map(r => [clip_(r[0], 1000), clip_(r[1], 60), clip_(r[2], 1000), clip_(r[3], 1000)])
+      .filter(r => r[0] && !(r[0] in have) && (have[r[0]] = 1));
+    if (add.length) {
+      const sh = sheet_(SH.TXT, TXT_COLS);
+      sh.getRange(sh.getLastRow() + 1, 1, add.length, TXT_COLS.length).setNumberFormat('@').setValues(add);
+    }
+    return { added: add.length };
+  });
 }
 function mailLists_() {
   return objs_(SH.MAIL, MAIL_COLS).filter(o => o.List).map(o => ({
@@ -306,7 +338,7 @@ function boot_(user) {
     user: { email: user.email, name: user.name, phone: user.phone, admin: user.admin, reviewer: user.reviewer, supervisorOf: user.supervisorOf },
     categories: categories_(), supervisors: supervisors_().filter(s => s.email).map(s => ({ warehouse: s.warehouse, name: s.name, email: s.email })),
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length, when: l.when })),
-    plates: dt.plates, drivers: dt.drivers, reports: list_(user),
+    plates: dt.plates, drivers: dt.drivers, reports: list_(user), texts: texts_(),
   };
 }
 
@@ -813,7 +845,7 @@ function trip_(p) {
 function settings_(user) {
   if (!user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
   return {
-    lists: mailLists_(), supervisors: supervisors_(), categories: objs_(SH.CAT, CAT_COLS).filter(o => o.Category).map(o => ({ en: o.Category, km: o.Khmer, types: o.Types, active: o.Active === '' || yes_(o.Active) })),
+    lists: mailLists_(), supervisors: supervisors_(), categories: objs_(SH.CAT, CAT_COLS).filter(o => o.Category).map(o => ({ en: o.Category, km: o.Khmer, icon: catIcon_(o.Category, o.Icon), types: o.Types, active: o.Active === '' || yes_(o.Active) })),
     telegramChat: setting_('TELEGRAM_CHAT_ID'), telegramBot: !!prop_('TELEGRAM_BOT_TOKEN'), prefix: setting_('NUMBER_PREFIX') || 'IR',
     publicLink: yes_(setting_('PUBLIC_LINK')) ? prop_('IR_PUBLIC_KEY') : '', delivery: !!prop_('DELIVERY_SHEET_ID'),
   };
@@ -846,7 +878,7 @@ function saveSettings_(p, user) {
     }
     if (Array.isArray(p.categories)) {
       rewrite_(SH.CAT, CAT_COLS, p.categories.filter(c => c && clip_(c.en, 80)).map(c => [clip_(c.en, 80), clip_(c.km, 80),
-        String(c.types || 'road,wh,near').split(/[\s,]+/).filter(x => TYPES[x]).join(',') || 'road,wh,near', c.active === false ? 'No' : 'Yes']));
+        String(c.types || 'road,wh,near').split(/[\s,]+/).filter(x => TYPES[x]).join(',') || 'road,wh,near', c.active === false ? 'No' : 'Yes', catIcon_(clip_(c.en, 80), c.icon)]));
     }
     if (p.telegramChat !== undefined) setSetting_('TELEGRAM_CHAT_ID', clip_(p.telegramChat, 40));
     if (p.prefix !== undefined) setSetting_('NUMBER_PREFIX', clip_(p.prefix, 10).replace(/[^A-Za-z0-9]/g, '') || 'IR');
@@ -866,7 +898,7 @@ function publicRoute_(action, p) {
   if (action === 'publicBoot') {
     const dt = driverTruck_();
     return { categories: categories_(), supervisors: supervisors_().filter(s => s.email).map(s => ({ warehouse: s.warehouse, name: s.name, email: s.email })),
-      plates: dt.plates, drivers: dt.drivers };
+      plates: dt.plates, drivers: dt.drivers, texts: texts_() };
   }
   if (!clip_(p.reporterName, 100)) fail_('BAD', 'Enter your name.', 'សូមបញ្ចូលឈ្មោះរបស់អ្នក។');
   if (!clip_(p.reporterPhone, 40)) fail_('BAD', 'Enter your phone number.', 'សូមបញ្ចូលលេខទូរស័ព្ទរបស់អ្នក។');
