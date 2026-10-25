@@ -151,3 +151,46 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .st.lock { opacity: .45; }
 .miss { border-color: #c62828 !important; box-shadow: 0 0 0 3px rgba(198, 40, 40, .18); border-radius: 14px; animation: shake .35s; }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* Location with GPS button; warehouse box greyed when not in a warehouse */
+.locrow { display: flex; gap: 8px; }
+.locrow .in { flex: 1; min-width: 0; }
+.locrow .btn { flex: none; white-space: nowrap; }
+.field.off { opacity: .45; }
+.field.off select { pointer-events: none; }
+
+/* Searchable picker (plate, driver), same as the Fuel app */
+.picker {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--field); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; font-weight: 600;
+}
+.picker .pph { color: var(--muted); font-weight: 400; }
+.picker .pk-ic { font-size: 15px; opacity: .7; flex: none; }
+.new-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--ok-soft); color: var(--ok); }
+.sheet-bg { position: fixed; inset: 0; z-index: 60; background: rgba(10, 15, 22, 0); display: flex; align-items: flex-end; justify-content: center; transition: background .2s; }
+.sheet-bg.open { background: rgba(10, 15, 22, .5); }
+.sheet {
+  width: 100%; max-width: 640px; background: var(--card); color: var(--text); border-radius: 22px 22px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform .2s ease-out; box-shadow: 0 -10px 30px rgba(0, 0, 0, .18);
+}
+.sheet-bg.open .sheet { transform: none; }
+.sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 6px auto 8px; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.sheet-h { font-weight: 700; font-size: 17px; }
+.icon-btn { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--bg); color: var(--text); font-size: 16px; cursor: pointer; display: grid; place-items: center; }
+.picker-sheet { height: min(85vh, 640px); display: flex; flex-direction: column; }
+.picker-sheet .search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; flex: none; }
+.picker-sheet .search input[type=search] { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; padding: 10px 0; min-height: 46px; outline: none; }
+.pick-list { flex: 1; overflow-y: auto; margin: 10px -16px 0; padding: 0 16px; -webkit-overflow-scrolling: touch; }
+.pick-list .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+.pick-group { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; padding: 10px 4px 4px; }
+.pick-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: none; border: 0; border-bottom: 1px solid var(--line); padding: 12px 4px; min-height: 52px;
+}
+.pick-item small { display: block; color: var(--muted); font-size: 13px; }
+.pick-item b { font-weight: 600; }
+.pick-item.on { color: var(--brand); }
+.pick-item .tick { font-weight: 700; color: var(--brand); }
+.pick-item.pick-add { color: var(--ok); border-top: 1.5px dashed var(--line); }
+.pick-item.pick-add b { font-weight: 700; }

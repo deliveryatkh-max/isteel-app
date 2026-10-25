@@ -48,6 +48,7 @@
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
   const SHIFTS = [['ថ្ងៃ', 'Day'], ['យប់', 'Night']];
+  const WAREHOUSES = ['Warehouse A-D', 'Warehouse E', 'Warehouse G', 'Warehouse H', 'Warehouse I'];
   const ROADS = [['ស្ងួត', 'Dry'], ['សើម', 'Wet'], ['រន្ធ / ខូច', 'Potholes'], ['ភក់', 'Mud'], ['ចរាចរណ៍ច្រើន', 'Heavy traffic']];
   const WEATHER = [['ថ្ងៃភ្លឺ', 'Daylight'], ['ភ្លៀង', 'Rain'], ['យប់', 'Night'], ['ងងឹត / ពន្លឺតិច', 'Poor light']];
   const STATUS = {
@@ -230,9 +231,35 @@
     paintForm();
   }
 
-  function locate() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(p => { if (f && !f.gps) { f.gps = p.coords.latitude.toFixed(5) + ', ' + p.coords.longitude.toFixed(5); const g = $('#gps'); if (g) g.value = f.gps; saveDraft(); } }, () => {}, { timeout: 8000, maximumAge: 300000 });
+  /** GPS of the phone, then the place name from OpenStreetMap (free) into Location when it is empty. Tap 📍 GPS to fetch it again. */
+  function locate(force) {
+    const hint = msg => { const h = $('#gpsHint'); if (h) h.textContent = msg; };
+    if (force) hint('⏳ ' + t('កំពុងរកទីតាំង...', 'Finding the place...'));
+    const got = async (lat, lon) => {
+      if (!f) return;
+      f.gps = lat.toFixed(5) + ', ' + lon.toFixed(5);
+      saveDraft();
+      const name = await placeName(lat, lon);
+      if (!f) return;
+      if (name && (force || !f.location)) { f.location = name; const el = $('#location'); if (el) el.value = name; saveDraft(); }
+      hint(name ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + f.gps : '📍 ' + f.gps + (force ? ' · ' + t('រកឈ្មោះទីកន្លែងមិនឃើញ សូមវាយ', 'No place name found, please type it') : ''));
+    };
+    if (DEMO) { setTimeout(() => got(11.9521, 104.6632), force ? 700 : 1500); return; }
+    if (!navigator.geolocation) { if (force) hint(t('ទូរស័ព្ទនេះមិនមាន GPS', 'This phone has no GPS')); return; }
+    navigator.geolocation.getCurrentPosition(p => got(p.coords.latitude, p.coords.longitude),
+      () => { if (force) hint('⚠️ ' + t('សូមបើក Location ក្នុងទូរស័ព្ទ', 'Turn on Location on the phone')); },
+      { timeout: 10000, maximumAge: force ? 0 : 300000, enableHighAccuracy: !!force });
+  }
+
+  async function placeName(lat, lon) {
+    if (DEMO) return t('ផ្លូវជាតិលេខ 5, កំពង់ឆ្នាំង', 'National Road 5, Kampong Chhnang');
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&lat=' + lat + '&lon=' + lon + '&accept-language=' + (window.LANG && LANG.get() === 'en' ? 'en' : 'km,en'));
+      const j = await r.json(), a = j.address || {};
+      const parts = [a.road || a.pedestrian || a.industrial || a.amenity, a.village || a.suburb || a.neighbourhood || a.quarter, a.city_district || a.county || a.town || a.city, a.state || a.province];
+      const name = Array.from(new Set(parts.filter(Boolean))).join(', ');
+      return name || String(j.display_name || '').split(', ').slice(0, 3).join(', ');
+    } catch (e) { return ''; }
   }
 
   const STEPS = [['ប្រភេទ', 'Type'], ['ពេល ទីកន្លែង', 'When, where'], ['អ្វីកើតឡើង', 'What happened'], ['ហានិភ័យ មូលហេតុ', 'Risk, cause'], ['ហត្ថលេខា', 'Sign']];
@@ -246,7 +273,13 @@
     return `<div class="field"><label class="f" for="${id}">${esc(t(km, en))}${req}</label>${input}${opts.hint ? `<div class="hint">${esc(opts.hint)}</div>` : ''}</div>`;
   };
   const chips = (id, list, multi) => `<div class="chips" data-chips="${id}">${list.map(o => `<button type="button" class="chip ${(multi ? String(f[id]).split(', ').indexOf(o[1]) >= 0 : f[id] === o[1]) ? 'on' : ''}" data-v="${esc(o[1])}">${esc(t(o[0], o[1]))}</button>`).join('')}</div>`;
-  const warehouses = () => Array.from(new Set(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean)));
+  // Kim's warehouse list first, then any other warehouse named in the Supervisors tab
+  const warehouses = () => Array.from(new Set(WAREHOUSES.concat(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean))));
+  // the warehouse box is open for warehouse incidents and near misses; a road incident ticks it only when it happened in a warehouse
+  const inWh = () => f.inWh != null ? f.inWh : f.type !== 'road' || !!f.warehouse;
+  const pickBtn = id => `<button type="button" class="picker" id="${id}">${pickIn(id)}</button>`;
+  const pickIn = id => `<span class="${f[id] ? '' : 'pph'}">${esc(f[id] || t('— ជ្រើសរើស —', '— Select —'))}${f[id] && f['new_' + id] ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span>`;
+  const showPick = id => { const b = $('#' + id); if (b && b.tagName === 'BUTTON') b.innerHTML = pickIn(id); };
 
   let paintedStep = 0;
   function paintForm() {
@@ -271,18 +304,18 @@
     } else if (s === 2) {
       body += `<div class="card"><h2>📍 ${t('ពេលវេលា និងទីកន្លែង', 'When and where')}</h2>
         <div class="row2">${field('date', 'ថ្ងៃកើតហេតុ', 'Date', { type: 'date', req: true })}${field('time', 'ម៉ោង', 'Time', { type: 'time' })}</div>
-        ${field('location', 'ទីកន្លែង / អាសយដ្ឋាន', 'Location / address', { req: true, ph: t('ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82', 'e.g. NR5 km 82') })}
-        <div class="row2"><div class="field"><label class="f" for="warehouse">${t('ឃ្លាំង / តំបន់', 'Warehouse / area')}</label><input class="in" id="warehouse" list="whList" value="${esc(f.warehouse)}" autocomplete="off"><datalist id="whList">${warehouses().map(w => `<option value="${esc(w)}">`).join('')}</datalist></div>
-        ${field('gps', 'GPS', 'GPS', { ph: t('យកដោយស្វ័យប្រវត្តិ', 'filled by itself') })}</div>
+        <div class="field"><label class="f" for="location">${t('ទីកន្លែង / អាសយដ្ឋាន', 'Location / address')} <span class="req">*</span></label>
+          <div class="locrow"><input class="in" id="location" value="${esc(f.location)}" placeholder="${esc(t('ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82', 'e.g. NR5 km 82'))}" autocomplete="off"><button type="button" class="btn sm" id="gpsBtn">📍 GPS</button></div>
+          <div class="hint" id="gpsHint">${f.gps ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + esc(f.gps) : ''}</div></div>
+        <label class="check"><input type="checkbox" id="inWh" ${inWh() ? 'checked' : ''}> ${t('កើតឡើងក្នុងឃ្លាំង', 'Happened in a warehouse')}</label>
+        <div class="field ${inWh() ? '' : 'off'}"><label class="f" for="warehouse">${t('ឃ្លាំង / តំបន់', 'Warehouse / area')}</label><select class="in" id="warehouse" ${inWh() ? '' : 'disabled'}><option value=""></option>${warehouses().map(w => `<option value="${esc(w)}" ${w === f.warehouse ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select></div>
         <label class="f">${t('ស្ថានភាពផ្លូវ / ទីតាំង', 'Road / site condition')}</label>${chips('road', ROADS, true)}
         <label class="f">${t('អាកាសធាតុ / ពន្លឺ', 'Weather / light')}</label>${chips('weather', WEATHER, true)}</div>`;
       body += `<div class="card"><h2>🚛 ${t('តៃកុង ឡាន និងជើងដឹក', 'Driver, truck and trip')}${f.type === 'near' ? ` <small class="il">(${t('បើមាន', 'if any')})</small>` : ''}</h2>
-        <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label><input class="in" id="plate" list="plateList" value="${esc(f.plate)}" autocomplete="off" style="text-transform:uppercase"><datalist id="plateList">${((B && B.plates) || []).map(p => `<option value="${esc(p)}">`).join('')}</datalist></div>
-        <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label><input class="in" id="driver" list="driverList" value="${esc(f.driver)}" autocomplete="off"><datalist id="driverList">${((B && B.drivers) || []).map(d => `<option value="${esc(d.name)}">`).join('')}</datalist></div></div>
+        <div class="row2"><div class="field"><label class="f" for="plate">${t('ផ្លាកលេខឡាន', 'Truck plate')}</label>${pickBtn('plate')}</div>
+        <div class="field"><label class="f" for="driver">${t('ឈ្មោះតៃកុង', 'Driver name')}</label>${pickBtn('driver')}</div></div>
         <div id="tripInfo"></div>
-        <div class="row2">${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}${field('driverId', 'លេខបុគ្គលិក / ប័ណ្ណបើកបរ', 'Driver ID / licence')}</div>
-        <div class="row2">${field('tripId', 'Trip ID', 'Trip ID')}${field('dn', 'លេខ DN', 'DN No(s).')}</div>
-        <div class="row2">${field('customer', 'អតិថិជន', 'Customer')}${field('load', 'ទំនិញ / ទម្ងន់ (kg)', 'Load (kg) / goods')}</div></div>`;
+        <div class="row2">${field('company', 'ក្រុមហ៊ុន', 'Company', { select: COMPANIES })}${field('dn', 'លេខ DN', 'DN No(s).')}</div></div>`;
       body += `<div class="card"><h2>📷 ${t('រូបថត', 'Photos')} <small class="il">(${t('ច្រើនបំផុត', 'up to')} ${MAX_PHOTOS})</small></h2>
         <div class="photos">${(f.keepPhotos || []).map((id, i) => `<div class="ph kept"><span>📎 ${i + 1}</span><button type="button" data-unkeep="${i}" aria-label="Remove">✕</button></div>`).join('')}
         ${f.photos.map((u, i) => `<div class="ph"><img src="${u}" alt=""><button type="button" data-unphoto="${i}" aria-label="Remove">✕</button></div>`).join('')}
@@ -378,7 +411,7 @@
     if (n === 1 && !f.type) m = t('សូមជ្រើសរើសប្រភេទហេតុការណ៍', 'Choose the incident type');
     else if (n === 1 && !f.category) m = t('សូមជ្រើសរើសប្រភេទរង', 'Choose a category');
     else if (n === 2 && !f.date) m = t('សូមបញ្ចូលថ្ងៃកើតហេតុ', 'Enter the date');
-    else if (n === 2 && !f.location && !f.warehouse) m = t('សូមបញ្ចូលទីកន្លែង', 'Enter the location');
+    else if (n === 2 && !f.location) m = t('សូមបញ្ចូលទីកន្លែង', 'Enter the location');
     else if (n === 3 && !String(f.story).trim()) m = t('សូមរៀបរាប់អំពីអ្វីដែលបានកើតឡើង', 'Describe what happened');
     if (quiet) return !m;
     return m || null;
@@ -401,7 +434,7 @@
   }
   function stepOkEn(n) {
     if (n === 1) return !f.type ? 'Choose the incident type' : !f.category ? 'Choose a category' : '';
-    if (n === 2) return !f.date ? 'Enter the date' : !f.location && !f.warehouse ? 'Enter the location' : '';
+    if (n === 2) return !f.date ? 'Enter the date' : !f.location ? 'Enter the location' : '';
     if (n === 3) return !String(f.story).trim() ? 'Describe what happened' : '';
     return '';
   }
@@ -447,9 +480,45 @@
       if (PUBLIC) { e.preventDefault(); renderForm(null); }
     };
     const pl = $('#plate');
-    if (pl) pl.onchange = () => { collect(); fillFromPlate(); };
+    if (pl) pl.onclick = () => {
+      collect();
+      const plates = ((B && B.plates) || []).slice();
+      if (f.plate && plates.indexOf(f.plate) < 0) plates.unshift(f.plate);
+      const items = plates.map(x => ({ value: x, sub: ((B && B.drivers) || []).filter(d => d.plate === x).map(d => d.name).join(', ') }));
+      openPicker({
+        title: t('ផ្លាកលេខឡាន', 'Truck plate'), groups: [{ items }], value: f.plate,
+        addNew: {
+          label: t('បន្ថែមឡានថ្មី', 'Add new truck'),
+          clean: q => { const v = q.toUpperCase().trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-'); const m = v.match(/^(\d[A-Z]{1,2})-?(\d{4})$/); return m ? m[1] + '-' + m[2] : v; },
+        },
+        onPick: (v, isNew) => { f.plate = v; f.new_plate = !!isNew; showPick('plate'); saveDraft(); fillFromPlate(); },
+      });
+    };
     const dr = $('#driver');
-    if (dr) dr.onchange = () => { collect(); const d = ((B && B.drivers) || []).find(x => x.name === f.driver); if (d && !f.plate) { f.plate = d.plate; $('#plate').value = d.plate; fillFromPlate(); } };
+    if (dr) dr.onclick = () => {
+      collect();
+      // one row per driver name; drivers of the chosen truck come first
+      const byName = new Map();
+      ((B && B.drivers) || []).forEach(d => { const it = byName.get(d.name) || { value: d.name, plates: [] }; if (d.plate && it.plates.indexOf(d.plate) < 0) it.plates.push(d.plate); byName.set(d.name, it); });
+      const all = Array.from(byName.values()).map(it => ({ value: it.value, sub: it.plates.join(', '), mine: !!f.plate && it.plates.indexOf(f.plate) >= 0 }));
+      if (f.driver && !byName.has(f.driver)) all.unshift({ value: f.driver, sub: '' });
+      const mine = all.filter(x => x.mine);
+      openPicker({
+        title: t('ឈ្មោះតៃកុង', 'Driver name'), value: f.driver,
+        groups: mine.length ? [{ label: t('ឡាន ', 'Truck ') + f.plate, items: mine }, { label: t('តៃកុងទាំងអស់', 'All drivers'), items: all.filter(x => !x.mine) }] : [{ items: all }],
+        addNew: { label: t('បន្ថែមតៃកុងថ្មី', 'Add new driver'), clean: q => q.replace(/\s+/g, ' ').trim() },
+        onPick: (v, isNew) => {
+          f.driver = v; f.new_driver = !!isNew; showPick('driver');
+          const d = ((B && B.drivers) || []).find(x => x.name === v);
+          if (d && d.plate && !f.plate) { f.plate = d.plate; f.new_plate = false; showPick('plate'); fillFromPlate(); }
+          saveDraft();
+        },
+      });
+    };
+    const gb = $('#gpsBtn');
+    if (gb) gb.onclick = () => { collect(); locate(true); };
+    const iw = $('#inWh');
+    if (iw) iw.onchange = () => { collect(); f.inWh = iw.checked; if (!iw.checked) f.warehouse = ''; saveDraft(); paintForm(); };
     $$('#view input.in, #view textarea.in, #view select.in').forEach(el => { el.addEventListener('change', collect); });
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
     const send = $('#send');
@@ -464,10 +533,49 @@
     return false;
   }
 
+  /** Searchable list in a bottom sheet, like the Fuel app. groups: [{label?, items: [{value, sub?}]}]. Text that matches nothing can be added as new. */
+  function openPicker(o) {
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet picker-sheet" role="dialog" aria-modal="true" aria-label="${esc(o.title)}">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(o.title)}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <label class="search"><span aria-hidden="true">🔍</span><input type="search" placeholder="${esc(t('ស្វែងរក ឬវាយឈ្មោះថ្មី', 'Search or type a new one'))}" autocomplete="off" enterkeyhint="search"></label>
+        <div class="pick-list"></div></div>`;
+    const input = bg.querySelector('input'), list = bg.querySelector('.pick-list');
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    const close = () => { document.removeEventListener('keydown', onKey); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const norm = v => String(v || '').toLowerCase().replace(/[\s\-.]/g, '');
+    const draw = () => {
+      const q = norm(input.value);
+      const html = o.groups.map(g => {
+        const items = g.items.filter(it => !q || norm(it.value).includes(q) || norm(it.sub).includes(q));
+        if (!items.length) return '';
+        return (g.label ? `<div class="pick-group">${esc(g.label)}</div>` : '') + items.map(it => `<button type="button" class="pick-item ${it.value === o.value ? 'on' : ''}" data-v="${esc(it.value)}"><span><b>${esc(it.value)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</span>${it.value === o.value ? '<span class="tick">✓</span>' : ''}</button>`).join('');
+      }).join('');
+      const add = o.addNew && o.addNew.clean(input.value);
+      const exists = add && o.groups.some(g => g.items.some(it => norm(it.value) === norm(add)));
+      const addRow = add && !exists ? `<button type="button" class="pick-item pick-add" data-add="${esc(add)}"><span><b>➕ ${esc(o.addNew.label)}: ${esc(add)}</b></span></button>` : '';
+      list.innerHTML = html + addRow || `<div class="empty">${esc(t('រកមិនឃើញ', 'No match'))}${o.addNew ? `<br><small>${esc(t('វាយឈ្មោះ ដើម្បីបន្ថែមថ្មី', 'Type a name to add a new one'))}</small>` : ''}</div>`;
+    };
+    input.oninput = draw;
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-close]')) { close(); return; }
+      const a = e.target.closest('[data-add]'), b = e.target.closest('[data-v]');
+      if (a) { close(); o.onPick(a.dataset.add, true); } else if (b) { close(); o.onPick(b.dataset.v, false); }
+    };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(bg);
+    draw();
+    requestAnimationFrame(() => bg.classList.add('open'));
+    const on = list.querySelector('.pick-item.on');
+    if (on) on.scrollIntoView({ block: 'center' });
+  }
+
   async function fillFromPlate() {
     const box = $('#tripInfo');
     const d = ((B && B.drivers) || []).find(x => x.plate === f.plate);
-    if (d && !f.driver) { f.driver = d.name; const el = $('#driver'); if (el) el.value = d.name; }
+    if (d && !f.driver) { f.driver = d.name; f.new_driver = false; showPick('driver'); }
     if (d && !f.company) { f.company = d.company && !/isi/i.test(d.company) ? '3PL / Rented' : 'ISI Steel'; const el = $('#company'); if (el) el.value = f.company; }
     if (!f.plate || PUBLIC || !box) return;
     box.innerHTML = `<div class="hint">⏳ ${t('កំពុងរកជើងដឹក...', 'Looking for the trip...')}</div>`;
@@ -475,7 +583,7 @@
       const tr = await api('trip', { plate: f.plate, date: f.date });
       if (!tr || !tr.tripId) { box.innerHTML = ''; return; }
       ['tripId', 'dn', 'customer'].forEach(k => { if (tr[k] && !f[k]) { f[k] = tr[k]; const el = $('#' + k); if (el) el.value = tr[k]; } });
-      if (tr.driver && !f.driver) { f.driver = tr.driver; const el = $('#driver'); if (el) el.value = tr.driver; }
+      if (tr.driver && !f.driver) { f.driver = tr.driver; showPick('driver'); }
       box.innerHTML = `<div class="tripbox">🔗 ${t('ពីជើងដឹក', 'From Delivery trip')} <b>${esc(tr.tripId)}</b><div class="meta">${esc([tr.driver, tr.dn, tr.customer].filter(Boolean).join(' · '))}</div></div>`;
       saveDraft();
     } catch (e) { box.innerHTML = ''; }
