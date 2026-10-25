@@ -275,8 +275,8 @@
   const chips = (id, list, multi) => `<div class="chips" data-chips="${id}">${list.map(o => `<button type="button" class="chip ${(multi ? String(f[id]).split(', ').indexOf(o[1]) >= 0 : f[id] === o[1]) ? 'on' : ''}" data-v="${esc(o[1])}">${esc(t(o[0], o[1]))}</button>`).join('')}</div>`;
   // Kim's warehouse list first, then any other warehouse named in the Supervisors tab
   const warehouses = () => Array.from(new Set(WAREHOUSES.concat(((B && B.supervisors) || []).map(s => s.warehouse).filter(Boolean))));
-  // the warehouse box is open for warehouse incidents and near misses; a road incident ticks it only when it happened in a warehouse
-  const inWh = () => f.inWh != null ? f.inWh : f.type !== 'road' || !!f.warehouse;
+  // step 1 already says where it happened: the warehouse box is open for warehouse incidents and near misses, greyed for road incidents
+  const inWh = () => f.type !== 'road';
   const pickBtn = id => `<button type="button" class="picker" id="${id}">${pickIn(id)}</button>`;
   const pickIn = id => `<span class="${f[id] ? '' : 'pph'}">${esc(f[id] || t('— ជ្រើសរើស —', '— Select —'))}${f[id] && f['new_' + id] ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span>`;
   const showPick = id => { const b = $('#' + id); if (b && b.tagName === 'BUTTON') b.innerHTML = pickIn(id); };
@@ -307,7 +307,6 @@
         <div class="field"><label class="f" for="location">${t('ទីកន្លែង / អាសយដ្ឋាន', 'Location / address')} <span class="req">*</span></label>
           <div class="locrow"><input class="in" id="location" value="${esc(f.location)}" placeholder="${esc(t('ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82', 'e.g. NR5 km 82'))}" autocomplete="off"><button type="button" class="btn sm" id="gpsBtn">📍 GPS</button></div>
           <div class="hint" id="gpsHint">${f.gps ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + esc(f.gps) : ''}</div></div>
-        <label class="check"><input type="checkbox" id="inWh" ${inWh() ? 'checked' : ''}> ${t('កើតឡើងក្នុងឃ្លាំង', 'Happened in a warehouse')}</label>
         <div class="field ${inWh() ? '' : 'off'}"><label class="f" for="warehouse">${t('ឃ្លាំង / តំបន់', 'Warehouse / area')}</label><select class="in" id="warehouse" ${inWh() ? '' : 'disabled'}><option value=""></option>${warehouses().map(w => `<option value="${esc(w)}" ${w === f.warehouse ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select></div>
         <label class="f">${t('ស្ថានភាពផ្លូវ / ទីតាំង', 'Road / site condition')}</label>${chips('road', ROADS, true)}
         <label class="f">${t('អាកាសធាតុ / ពន្លឺ', 'Weather / light')}</label>${chips('weather', WEATHER, true)}</div>`;
@@ -444,7 +443,7 @@
     const goTo = n => { collect(); const o = openStep(); if (n > f.step && n > o) { stopAt(o); return; } f.step = n; paintForm(); window.scrollTo(0, 0); };
     $$('[data-go]').forEach(b => { b.onclick = e => { e.preventDefault(); goTo(+b.dataset.go); }; });
     $$('[data-next]').forEach(b => { b.onclick = () => goTo(f.step + 1); });
-    $$('[data-type]').forEach(b => { b.onclick = () => { collect(); f.type = b.dataset.type; if (f.type !== 'near') f.anonymous = false; const cat = CATS.find(c => c.en === f.category); if (cat && cat.types && cat.types.indexOf(f.type) < 0) f.category = ''; paintForm(); }; });
+    $$('[data-type]').forEach(b => { b.onclick = () => { collect(); f.type = b.dataset.type; if (f.type !== 'near') f.anonymous = false; if (f.type === 'road') f.warehouse = ''; const cat = CATS.find(c => c.en === f.category); if (cat && cat.types && cat.types.indexOf(f.type) < 0) f.category = ''; paintForm(); }; });
     $$('[data-chips]').forEach(box => {
       const id = box.dataset.chips, multi = id === 'road' || id === 'weather';
       box.querySelectorAll('.chip').forEach(c => { c.onclick = () => {
@@ -520,8 +519,6 @@
     if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
     const gb = $('#gpsBtn');
     if (gb) gb.onclick = () => { collect(); locate(true); };
-    const iw = $('#inWh');
-    if (iw) iw.onchange = () => { collect(); f.inWh = iw.checked; if (!iw.checked) f.warehouse = ''; saveDraft(); paintForm(); };
     $$('#view input.in, #view textarea.in, #view select.in').forEach(el => { el.addEventListener('change', collect); });
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
     const send = $('#send');

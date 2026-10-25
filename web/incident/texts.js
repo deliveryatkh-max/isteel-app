@@ -62,7 +62,6 @@ window.IR_TEXTS = [
   ["Time","New report","ពេលវេលា និងទីកន្លែង","Step 2","ម៉ោង","Time"],
   ["Location / address","New report","ពេលវេលា និងទីកន្លែង","Step 2","ទីកន្លែង / អាសយដ្ឋាន","Location / address"],
   ["e.g. NR5 km 82","New report","ពេលវេលា និងទីកន្លែង","Step 2","ឧ. ផ្លូវជាតិលេខ 5 គ.ម 82","e.g. NR5 km 82"],
-  ["Happened in a warehouse","New report","ពេលវេលា និងទីកន្លែង","Step 2","កើតឡើងក្នុងឃ្លាំង","Happened in a warehouse"],
   ["Warehouse / area","New report","ពេលវេលា និងទីកន្លែង","Step 2","ឃ្លាំង / តំបន់","Warehouse / area"],
   ["Road / site condition","New report","ស្ថានភាពផ្លូវ / ទីតាំង","Step 2","ស្ថានភាពផ្លូវ / ទីតាំង","Road / site condition"],
   ["Dry","New report","ស្ថានភាពផ្លូវ / ទីតាំង","Step 2","ស្ងួត","Dry"],
