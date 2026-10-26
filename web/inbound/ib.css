@@ -76,3 +76,53 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 table.tb { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.tb th, table.tb td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
 table.tb td.n, table.tb th.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Searchable picker (plate, driver), same as the Fuel app */
+.picker {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--field); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; font-weight: 600;
+}
+.picker .pph { color: var(--muted); font-weight: 400; }
+.picker .pk-ic { font-size: 15px; opacity: .7; flex: none; }
+.new-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--ok-soft); color: var(--ok); }
+.sheet-bg { position: fixed; inset: 0; z-index: 60; background: rgba(10, 15, 22, 0); display: flex; align-items: flex-end; justify-content: center; transition: background .2s; }
+.sheet-bg.open { background: rgba(10, 15, 22, .5); }
+.sheet {
+  width: 100%; max-width: 640px; background: var(--card); color: var(--text); border-radius: 22px 22px 0 0;
+  padding: 6px 16px calc(16px + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform .2s ease-out; box-shadow: 0 -10px 30px rgba(0, 0, 0, .18);
+}
+.sheet-bg.open .sheet { transform: none; }
+.sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 6px auto 8px; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.sheet-h { font-weight: 700; font-size: 17px; }
+.icon-btn { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--bg); color: var(--text); font-size: 16px; cursor: pointer; display: grid; place-items: center; }
+.picker-sheet { height: min(85vh, 640px); display: flex; flex-direction: column; }
+.picker-sheet .search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 12px; padding: 0 12px; flex: none; }
+.picker-sheet .search input[type=search] { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; padding: 10px 0; min-height: 46px; outline: none; }
+.pick-list { flex: 1; overflow-y: auto; margin: 10px -16px 0; padding: 0 16px; -webkit-overflow-scrolling: touch; }
+.pick-list .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+.pick-group { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; padding: 10px 4px 4px; }
+.pick-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; cursor: pointer; font: inherit; color: var(--text);
+  background: none; border: 0; border-bottom: 1px solid var(--line); padding: 12px 4px; min-height: 52px;
+}
+.pick-item small { display: block; color: var(--muted); font-size: 13px; }
+.pick-item b { font-weight: 600; }
+.pick-item.on { color: var(--brand); }
+.pick-item .tick { font-weight: 700; color: var(--brand); }
+.pick-item.pick-add { color: var(--ok); border-top: 1.5px dashed var(--line); }
+.pick-item.pick-add b { font-weight: 700; }
+
+/* fields filled from the incoming plan are greyed */
+.in.ro { background: var(--bg) !important; color: var(--muted); border-style: dashed; pointer-events: none; }
+.greys { margin-top: 4px; }
+.il { display: inline; font-weight: 400; margin-left: 4px; }
+.picker.off { opacity: .6; pointer-events: none; background: var(--bg); }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.shot { display: grid; gap: 4px; cursor: pointer; }
+.shot small { font-size: 11.5px; line-height: 1.25; text-align: center; }
+.shot .ph { width: 100%; border: 2px dashed var(--line); background: var(--card); }
+.shot.has .ph { border: 0; background: var(--soft); }
+.shot .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sam { display: grid; justify-items: center; font-size: 28px; line-height: 1.1; }
+.sam small { font-size: 11px; color: var(--muted); }
