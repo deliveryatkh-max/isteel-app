@@ -156,7 +156,7 @@
       <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
-    $('#xls').onclick = () => exportCsv(rows);
+    $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : exportCsv(rows));
   }
   function exportCsv(rows) {
     const H = ['PO Number', 'Inbound Number', 'Truck Number/Trailer', 'PO Qty', 'DN Qty', 'Actual Receipt Qty', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity', 'Manpower used to Unload/Receive', 'Truck Owner', 'Damaged?', 'Damage Detail', 'Remark'];
