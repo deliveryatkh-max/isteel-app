@@ -95,7 +95,7 @@
       const p = PLAN[x[3]];
       out.push(Object.assign(fromPlan(p), {
         id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length],
-        actQty: end ? p.kg + x[4] : '', date: ymd(d), start, end,
+        dnQty: i === 14 ? p.kg - 50 : p.kg, actQty: end ? p.kg + x[4] : '', date: ymd(d), start, end,
         manpower: x[5], owner: end ? x[6] : '', carrier: x[7], damaged: end ? x[8] : null, damageDetail: x[9],
         remark: i === 11 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
@@ -103,15 +103,15 @@
     return out;
   }
   // the greyed fields copied from the plan line
-  function fromPlan(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, material: p.material, desc: p.desc, poQty: p.kg, dnQty: p.kg, uom: 'Kg', pcs: p.pcs }; }
+  function fromPlan(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, material: p.material, desc: p.desc, poQty: p.kg, uom: 'Kg', pcs: p.pcs }; }
   // kg already received (or being unloaded) against one plan line
   const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.material === mat && r.id !== skip).reduce((s, r) => s + (+r.actQty || 0), 0);
   function load() {
-    const s = get('ib_demo_v3');
+    const s = get('ib_demo_v4');
     if (s) { try { const o = JSON.parse(s); if (o.day === today()) { DATA = o.rows; return; } } catch (e) { /* reseed */ } }
     DATA = seed(); save();
   }
-  function save() { set('ib_demo_v3', JSON.stringify({ day: today(), rows: DATA })); }
+  function save() { set('ib_demo_v4', JSON.stringify({ day: today(), rows: DATA })); }
   const byId = id => DATA.find(r => r.id === id);
   const isLive = r => r.start && !r.end;
 
@@ -240,7 +240,9 @@
           <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
           <div class="row2">${grey(t('សម្ភារៈ', 'Material'), r.material)}${grey(t('ឯកតា', 'UoM'), r.material ? r.uom : '')}</div>
           ${grey(t('ការពិពណ៌នាសម្ភារៈ', 'Material Description'), r.desc)}
-          <div class="row2">${grey(t('បរិមាណ PO', 'PO Qty'), r.material ? fmt(r.poQty) : '')}${grey(t('បរិមាណ DN', 'DN Qty'), r.material ? fmt(r.dnQty) : '')}</div>
+          <div class="row2">${grey(t('បរិមាណ PO', 'PO Qty'), r.material ? fmt(r.poQty) : '')}
+            <div class="field"><label class="f">${t('បរិមាណ DN', 'DN Qty')} <span class="req">*</span></label><input class="in" id="dnQty" inputmode="decimal" value="${esc(r.dnQty)}" placeholder="${t('តាមឯកសារ DN', 'From the DN')}"></div></div>
+          <div class="cmp">${cmp(t('DN ធៀប PO', 'DN vs PO'), diffPct(+r.dnQty, +r.poQty))}</div>
         </div>` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
       </section>
 
@@ -293,10 +295,10 @@
     bindForm();
   }
   function collect() {
-    ['actQty', 'start', 'end', 'remark', 'damageDetail'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
+    ['dnQty', 'actQty', 'start', 'end', 'remark', 'damageDetail'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
   }
   function pickLine(po, mat) {
-    const keep = { id: F.id, truck: F.truck, newTruck: F.newTruck, newCarrier: F.newCarrier, by: F.by, ph: F.ph, date: F.date, start: F.start, end: F.end, actQty: F.actQty, manpower: F.manpower, owner: F.owner, carrier: F.carrier, damaged: F.damaged, damageDetail: F.damageDetail, remark: F.remark };
+    const keep = { id: F.id, dnQty: F.dnQty, truck: F.truck, newTruck: F.newTruck, newCarrier: F.newCarrier, by: F.by, ph: F.ph, date: F.date, start: F.start, end: F.end, actQty: F.actQty, manpower: F.manpower, owner: F.owner, carrier: F.carrier, damaged: F.damaged, damageDetail: F.damageDetail, remark: F.remark };
     const b = blank(); b.po = po;
     const lines = PLAN.filter(x => x.po === po);
     if (!mat && lines.length === 1) mat = lines[0].material;
@@ -330,12 +332,12 @@
     $$('[data-dmg]').forEach(b => { b.onclick = () => { F.damaged = b.dataset.dmg === '1'; re(); }; });
     const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = Math.max(1, (+F.manpower || 1) - 1); $('#mp').textContent = F.manpower; };
     const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; };
-    ['actQty', 'start', 'end'].forEach(k => { const el = $('#' + k); if (el) el.onchange = re; });
+    ['dnQty', 'actQty', 'start', 'end'].forEach(k => { const el = $('#' + k); if (el) el.onchange = re; });
     $$('[data-ph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); shrink(f, url => { F.ph = Object.assign({}, F.ph, { [inp.dataset.ph]: url }); re(); }); }; });
     const need = () => {
       const miss = [];
       if (!F.po) miss.push(t('លេខ PO', 'PO number')); if (!F.material) miss.push(t('សម្ភារៈ', 'Material'));
-      if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number'));
+      if (!F.dnQty) miss.push(t('បរិមាណ DN', 'DN Qty')); if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
     };
