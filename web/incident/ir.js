@@ -77,7 +77,7 @@
     ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
   const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
   const fitRecs = type => RECS.filter(r => (REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) >= 0);
-  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${fitRecs(type).map(r => `<label class="check rec"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}"> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
+  const recTicks = type => `<select class="in" id="naRec"><option value="">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick a suggested action'))}</option>${fitRecs(type).map(r => `<option value="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}">${esc(t(r[1], r[2]))}</option>`).join('')}</select>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -269,7 +269,7 @@
       if (!f.whys || f.whys.length < 5) f.whys = (f.whys || []).concat(['', '', '', '', '']).slice(0, 5);
       if (!f.reporterName && B && B.user) f.reporterName = B.user.name || '';
       if (!f.reporterPhone && B && B.user) f.reporterPhone = B.user.phone || '';
-      if (!f.gps) locate();
+      locate();   // a fresh place every time a new report opens (Kim, 28 Oct 2026)
     }
     screen = () => { collect(); paintForm(); };
     paintForm();
@@ -285,14 +285,14 @@
       saveDraft();
       const name = await placeName(lat, lon);
       if (!f) return;
-      if (name && (force || !f.location)) { f.location = name; const el = $('#location'); if (el) el.value = name; saveDraft(); }
+      if (name && (force || !f.location || f.locAuto)) { f.location = name; f.locAuto = true; const el = $('#location'); if (el) el.value = name; saveDraft(); }
       hint(name ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + f.gps : '📍 ' + f.gps + (force ? ' · ' + t('រកឈ្មោះទីកន្លែងមិនឃើញ សូមវាយ', 'No place name found, please type it') : ''));
     };
     if (DEMO) { setTimeout(() => got(11.9521, 104.6632), force ? 700 : 1500); return; }
     if (!navigator.geolocation) { if (force) hint(t('ទូរស័ព្ទនេះមិនមាន GPS', 'This phone has no GPS')); return; }
     navigator.geolocation.getCurrentPosition(p => got(p.coords.latitude, p.coords.longitude),
       () => { if (force) hint('⚠️ ' + t('សូមបើក Location ក្នុងទូរស័ព្ទ', 'Turn on Location on the phone')); },
-      { timeout: 10000, maximumAge: force ? 0 : 300000, enableHighAccuracy: !!force });
+      { timeout: 10000, maximumAge: force ? 0 : 60000, enableHighAccuracy: !!force });
   }
 
   async function placeName(lat, lon) {
@@ -608,6 +608,8 @@
     if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
     const gb = $('#gpsBtn');
     if (gb) gb.onclick = () => { collect(); locate(true); };
+    const le = $('#location');
+    if (le) le.addEventListener('input', () => { if (f) f.locAuto = false; });   // typed by hand: GPS no longer replaces it
     $$('#view input.in, #view textarea.in, #view select.in').forEach(el => { el.addEventListener('change', collect); });
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
     const send = $('#send');
@@ -893,7 +895,7 @@
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
       (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', immText(d.immediate)));
     const acts = d.actions || [];
-    html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
+    html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ (បំពេញដោយប្រធានក្រុម)', 'Actions (filled by team leader)')}</h2>
       ${acts.length ? acts.map((a, i) => `<div class="actrow" data-i="${i}"><div><b>${esc(a.what)}</b><small>${esc([a.owner, a.due].filter(Boolean).join(' · '))}${a.done ? ' · ✅ ' + esc(a.done) : ''}</small></div>
         ${c.actions ? `<select class="in st-sel" data-ai="${i}">${[['បើក', 'Open'], ['កំពុងធ្វើ', 'In progress'], ['រួចរាល់', 'Done']].map(o => `<option value="${o[1]}" ${a.status === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select>`
           : `<span class="badge ${a.status === 'Done' ? 'approved' : a.due && a.due < today() ? 'rejected' : 'pending'}">${esc(t({ Open: 'បើក', 'In progress': 'កំពុងធ្វើ', Done: 'រួចរាល់' }[a.status] || a.status, a.status))}</span>`}</div>`).join('')
@@ -1006,7 +1008,8 @@
   function readActs() {
     const acts = (cur.actions || []).map((a, i) => { const s = document.querySelector(`[data-ai="${i}"]`); return Object.assign({}, a, { status: s ? s.value : a.status }); });
     const own = $('#naOwner') ? $('#naOwner').value.trim() : '', due = $('#naDue') ? $('#naDue').value : '';
-    $$('.newact [data-tick]:checked').forEach(b => acts.push({ what: b.dataset.tick, owner: own, due, status: 'Open' }));
+    const rec = $('#naRec');
+    if (rec && rec.value) acts.push({ what: rec.value, owner: own, due, status: 'Open' });
     const w = $('#naWhat');
     if (w && w.value.trim()) acts.push({ what: w.value.trim(), owner: $('#naOwner').value.trim(), due: $('#naDue').value, status: 'Open' });
     return acts;
