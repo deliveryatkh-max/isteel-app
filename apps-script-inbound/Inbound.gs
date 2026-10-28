@@ -581,7 +581,7 @@ function email_(p, user) {
   const file = pdfFile_(rec);
   const less = rec.items.some(isLess_), dmg = rec.items.some(i => Number(i.dmgQty) > 0);
   const row = (k, v) => (v === '' || v == null ? '' : '<tr><td style="padding:4px 8px;background:#f2f5f9;font-weight:600;border:1px solid #d6dee8">' + esc_(k) + '</td><td style="padding:4px 8px;border:1px solid #d6dee8">' + esc_(v) + '</td></tr>');
-  const note = clip_(p.note, 1000), url = setting_('APP_URL');
+  const note = clip_(p.note, 4000), url = setting_('APP_URL');
   const html = '<div style="font-family:Arial,\'Noto Sans Khmer\',sans-serif;color:#011e41;max-width:680px">' +
     (note ? '<p style="white-space:pre-line">' + esc_(note) + '</p>' : '') +
     '<div style="background:#011e41;color:#fff;padding:12px 16px;border-radius:8px"><div style="font-size:12px;opacity:.8">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>' +

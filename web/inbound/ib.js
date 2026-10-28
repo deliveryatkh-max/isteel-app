@@ -656,9 +656,11 @@
       ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}"> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
         : `<p class="hint">${t('មិនទាន់មានបញ្ជីអ៊ីមែលទេ (Email Lists ក្នុង Sheet)', 'No email lists yet (Email Lists tab in the Sheet)')}</p>`}
       <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
-      <label class="f" for="mailNote">${t('សារ (បើមាន)', 'Message (optional)')}</label><textarea class="in" id="mailNote" rows="2"></textarea>
+      <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
+      <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
       <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF', 'The PDF report is attached')}</p>
       <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button></div>`;
+    $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
       const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = $('#mailExtra').value.trim();
       if (!lists.length && !extra) { toast('⚠️ ' + t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
@@ -667,6 +669,34 @@
       try { const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value }); toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people')); box.innerHTML = ''; }
       catch (e) { toast('⚠️ ' + oldScript(e)); busy(b, false); }
     };
+  }
+  // Ready-made English email text for the receipt; the user can edit it before sending
+  function mailDraft(r) {
+    const u = ' ' + (r.uom || ''), kg = n => fmt(n) + u;
+    const dmgItems = (r.items || []).filter(i => +i.dmgQty > 0), lessItems = (r.items || []).filter(isLessItem);
+    const short = lessItems.reduce((s, i) => s + (+i.arrQty - +i.grQty), 0), sp = spentMin(r);
+    const l = ['Dear Team,', '',
+      `Please be informed that the goods receipt for ${r.po}${r.inbound ? ' (Inbound ' + r.inbound + ')' : ''}${r.supplier ? ' from ' + r.supplier : ''} has been completed on ${showDate(r.date)}.`, '',
+      'Summary:',
+      `- Receipt No.: ${r.id}`,
+      `- Truck: ${r.truck}${r.owner === 'ISI' ? ' (ISI truck)' : r.owner === '3PL' ? ' (3PL' + (r.carrier ? ' · ' + r.carrier : '') + ')' : ''}`];
+    if (r.dn3pl) l.push(`- 3PL DN No.: ${r.dn3pl}`);
+    l.push(`- Items: ${(r.items || []).length} ${(r.items || []).length === 1 ? 'line' : 'lines'}`,
+      `- PO Qty: ${kg(tot(r, 'poQty'))}`,
+      `- Arrival Qty: ${kg(tot(r, 'arrQty'))}`,
+      `- Received (GR) Qty: ${kg(tot(r, 'grQty'))}`,
+      `- Damaged Qty: ${dmgItems.length ? kg(tot(r, 'dmgQty')) : 'None'}`,
+      `- Received less than arrival: ${lessItems.length ? kg(short) : 'None'}`,
+      `- Unloading: ${r.start}–${r.end}${sp == null ? '' : ' (' + sp + ' min'}${r.manpower ? ', ' + r.manpower + ' people' : ''}${sp == null ? '' : ')'}`);
+    if (r.remark) l.push(`- Remark: ${r.remark}`);
+    if (dmgItems.length) {
+      l.push('', 'Damaged items:');
+      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${kg(i.dmgQty)}${i.dmgType ? ' (' + (DMG.find(d => d[0] === i.dmgType) || [, , , i.dmgType])[3] + ')' : ''}`));
+    }
+    l.push('', `The full Goods Receipt Report (PDF), including photos, is attached for your reference.`,
+      dmgItems.length || lessItems.length ? 'Kindly review the damaged / short-received quantities and advise on the next steps.' : 'All goods were received in good condition.',
+      '', 'Best regards,', (USER && USER.name) || r.finishedBy || r.by || '', 'Warehouse & Logistics, ISI Steel');
+    return l.join('\n');
   }
   // Demo only: how the PDF page looks (the real one is made by the Apps Script)
   function preview(r) {
