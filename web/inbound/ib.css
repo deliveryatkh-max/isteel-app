@@ -158,3 +158,10 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .dmgbox .ph button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 11px; }
 .pick-item.mchk input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .picker-sheet [data-done] { flex: none; }
+
+/* required and still empty: red border */
+.need { border-color: var(--bad) !important; box-shadow: 0 0 0 1px var(--bad) inset !important; background-color: var(--bad-soft) !important; }
+.shot.need .ph { border: 2px solid var(--bad); background: var(--bad-soft); box-shadow: none; }
+.shot.need { background: none !important; box-shadow: none !important; }
+.ph.add.need { border: 2px solid var(--bad); }
+.seg.need { border-radius: 14px; padding: 3px; border: 1.5px solid var(--bad); background: var(--bad-soft) !important; }

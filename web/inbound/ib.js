@@ -308,7 +308,7 @@
       ${started ? `
       <section class="card"><h2>👷 ${t('ឡាន និងកម្មករ', 'Truck owner and manpower')}</h2>
         <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
-          <div class="seg"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
+          <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
         ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
         <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')}</label>
           <div class="stepper"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower)}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
@@ -380,7 +380,25 @@
     draw();
     requestAnimationFrame(() => bg.classList.add('open'));
   }
+  // required boxes that are still empty get a red border (Kim, 28 Oct 2026); it clears as soon as they are filled
+  function markNeed() {
+    const r = F, fin = !!r.start;
+    const mark = (el, on) => { if (el) el.classList.toggle('need', !!on); };
+    mark($('#po'), !r.po);
+    mark($('#items'), r.po && !r.items.length);
+    mark($('#truck'), !r.truck);
+    mark($('#dn3pl'), !r.dn3pl);
+    $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
+    $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
+      mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
+    r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
+    mark($('.seg[data-seg="own"]'), fin && !r.owner);
+  }
   function bindForm() {
+    markNeed();
+    const live = () => { collect(); markNeed(); };
+    ['dn3pl'].forEach(k => { const el = $('#' + k); if (el) el.oninput = live; });
+    $$('[data-it]').forEach(el => { el.oninput = live; });
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
     pk('po', () => ({ title: t('លេខ PO (មិនទាន់ទទួលគ្រប់)', 'PO Number (pending only)'), value: F.po,
