@@ -644,7 +644,7 @@ const LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAZoAAACdCAYAAACNdL5vAAAAAXNSR0IArs4c6Q
 
 /** The PDF is filled in from Kim's Word template; if that ever fails, the built-in one-page layout is used. */
 // Bump PDF_VER when the layout changes: saved PDFs from an older layout are made again the next time they are opened.
-const PDF_VER = 3;
+const PDF_VER = 2;
 const pdfInfo_ = (file, at) => ({ id: file.getId(), url: file.getUrl(), at, v: pdfVer_() });
 function makePdf_(d, folder) {
   try {
