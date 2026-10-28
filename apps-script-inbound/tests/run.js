@@ -129,4 +129,30 @@ const m = env.mails[env.mails.length - 1];
 ok(Object.values(env.files).filter(f => f.name === r.id + '.pdf' && !f.trashed).length === 1, 'PDF reused, not made twice');
 ok(m.to === 'wh1@x.com,wh2@x.com,boss@x.com' && m.attachments.length === 1 && /Goods receipt/.test(m.subject), 'email with PDF');
 
+// Word template from a Drive folder: an empty folder gets the standard template, each item gets its own table row
+const set = env.ss.getSheetByName('IB Settings');
+env.folders.dKimInboundTemplates0001 = { id: 'dKimInboundTemplates0001', name: 'Inbound Report Template', parent: 'root', trashed: false };
+const tf = env.g.DriveApp.getFolderById('dKimInboundTemplates0001');
+const linkRow = set.rows.findIndex(x => x && x[0] === 'PDF_TEMPLATE_LINK');
+ok(linkRow > 0, 'PDF_TEMPLATE_LINK setting');
+set.rows[linkRow][1] = 'https://drive.google.com/drive/folders/' + tf.getId();
+const nDocs = Object.keys(env.docs).length;
+must(call('sok@x.com', 'pdf', { id: r.id }));
+const seeded = Object.values(env.files).find(f => f.parent === tf.getId());
+ok(seeded && /\.docx$/.test(seeded.name), 'empty folder gets the standard Word template');
+const td = Object.values(env.docs).pop();
+ok(Object.keys(env.docs).length === nDocs + 1 && td.tpl && env.templateUploads === 1, 'PDF filled from the Word template');
+const txt = td.parts.join('\n');
+ok(txt.indexOf('{{') < 0 && txt.indexOf(r.id) >= 0 && txt.indexOf(r.po) >= 0, 'placeholders filled');
+eq(td.parts.filter(x => x === '1' || x === '2').length >= 1, true, 'item rows numbered');
+ok(td.font === 'Kantumruy Pro', 'PDF font set');
+must(call('sok@x.com', 'pdf', { id: r.id }));
+ok(Object.keys(env.docs).length === nDocs + 1 && env.templateUploads === 1, 'same template: saved PDF reused');
+seeded.updated = Date.now();
+must(call('sok@x.com', 'pdf', { id: r.id }));
+ok(Object.keys(env.docs).length === nDocs + 2 && env.templateUploads === 2, 'edited template: converted again and PDF remade');
+set.rows[linkRow][1] = 'not a link';
+must(call('sok@x.com', 'pdf', { id: r.id }));
+ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE_ERROR')[1]), 'bad link: error noted, built-in layout used');
+
 console.log('Inbound.gs: ' + pass + ' checks passed');

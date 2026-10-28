@@ -131,6 +131,8 @@ function setup() {
     ['APP_URL', 'https://isteel-app.pages.dev/inbound/', 'Address of the app, used in Telegram buttons'],
     ['THREEPL_COMPANIES', 'FOXS, Queen Legacy, Srong Sal, Chroek Kimheng', '3PL companies in the app\'s list, comma separated (people can also add new ones)'],
     ['EMAIL_NO_REPLY', 'No', 'Yes = report emails come from noreply@ your company domain (works only when this script is owned by a Google Workspace account, not a free Gmail)'],
+    ['PDF_TEMPLATE_LINK', '', 'Drive link to the report template: a Word file, a Google Doc or a folder (the newest file in it is used). Edit the template and the next report uses it. Empty = built-in layout.'],
+    ['PDF_FONT', 'Kantumruy Pro', 'Font for the report text (Google can only print Google fonts). - = keep the template fonts.'],
     ['DAYS_SHOWN', '90', 'How many days of receipts the app loads (receipts of POs still in Incoming Plan always load)'],
   ]);
   sheet_(SH.MAIL, MAIL_COLS, MAIL_SEED);
@@ -553,11 +555,20 @@ function doneRec_(id) {
 }
 /** The receipt's PDF, kept in its photo folder and made again only when the receipt changed. */
 function pdfFile_(rec) {
-  const ver = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, "v3" + JSON.stringify(rec)));
+  tplMemo_ = null;   // read the template setting fresh on every call
+  const ver = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, 'v4' + tplStamp_() + JSON.stringify(rec)));
   const folder = folder_(rec.id), name = rec.id + '.pdf';
   const it = folder.getFilesByName(name);
   while (it.hasNext()) { const f = it.next(); if (f.getDescription() === ver) return f; f.setTrashed(true); }
-  const f = makePdf_(rec, folder, name);
+  let f;
+  try {
+    f = templatePdf_(rec, folder, name);
+    if (setting_('PDF_TEMPLATE_ERROR')) setSetting_('PDF_TEMPLATE_ERROR', '');
+  } catch (e) {
+    console.error('Template PDF failed, using the built-in layout: ' + e);
+    try { setSetting_('PDF_TEMPLATE_ERROR', new Date().toISOString() + ' ' + String(e && e.stack || e).slice(0, 400)); } catch (x) { /* sheet busy */ }
+    f = makePdf_(rec, folder, name);
+  }
   f.setDescription(ver);
   return f;
 }
@@ -620,6 +631,132 @@ function email_(p, user) {
   }
   MailApp.sendEmail(msg);
   return { sent: to.length };
+}
+
+// ---- Word template for the PDF (same idea as the Incident app). IB Settings PDF_TEMPLATE_LINK = a Drive link to a Word file,
+// a Google Doc or a folder (newest file in it). A Word file is turned into a Google Doc again whenever it changes
+// (PDF_TEMPLATE_ID / PDF_TEMPLATE_STAMP). An empty folder gets a copy of the standard template (web/inbound/ib-template.docx).
+const TEMPLATE_URL = 'https://isteel-app.pages.dev/inbound/ib-template.docx';
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const GDOC_MIME = 'application/vnd.google-apps.document';
+function setSetting_(k, v) {
+  const sh = ss_().getSheetByName(SH.SET), n = sh.getLastRow(), vals = n ? sh.getRange(1, 1, n, 1).getValues() : [];
+  for (let i = 1; i < vals.length; i++) if (vals[i][0] === k) { sh.getRange(i + 1, 2).setValue(v); return; }
+  sh.getRange(n + 1, 1, 1, 3).setValues([[k, v, 'Kept by the app']]);
+}
+function templateSource_() {
+  const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
+  if (!link) return null;
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) throw new Error('PDF_TEMPLATE_LINK is not a Google Drive link');
+  if (!m[2]) return DriveApp.getFileById(m[1] || m[3] || m[4]);
+  const folder = DriveApp.getFolderById(m[2]);
+  let best = null;
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.isTrashed() || [GDOC_MIME, DOCX_MIME].indexOf(f.getMimeType()) < 0) continue;
+    if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f;
+  }
+  return best || folder.createFile(UrlFetchApp.fetch(TEMPLATE_URL).getBlob().setName('ISI Inbound Report Template.docx').setContentType(DOCX_MIME));
+}
+let tplMemo_ = null;
+/** { id, stamp } of the Google Doc to copy, or null for the built-in layout; the stamp changes whenever the template does. */
+function template_() {
+  if (tplMemo_ !== null) return tplMemo_;
+  const src = templateSource_();
+  if (!src) return (tplMemo_ = false);
+  const stamp = src.getId() + '@' + src.getLastUpdated().getTime();
+  if (src.getMimeType() === GDOC_MIME) return (tplMemo_ = { id: src.getId(), stamp });
+  const old = setting_('PDF_TEMPLATE_ID');
+  if (old && setting_('PDF_TEMPLATE_STAMP') === stamp) { try { if (!DriveApp.getFileById(old).isTrashed()) return (tplMemo_ = { id: old, stamp }); } catch (e) { /* gone: convert again */ } }
+  const b = 'ibtpl' + Date.now();
+  const meta = { name: 'Inbound Report Template (made from ' + src.getName() + ')', mimeType: GDOC_MIME, parents: [root_().getId()] };
+  const bytes = x => Utilities.newBlob(x).getBytes();
+  const payload = bytes('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + DOCX_MIME + '\r\n\r\n')
+    .concat(src.getBlob().getBytes(), bytes('\r\n--' + b + '--'));
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+    method: 'post', contentType: 'multipart/related; boundary=' + b, payload, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error('template upload ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+  const id = JSON.parse(r.getContentText()).id;
+  if (old && old !== id) { try { DriveApp.getFileById(old).setTrashed(true); } catch (e) { /* already gone */ } }
+  setSetting_('PDF_TEMPLATE_ID', id);
+  setSetting_('PDF_TEMPLATE_STAMP', stamp);
+  return (tplMemo_ = { id, stamp });
+}
+function tplStamp_() { try { const t = template_(); return t ? t.stamp : 'basic'; } catch (e) { return 'error ' + e; } }
+/** Text for each {{placeholder}} in the template. */
+function pdfValues_(r) {
+  const pr = prod_(r), sp = spent_(r);
+  return {
+    id: r.id, date: showDate_(r.date), status: r.status, po: r.po, inbound: r.inbound, ref: r.ref, supplier: r.supplier, eta: showDate_(r.eta),
+    dn3pl: r.dn3pl, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '',
+    itemCount: r.items.length, totPo: kg_(tot_(r, 'poQty')), totArr: kg_(tot_(r, 'arrQty')), totGr: kg_(tot_(r, 'grQty')), totDmg: kg_(tot_(r, 'dmgQty')), uom: r.uom,
+    start: r.start, end: r.end, spent: sp === '' ? '' : sp + ' min', manpower: r.manpower, productivity: pr === '' ? '' : pr + ' t/person/h', remark: r.remark,
+    by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '',
+  };
+}
+function templatePdf_(r, folder, name) {
+  const t = template_();
+  if (!t) return makePdf_(r, folder, name);
+  const copy = DriveApp.getFileById(t.id).makeCopy(r.id + ' (pdf)', folder);
+  try {
+    const doc = DocumentApp.openById(copy.getId()), body = doc.getBody();
+    itemRows_(body, r);
+    images_(body, '{{truckPhotos}}', PHOTOS.map(k => (r.ph || {})[k]).filter(Boolean), 170, 120);
+    images_(body, '{{damagePhotos}}', [].concat.apply([], r.items.map(i => i.dmgPh || [])).slice(0, 12), 125, 90);
+    const v = pdfValues_(r);
+    const parts = [body, doc.getHeader(), doc.getFooter()].filter(Boolean);
+    parts.forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
+    // Google can only print Google fonts, so Word fonts are swapped for one (IB Settings PDF_FONT)
+    const font = String(setting_('PDF_FONT') || 'Kantumruy Pro').trim();
+    if (font && font !== '-') parts.forEach(el => { try { el.editAsText().setFontFamily(font); } catch (e) { /* unknown font: keep the template's */ } });
+    doc.saveAndClose();
+    return folder.createFile(copy.getAs('application/pdf').setName(name));
+  } finally {
+    copy.setTrashed(true);   // only the PDF is kept
+  }
+}
+const pat_ = key => key.replace(/[{}.]/g, '\\$&');
+/** Swap every copy of key for the value, as plain text ("-" when empty). */
+function fill_(el, key, val) {
+  const txt = String(val == null || val === '' ? '-' : val).replace(/\{\{/g, '{ {');
+  let r;
+  while ((r = el.findText(pat_(key)))) {
+    const t = r.getElement().asText(), s = r.getStartOffset(), e = r.getEndOffsetInclusive();
+    t.insertText(s, txt);   // insert first so the text element is never left empty
+    t.deleteText(s + txt.length, e + txt.length);
+  }
+}
+/** One table row per item, copied from the row that holds {{item.material}}. */
+function itemRows_(body, r) {
+  const f = body.findText(pat_('{{item.material}}'));
+  if (!f) return;
+  let row = f.getElement();
+  while (row && row.getType() !== DocumentApp.ElementType.TABLE_ROW) row = row.getParent();
+  if (!row) return;
+  const table = row.getParentTable(), at = table.getChildIndex(row);
+  r.items.forEach((i, n) => {
+    const nr = table.insertTableRow(at + 1 + n, row.copy());
+    const mat = i.material + ' ' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
+    [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', kg_(i.dmgQty || 0)], ['uom', r.uom]]
+      .forEach(x => fill_(nr, '{{item.' + x[0] + '}}', x[1]));
+  });
+  row.removeFromParent();
+}
+/** Pictures where the placeholder is; with none, the placeholder is left for fill_ ("-"). */
+function images_(body, key, ids, w, h) {
+  const blobs = ids.map(id => { try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; } }).filter(Boolean);
+  if (!blobs.length) return;
+  const f = body.findText(pat_(key));
+  if (!f) return;
+  const t = f.getElement().asText(), s = f.getStartOffset(), e = f.getEndOffsetInclusive();
+  t.insertText(s, ' ');
+  t.deleteText(s + 1, e + 1);
+  let p = t.getParent();
+  while (p && p.getType() !== DocumentApp.ElementType.PARAGRAPH) p = p.getParent();
+  if (!p) return;
+  blobs.forEach(b => { try { fit_(p.appendInlineImage(b), w, h); p.appendText(' '); } catch (e) { /* not an image */ } });
 }
 
 const NAVY = '#011e41', SOFT = '#d4e1f5', LINE = '#b9c3cf', PAGE_W = 539, LABEL_W = 92;

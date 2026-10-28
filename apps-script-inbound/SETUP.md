@@ -50,6 +50,19 @@ A free Gmail always shows its address as the sender. To send from `noreply@<your
 owned by a Google Workspace account (paid): move them to that account, deploy from it, and set `EMAIL_NO_REPLY` to `Yes` in
 **IB Settings** (add the row if it is missing).
 
+### Report layout (Word template)
+
+The PDF is filled from a Word template, like the Incident report. The standard one is `web/inbound/ib-template.docx`
+(also in `apps-script-inbound/templates/`). Put the Drive link of a Word file, a Google Doc or a folder in **IB Settings →
+PDF_TEMPLATE_LINK**; with a folder, the newest Word file / Doc in it is used, and an empty folder gets a copy of the
+standard template. Edit it in Word, keep the `{{...}}` words, upload it again and the next report uses it (saved PDFs are
+made again). The row holding `{{item.material}}` repeats once per item. Placeholders: `{{id}} {{date}} {{status}} {{po}}
+{{inbound}} {{ref}} {{supplier}} {{eta}} {{dn3pl}} {{truck}} {{owner}} {{itemCount}} {{item.no}} {{item.material}}
+{{item.poQty}} {{item.arrQty}} {{item.grQty}} {{item.dmgQty}} {{item.uom}} {{totPo}} {{totArr}} {{totGr}} {{totDmg}} {{uom}}
+{{start}} {{end}} {{spent}} {{manpower}} {{productivity}} {{remark}} {{truckPhotos}} {{damagePhotos}} {{by}} {{finishedBy}}`.
+Google can only print Google fonts, so the text is set in **PDF_FONT** (Kantumruy Pro; `-` keeps the template's fonts).
+If the template fails, the built-in layout is used and the reason is written in **PDF_TEMPLATE_ERROR**.
+
 ## Sheet tabs
 
 - **Incoming Plan**: the packing lists (one row per PO line). Kim keeps it filled.
