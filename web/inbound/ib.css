@@ -168,3 +168,21 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .tbox.ro { background: var(--bg); border-style: dashed; color: var(--muted); }
 .tbox.ro b { color: var(--muted); }
 .stepper.need { border-radius: 14px; padding: 3px; border: 1.5px solid var(--bad); }
+
+/* start menu + Incoming Plan */
+.tabs.five { grid-template-columns: repeat(5, 1fr); }
+.menu2 { display: grid; gap: 14px; margin-top: 6px; }
+.mtile { display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto auto; column-gap: 14px; align-items: center; padding: 18px 16px; border-radius: 18px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-decoration: none; }
+.mtile .mi { grid-row: 1 / 4; width: 64px; height: 64px; border-radius: 16px; background: var(--soft); display: flex; align-items: center; justify-content: center; font-size: 36px; }
+.mtile b { font-size: 19px; }
+.mtile small { color: var(--muted); font-size: 14px; }
+.mtile em { font-style: normal; font-size: 13px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+.upl { cursor: pointer; }
+.prog { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; margin: 8px 0 4px; }
+.prog i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+.tb.pl td small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.tb.pl td.okc { color: var(--ok); }
+.tb .totr td { font-weight: 700; border-top: 2px solid var(--line); }
+.btn.bad { color: var(--bad); border-color: var(--bad); }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

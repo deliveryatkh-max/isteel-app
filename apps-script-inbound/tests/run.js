@@ -99,4 +99,20 @@ ok(!('f1' in th) || env.files.f1.parent !== 'root', 'files outside the folder ar
 b = must(call('sok@x.com', 'boot', {}));
 eq(b.receipts.map(x => x.id).sort(), [r.id, r2.id].sort(), 'receipts in boot');
 
+// Incoming Plan from the app (Supervisor / Admin)
+ok(/^DENIED/.test(call('sok@x.com', 'planSave', { lines: [{ po: 'PO1', material: 'M1', kg: 5 }] }).error), 'user cannot change the plan');
+let pl = must(call('kim@x.com', 'planSave', { lines: [
+  { po: '5100099999', material: '1300000001', desc: 'NEW A', kg: '40,000', pcs: 2, inbound: 'IN 9', ref: 'R9', eta: '2026-11-02', supplier: 'New Co' },
+  { po: 'PO5100099999', material: '1300000002', desc: 'NEW B', kg: 1000 },
+  { po: 'PO5100099999', material: '', kg: 5 }] }));
+eq(pl.filter(x => x.po === 'PO5100099999').map(x => [x.material, x.kg, x.eta, x.supplier]), [['1300000001', 40000, '2026-11-02', 'New Co'], ['1300000002', 1000, '', '']], 'new PO added, PO prefix, bad row skipped');
+eq(pl.length, 5, 'other POs kept');
+// re-upload PO5100012725 without line 1100000231: received line stays, line 230 updated
+pl = must(call('kim@x.com', 'planSave', { lines: [{ po: 'PO5100012725', material: '1100000230', desc: 'X', kg: 33000, supplier: 'Regency' }] }));
+eq(pl.filter(x => x.po === 'PO5100012725').map(x => [x.material, x.kg]).sort(), [['1100000230', 33000], ['1100000231', 23550]], 'replace PO, keep received line');
+ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012725' }).error), 'PO with trucks cannot be deleted');
+pl = must(call('kim@x.com', 'planDel', { po: 'PO5100099999' }));
+eq(pl.map(x => x.po).sort(), ['PO5100012725', 'PO5100012725', 'PO5100012751'], 'PO deleted');
+eq(env.ss.getSheetByName('Incoming Plan').rows.slice(1).filter(r => r && r.some(c => String(c).trim())).map(r => r[0]), ['1', '2', '3'], 'No. renumbered');
+
 console.log('Inbound.gs: ' + pass + ' checks passed');

@@ -61,6 +61,8 @@ function route_(action, p, user) {
     case 'finish': return update_(p.receipt || {}, user, true);
     case 'save': return update_(p.receipt || {}, user, false);
     case 'photos': return photos_(p.ids);
+    case 'planSave': return withLock_(() => planSave_(p.lines, user));
+    case 'planDel': return withLock_(() => planDel_(p.po, user));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -247,6 +249,67 @@ function plan_() {
     po: cell(r, iPo), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
     ref: cell(r, iRef), eta: cell(r, iEta), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
+}
+
+// ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
+function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'Only a Supervisor or Admin can change the Incoming Plan.', 'មានតែ Supervisor ឬ Admin ទេដែលអាចកែផែនការបាន។'); }
+const poOf_ = v => { const s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return s && !/^PO/.test(s) ? 'PO' + s : s; };
+/** kg arrived (still unloading) or received per PO|material */
+function recvdMap_() {
+  const m = {};
+  receipts_().forEach(r => (r.items || []).forEach(i => { const k = r.po + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
+  return m;
+}
+/** Rewrites the Incoming Plan tab: rows of other POs stay as they are (all columns). */
+function planWrite_(keep, add) {
+  const sh = sheet_(SH.PLAN, PLAN_COLS);
+  const width = Math.max(sh.getLastColumn(), PLAN_COLS.length);
+  const head = sh.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+  const rows = keep.concat(add.map(l => head.map(h => {
+    switch (h.toLowerCase().replace(/\.$/, '')) {
+      case 'material': return l.material; case 'description': case 'material description': return l.desc; case 'plant': return l.plant; case 'sloc': return l.sloc;
+      case 'kg': return l.kg; case 't': return Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return Math.ceil(l.kg / 1000 / 40);
+      case 'po number': case 'po': return l.po; case 'inbound no': case 'inbound number': return l.inbound; case 'ref. no': case 'ref no': return l.ref;
+      case 'eta': return l.eta; case 'supplier': return l.supplier; default: return '';
+    }
+  })));
+  const iNo = head.indexOf('No');
+  if (iNo >= 0) rows.forEach((r, i) => { r[iNo] = i + 1; });
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, width).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, width).setNumberFormat('@').setValues(rows.map(r => r.map(v => (v == null ? '' : String(v)))));
+}
+function planRows_() {
+  const sh = sheet_(SH.PLAN, PLAN_COLS);
+  const width = Math.max(sh.getLastColumn(), PLAN_COLS.length);
+  const v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), width).getValues();
+  const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
+  const iPo = Math.max(head.indexOf('po number'), head.indexOf('po')), iMat = head.indexOf('material');
+  return v.slice(1).filter(r => r.some(c => String(c).trim())).map(r => ({ po: poOf_(r[iPo]), material: String(r[iMat]).trim(), row: r.map(c => (c instanceof Date ? fmt_(c, 'yyyy-MM-dd') : c)) }));
+}
+/** Upload (Excel or by hand): each PO in the upload replaces its lines; lines already received and not in the upload stay. */
+function planSave_(lines, user) {
+  planner_(user);
+  const add = [], seen = {};
+  (Array.isArray(lines) ? lines : []).slice(0, 2000).forEach(l => {
+    const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg),
+      pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80) };
+    if (!x.po || !x.material || !(x.kg > 0)) return;
+    const k = x.po + '|' + x.material; if (seen[k]) { seen[k].kg += x.kg; return; }   // same material twice in a PO: one line
+    seen[k] = x; add.push(x);
+  });
+  if (!add.length) fail_('BAD', 'No rows with PO, Material and Kg.', 'គ្មានជួរដែលមាន PO, Material និង Kg ទេ។');
+  const pos = {}; add.forEach(x => { pos[x.po] = 1; });
+  const got = recvdMap_();
+  const keep = planRows_().filter(r => !pos[r.po] || (got[r.po + '|' + r.material] > 0 && !seen[r.po + '|' + r.material])).map(r => r.row);
+  planWrite_(keep, add);
+  return plan_();
+}
+function planDel_(po, user) {
+  planner_(user);
+  po = poOf_(po);
+  if (receipts_().some(r => r.po === po)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
+  planWrite_(planRows_().filter(r => r.po !== po).map(r => r.row), []);
+  return plan_();
 }
 
 // ---------------------------------------------------------------- receipts

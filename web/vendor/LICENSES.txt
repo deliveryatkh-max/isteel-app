@@ -1,3 +1,4 @@
 jsQR 1.4.0 (QR code reader) - Apache-2.0 - https://github.com/cozmo/jsQR
 qrcode-generator 1.4.4 (QR code maker) - MIT - Copyright (c) 2009 Kazuhiko Arase - https://github.com/kazuhikoarase/qrcode-generator
 @zxing/browser 0.1.5 + @zxing/library 0.21 (barcode reader, used when the phone has no BarcodeDetector) - Apache-2.0 - https://github.com/zxing-js/browser
+SheetJS xlsx 0.18.5 mini (reads the Incoming Packing List Excel in the Inbound app) - Apache-2.0 - https://sheetjs.com
