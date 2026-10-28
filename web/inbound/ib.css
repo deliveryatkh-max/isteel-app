@@ -207,3 +207,26 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .itbl .qrow .c5 .qin { border-color: var(--c5); }
 .itbl .qrow .qro { font-weight: 600; text-align: right; }
 .itbl .qrow .c5 .qro { text-align: center; }
+
+/* report buttons, email box, demo PDF preview */
+.rep2 { display: grid; gap: 10px; }
+.mailbox { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--soft); display: grid; gap: 6px; }
+.mailbox .check { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--card); }
+.mailbox .check input { width: 20px; height: 20px; }
+.pdfv { position: fixed; inset: 0; z-index: 60; background: rgba(1, 30, 65, .72); overflow: auto; padding: 10px; }
+.pdfv .pbar { display: flex; justify-content: space-between; align-items: center; color: #fff; max-width: 794px; margin: 0 auto 8px; }
+.pdfv .page { background: #fff; color: #011e41; max-width: 794px; margin: 0 auto; padding: 22px 24px; font-size: 10px; line-height: 1.35; border-radius: 4px; }
+.pdfv .phead { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
+.pdfv .plogo { font: 800 20px/1 system-ui, sans-serif; color: #011e41; } .pdfv .plogo span { font-size: 16px; }
+.pdfv h4 { margin: 10px 0 3px; font-size: 10.5px; color: #011e41; }
+.pdfv table { width: 100%; border-collapse: collapse; }
+.pdfv td, .pdfv th { border: 1px solid #b9c3cf; padding: 2px 4px; text-align: left; vertical-align: top; }
+.pdfv .pkv th { background: #f2f5f9; width: 17%; }
+.pdfv .pit th { background: #f2f5f9; } .pdfv .pit .n { text-align: right; } .pdfv .pit .tot td { background: #f2f5f9; font-weight: 700; }
+.pdfv .pit th.c1 { color: #475569; background: #eef2f6; } .pdfv .pit th.c2 { color: #0b62a4; background: #e3f0fb; } .pdfv .pit th.c3 { color: #1e7a3c; background: #e3f4e7; }
+.pdfv .pit th.c4 { color: #b45309; background: #fdf0dc; } .pdfv .pit th.c5 { color: #6b3fa0; background: #f1e9f9; }
+.pdfv .pph { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .pdfv .pph.sm { grid-template-columns: repeat(4, 1fr); }
+.pdfv .pph div { aspect-ratio: 4 / 3; background: #eef2f6; display: flex; align-items: center; justify-content: center; font-size: 28px; overflow: hidden; border-radius: 4px; }
+.pdfv .pph img { width: 100%; height: 100%; object-fit: cover; }
+.btn .spinner { display: inline-block; width: 16px; height: 16px; margin: 0 4px 0 0; border-width: 2px; vertical-align: -3px; }
+.mailbox label.f { margin: 6px 0 2px; }

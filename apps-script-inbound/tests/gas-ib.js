@@ -73,7 +73,7 @@ function makeEnv(opts) {
       getId: () => f.id, getName: () => f.name, getUrl: () => 'https://drive.google.com/file/d/' + f.id,
       getBlob: () => blob(f.data, f.mime, f.name), setContent(s) { f.data = Buffer.from(String(s), 'utf8'); return this; },
       getAs: mime => blob('%PDF-' + (docs[f.id] ? docs[f.id].parts.join('\n') : ''), mime, f.name + '.pdf'), getThumbnail: () => null, isTrashed: () => f.trashed,
-      setDescription(d) { f.desc = d; return this; }, setTrashed(v) { f.trashed = v; return this; },
+      setDescription(d) { f.desc = d; return this; }, getDescription: () => f.desc, setTrashed(v) { f.trashed = v; return this; },
       moveTo(folder) { f.parent = folder.getId(); return this; },
       getParents: () => iter(folders[f.parent] ? [folderApi(folders[f.parent])] : []),
       makeCopy(n, folder) { const c = Object.assign({}, f, { id: 'f' + (++nid), name: n, parent: folder.getId() }); files[c.id] = c; return fileApi(c); },
@@ -95,9 +95,10 @@ function makeEnv(opts) {
     const img = () => { doc.images++; const o = { getWidth: () => 800, getHeight: () => 600, setWidth: () => o, setHeight: () => o }; return o; };
     const el = text => { const o = { editAsText: () => o, setForegroundColor: () => o, setBold: () => o, setItalic: () => o, setBackgroundColor: () => o, setFontSize: () => o, setHeading: () => o,
       setGlyphType: () => o, setSpacingBefore: () => o, setSpacingAfter: () => o, appendInlineImage: () => img(), appendText: () => o, asParagraph: () => o,
-      asText: () => ({ getText: () => text }), removeFromParent: () => { doc.parts.shift(); } }; return o; };
-    const table = rows => { const cell = { setBackgroundColor: () => cell, editAsText: () => cell, setForegroundColor: () => cell, setBold: () => cell, setFontSize: () => cell, getChild: () => el('') };
-      return { setBorderColor() {}, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
+      setAlignment: () => o, asText: () => ({ getText: () => text }), removeFromParent: () => { doc.parts.shift(); } }; return o; };
+    const table = rows => { const cell = { setBackgroundColor: () => cell, editAsText: () => cell, setForegroundColor: () => cell, setBold: () => cell, setFontSize: () => cell, getChild: () => el(''),
+        setText: () => cell, setWidth: () => cell, setPaddingTop: () => cell, setPaddingBottom: () => cell, setPaddingLeft: () => cell, setPaddingRight: () => cell };
+      return { setBorderColor() {}, setBorderWidth() {}, setColumnWidth() {}, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
     const body = {
       setMarginTop: () => body, setMarginBottom: () => body, setMarginLeft: () => body, setMarginRight: () => body, setAttributes: () => body,
       appendParagraph: t => { doc.parts.push(String(t)); return el(t); }, appendListItem: t => { doc.parts.push('• ' + t); return el(t); },
@@ -125,7 +126,7 @@ function makeEnv(opts) {
       base64Decode: s => signed(Buffer.from(String(s), 'base64')),
       computeHmacSha256Signature: (v, k) => signed(crypto.createHmac('sha256', buf(k)).update(buf(v)).digest()),
       computeDigest: (a, t) => signed(crypto.createHash('sha256').update(buf(t)).digest()),
-      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      DigestAlgorithm: { SHA_256: 'SHA_256', MD5: 'MD5' },
     },
     ContentService: { createTextOutput: s => ({ s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     DriveApp: {
@@ -137,7 +138,7 @@ function makeEnv(opts) {
       create: n => { const d = makeFile(blob('', 'application/vnd.google-apps.document', n), 'root'); return docApi(d.getId(), n); },
       openById: id => docApi(id, files[id] ? files[id].name : id),
       Attribute: { FONT_FAMILY: 'FONT_FAMILY', FONT_SIZE: 'FONT_SIZE' },
-      ParagraphHeading: { TITLE: 'T', SUBTITLE: 'S', HEADING2: 'H2' }, GlyphType: { BULLET: 'B' },
+      HorizontalAlignment: { RIGHT: 'R' }, ParagraphHeading: { TITLE: 'T', SUBTITLE: 'S', HEADING2: 'H2' }, GlyphType: { BULLET: 'B' },
     },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: o => mails.push(o) },
     ScriptApp: { getOAuthToken: () => 'oauth' },

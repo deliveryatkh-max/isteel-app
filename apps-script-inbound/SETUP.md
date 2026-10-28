@@ -38,6 +38,15 @@ Until step 5 is done the app runs in **DEMO** mode (sample POs and receipts kept
    (Deploy → Manage deployments → ✎ → New version). The next time the home menu opens, a **ទទួលទំនិញ** tick box
    column appears in Users, **unticked**. Tick it for the warehouse staff who receive goods (admins always see it).
 
+## PDF report and email
+
+After a truck is finished, its receipt screen shows **📄 Generate Report (PDF)** (one A4 page: details, items, times,
+truck and damage photos; saved as `<receipt id>.pdf` in the receipt's photo folder and made again only when the receipt
+changes) and **✉️ Send Email** (tick lists from the **Email Lists** tab and/or type addresses; the PDF is attached).
+Fill the **Email Lists** tab: *List* (name shown in the app), *Emails* (comma separated), *Active* (Yes/No). The first
+time after this update, paste the new `Inbound.gs` + `appsscript.json`, deploy a **New version** and allow the new
+permissions (Google Docs to make the PDF, send email as you). Gmail sends up to 100 emails a day from a free account.
+
 ## Sheet tabs
 
 - **Incoming Plan**: the packing lists (one row per PO line). Kim keeps it filled.
@@ -45,6 +54,7 @@ Until step 5 is done the app runs in **DEMO** mode (sample POs and receipts kept
   Qty, Damaged Qty, Damage Type, Received Less, 3PL DN and the photos folder link. Written by the app; don't edit by hand.
 - **Receipts**: one row per truck (the app's own copy). Don't edit.
 - **IB Settings**: Telegram chat, app address, 3PL companies, days of receipts the app loads.
+- **Email Lists**: named email lists for the Send Email button.
 
 ## Who can do what
 
