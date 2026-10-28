@@ -151,3 +151,18 @@ main { max-width: 1080px; margin: 0 auto; padding: 18px 16px 32px; }
 .bar-right { gap: 5px; }
 /* Every app header is the same height, with the same logo and buttons (Kim, 2026-10-11). */
 .bar { min-height: calc(54px + env(safe-area-inset-top)); padding-bottom: 0; padding-top: env(safe-area-inset-top); }
+
+/* Phone: all tiles fit on one screen (sizes set by fitGrid in home.js, Kim 2026-10-28). */
+:root { --safe-b: env(safe-area-inset-bottom); }
+@media (max-width: 639px) {
+  main { padding-top: 12px; padding-bottom: 14px; }
+  .hello { margin-bottom: 10px; }
+}
+.grid.fit { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: var(--gap); }
+.grid.fit .tile { min-height: 0; height: var(--tile-h); padding: 8px 6px; gap: 6px; border-radius: 16px; }
+.grid.fit .tile .ico { width: var(--ico); height: var(--ico); border-radius: calc(var(--ico) * .28); flex: none; }
+.grid.fit .tile .ico img { width: var(--img); height: var(--img); }
+.grid.fit.small .tile .t { font-size: 14.5px; line-height: 1.2; }
+.grid.fit.small .tile .wait { display: none; }
+.grid.fit.small .tile .badge { font-size: 10px; padding: 1px 6px; }
+.grid.fit.small .tile .count { top: 6px; right: 6px; min-width: 22px; height: 22px; font-size: 12px; }

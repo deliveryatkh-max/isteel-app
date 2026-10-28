@@ -97,6 +97,10 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .sigpad .btn { position: absolute; top: 6px; right: 6px; background: #fff; color: #011e41; }
 .sighint { position: absolute; left: 12px; bottom: 8px; font-size: 12.5px; color: #8a97a8; pointer-events: none; }
 .sigpad.inked .sighint { display: none; }
+.sigpad.locked { touch-action: pan-y; }
+.sigpad.locked canvas { touch-action: pan-y; opacity: .35; }
+.sigpad.locked .btn, .sigpad.locked .sighint { display: none; }
+.sigunlock { position: absolute; inset: 0; margin: auto; width: max-content; height: 44px; padding: 0 18px; border: 0; border-radius: 22px; background: #011e41; color: #fff; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(1,30,65,.25); }
 .pubnote { margin: 0 0 12px; }
 
 /* one report */
