@@ -784,8 +784,16 @@
     g.scale(ratio, ratio); g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#0b3a75';
     let drawing = false, last = null, inked = false;
     sigData = '';
+    // Locked until "Unlock to sign" is tapped, so scrolling over the box never draws by mistake (Kim, 28 Oct 2026).
+    const pad = canvas.parentElement;
+    pad.classList.add('locked');
+    const un = document.createElement('button');
+    un.type = 'button'; un.className = 'sigunlock';
+    un.innerHTML = `🔒 ${t('ដោះសោដើម្បីចុះហត្ថលេខា', 'Unlock to sign')}`;
+    un.onclick = () => { pad.classList.remove('locked'); un.remove(); };
+    pad.appendChild(un);
     const pos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    canvas.onpointerdown = e => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e); g.beginPath(); g.arc(last.x, last.y, 1.2, 0, 7); g.fill(); };
+    canvas.onpointerdown = e => { if (pad.classList.contains('locked')) return; e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e); g.beginPath(); g.arc(last.x, last.y, 1.2, 0, 7); g.fill(); };
     canvas.onpointermove = e => { if (!drawing) return; const p = pos(e); g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(p.x, p.y); g.stroke(); last = p; inked = true; };
     const end = () => { if (!drawing) return; drawing = false; if (inked) sigData = canvas.toDataURL('image/png'); canvas.parentElement.classList.toggle('inked', inked); };
     canvas.onpointerup = end; canvas.onpointercancel = end; canvas.onpointerleave = end;
@@ -871,12 +879,6 @@
         ${c.edit ? `<a class="btn sm ok" href="#/edit/${encodeURIComponent(d.id)}">✏️ ${t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again')}</a>` : ''}</div>
       ${d.status === 'Returned' && d.returnNote ? `<div class="alert warn">↩️ ${esc(d.returnNote)}</div>` : ''}
       <div id="mailBox"></div></div>`;
-    if (c.sign) html += `<div class="card signcard"><h2>✍️ ${t('ចុះហត្ថលេខាជាប្រធានឃ្លាំង', 'Sign as Warehouse Supervisor')}</h2>
-      <p class="hint">${t('ពិនិត្យរបាយការណ៍ខាងក្រោម កែវិធានការបើចាំបាច់ ហើយចុះហត្ថលេខា។', 'Check the report below, adjust the actions if needed, then sign.')}</p>
-      <div class="field"><label class="f" for="supComment">${t('មតិ (បើមាន)', 'Comment (optional)')}</label><textarea class="in" id="supComment" rows="2"></textarea></div>
-      <div class="sigpad"><canvas id="sig"></canvas><button type="button" class="btn sm ghost" id="sigClear">${t('លុប', 'Clear')}</button><span class="sighint">${t('ចុះហត្ថលេខាក្នុងប្រអប់', 'Sign inside the box')}</span></div>
-      <button class="btn ok big mt" id="signBtn">✅ ${t('ចុះហត្ថលេខា', 'Sign')}</button>
-      <button class="btn big mt" id="backBtn">↩️ ${t('បញ្ជូនត្រឡប់ឲ្យកែ', 'Send back for changes')}</button></div>`;
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
@@ -900,6 +902,12 @@
       ${c.actions || c.close ? `<div class="actbtns${c.actions && c.close ? ' two' : ''}">${c.actions ? `<button class="btn big" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>` : ''}${c.close ? `<button class="btn big" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>` : ''}</div>`;
     const nPh = (d.photos || []).length;
     if (nPh) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')} (${nPh})</h2><div class="photos">${d.photos.map((x, i) => `<button type="button" class="ph view" data-ph="${i}">${(d.photoThumbs || [])[i] ? `<img src="${d.photoThumbs[i]}" alt="">` : '<span class="spin"></span>'}</button>`).join('')}</div></div>`;
+    if (c.sign) html += `<div class="card signcard"><h2>✍️ ${t('ចុះហត្ថលេខាជាប្រធានឃ្លាំង', 'Sign as Warehouse Supervisor')}</h2>
+      <p class="hint">${t('ពិនិត្យរបាយការណ៍ខាងលើ កែវិធានការបើចាំបាច់ ហើយចុះហត្ថលេខា។', 'Check the report above, adjust the actions if needed, then sign.')}</p>
+      <div class="field"><label class="f" for="supComment">${t('មតិ (បើមាន)', 'Comment (optional)')}</label><textarea class="in" id="supComment" rows="2"></textarea></div>
+      <div class="sigpad"><canvas id="sig"></canvas><button type="button" class="btn sm ghost" id="sigClear">${t('លុប', 'Clear')}</button><span class="sighint">${t('ចុះហត្ថលេខាក្នុងប្រអប់', 'Sign inside the box')}</span></div>
+      <button class="btn ok big mt" id="signBtn">✅ ${t('ចុះហត្ថលេខា', 'Sign')}</button>
+      <button class="btn big mt" id="backBtn">↩️ ${t('បញ្ជូនត្រឡប់ឲ្យកែ', 'Send back for changes')}</button></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
     $('#view').innerHTML = html;
     wireReport();
