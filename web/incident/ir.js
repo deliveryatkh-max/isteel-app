@@ -77,7 +77,7 @@
     ['all', '📢 ប្រជុំសុវត្ថិភាពខ្លីជាមួយក្រុម', 'Toolbox talk with the team'], ['all', '📝 កែសម្រួលនីតិវិធីការងារ (SOP)', 'Update the work procedure (SOP)']];
   const REC_FIT = { road: ['drive', 'load', 'all'], wh: ['drive', 'load', 'crane', 'walk', 'all'], near: ['load', 'crane', 'walk', 'all'] };
   const fitRecs = type => RECS.filter(r => (REC_FIT[type] || REC_FIT.wh).indexOf(r[0]) >= 0);
-  const recTicks = type => `<div class="recs one"><small class="hint">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick suggested actions'))}</small>${fitRecs(type).map(r => `<label class="check rec"><input type="checkbox" data-tick="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}"> <span>${esc(t(r[1], r[2]))}</span></label>`).join('')}</div>`;
+  const recTicks = type => `<select class="in" id="naRec"><option value="">💡 ${esc(t('ជ្រើសវិធានការណែនាំ', 'Pick a suggested action'))}</option>${fitRecs(type).map(r => `<option value="${esc(t(r[1], r[2]).replace(/^\S+\s/, ''))}">${esc(t(r[1], r[2]))}</option>`).join('')}</select>`;
   const COMPANIES = [['ISI Steel', 'ISI Steel'], ['3PL / ឡានជួល', '3PL / Rented'], ['អតិថិជន', 'Customer'], ['ភ្ញៀវ / អ្នកម៉ៅការ', 'Visitor / Contractor']];
   const ROLES = [['តៃកុង', 'Driver'], ['ជំនួយការតៃកុង', 'Driver assistant'], ['អ្នកបើកហ្វកលីហ្វ', 'Forklift operator'], ['អ្នកបើកស្ទូច', 'Crane operator'],
     ['បុគ្គលិកឃ្លាំង', 'Warehouse staff'], ['សន្តិសុខ', 'Security'], ['ប្រធានក្រុម', 'Supervisor'], ['ផ្សេងៗ', 'Other']];
@@ -269,7 +269,7 @@
       if (!f.whys || f.whys.length < 5) f.whys = (f.whys || []).concat(['', '', '', '', '']).slice(0, 5);
       if (!f.reporterName && B && B.user) f.reporterName = B.user.name || '';
       if (!f.reporterPhone && B && B.user) f.reporterPhone = B.user.phone || '';
-      if (!f.gps) locate();
+      locate();   // a fresh place every time a new report opens (Kim, 28 Oct 2026)
     }
     screen = () => { collect(); paintForm(); };
     paintForm();
@@ -285,14 +285,14 @@
       saveDraft();
       const name = await placeName(lat, lon);
       if (!f) return;
-      if (name && (force || !f.location)) { f.location = name; const el = $('#location'); if (el) el.value = name; saveDraft(); }
+      if (name && (force || !f.location || f.locAuto)) { f.location = name; f.locAuto = true; const el = $('#location'); if (el) el.value = name; saveDraft(); }
       hint(name ? '📍 ' + t('យកពី GPS', 'From GPS') + ' · ' + f.gps : '📍 ' + f.gps + (force ? ' · ' + t('រកឈ្មោះទីកន្លែងមិនឃើញ សូមវាយ', 'No place name found, please type it') : ''));
     };
     if (DEMO) { setTimeout(() => got(11.9521, 104.6632), force ? 700 : 1500); return; }
     if (!navigator.geolocation) { if (force) hint(t('ទូរស័ព្ទនេះមិនមាន GPS', 'This phone has no GPS')); return; }
     navigator.geolocation.getCurrentPosition(p => got(p.coords.latitude, p.coords.longitude),
       () => { if (force) hint('⚠️ ' + t('សូមបើក Location ក្នុងទូរស័ព្ទ', 'Turn on Location on the phone')); },
-      { timeout: 10000, maximumAge: force ? 0 : 300000, enableHighAccuracy: !!force });
+      { timeout: 10000, maximumAge: force ? 0 : 60000, enableHighAccuracy: !!force });
   }
 
   async function placeName(lat, lon) {
@@ -608,6 +608,8 @@
     if (sd) sd.onclick = () => { collect(); scanCode(code => { const have = String(f.dn || '').split(/[\s,]+/).filter(Boolean); if (have.indexOf(code) < 0) have.push(code); f.dn = have.join(', '); const el = $('#dn'); if (el) el.value = f.dn; saveDraft(); toast('✅ DN ' + code); }); };
     const gb = $('#gpsBtn');
     if (gb) gb.onclick = () => { collect(); locate(true); };
+    const le = $('#location');
+    if (le) le.addEventListener('input', () => { if (f) f.locAuto = false; });   // typed by hand: GPS no longer replaces it
     $$('#view input.in, #view textarea.in, #view select.in').forEach(el => { el.addEventListener('change', collect); });
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
     const send = $('#send');
@@ -784,8 +786,16 @@
     g.scale(ratio, ratio); g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#0b3a75';
     let drawing = false, last = null, inked = false;
     sigData = '';
+    // Locked until "Unlock to sign" is tapped, so scrolling over the box never draws by mistake (Kim, 28 Oct 2026).
+    const pad = canvas.parentElement;
+    pad.classList.add('locked');
+    const un = document.createElement('button');
+    un.type = 'button'; un.className = 'sigunlock';
+    un.innerHTML = `🔒 ${t('ដោះសោដើម្បីចុះហត្ថលេខា', 'Unlock to sign')}`;
+    un.onclick = () => { pad.classList.remove('locked'); un.remove(); };
+    pad.appendChild(un);
     const pos = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-    canvas.onpointerdown = e => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e); g.beginPath(); g.arc(last.x, last.y, 1.2, 0, 7); g.fill(); };
+    canvas.onpointerdown = e => { if (pad.classList.contains('locked')) return; e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e); g.beginPath(); g.arc(last.x, last.y, 1.2, 0, 7); g.fill(); };
     canvas.onpointermove = e => { if (!drawing) return; const p = pos(e); g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(p.x, p.y); g.stroke(); last = p; inked = true; };
     const end = () => { if (!drawing) return; drawing = false; if (inked) sigData = canvas.toDataURL('image/png'); canvas.parentElement.classList.toggle('inked', inked); };
     canvas.onpointerup = end; canvas.onpointercancel = end; canvas.onpointerleave = end;
@@ -871,12 +881,6 @@
         ${c.edit ? `<a class="btn sm ok" href="#/edit/${encodeURIComponent(d.id)}">✏️ ${t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again')}</a>` : ''}</div>
       ${d.status === 'Returned' && d.returnNote ? `<div class="alert warn">↩️ ${esc(d.returnNote)}</div>` : ''}
       <div id="mailBox"></div></div>`;
-    if (c.sign) html += `<div class="card signcard"><h2>✍️ ${t('ចុះហត្ថលេខាជាប្រធានឃ្លាំង', 'Sign as Warehouse Supervisor')}</h2>
-      <p class="hint">${t('ពិនិត្យរបាយការណ៍ខាងក្រោម កែវិធានការបើចាំបាច់ ហើយចុះហត្ថលេខា។', 'Check the report below, adjust the actions if needed, then sign.')}</p>
-      <div class="field"><label class="f" for="supComment">${t('មតិ (បើមាន)', 'Comment (optional)')}</label><textarea class="in" id="supComment" rows="2"></textarea></div>
-      <div class="sigpad"><canvas id="sig"></canvas><button type="button" class="btn sm ghost" id="sigClear">${t('លុប', 'Clear')}</button><span class="sighint">${t('ចុះហត្ថលេខាក្នុងប្រអប់', 'Sign inside the box')}</span></div>
-      <button class="btn ok big mt" id="signBtn">✅ ${t('ចុះហត្ថលេខា', 'Sign')}</button>
-      <button class="btn big mt" id="backBtn">↩️ ${t('បញ្ជូនត្រឡប់ឲ្យកែ', 'Send back for changes')}</button></div>`;
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
@@ -891,7 +895,7 @@
       kv('លទ្ធភាព', 'Likelihood', d.likelihood ? d.likelihood + ' · ' + t(LIK[d.likelihood - 1][0], LIK[d.likelihood - 1][1]) : '') + kv('មូលហេតុចម្បង', 'Main cause', pick(CAUSES, d.cause)) +
       (d.whys || []).map((w, i) => kv('ហេតុអ្វី ' + (i + 1), 'Why ' + (i + 1), w)).join('') + kv('វិធានការភ្លាមៗ', 'Immediate action', immText(d.immediate)));
     const acts = d.actions || [];
-    html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ', 'Actions')}</h2>
+    html += `<div class="card sec"><h2>🛠️ ${t('វិធានការ (បំពេញដោយប្រធានក្រុម)', 'Actions (filled by team leader)')}</h2>
       ${acts.length ? acts.map((a, i) => `<div class="actrow" data-i="${i}"><div><b>${esc(a.what)}</b><small>${esc([a.owner, a.due].filter(Boolean).join(' · '))}${a.done ? ' · ✅ ' + esc(a.done) : ''}</small></div>
         ${c.actions ? `<select class="in st-sel" data-ai="${i}">${[['បើក', 'Open'], ['កំពុងធ្វើ', 'In progress'], ['រួចរាល់', 'Done']].map(o => `<option value="${o[1]}" ${a.status === o[1] ? 'selected' : ''}>${esc(t(o[0], o[1]))}</option>`).join('')}</select>`
           : `<span class="badge ${a.status === 'Done' ? 'approved' : a.due && a.due < today() ? 'rejected' : 'pending'}">${esc(t({ Open: 'បើក', 'In progress': 'កំពុងធ្វើ', Done: 'រួចរាល់' }[a.status] || a.status, a.status))}</span>`}</div>`).join('')
@@ -900,6 +904,12 @@
       ${c.actions || c.close ? `<div class="actbtns${c.actions && c.close ? ' two' : ''}">${c.actions ? `<button class="btn big" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>` : ''}${c.close ? `<button class="btn big" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>` : ''}</div>`;
     const nPh = (d.photos || []).length;
     if (nPh) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')} (${nPh})</h2><div class="photos">${d.photos.map((x, i) => `<button type="button" class="ph view" data-ph="${i}">${(d.photoThumbs || [])[i] ? `<img src="${d.photoThumbs[i]}" alt="">` : '<span class="spin"></span>'}</button>`).join('')}</div></div>`;
+    if (c.sign) html += `<div class="card signcard"><h2>✍️ ${t('ចុះហត្ថលេខាជាប្រធានឃ្លាំង', 'Sign as Warehouse Supervisor')}</h2>
+      <p class="hint">${t('ពិនិត្យរបាយការណ៍ខាងលើ កែវិធានការបើចាំបាច់ ហើយចុះហត្ថលេខា។', 'Check the report above, adjust the actions if needed, then sign.')}</p>
+      <div class="field"><label class="f" for="supComment">${t('មតិ (បើមាន)', 'Comment (optional)')}</label><textarea class="in" id="supComment" rows="2"></textarea></div>
+      <div class="sigpad"><canvas id="sig"></canvas><button type="button" class="btn sm ghost" id="sigClear">${t('លុប', 'Clear')}</button><span class="sighint">${t('ចុះហត្ថលេខាក្នុងប្រអប់', 'Sign inside the box')}</span></div>
+      <button class="btn ok big mt" id="signBtn">✅ ${t('ចុះហត្ថលេខា', 'Sign')}</button>
+      <button class="btn big mt" id="backBtn">↩️ ${t('បញ្ជូនត្រឡប់ឲ្យកែ', 'Send back for changes')}</button></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
     $('#view').innerHTML = html;
     wireReport();
@@ -998,7 +1008,8 @@
   function readActs() {
     const acts = (cur.actions || []).map((a, i) => { const s = document.querySelector(`[data-ai="${i}"]`); return Object.assign({}, a, { status: s ? s.value : a.status }); });
     const own = $('#naOwner') ? $('#naOwner').value.trim() : '', due = $('#naDue') ? $('#naDue').value : '';
-    $$('.newact [data-tick]:checked').forEach(b => acts.push({ what: b.dataset.tick, owner: own, due, status: 'Open' }));
+    const rec = $('#naRec');
+    if (rec && rec.value) acts.push({ what: rec.value, owner: own, due, status: 'Open' });
     const w = $('#naWhat');
     if (w && w.value.trim()) acts.push({ what: w.value.trim(), owner: $('#naOwner').value.trim(), due: $('#naDue').value, status: 'Open' });
     return acts;
