@@ -82,8 +82,13 @@ const supList = must(call('sup@x.com', 'list', {}));
 ok(supList[0].toSign, 'supervisor has it to sign');
 ok(/^DENIED/.test(call('other@x.com', 'get', { id: r1.id }).error), 'other cannot open');
 let d = must(call('driver@x.com', 'get', { id: r1.id }));
-eq(d.photos.length, 2); eq(d.photoThumbs.length, 2, 'photos come back');
-ok(d.voice && /^data:audio\/webm;base64,/.test(d.voiceData), 'voice note saved and comes back');
+eq(d.photos.length, 2); ok(!d.photoThumbs && !d.voiceData, 'report comes back without media');
+const md = must(call('sup@x.com', 'media', { id: d.id }));
+eq(md.photos.length, 2, 'photos come back');
+ok(d.voice && /^data:audio\/webm;base64,/.test(md.voice), 'voice note saved and comes back');
+eq(must(call('sup@x.com', 'media', { id: d.id })).photos, md.photos, 'thumbnails from the cache');
+ok(/^data:image\//.test(must(call('sup@x.com', 'photo', { id: d.id, i: 1 })).data), 'full photo');
+ok(call('nobody@x.com', 'media', { id: d.id }).error, 'media needs access');
 ok(!d.can.sign && !d.can.edit, 'reporter cannot sign');
 ok(/^DENIED/.test(call('driver@x.com', 'sign', { id: r1.id, signature: SIG }).error), 'reporter cannot sign');
 
@@ -116,6 +121,7 @@ ok(Object.values(env.files).filter(f => /document/.test(f.mime)).every(f => f.tr
 row = env.ss.getSheetByName('Incidents').rows[1];
 eq(col('Supervisor'), 'Pisey'); ok(col('PDF Link'), 'PDF link in sheet');
 ok(pdfDoc.tpl, 'PDF filled from the Word template');
+eq(pdfDoc.font, 'Kantumruy Pro', 'PDF font set to a Google font');
 ok(!/\{\{/.test(text), 'no placeholders left: ' + (text.match(/\{\{[^}]*\}\}/g) || []).join(' '));
 ok(/8100452231/.test(text) && /Pisey/.test(text), 'values filled');
 const tplFile = Object.values(env.files).find(f => f.tpl && f.name === 'Incident Report Template');

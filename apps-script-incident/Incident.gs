@@ -88,6 +88,8 @@ function route_(action, p, user) {
     case 'boot': return boot_(user);
     case 'list': return list_(user);
     case 'get': return view_(getReport_(p.id, user), user);
+    case 'media': return media_(getReport_(p.id, user));
+    case 'photo': return photo_(getReport_(p.id, user), Number(p.i) || 0);
     case 'submit': return submit_(p, user);
     case 'sign': return sign_(p, user);
     case 'sendBack': return sendBack_(p, user);
@@ -167,6 +169,7 @@ function setup() {
     ['TELEGRAM_CHAT_ID', '', 'Telegram group for new and signed reports (the Fuel app\'s TELEGRAM_CHAT_ID works). Empty = off.'],
     ['APP_URL', 'https://isteel-app.pages.dev/incident/', 'Address of the app, used in Telegram buttons and emails'],
     ['PUBLIC_LINK', 'Yes', 'Yes = drivers can report through the QR / link without signing in'],
+    ['PDF_FONT', 'Kantumruy Pro', 'Font for the whole PDF (a Google font, e.g. Kantumruy Pro, Noto Sans Khmer, Battambang). - = keep the template fonts.'],
     ['PDF_TEMPLATE_LINK', '', 'Drive link to the PDF template: a Google Doc, a Word file or a folder (newest file used). Empty = built-in template.'],
   ]);
   sheet_(SH.TXT, TXT_COLS);
@@ -390,20 +393,11 @@ function getReport_(id, user) {
   if (!canSee_(row, user)) fail_('DENIED', 'You cannot open this report.', 'អ្នកមិនអាចបើករបាយការណ៍នេះបានទេ។');
   return d;
 }
-/** What the app gets: the report plus what this person may do with it. Signature/photo files stay in Drive. */
+/** What the app gets: the report plus what this person may do with it. Photos and the voice note come separately
+ *  (media_), so the report opens straight away. */
 function view_(d, user) {
   const sup = isSupervisorFor_(d, user);
-  // Photos come back small (Drive thumbnail, or the photo itself, already shrunk on the phone) so the supervisor sees them.
-  const thumbs = (d.photos || []).map(id => {
-    try {
-      const f = DriveApp.getFileById(id);
-      const b = f.getThumbnail() || f.getBlob();
-      return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
-    } catch (e) { return ''; }
-  }).filter(Boolean);
-  let voiceData = '';
-  if (d.voice) try { const b = DriveApp.getFileById(d.voice).getBlob(); voiceData = 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) { /* file gone */ }
-  return Object.assign({}, d, { photoThumbs: thumbs, voiceData: voiceData,
+  return Object.assign({}, d, {
     can: {
       edit: d.status === STATUS.back && d.reporter.email === user.email,
       sign: d.status === STATUS.wait && sup,
@@ -412,6 +406,30 @@ function view_(d, user) {
       email: d.status === STATUS.signed || d.status === STATUS.closed,
     },
   });
+}
+
+const dataUrl_ = (b, type) => 'data:' + (b.getContentType() || type) + ';base64,' + Utilities.base64Encode(b.getBytes());
+/** Small photos (Drive thumbnail, kept in the cache) and the voice note for the report screen. */
+function media_(d) {
+  const cache = CacheService.getScriptCache();
+  const photos = (d.photos || []).map(id => {
+    const k = 'irth:' + id, hit = cache.get(k);
+    if (hit) return hit;
+    try {
+      const f = DriveApp.getFileById(id), u = dataUrl_(f.getThumbnail() || f.getBlob(), 'image/jpeg');
+      if (u.length < 95000) cache.put(k, u, 21600);
+      return u;
+    } catch (e) { return ''; }
+  });
+  let voice = '';
+  if (d.voice) try { voice = dataUrl_(DriveApp.getFileById(d.voice).getBlob(), 'audio/webm'); } catch (e) { /* file gone */ }
+  return { photos, voice };
+}
+/** One photo in full size, for the photo viewer. */
+function photo_(d, i) {
+  const id = (d.photos || [])[i];
+  if (!id) fail_('BAD', 'Photo not found.', 'រកមិនឃើញរូបថត។');
+  return { data: dataUrl_(DriveApp.getFileById(id).getBlob(), 'image/jpeg') };
 }
 
 function nextId_() {
@@ -629,6 +647,7 @@ function makePdf_(d, folder) {
 const TEMPLATE_URL = 'https://isteel-app.pages.dev/incident/ir-template.docx';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const GDOC_MIME = 'application/vnd.google-apps.document';
+const PDF_FONT = 'Kantumruy Pro';   // Google font closest to MiSans Khmer (Khmer + English)
 function templateSource_() {
   const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
   if (!link) return null;
@@ -700,7 +719,11 @@ function templatePdf_(d, folder) {
     images_(body, '{{reporterSignature}}', d.reporter.sig ? [d.reporter.sig] : [], 130, 40);
     images_(body, '{{supervisorSignature}}', d.supervisor.sig ? [d.supervisor.sig] : [], 130, 40);
     const v = pdfValues_(d);
-    [body, doc.getHeader(), doc.getFooter()].filter(Boolean).forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
+    const parts = [body, doc.getHeader(), doc.getFooter()].filter(Boolean);
+    parts.forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
+    // Google can only print Google fonts, so a Word font such as MiSans Khmer is swapped for one (IR Settings PDF_FONT).
+    const font = String(setting_('PDF_FONT') || PDF_FONT).trim();
+    if (font && font !== '-') parts.forEach(el => { try { el.editAsText().setFontFamily(font); } catch (e) { /* unknown font: keep the template's */ } });
     doc.saveAndClose();
     return savePdf_(copy, d, folder);
   } finally {
