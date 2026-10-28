@@ -1928,7 +1928,9 @@
   const ads = { list: null, version: null, syncing: null };
   const adList = () => ads.list || (ads.list = (local.get('ads') || {}).ads || null);
   const adActive = (a, now) => a.show && (!a.start || now >= a.start) && (!a.end || now <= a.end);
-  const currentAd = () => (adList() || []).filter(a => adActive(a, Date.now())).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
+  // Every ad that is switched on and in its dates takes turns at random (Kim, 25 Oct 2026).
+  const liveAds = () => (adList() || []).filter(a => adActive(a, Date.now()));
+  const AD_LAST = 'fr_ad_last';
   const adsOn = () => !!state.config && state.config.adsVersion !== undefined;
   const dayStr = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
   const dayShow = ms => { if (!ms) return ''; const d = new Date(ms); return `${pad2(d.getDate())}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
@@ -2009,8 +2011,8 @@
         const c = current();
         if (c && (c.s === 'gallery' || c.s === 'ads')) paint(c);
       }
-      const next = currentAd();
-      if (next) await adBlob(next, true);
+      // One at a time, so a phone on 4G is never busy with several big videos at once.
+      for (const a of liveAds()) await adBlob(a, true).catch(() => {});
     })().catch(() => { /* offline: try again next time */ }).finally(() => { ads.syncing = null; });
     return ads.syncing;
   }
@@ -2021,11 +2023,16 @@
     async start() {
       if (this.shown) return;
       this.shown = true;
-      const ad = adsOn() && currentAd();
-      if (!ad) return;
-      const blob = await adStore.get(ad.key);
-      if (!blob) return;   // not downloaded yet: it shows from the next open
-      this.show(ad, blob);
+      if (!adsOn()) return;
+      // Only ads already on the phone can show; one still downloading joins from a later open.
+      const ready = [];
+      for (const a of liveAds()) { const blob = await adStore.get(a.key); if (blob) ready.push({ a, blob }); }
+      if (!ready.length) return;
+      const last = storeGet(AD_LAST);
+      const pool = ready.length > 1 ? ready.filter(r => r.a.id !== last) : ready;   // never the same one twice in a row
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      storeSet(AD_LAST, pick.a.id);
+      this.show(pick.a, pick.blob);
     },
     show(ad, blob) {
       const url = URL.createObjectURL(blob), secs = ad.seconds || 7;
@@ -2038,25 +2045,43 @@
         <div class="ad-top"><div class="ad-tag"><img src="../icons/isi-white.png" alt="">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
           <button type="button" class="ad-skip">${L('រំលង', 'Skip')} <span class="ad-ring" style="--p:0"><b>${secs}</b></span></button></div>
         <div class="ad-media">${video
-          ? `<video src="${url}" autoplay muted playsinline loop></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`
+          ? `<video src="${url}" autoplay muted playsinline></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`
           : `<img src="${url}" alt="">`}</div>
         ${ad.text ? `<div class="ad-text">${esc(ad.text)}</div>` : ''}
         <div class="ad-sub">${L(`ចូលទៅកម្មវិធីក្នុង <b>${secs}</b> វិនាទី · ចុច រំលង ដើម្បីចូលភ្លាម`, `Opening the app in <b>${secs}</b> s · tap Skip to go now`)}</div>
-        <div class="ad-bar"><i style="animation-duration:${secs}s"></i></div>`;
+        <div class="ad-bar"><i style="${video ? 'animation:none' : `animation-duration:${secs}s`}"></i></div>`;
       document.body.appendChild(el);
       document.body.classList.add('ad-open');
-      let left = secs, done = false;
+      let left = secs, done = false, tick = null;
       const ring = $('.ad-ring', el), num = $('.ad-ring b', el), sub = $('.ad-sub b', el);
-      const tick = setInterval(() => {
-        left--;
-        if (left <= 0) return close(false);
-        num.textContent = left; if (sub) sub.textContent = left;
-        ring.style.setProperty('--p', (secs - left) / secs);
-      }, 1000);
+      const show = (n, part) => { num.textContent = n; if (sub) sub.textContent = n; ring.style.setProperty('--p', part); };
+      // Images: the admin's 5–10 seconds. Videos play to the end, with no limit, unless Skip is tapped (Kim, 25 Oct 2026).
+      const timer = () => {
+        if (tick) return;
+        tick = setInterval(() => {
+          left--;
+          if (left <= 0) return close(false);
+          show(left, (secs - left) / secs);
+        }, 1000);
+      };
+      if (video) {
+        const v = $('video', el), bar = $('.ad-bar i', el);
+        v.ontimeupdate = () => {
+          if (!v.duration || !isFinite(v.duration)) return;
+          show(Math.max(1, Math.ceil(v.duration - v.currentTime)), v.currentTime / v.duration);
+          bar.style.width = (v.currentTime / v.duration * 100) + '%';
+        };
+        v.onended = () => close(false);
+        // A video the phone can't play falls back to the seconds, so the app never gets stuck.
+        v.onerror = () => { bar.style.animation = ''; bar.style.animationDuration = secs + 's'; timer(); };
+        const p = v.play && v.play();
+        if (p && p.catch) p.catch(() => v.onerror());
+      } else timer();
       const close = skipped => {
         if (done) return;
         done = true;
         clearInterval(tick);
+        const v = $('video', el); if (v) v.pause();
         el.classList.add('out');
         document.body.classList.remove('ad-open');
         setTimeout(() => { el.remove(); URL.revokeObjectURL(url); }, 250);
@@ -2080,11 +2105,11 @@
     const draw = () => {
       if (current() !== me) return;
       const list = adList();
-      const cur = currentAd();
+      const now = Date.now();
       $('#view').innerHTML = `<h2>🖼️ ${L('វិចិត្រសាល', 'Gallery')}</h2>` + (!list ? '<div class="spinner"></div>'
         : list.length ? `<div class="ad-gal">${list.map(a => `
           <button type="button" class="ad-gi" data-ad="${esc(a.id)}">${adThumb(a)}
-            ${cur && cur.id === a.id ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
+            ${adActive(a, now) ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
             <span class="ad-gtx">${a.text ? `<b>${esc(a.text)}</b>` : ''}<small>${dayShow(a.createdAt)}</small></span></button>`).join('')}</div>`
         : `<div class="empty"><div class="big">🖼️</div>${L('មិនទាន់មានរូបភាព ឬ វីដេអូ', 'No images or videos yet')}</div>`);
       $$('[data-ad]').forEach(b => b.onclick = () => { const a = adList().find(x => x.id === b.dataset.ad); if (a) viewAd(a); });
@@ -2124,12 +2149,12 @@
       const row = a => `
         <div class="ad-li">${adThumb(a)}
           <div class="ad-li-t">${a.text ? `<b>${esc(a.text)}</b>` : `<b class="muted">${esc(a.name || a.id)}</b>`}
-            <small>${a.type === 'video' ? L('វីដេអូ', 'Video') : L('រូបភាព', 'Image')} · ${a.seconds} ${L('វិ', 's')}${a.start || a.end ? ` · ${dayShow(a.start) || '…'} → ${dayShow(a.end) || '…'}` : ''}</small>
+            <small>${a.type === 'video' ? L('វីដេអូ · ចាក់ដល់ចប់', 'Video · plays to the end') : `${L('រូបភាព', 'Image')} · ${a.seconds} ${L('វិ', 's')}`}${a.start || a.end ? ` · ${dayShow(a.start) || '…'} → ${dayShow(a.end) || '…'}` : ''}</small>
             <small>👁 ${a.views || 0} · ${L('រំលង', 'skipped')} ${a.views ? Math.round((a.skips || 0) / a.views * 100) : 0}%</small>
             <div class="ad-acts"><button type="button" class="btn small" data-edit="${esc(a.id)}">✏️ ${L('កែ', 'Edit')}</button><button type="button" class="btn small ghost" data-del="${esc(a.id)}">🗑 ${L('លុប', 'Delete')}</button></div></div>
           <button type="button" class="ad-sw ${a.show ? 'on' : ''}" data-sw="${esc(a.id)}" role="switch" aria-checked="${a.show}" aria-label="${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}"></button>
         </div>`;
-      const live = (list || []).filter(a => adActive(a, now)), cur = currentAd();
+      const live = (list || []).filter(a => adActive(a, now));
       const rest = (list || []).filter(a => !live.includes(a));
       $('#view').innerHTML = `
         <h2>📣 ${L('ផ្សព្វផ្សាយ', 'Ads')} <small style="display:inline">· ${L('សម្រាប់តែ Admin', 'Admins only')}</small></h2>
@@ -2137,7 +2162,7 @@
         ${!list ? '<div class="spinner"></div>' : `
         <div class="card" style="margin-top:14px"><div class="sec-h" style="margin:0 0 4px">${L('កំពុងបង្ហាញ', 'Showing now')} <small>(${live.length})</small></div>
           ${live.length ? live.map(row).join('') : `<div class="hint">${L('គ្មាន · បើក មួយខាងក្រោម', 'None · switch one on below')}</div>`}
-          ${live.length > 1 ? `<div class="hint">ℹ️ ${L('បង្ហាញតែមួយដែលថ្មីបំផុតប៉ុណ្ណោះ', 'Only the newest one shows')}: ${esc((cur && (cur.text || cur.name)) || '')}</div>` : ''}</div>
+          ${live.length > 1 ? `<div class="hint">🔀 ${L('បង្ហាញម្តងមួយ ដោយចៃដន្យ រាល់ពេលបើកកម្មវិធី', 'One of these shows at random each time the app opens')}</div>` : ''}</div>
         ${rest.length ? `<div class="card"><div class="sec-h" style="margin:0 0 4px">${L('ផ្សេងៗ', 'Others')} <small>(${rest.length})</small></div>${rest.map(row).join('')}</div>` : ''}`}`;
       $('#adNew').onclick = () => go({ s: 'adEdit' });
       $$('[data-edit]').forEach(b => b.onclick = () => go({ s: 'adEdit', id: b.dataset.edit }));
@@ -2179,7 +2204,7 @@
     $('#view').innerHTML = `
       <h2>📣 ${a ? L('កែផ្សព្វផ្សាយ', 'Edit ad') : L('បង្ហោះថ្មី', 'Post new')}</h2>
       <div class="card">
-        <div class="field"><div class="label"><span>${L('រូបភាព ឬ វីដេអូ', 'Image or video')} <span class="req">*</span></span><small>JPG · PNG · MP4 ≤ 30 ${L('វិ', 's')} · ≤ 20 MB</small></div>
+        <div class="field"><div class="label"><span>${L('រូបភាព ឬ វីដេអូ', 'Image or video')} <span class="req">*</span></span><small>JPG · PNG · MP4 ≤ 20 MB</small></div>
           <label class="ad-drop"><input type="file" accept="image/*,video/*" hidden>
             <span class="ad-pv" style="${f.preview ? `background-image:url('${f.preview}')` : ''}">${f.preview ? (f.type === 'video' ? '<span class="ad-play">▶</span>' : '') : '📷'}</span>
             <span style="flex:1;min-width:0"><b>${esc(f.name || (a ? L('ឯកសារបច្ចុប្បន្ន', 'Current file') : L('ជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Choose an image or a video')))}</b>
@@ -2190,7 +2215,8 @@
           <textarea id="adText" maxlength="200" placeholder="${L('ឧ. សូមពន្លត់ម៉ាស៊ីន មុនពេលចាក់សាំង!', 'e.g. Turn off the engine before refuelling!')}">${esc(f.text)}</textarea>
           <div class="ad-redprev" id="adPrev">${esc(f.text)}</div></div>
         <div class="field"><div class="label"><span>${L('បង្ហាញរយៈពេល (វិនាទី)', 'Show for (seconds)')}</span></div>
-          <div class="ad-secs">${[5, 6, 7, 8, 9, 10].map(n => `<button type="button" class="${n === f.seconds ? 'on' : ''}" data-sec="${n}">${n}</button>`).join('')}</div></div>
+          ${f.type === 'video' ? `<div class="hint">▶ ${L('វីដេអូ ចាក់រហូតដល់ចប់ (ឬ ចុច រំលង)', 'A video plays to the end (or until Skip)')}</div>`
+            : `<div class="ad-secs">${[5, 6, 7, 8, 9, 10].map(n => `<button type="button" class="${n === f.seconds ? 'on' : ''}" data-sec="${n}">${n}</button>`).join('')}</div>`}</div>
         <div class="field"><div class="row">
           <div><div class="label"><span>${L('ចាប់ពី', 'From')}</span></div><input type="date" class="ad-date" id="adStart" value="${f.start}"></div>
           <div><div class="label"><span>${L('ដល់', 'Until')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div><input type="date" class="ad-date" id="adEnd" value="${f.end}"></div></div></div>
@@ -2215,8 +2241,7 @@
       try {
         if (/^video\//.test(file.type)) {
           if (file.size > 20 * 1024 * 1024) return err(L('វីដេអូធំពេក (លើស 20 MB)។ សូមកាត់ឲ្យខ្លី។', 'The video is too big (over 20 MB). Please make it shorter.'));
-          const { duration, thumb } = await videoInfo(file);
-          if (duration > 30.5) return err(L(`វីដេអូវែងពេក (${Math.round(duration)} វិ)។ អតិបរមា 30 វិ។`, `The video is too long (${Math.round(duration)} s). 30 s at most.`));
+          const { thumb } = await videoInfo(file);
           Object.assign(f, { file, type: 'video', preview: thumb, name: file.name });
         } else if (/^image\//.test(file.type)) {
           const thumb = await resizeImage(file, 320, 0.6);
