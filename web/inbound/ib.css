@@ -217,7 +217,8 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .pdfv .pbar { display: flex; justify-content: space-between; align-items: center; color: #fff; max-width: 794px; margin: 0 auto 8px; }
 .pdfv .page { background: #fff; color: #011e41; max-width: 794px; margin: 0 auto; padding: 22px 24px; font-size: 10px; line-height: 1.35; border-radius: 4px; }
 .pdfv .phead { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
-.pdfv .plogo { font: 800 20px/1 system-ui, sans-serif; color: #011e41; } .pdfv .plogo span { font-size: 16px; }
+.pdfv .plogo { height: 38px; width: auto; }
+.pdfv .pnote { margin-top: 14px; font-size: 7.5px; font-style: italic; color: #8a94a3; text-align: left; }
 .pdfv h4 { margin: 10px 0 3px; font-size: 10.5px; color: #011e41; }
 .pdfv table { width: 100%; border-collapse: collapse; }
 .pdfv td, .pdfv th { border: 1px solid #b9c3cf; padding: 2px 4px; text-align: left; vertical-align: top; }

@@ -552,7 +552,7 @@ function doneRec_(id) {
 }
 /** The receipt's PDF, kept in its photo folder and made again only when the receipt changed. */
 function pdfFile_(rec) {
-  const ver = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, "v2" + JSON.stringify(rec)));
+  const ver = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, "v3" + JSON.stringify(rec)));
   const folder = folder_(rec.id), name = rec.id + '.pdf';
   const it = folder.getFilesByName(name);
   while (it.hasNext()) { const f = it.next(); if (f.getDescription() === ver) return f; f.setTrashed(true); }
@@ -663,6 +663,11 @@ function makePdf_(r, folder, name) {
     section_(body, two_('អ្នកកត់ត្រា', 'RECORDED BY'));
     kv_(body, [[two_('មកដល់', 'Arrival by'), r.by, two_('បញ្ចប់ដោយ', 'Finished by'), r.finishedBy]]);
     if (body.getNumChildren() > 1 && body.getChild(0).asText().getText() === '') body.getChild(0).removeFromParent();
+    const note = 'This is a computer-generated document. No signature is required.';
+    let foot;
+    try { foot = (doc.getFooter() || doc.addFooter()).appendParagraph(note); } catch (e) { foot = body.appendParagraph(note); }
+    foot.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
+    foot.editAsText().setFontSize(6.5).setForegroundColor('#8a94a3').setBold(false).setItalic(true);
     doc.saveAndClose();
     return folder.createFile(docFile.getAs('application/pdf').setName(name));
   } finally {
