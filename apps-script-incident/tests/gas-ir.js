@@ -106,6 +106,35 @@ function makeEnv(opts) {
     return { getId: () => id, getName: () => name, getUrl: () => 'https://docs.google.com/document/d/' + id, getBody: () => body, saveAndClose() {} };
   }
 
+  // Word template as a Google Doc: paragraphs and tables of placeholder text, filled with findText/insertText/deleteText.
+  const TPL = ['INCIDENT & NEAR MISS REPORT', 'របាយការណ៍គ្រោះថ្នាក់ និងហេតុការណ៍ជិតកើតគ្រោះថ្នាក់', '{{id}} · Reported {{created}} · Status {{status}}',
+    'A. ប្រភេទហេតុការណ៍ ពេលវេលា ទីកន្លែង · TYPE, WHEN AND WHERE',
+    [['Type', '{{type}}', 'Category', '{{category}}'], ['Date / time', '{{date}}', 'Reported by', '{{reporter}}'], ['Location', '{{location}}', 'Warehouse', '{{warehouse}}'], ['Road', '{{road}}', 'Weather', '{{weather}}']],
+    'B. DRIVER AND TRUCK', [['Driver', '{{driver}}', 'Plate', '{{plate}}'], ['Company', '{{company}}', 'DN #', '{{dn}}']],
+    'C. WHAT HAPPENED', '{{story}}',
+    'D. INJURY AND DAMAGE', [['Anyone injured?', '{{anyInjured}}', 'LTI', '{{lti}}'], ['Vehicle', '{{vehicleDamage}}', 'Goods', '{{goodsDamage}}'], ['Property', '{{property}}', 'Insurance', '{{insurance}}'],
+      ['First aid', '{{firstAid}}', 'Evidence', '{{evidence}}'], ['Witnesses', '{{witnesses}}', 'Cost', '{{cost}}']],
+    'E. RISK AND CAUSE', [['Severity', '{{severity}}', 'Likelihood', '{{likelihood}}'], ['Score', '{{score}}', 'Cause', '{{cause}}'], ['Why', '{{why}}']],
+    'F. ACTIONS', [['Immediate action', '{{immediate}}'], ['Corrective / preventive action', 'Owner', 'Due', 'Status'], ['{{action.what}}', '{{action.owner}}', '{{action.due}}', '{{action.status}}'], ['Supervisor comment', '{{supComment}}']],
+    'G. PHOTOS', '{{photos}}', 'SIGN-OFF', [['Reported by', 'Warehouse Supervisor'], ['{{reporterSignature}}', '{{supervisorSignature}}'], ['{{reporterName}}', '{{supervisorName}}']]];
+  function tplDocApi(id, name) {
+    const doc = docs[id] = { id, name, parts: [], images: 0, tpl: true };
+    const img = () => { doc.images++; const o = { getWidth: () => 800, getHeight: () => 600, setWidth: () => o, setHeight: () => o }; return o; };
+    const para = (str, parent) => {
+      const p = { getType: () => 'PARAGRAPH', getParent: () => parent(), appendInlineImage: () => img(), appendText: () => p };
+      const t = p.text = { s: str, getType: () => 'TEXT', asText: () => t, getText: () => t.s, getParent: () => p,
+        insertText(i, x) { t.s = t.s.slice(0, i) + x + t.s.slice(i); return t; }, deleteText(a, b) { t.s = t.s.slice(0, a) + t.s.slice(b + 1); return t; } };
+      return p;
+    };
+    const find = (paras, pat) => { const re = new RegExp(pat); for (const p of paras()) { const m = re.exec(p.text.s); if (m) return { getElement: () => p.text, getStartOffset: () => m.index, getEndOffsetInclusive: () => m.index + m[0].length - 1 }; } return null; };
+    const makeRow = (cells, table) => { const r = { table, getType: () => 'TABLE_ROW', getParent: () => r.table, getParentTable: () => r.table, copy: () => makeRow(r.cells.map(c => c.text.s), null),
+      findText: pat => find(() => r.cells, pat), removeFromParent() { r.table.rows.splice(r.table.rows.indexOf(r), 1); } }; r.cells = cells.map(c => para(c, () => r)); return r; };
+    const blocks = TPL.map(b => { if (typeof b === 'string') return para(b, () => body); const t = { getChildIndex: r => t.rows.indexOf(r), insertTableRow(i, r) { r.table = t; t.rows.splice(i, 0, r); return r; } }; t.rows = b.map(r => makeRow(r, t)); return t; });
+    const all = () => [].concat.apply([], blocks.map(b => b.rows ? [].concat.apply([], b.rows.map(r => r.cells)) : [b]));
+    const body = { findText: pat => find(all, pat) };
+    return { getId: () => id, getBody: () => body, getHeader: () => null, getFooter: () => null, saveAndClose() { doc.parts = all().map(p => p.text.s); } };
+  }
+
   const sandbox = {
     console: { log: () => {}, warn: () => {}, error: (...a) => env.errors.push(a.join(' ')) },
     SpreadsheetApp: { getActive: () => ss, openById: id => { if (id !== 'USERS') throw new Error('bad id'); return users; } },
@@ -133,7 +162,8 @@ function makeEnv(opts) {
     },
     DocumentApp: {
       create: n => { const d = makeFile(blob('', 'application/vnd.google-apps.document', n), 'root'); return docApi(d.getId(), n); },
-      openById: id => docApi(id, files[id] ? files[id].name : id),
+      openById: id => (files[id] && files[id].tpl ? tplDocApi : docApi)(id, files[id] ? files[id].name : id),
+      ElementType: { TABLE_ROW: 'TABLE_ROW', PARAGRAPH: 'PARAGRAPH' },
       Attribute: { FONT_FAMILY: 'FONT_FAMILY', FONT_SIZE: 'FONT_SIZE' }, HorizontalAlignment: { RIGHT: 'R' },
       ParagraphHeading: { TITLE: 'T', SUBTITLE: 'S', HEADING2: 'H2' }, GlyphType: { BULLET: 'B' },
     },
@@ -143,6 +173,8 @@ function makeEnv(opts) {
       fetch: (url, o) => {
         if (/api\.telegram\.org/.test(url)) { telegrams.push({ method: url.split('/').pop(), payload: o.payload }); return { getContentText: () => '{"ok":true}' }; }
         if (/export\?format=docx/.test(url)) return { getResponseCode: () => 200, getBlob: () => blob('PK-docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'x.docx') };
+        if (/ir-template\.docx$/.test(url)) { if (env.noTemplate) throw new Error('offline'); return { getBlob: () => blob('PK-docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 't.docx') }; }
+        if (/upload\/drive\/v3\/files/.test(url)) { const id = 'f' + (++nid); files[id] = { id, name: 'Incident Report Template', data: Buffer.from(''), parent: 'root', trashed: false, tpl: true }; env.templateUploads = (env.templateUploads || 0) + 1; return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) }; }
         if (/tokeninfo/.test(url)) return { getResponseCode: () => 400, getContentText: () => '{}' };
         throw new Error('unexpected fetch ' + url);
       },

@@ -115,10 +115,21 @@ ok(Object.values(env.files).filter(f => f.name === r1.id + '.pdf' && !f.trashed)
 ok(Object.values(env.files).filter(f => /document/.test(f.mime)).every(f => f.trashed), 'temp Doc trashed');
 row = env.ss.getSheetByName('Incidents').rows[1];
 eq(col('Supervisor'), 'Pisey'); ok(col('PDF Link'), 'PDF link in sheet');
+ok(pdfDoc.tpl, 'PDF filled from the Word template');
+ok(!/\{\{/.test(text), 'no placeholders left: ' + (text.match(/\{\{[^}]*\}\}/g) || []).join(' '));
+ok(/8100452231/.test(text) && /Pisey/.test(text), 'values filled');
+const tplFile = Object.values(env.files).find(f => f.tpl && f.name === 'Incident Report Template');
+ok(tplFile && !tplFile.trashed && env.templateUploads === 1, 'template loaded once and kept');
 
 // pdf for the app
 const pdf = must(call('driver@x.com', 'pdf', { id: r1.id }));
 ok(Buffer.from(pdf.b64, 'base64').toString().startsWith('%PDF'), 'pdf bytes');
+// template gone and the Word file can't be fetched: built-in layout instead
+Object.values(env.files).filter(f => f.name === r1.id + '.pdf').forEach(f => { f.trashed = true; });
+tplFile.trashed = true; env.noTemplate = true;
+ok(must(call('driver@x.com', 'pdf', { id: r1.id })).b64, 'pdf without the template');
+ok(!Object.values(env.docs).pop().tpl && /Template PDF failed/.test(env.errors.pop()), 'fell back to the built-in layout');
+env.noTemplate = false;
 
 // email button
 ok(/list|email/i.test(call('driver@x.com', 'email', { id: r1.id, lists: [] }).error), 'needs a list');
