@@ -1,0 +1,91 @@
+/* Fuel Dashboard in the soft glass look (Kim, 28 Oct 2026): ISI colours, frosted cards, pill tabs, Outfit numbers.
+   Design only, loaded after assets/dashboard.css; the dashboard's data and pages are unchanged. */
+:root {
+  --g-glass: rgba(255, 255, 255, .72); --g-line: rgba(1, 30, 65, .08); --g-field: rgba(255, 255, 255, .85);
+  --g-shadow: 0 1px 2px rgba(1, 30, 65, .04), 0 8px 24px rgba(1, 30, 65, .07);
+  --g-shadow-up: 0 14px 32px rgba(1, 30, 65, .14);
+  --g-wash: radial-gradient(760px 520px at 0% 0%, rgba(97, 203, 244, .38), transparent 62%),
+    radial-gradient(700px 500px at 100% 10%, rgba(180, 205, 240, .75), transparent 62%),
+    radial-gradient(800px 560px at 45% 110%, rgba(11, 118, 160, .16), transparent 62%);
+  --g-grad: linear-gradient(135deg, #0B76A0, #084F6A 70%, #011E41);
+  --g-display: "Outfit", "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+  --g-sans: "Inter", "Noto Sans Khmer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bg: 243 246 250;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --g-glass: rgba(13, 26, 44, .72); --g-line: rgba(255, 255, 255, .08); --g-field: rgba(19, 36, 59, .85);
+    --g-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .28); --g-shadow-up: 0 14px 32px rgba(0, 0, 0, .45);
+    --g-wash: radial-gradient(620px 420px at 0% -5%, rgba(11, 118, 160, .35), transparent 60%),
+      radial-gradient(560px 400px at 100% 0%, rgba(8, 79, 106, .45), transparent 60%),
+      radial-gradient(640px 480px at 50% 105%, rgba(97, 203, 244, .10), transparent 60%);
+    --bg: 7 17 31;
+  }
+}
+:root[data-theme="dark"] {
+  --g-glass: rgba(13, 26, 44, .72); --g-line: rgba(255, 255, 255, .08); --g-field: rgba(19, 36, 59, .85);
+  --g-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .28); --g-shadow-up: 0 14px 32px rgba(0, 0, 0, .45);
+  --g-wash: radial-gradient(620px 420px at 0% -5%, rgba(11, 118, 160, .35), transparent 60%),
+    radial-gradient(560px 400px at 100% 0%, rgba(8, 79, 106, .45), transparent 60%),
+    radial-gradient(640px 480px at 50% 105%, rgba(97, 203, 244, .10), transparent 60%);
+  --bg: 7 17 31;
+}
+
+html, body { background: rgb(var(--bg)) var(--g-wash) fixed no-repeat; }
+body { font-family: var(--g-sans); }
+.num, h3, .text-\[26px\], .text-\[30px\], .text-\[22px\] { font-family: var(--g-display); }
+h3 { font-weight: 600 !important; letter-spacing: -.005em; }
+
+/* Banner: a floating navy pill with the ISI STEEL pattern. */
+header.bg-head { background: transparent !important; padding: 8px 12px 0; }
+header.bg-head > div {
+  background: #091f3f url(../icons/banner-pattern.png) left center / auto 120px repeat-x;
+  border-radius: 999px; padding: 0 10px 0 12px; box-shadow: 0 10px 26px rgba(1, 30, 65, .22);
+}
+
+/* Page tabs: pills in a frosted capsule; the open page is a navy-blue gradient pill. */
+nav.sticky { top: 62px; background: transparent !important; border: 0 !important; -webkit-backdrop-filter: none; backdrop-filter: none; padding-top: 8px; }
+nav.sticky > div {
+  width: fit-content; max-width: calc(100% - 24px); margin: 0 max(12px, calc((100% - 1400px) / 2 + 16px)); padding: 4px !important; gap: 2px;
+  background: var(--g-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--g-line); border-radius: 999px; box-shadow: var(--g-shadow); scrollbar-width: none;
+}
+nav.sticky > div::-webkit-scrollbar { display: none; }
+nav.sticky button { border: 0 !important; margin: 0 !important; border-radius: 999px; padding: 7px 16px; font-weight: 500; transition: background .18s, color .18s; }
+nav.sticky button:hover { background: rgb(var(--soft) / .7); }
+nav.sticky button.border-brand { background: var(--g-grad); color: #fff !important; font-weight: 600; box-shadow: 0 6px 16px rgba(11, 118, 160, .3); }
+nav.sticky button.border-brand .text-warn { color: #FFD27A; }
+
+/* Filters: soft rounded fields. */
+select.inp, select.h-9, input.inp { border-radius: 12px; border-color: var(--g-line); background-color: var(--g-field); box-shadow: 0 1px 2px rgba(1, 30, 65, .04); }
+label > select.inp, label > select.h-9 { height: 40px; border-radius: 14px; padding: 0 12px; }
+select.inp:focus, select.h-9:focus, input.inp:focus { outline: none; border-color: rgb(var(--series)); box-shadow: 0 0 0 3px rgba(11, 118, 160, .18); }
+
+/* Cards: frosted glass, 20px corners, soft shadow; KPI cards lift on hover. */
+section.bg-card, button.bg-card, div.bg-card.border {
+  background: var(--g-glass) !important; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-color: var(--g-line) !important; border-radius: 20px !important; box-shadow: var(--g-shadow) !important;
+}
+button.bg-card { transition: transform .18s, box-shadow .18s, border-color .18s; }
+button.bg-card:hover { transform: translateY(-2px); box-shadow: var(--g-shadow-up) !important; border-color: rgb(var(--series) / .45) !important; }
+button.bg-card .text-\[26px\] { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
+section .border-t.border-line, section .border-line\/70 { border-color: var(--g-line) !important; }
+/* Executive summary header strip */
+section > button.bg-soft\/60 { background: linear-gradient(90deg, rgb(var(--soft) / .75), transparent); }
+/* Small buttons and the main button as pills. */
+main .btn, main .btn-sm, .btn-primary { border-radius: 999px; }
+.btn-primary { background: var(--g-grad); border: 0; box-shadow: 0 6px 16px rgba(11, 118, 160, .25); }
+
+/* Charts: lighter grid, rounded tooltip. */
+.recharts-cartesian-grid line { stroke: var(--g-line); }
+.recharts-default-tooltip { border-radius: 12px !important; border: 1px solid var(--g-line) !important; box-shadow: var(--g-shadow); background: var(--g-glass) !important; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+
+.recharts-line-curve { stroke-width: 2.5; filter: drop-shadow(0 4px 6px rgba(11, 118, 160, .28)); }
+.recharts-pie-sector path { stroke: rgba(255, 255, 255, .7); stroke-width: 2; }
+
+/* Tables inside cards */
+section table thead th { font-weight: 600; }
+section table tbody tr:hover { background: rgb(var(--soft) / .45); }
+
+/* Pop-up details panel and its dimmed background */
+.bg-black\/40 { background: rgba(1, 15, 33, .45) !important; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }

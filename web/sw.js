@@ -16,7 +16,7 @@ const SHELL = [
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
   'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'users/', 'users/um.js', 'users/um.css',
-  'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css',
+  'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css', 'dashboard/glass.css',
   'dashboard/vendor/react.production.min.js', 'dashboard/vendor/react-dom.production.min.js',
   'dashboard/vendor/prop-types.min.js', 'dashboard/vendor/Recharts.js',
 ];
