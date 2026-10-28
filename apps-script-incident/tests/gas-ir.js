@@ -92,10 +92,10 @@ function makeEnv(opts) {
     const doc = docs[id] = { id, name, parts: [], images: 0 };
     const img = () => { doc.images++; const o = { getWidth: () => 800, getHeight: () => 600, setWidth: () => o, setHeight: () => o }; return o; };
     const el = text => { const o = { editAsText: () => o, setForegroundColor: () => o, setBold: () => o, setItalic: () => o, setBackgroundColor: () => o, setFontSize: () => o, setHeading: () => o,
-      setGlyphType: () => o, setSpacingBefore: () => o, setSpacingAfter: () => o, appendInlineImage: () => img(), appendText: () => o, asParagraph: () => o,
+      setGlyphType: () => o, setSpacingBefore: () => o, setSpacingAfter: () => o, appendInlineImage: () => img(), appendText: () => o, setAlignment: () => o, asParagraph: () => o,
       asText: () => ({ getText: () => text }), removeFromParent: () => { doc.parts.shift(); } }; return o; };
-    const table = rows => { const cell = { setBackgroundColor: () => cell, editAsText: () => cell, setForegroundColor: () => cell, setBold: () => cell, setFontSize: () => cell, getChild: () => el('') };
-      return { setBorderColor() {}, editAsText: () => cell, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
+    const table = rows => { const cell = { setPaddingTop: () => cell, setPaddingBottom: () => cell, setPaddingLeft: () => cell, setPaddingRight: () => cell, setWidth: () => cell, setText: () => cell, setBackgroundColor: () => cell, editAsText: () => cell, setForegroundColor: () => cell, setBold: () => cell, setFontSize: () => cell, getChild: () => el('') };
+      return { setBorderColor() {}, setBorderWidth() {}, setColumnWidth() {}, editAsText: () => cell, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
     const body = {
       setMarginTop: () => body, setMarginBottom: () => body, setMarginLeft: () => body, setMarginRight: () => body, setAttributes: () => body,
       appendParagraph: t => { doc.parts.push(String(t)); return el(t); }, appendListItem: t => { doc.parts.push('• ' + t); return el(t); },
@@ -134,7 +134,7 @@ function makeEnv(opts) {
     DocumentApp: {
       create: n => { const d = makeFile(blob('', 'application/vnd.google-apps.document', n), 'root'); return docApi(d.getId(), n); },
       openById: id => docApi(id, files[id] ? files[id].name : id),
-      Attribute: { FONT_FAMILY: 'FONT_FAMILY', FONT_SIZE: 'FONT_SIZE' },
+      Attribute: { FONT_FAMILY: 'FONT_FAMILY', FONT_SIZE: 'FONT_SIZE' }, HorizontalAlignment: { RIGHT: 'R' },
       ParagraphHeading: { TITLE: 'T', SUBTITLE: 'S', HEADING2: 'H2' }, GlyphType: { BULLET: 'B' },
     },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: o => mails.push(o) },
