@@ -14,8 +14,8 @@
   const DEMO = !CFG.API_URL;
 
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
-  const PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
-  const CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng', 'Vannoun'];
+  let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
+  let CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'];
 
   // ------------------------------------------------------------------ time helpers
   const pad = n => String(n).padStart(2, '0');
@@ -46,7 +46,7 @@
   // ------------------------------------------------------------------ incoming plan (Kim's "Incoming Packing List Template")
   // One row per PO line: the real app reads these from the Incoming Plan tab of the sheet.
   const PL = (po, inbound, ref, eta, supplier, lines) => lines.map(l => ({ po, inbound, ref, eta, supplier, material: l[0], desc: l[1], plant: 'KMH1', sloc: l[4] || '1020', kg: l[2], pcs: l[3] }));
-  const PLAN = [].concat(
+  let PLAN = [].concat(
     PL('PO5100012725', 'Test IN 1800048956', '1072003238-Lot1', '2026-10-18', 'Regency', [
       ['1100000230', 'INTANU G300AZ30 BT 1200x0.260', 32520, 7], ['1100000231', 'INTANU G300AZ30 BR 1200x0.220', 23550, 5],
       ['1100000232', 'INTANU G300AZ30 BR 1200x0.260', 49000, 11], ['1100000233', 'INTANU G300AZ30 BR 1200x0.310', 36230, 8],
@@ -61,7 +61,8 @@
       ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]]),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
       ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]]));
-  const POS = Array.from(new Set(PLAN.map(p => p.po)));
+  let POS = Array.from(new Set(PLAN.map(p => p.po)));
+  function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
   const showEta = s => showDate(s);
 
@@ -97,7 +98,7 @@
       [1, '11:00', 40, [[19, 38900, -500, 2, 'rust']], 4, '3PL', 'Chroek Kimheng'],
       [1, '14:30', 55, [[5, 40000, 0]], 2, 'ISI', ''],
       [2, '08:00', 50, [[7, 40000, 0]], 3, '3PL', 'FOXS'],
-      [2, '10:45', 90, [[7, 40000, 0]], 2, '3PL', 'Vannoun'],
+      [2, '10:45', 90, [[7, 40000, 0]], 2, '3PL', 'Srong Sal'],
       [3, '07:50', 58, [[8, 38000, 0]], 3, 'ISI', ''],
       [3, '09:30', 64, [[15, 40000, -50]], 3, '3PL', 'Srong Sal'],
       [4, '08:15', 52, [[15, 40000, 0]], 3, '3PL', 'Queen Legacy'],
@@ -128,12 +129,76 @@
   // a PO is pending while any of its lines still has kg to receive
   const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
   const pendingPOs = skip => POS.filter(po => pendingLines(po, skip).length);
+  // Live: everything comes from the Apps Script in one "boot" call and is kept on the phone, so the app opens at once.
+  let USER = null;
+  function applyBoot(d) {
+    setPlan(d.plan || []); DATA = d.receipts || []; USER = d.user || null;
+    if (d.plates && d.plates.length) PLATES = d.plates;
+    if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
+  }
   function load() {
+    if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
     const s = get('ib_demo_v5');
     if (s) { try { const o = JSON.parse(s); if (o.day === today()) { DATA = o.rows; return; } } catch (e) { /* reseed */ } }
     DATA = seed(); save();
   }
-  function save() { set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA })); }
+  function save() {
+    if (DEMO) set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA }));
+    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER }));
+  }
+  const canEdit = r => DEMO || (USER && (USER.admin || USER.reviewer || r.byEmail === USER.email));
+
+  // ------------------------------------------------------------------ Apps Script (same sign-in as every iSteel app)
+  const TOKEN_KEY = 'fr_id_token';
+  function claims() {
+    try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); }
+    catch (e) { return null; }
+  }
+  const signedIn = () => { const c = claims(); return !!(c && c.exp * 1000 > Date.now() + 60000); };
+  const msgOf = e => { const s = String(e || 'Error'); const m = s.match(/^([A-Z_]+):\s*([\s\S]*)$/); const txt = m ? m[2] : s; const p = txt.split(' || '); return { code: m ? m[1] : '', text: t(p[1] || p[0], p[0]) }; };
+  async function api(action, payload) {
+    let data;
+    try {
+      const res = await fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token: get(TOKEN_KEY), payload: payload || {} }) });
+      data = await res.json();
+    } catch (e) {
+      throw Object.assign(new Error(t('មិនអាចភ្ជាប់អ៊ីនធឺណិត។ សូមព្យាយាមម្តងទៀត។', 'No connection. Please try again.')), { code: 'NET' });
+    }
+    if (!data.ok) { const m = msgOf(data.error); throw Object.assign(new Error(m.text), { code: m.code }); }
+    if (data.session) set(TOKEN_KEY, data.session);
+    return data.data;
+  }
+  const formOpen = () => /^#\/(new|edit\/)/.test(location.hash);
+  async function refresh() {
+    if (DEMO) return;
+    try {
+      applyBoot(await api('boot')); save();
+      if (!formOpen()) screen(); else paintTabs('');
+    } catch (e) {
+      if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ib_boot', null); showBlocked(e); return; }
+      toast(e.message);
+    }
+  }
+  function showBlocked(e) {
+    $('#view').innerHTML = `<div class="card done"><div class="emoji">🔒</div><h2>${e.code === 'AUTH' ? t('សូមចូលគណនីនៅទំព័រដើម', 'Please sign in on the home menu') : t('មិនទាន់មានសិទ្ធិ', 'No access yet')}</h2>
+      <p>${esc(e.message)}</p><a class="btn ok" href="../">${t('ទៅទំព័រដើម', 'Go to the home menu')}</a></div>`;
+  }
+  // photos saved in Drive come back as small thumbnails, fetched only when a screen shows them
+  const THUMBS = {};
+  let thumbBusy = false;
+  async function loadThumbs() {
+    if (DEMO || thumbBusy) return;
+    const ids = Array.from(new Set($$('[data-fid]').map(el => el.dataset.fid))).filter(id => !(id in THUMBS));
+    if (!ids.length) return;
+    thumbBusy = true;
+    try {
+      const got = await api('photos', { ids: ids.slice(0, 20) });
+      ids.forEach(id => { THUMBS[id] = got[id] || ''; });
+      $$('[data-fid]').forEach(el => { const u = THUMBS[el.dataset.fid]; if (u) el.outerHTML = `<img src="${u}" alt="">`; });
+    } catch (e) { /* offline: keep the placeholders */ }
+    thumbBusy = false;
+    if ($$('[data-fid]').some(el => !(el.dataset.fid in THUMBS))) loadThumbs();
+  }
   const byId = id => DATA.find(r => r.id === id);
   const isLive = r => r.start && !r.end;
 
@@ -141,7 +206,7 @@
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
   function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; }
-  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; };
+  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
   function badges(r) {
@@ -232,10 +297,13 @@
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: 2, owner: '', carrier: '', remark: '', ph: {} }; }
+  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
   const grey = (lbl, v) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
-  const phImg = (v, ic) => v && v !== 'sample' ? `<img src="${v}" alt="">` : `<span class="sam">${ic}<small>${v ? t('គំរូ', 'sample') : t('ថត', 'Take')}</small></span>`;
+  const phImg = (v, ic) => !v ? `<span class="sam">${ic}<small>${t('ថត', 'Take')}</small></span>`
+    : /^data:/.test(v) ? `<img src="${v}" alt="">`
+    : v === 'sample' ? `<span class="sam">${ic}<small>${t('គំរូ', 'sample')}</small></span>`
+    : THUMBS[v] ? `<img src="${THUMBS[v]}" alt="">` : `<span class="sam" data-fid="${esc(v)}">${ic}<small>⏳</small></span>`;
   function phTile(k, ic, km, en) {
     const v = F.ph && F.ph[k];
     return `<label class="shot${v ? ' has' : ''}"><input type="file" accept="image/*" capture="environment" data-ph="${k}" hidden><div class="ph">${phImg(v, v ? ic : '📷')}</div><small>${ic} ${t(km, en)} <span class="req">*</span></small></label>`;
@@ -302,7 +370,7 @@
           ${grey(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}
         </div>
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
-        <div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>
+        ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
 
       ${started ? `
@@ -310,14 +378,14 @@
         <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
           <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
         ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
-        <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')}</label>
-          <div class="stepper"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower)}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
+        <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
+          <div class="stepper" id="mpBox"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower || '–')}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
       </section>
 
       <section class="card"><h2>⏱ ${t('ម៉ោងទម្លាក់', 'Unloading time')}</h2>
         <div class="timebox">
-          <div class="tbox"><small>▶ ${t('ម៉ោងចាប់ផ្តើម', 'Start time')}</small><input type="time" id="start" value="${esc(r.start)}"></div>
-          <div class="tbox"><small>⏹ ${t('ម៉ោងបញ្ចប់', 'End time')}</small>${r.end ? `<input type="time" id="end" value="${esc(r.end)}">` : `<b>– – : – –</b>`}</div>
+          <div class="tbox ro"><small>▶ ${t('ម៉ោងចាប់ផ្តើម', 'Start time')}</small><b>${esc(r.start)}</b></div>
+          <div class="tbox ro"><small>⏹ ${t('ម៉ោងបញ្ចប់', 'End time')}</small><b>${esc(r.end || '– – : – –')}</b></div>
         </div>
         <div class="calc">
           <div class="tbox"><small>${t('រយៈពេល', 'Time spent')}</small><b>${showSpent(m)}</b></div>
@@ -393,6 +461,7 @@
       mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
     r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
     mark($('.seg[data-seg="own"]'), fin && !r.owner);
+    mark($('#mpBox'), fin && !(+r.manpower > 0));
   }
   function bindForm() {
     markNeed();
@@ -423,8 +492,8 @@
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
     $$('[data-own]').forEach(b => { b.onclick = () => { F.owner = b.dataset.own; if (F.owner === 'ISI') F.carrier = ''; re(); }; });
-    const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = Math.max(1, (+F.manpower || 1) - 1); $('#mp').textContent = F.manpower; };
-    const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; };
+    const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = +F.manpower > 1 ? +F.manpower - 1 : F.manpower; $('#mp').textContent = F.manpower || '–'; markNeed(); };
+    const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; markNeed(); };
     ['start', 'end'].forEach(k => { const el = $('#' + k); if (el) el.onchange = re; });
     $$('[data-ph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); shrink(f, url => { F.ph = Object.assign({}, F.ph, { [inp.dataset.ph]: url }); re(); }); }; });
     const need = () => {
@@ -444,21 +513,26 @@
       if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
       if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
       if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
+      if (!(+F.manpower > 0)) miss.push(t('ចំនួនកម្មករ', 'Manpower'));
       return miss;
     };
     const st = $('#startBtn');
-    if (st) st.onclick = () => {
+    if (st) st.onclick = async () => {
       collect(); const miss = need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
+      if (!DEMO) { const rec = await send('start', st); if (rec) { toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + rec.start); location.hash = '#/'; } return; }
       F.date = today(); F.start = nowHM(); F.id = 'IB' + F.date.slice(2).replace(/-/g, '') + '-' + pad(DATA.length + 1); F.by = t('អ្នក (សាកល្បង)', 'You (demo)');
       DATA.push(JSON.parse(JSON.stringify(F))); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/';
     };
     const en = $('#endBtn');
-    if (en) en.onclick = () => {
+    if (en) en.onclick = async () => {
       collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
+      if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); location.hash = '#/r/' + rec.id; } return; }
       F.end = nowHM(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
-    if (sv) sv.onclick = () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', ')); store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+    if (sv) sv.onclick = async () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
+      if (!DEMO) { const rec = await send('save', sv); if (rec) { toast('💾 ' + t('បានរក្សាទុក', 'Saved')); location.hash = '#/r/' + rec.id; } return; }
+      store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
@@ -499,6 +573,20 @@
     if (on) on.scrollIntoView({ block: 'center' });
   }
 
+  // live save: the Apps Script stamps the times, keeps the photos in Drive and sends back the saved receipt
+  let sending = false;
+  async function send(action, btn) {
+    if (sending) return null;
+    sending = true;
+    const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> ' + t('កំពុងរក្សាទុក…', 'Saving…');
+    try {
+      const rec = await api(action, { receipt: F });
+      const i = DATA.findIndex(x => x.id === rec.id); if (i >= 0) DATA[i] = rec; else DATA.push(rec);
+      save(); F = null;
+      return rec;
+    } catch (e) { toast('⚠️ ' + e.message); return null; }
+    finally { sending = false; if (btn.isConnected) { btn.disabled = false; btn.innerHTML = html; } }
+  }
   function store() { const i = DATA.findIndex(x => x.id === F.id); const c = JSON.parse(JSON.stringify(F)); if (i >= 0) DATA[i] = c; else DATA.push(c); save(); }
 
 
@@ -529,7 +617,7 @@
       <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
       </section>
       ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `<button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
-    const b = $('#fin') || $('#edit'); b.onclick = () => { F = null; location.hash = '#/edit/' + id; };
+    const b = $('#fin') || $('#edit'); if (!canEdit(r) && !isLive(r)) { b.remove(); return; } b.onclick = () => { F = null; location.hash = '#/edit/' + id; };
   }
 
   // ------------------------------------------------------------------ Summary
@@ -595,6 +683,10 @@
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintDemo(); screen(); }); }
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   paintDemo();
-  window.ISTEEL_REFRESH = screen;
-  load(); paintStatic(); window.addEventListener('hashchange', screen); screen();
+  window.ISTEEL_REFRESH = () => { if (formOpen()) { toast(t('កំពុងបំពេញទម្រង់', 'Form in progress')); return; } screen(); refresh(); };
+  load(); paintStatic(); window.addEventListener('hashchange', screen);
+  if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
+  else { screen(); refresh(); }
+  // screens refresh when the phone comes back to the app (not while a form is open)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !formOpen()) refresh(); });
 })();

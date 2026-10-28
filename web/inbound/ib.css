@@ -165,3 +165,6 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .shot.need { background: none !important; box-shadow: none !important; }
 .ph.add.need { border: 2px solid var(--bad); }
 .seg.need { border-radius: 14px; padding: 3px; border: 1.5px solid var(--bad); background: var(--bad-soft) !important; }
+.tbox.ro { background: var(--bg); border-style: dashed; color: var(--muted); }
+.tbox.ro b { color: var(--muted); }
+.stepper.need { border-radius: 14px; padding: 3px; border: 1.5px solid var(--bad); }
