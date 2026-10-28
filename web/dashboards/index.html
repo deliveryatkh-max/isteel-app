@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e41">
+  <title>Dashboards · ISI STEEL</title>
+  <link rel="icon" type="image/png" href="../icons/favicon.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../home.css">
+  <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+  <style>
+    .wrap { max-width: 720px; margin: 0 auto; padding: 16px; font-family: "Noto Sans", system-ui, sans-serif; color: var(--text); }
+    h1 { font-size: 22px; margin: 8px 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+    .list { display: grid; gap: 12px; }
+    .dash { display: flex; gap: 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); color: var(--text); text-decoration: none; }
+    .dash:hover, .dash:focus-visible { border-color: var(--accent); }
+    .dash .ico { flex: none; width: 48px; height: 48px; border-radius: 14px; background: var(--soft); color: var(--accent); display: grid; place-items: center; }
+    .dash .ico svg { width: 26px; height: 26px; }
+    .dash b { display: block; font-size: 17px; }
+    .dash small { display: block; color: var(--muted); font-size: 13.5px; line-height: 1.45; margin-top: 2px; }
+    .dash .go { margin-left: auto; color: var(--accent); font-size: 22px; flex: none; }
+    .back { display: inline-block; margin-top: 18px; color: var(--accent); font-weight: 600; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <div class="logo-col">
+        <a class="isi-logo" href="../" style="text-decoration:none;color:inherit"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30"><span class="word">STEEL</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="wrap">
+    <h1>Dashboards</h1>
+    <p class="sub">Choose a dashboard. More will be added here.</p>
+    <div class="list">
+      <a class="dash" href="../dashboard/">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
+        <span><b>Fuel Dashboard</b><small>Fuel use per truck and per driver, from the Fuel Refill app.</small></span>
+        <span class="go" aria-hidden="true">›</span>
+      </a>
+      <a class="dash" href="https://claude.ai/artifact/BRbnSoBDGZSQjzEYPhhjhR" target="_blank" rel="noopener">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2zM13 10h5l3 3v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span>
+        <span><b>Transport Cost Dashboard</b><small>3PL trip costs, lanes, vendors and anomalies. Opens in Claude (demo, real data from the invoices).</small></span>
+        <span class="go" aria-hidden="true">↗</span>
+      </a>
+    </div>
+    <a class="back" href="../">‹ Back to home</a>
+  </main>
+</body>
+</html>
