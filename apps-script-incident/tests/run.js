@@ -116,6 +116,7 @@ ok(Object.values(env.files).filter(f => /document/.test(f.mime)).every(f => f.tr
 row = env.ss.getSheetByName('Incidents').rows[1];
 eq(col('Supervisor'), 'Pisey'); ok(col('PDF Link'), 'PDF link in sheet');
 ok(pdfDoc.tpl, 'PDF filled from the Word template');
+eq(pdfDoc.font, 'Kantumruy Pro', 'PDF font set to a Google font');
 ok(!/\{\{/.test(text), 'no placeholders left: ' + (text.match(/\{\{[^}]*\}\}/g) || []).join(' '));
 ok(/8100452231/.test(text) && /Pisey/.test(text), 'values filled');
 const tplFile = Object.values(env.files).find(f => f.tpl && f.name === 'Incident Report Template');

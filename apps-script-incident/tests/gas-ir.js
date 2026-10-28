@@ -132,7 +132,7 @@ function makeEnv(opts) {
       findText: pat => find(() => r.cells, pat), removeFromParent() { r.table.rows.splice(r.table.rows.indexOf(r), 1); } }; r.cells = cells.map(c => para(c, () => r)); return r; };
     const blocks = TPL.map(b => { if (typeof b === 'string') return para(b, () => body); const t = { getChildIndex: r => t.rows.indexOf(r), insertTableRow(i, r) { r.table = t; t.rows.splice(i, 0, r); return r; } }; t.rows = b.map(r => makeRow(r, t)); return t; });
     const all = () => [].concat.apply([], blocks.map(b => b.rows ? [].concat.apply([], b.rows.map(r => r.cells)) : [b]));
-    const body = { findText: pat => find(all, pat) };
+    const body = { findText: pat => find(all, pat), editAsText: () => ({ setFontFamily: f => { doc.font = f; } }) };
     return { getId: () => id, getBody: () => body, getHeader: () => null, getFooter: () => null, saveAndClose() { doc.parts = all().map(p => p.text.s); } };
   }
 

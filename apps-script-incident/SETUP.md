@@ -76,10 +76,13 @@ Each report is one row in the **Incidents** tab (same columns as the Excel Incid
 
 Put a Google Drive link in IR Settings **PDF_TEMPLATE_LINK**: a Google Doc, a Word file, or a folder (the newest Doc or
 Word file in it is used). Every PDF reads the template from that link, so an edited or new template shows in the next
-PDF, and saved PDFs made with an older template are made again when opened. Keep the `{{...}}` words; the row with
+PDF, and saved PDFs made with an older template or font are made again when opened. Keep the `{{...}}` words; the row with
 `{{action.what}}` repeats once per action. A Word file is turned into a Google Doc in the reports folder whenever it
 changes. With no link the app uses `web/incident/ir-template.docx`; if the template can't be used, it falls back to its
 built-in one-page layout and writes the reason in **PDF_TEMPLATE_ERROR**.
+
+Google can only print Google fonts, so **PDF_FONT** (default Kantumruy Pro) is put on all the PDF text. Use `-` to keep
+the template's fonts.
 
 ## Limits
 

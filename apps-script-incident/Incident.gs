@@ -167,6 +167,7 @@ function setup() {
     ['TELEGRAM_CHAT_ID', '', 'Telegram group for new and signed reports (the Fuel app\'s TELEGRAM_CHAT_ID works). Empty = off.'],
     ['APP_URL', 'https://isteel-app.pages.dev/incident/', 'Address of the app, used in Telegram buttons and emails'],
     ['PUBLIC_LINK', 'Yes', 'Yes = drivers can report through the QR / link without signing in'],
+    ['PDF_FONT', 'Kantumruy Pro', 'Font for the whole PDF (a Google font, e.g. Kantumruy Pro, Noto Sans Khmer, Battambang). - = keep the template fonts.'],
     ['PDF_TEMPLATE_LINK', '', 'Drive link to the PDF template: a Google Doc, a Word file or a folder (newest file used). Empty = built-in template.'],
   ]);
   sheet_(SH.TXT, TXT_COLS);
@@ -629,6 +630,7 @@ function makePdf_(d, folder) {
 const TEMPLATE_URL = 'https://isteel-app.pages.dev/incident/ir-template.docx';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const GDOC_MIME = 'application/vnd.google-apps.document';
+const PDF_FONT = 'Kantumruy Pro';   // Google font closest to MiSans Khmer (Khmer + English)
 function templateSource_() {
   const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
   if (!link) return null;
@@ -700,7 +702,11 @@ function templatePdf_(d, folder) {
     images_(body, '{{reporterSignature}}', d.reporter.sig ? [d.reporter.sig] : [], 130, 40);
     images_(body, '{{supervisorSignature}}', d.supervisor.sig ? [d.supervisor.sig] : [], 130, 40);
     const v = pdfValues_(d);
-    [body, doc.getHeader(), doc.getFooter()].filter(Boolean).forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
+    const parts = [body, doc.getHeader(), doc.getFooter()].filter(Boolean);
+    parts.forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
+    // Google can only print Google fonts, so a Word font such as MiSans Khmer is swapped for one (IR Settings PDF_FONT).
+    const font = String(setting_('PDF_FONT') || PDF_FONT).trim();
+    if (font && font !== '-') parts.forEach(el => { try { el.editAsText().setFontFamily(font); } catch (e) { /* unknown font: keep the template's */ } });
     doc.saveAndClose();
     return savePdf_(copy, d, folder);
   } finally {
