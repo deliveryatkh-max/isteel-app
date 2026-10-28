@@ -112,6 +112,70 @@
     if (photoCache.size > 40) photoCache.delete(photoCache.keys().next().value);
   }
 
+  // Odometer previews in the Reviewer list (Kim, 19 Oct 2026). Loaded only for rows on screen,
+  // a few per call and without the busy bar, then shrunk and kept on the phone so each loads once.
+  const thumbs = {
+    KEY: 'fr_thumbs', MAX: 300, map: null, queue: new Set(), timer: 0, saveTimer: 0, running: 0, seen: null,
+    load() {
+      if (this.map) return this.map;
+      try { this.map = new Map(Object.entries(JSON.parse(localStorage.getItem(this.KEY) || '{}'))); } catch (e) { this.map = new Map(); }
+      return this.map;
+    },
+    save() {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(() => {
+        const m = this.load();
+        while (m.size > this.MAX) m.delete(m.keys().next().value);
+        try { localStorage.setItem(this.KEY, JSON.stringify(Object.fromEntries(m))); } catch (e) { /* storage full or blocked */ }
+      }, 400);
+    },
+    get(url) { return this.load().get(url); },
+    // One observer for the list: rows ask for their photo when they scroll into view.
+    watch(root) {
+      if (this.seen) this.seen.disconnect();
+      if (!('IntersectionObserver' in window)) return;
+      this.seen = new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return;
+        this.seen.unobserve(e.target);
+        this.queue.add(e.target.dataset.thumb);
+        clearTimeout(this.timer); this.timer = setTimeout(() => this.fetch(), 120);
+      }), { rootMargin: '200px 0px' });
+      $$('[data-thumb]:not(.has-img)', root).forEach(el => this.seen.observe(el));
+    },
+    async fetch() {
+      if (this.running >= 2 || !this.queue.size) return;
+      const urls = [...this.queue].slice(0, 10);
+      urls.forEach(u => this.queue.delete(u));
+      this.running++;
+      try {
+        const res = await (DEMO ? demoApi('thumbs', { urls }) : callServer('thumbs', { urls }));
+        for (const url of urls) {
+          const data = res.thumbs && res.thumbs[url];
+          if (!data) continue;
+          const small = await shrink(data, 96).catch(() => data);
+          this.load().set(url, small);
+          $$(`[data-thumb="${CSS.escape(url)}"]`).forEach(el => { el.style.backgroundImage = `url('${small}')`; el.classList.add('has-img'); });
+        }
+        this.save();
+      } catch (e) { /* offline or busy: rows keep their icon */ }
+      finally { this.running--; if (this.queue.size) this.fetch(); }
+    },
+  };
+  function shrink(dataUrl, size) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const k = size / Math.min(img.width, img.height), c = document.createElement('canvas');
+        if (k >= 1) return resolve(dataUrl);
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
   // ---------------- Outbox ----------------
   // New entries are kept on the phone and sent in the background, so Submit doesn't wait for Google.
   // They are stored in IndexedDB, so an entry still sending survives closing the app and is sent
@@ -282,7 +346,8 @@
 
   // ---------------- Demo mode ----------------
 
-  const demo = { rows: (window.DEMO_DATA && window.DEMO_DATA.rows || []).map(r => Object.assign({}, r)), photos: {}, user: null };
+  const demo = { rows: (window.DEMO_DATA && window.DEMO_DATA.rows || []).map(r => Object.assign({}, r)), photos: {}, reads: {}, user: null,
+    ads: (window.DEMO_DATA && window.DEMO_DATA.ads || []).map(a => Object.assign({}, a)), adsVer: 1 };
   function demoApi(action, p) {
     const D = window.DEMO_DATA;
     const user = demo.user;
@@ -297,7 +362,8 @@
             if (r.km > 1 && r.dateTime > o.kmAt) { o.km = r.km; o.kmAt = r.dateTime; }
             if (r.hour > 1 && r.dateTime > o.hourAt) { o.hour = r.hour; o.hourAt = r.dateTime; }
           });
-          return resolve({ user, types: D.types, plates: D.plates, drivers: D.drivers, equipment: D.equipment, litreLimit: D.litreLimit, lastReadings: last, brokenPlates: D.brokenPlates || [] });
+          return resolve({ user, types: D.types, plates: D.plates, drivers: D.drivers, equipment: D.equipment, litreLimit: D.litreLimit, lastReadings: last, brokenPlates: D.brokenPlates || [],
+            isAdmin: user.role === 'admin', adsVersion: String(demo.adsVer) });
         }
         const savePhotos = (r, src) => ['odoPhoto', 'hourPhoto', 'pumpPhoto', 'signature'].forEach(k => {
           if (src[k]) { const key = 'demo://' + r.id + '/' + k + '/' + Date.now(); demo.photos[key] = src[k]; r[k] = key; }
@@ -308,6 +374,9 @@
             litres: toNum(p.litres), note: p.note || '', latLong: `${(+p.lat).toFixed(6)}, ${(+p.lng).toFixed(6)}`,
             user: user.email, dateTime: Date.now(), status: '', reviewedBy: '' };
           savePhotos(r, p);
+          // Demo photo check: the demo reader's answers (see readPhoto) stand in for the server's.
+          if (p.reads && Object.keys(p.reads).length) r.pc = Object.assign({}, p.reads.odoPhoto || p.reads.hourPhoto ? { meter: (demo.reads[p.reads.odoPhoto || p.reads.hourPhoto] || {}).value, meterWrong: (demo.reads[p.reads.odoPhoto || p.reads.hourPhoto] || {}).wrong } : {},
+            p.reads.pumpPhoto ? { litres: (demo.reads[p.reads.pumpPhoto] || {}).value, pumpWrong: (demo.reads[p.reads.pumpPhoto] || {}).wrong } : {});
           demo.rows.push(r);
           return resolve({ id });
         }
@@ -330,6 +399,27 @@
           return resolve({ id: r.id });
         }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
+        if (action === 'transcribe') return setTimeout(() => resolve({ text: 'ចាក់សាំងនៅស្ថានីយ៍ទួលគោក' }), 800);
+        if (action === 'readPhoto') {
+          const res = window.DEMO_READ ? window.DEMO_READ(p) : { value: p.kind === 'litres' ? 120 : p.kind === 'km' ? 474500 : null };
+          res.token = 'demo' + Math.random(); demo.reads[res.token] = res;
+          return setTimeout(() => resolve(res), 1200);
+        }
+        if (action === 'ads') return resolve({ version: String(demo.adsVer), ads: demo.ads.slice().sort((a, b) => b.createdAt - a.createdAt).map(a => Object.assign({}, a, { media: undefined })) });
+        if (action === 'adMedia') { const a = demo.ads.find(x => x.id === p.id); return setTimeout(() => resolve({ key: a && a.key, dataUrl: a ? a.media : null }), 400); }
+        if (action === 'adSave') {
+          let a = demo.ads.find(x => x.id === p.id);
+          if (!a) { a = { id: 'AD' + Date.now(), createdAt: Date.now(), createdBy: user.email, views: 0, skips: 0 }; demo.ads.push(a); }
+          if (p.media) Object.assign(a, { media: p.media, key: 'k' + Date.now(), type: /^data:video/.test(p.media) ? 'video' : 'image', name: p.name });
+          if (p.thumb) a.thumb = p.thumb;
+          const day = v => v ? new Date(v + 'T00:00:00').getTime() : null;
+          Object.assign(a, { text: p.text || '', seconds: p.seconds, start: day(p.start), end: p.end ? day(p.end) + 864e5 - 1 : null, show: p.show !== false, updatedAt: Date.now() });
+          demo.adsVer++;
+          return setTimeout(() => resolve({ id: a.id }), 600);
+        }
+        if (action === 'adDelete') { demo.ads = demo.ads.filter(x => x.id !== p.id); demo.adsVer++; return resolve({ id: p.id }); }
+        if (action === 'adSeen') { const a = demo.ads.find(x => x.id === p.id); if (a) { a.views++; if (p.skipped) a.skips++; } return resolve({ counted: !!a }); }
+        if (action === 'thumbs') return resolve({ thumbs: Object.fromEntries(p.urls.map(u => [u, demo.photos[u] || null])) });
         throw new Error('Unknown action');
       } catch (e) { reject(e); }
     }, 150));
@@ -353,7 +443,7 @@
     storeSet(TOKEN_KEY, null);
     if (!DEMO && window.google && google.accounts) google.accounts.id.disableAutoSelect();
     if (!expired) {
-      local.clear(); photoCache.clear();
+      local.clear(); photoCache.clear(); thumbs.map = new Map(); try { localStorage.removeItem(thumbs.KEY); } catch (e) { /* ignore */ }
       state.config = null; state.form = null; state.draft = null; state.editing = null; state.mine = null;
       demo.user = null; rv.rows = null; rv.fetchedAt = 0; nav.stack = []; nav.i = -1;
     }
@@ -386,6 +476,7 @@
           <div class="row" style="margin-top:16px">
             <button class="btn" data-demo="user">🚚 ${L('អ្នកបើកបរ', 'Driver')}</button>
             <button class="btn" data-demo="reviewer">✅ ${L('អ្នកពិនិត្យ', 'Reviewer')}</button>
+            <button class="btn" data-demo="admin">📣 Admin</button>
           </div>` : `
           <p class="hint">${L('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
           <div id="gsiButton"><div class="spinner"></div></div>
@@ -395,6 +486,7 @@
       $$('[data-demo]').forEach(b => b.onclick = () => {
         demo.user = b.dataset.demo === 'user'
           ? { email: 'driver.demo@gmail.com', name: 'Demo Driver', role: 'user' }
+          : b.dataset.demo === 'admin' ? { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin' }
           : { email: 'pheakdeykim@gmail.com', name: 'Demo Reviewer', role: 'reviewer' };
         start();
       });
@@ -425,12 +517,14 @@
     if (cached) {
       // Open straight away with the saved lists; refresh them quietly.
       state.config = cached;
+      splash.start();
       enterApp();
       api('config').then(c => {
         if (!state.config) return;
         state.config = c;
         local.set('config', c);
         showRole();
+        syncAds();
       }).catch(e => {
         if (e.code === 'NOACCESS') { local.clear(); state.config = null; start(); }
       });
@@ -450,7 +544,9 @@
       return;
     }
     local.set('config', state.config);
+    splash.start();
     enterApp();
+    syncAds();
   }
 
   // Asks the admin to add this Google account: the server adds it to the Users sheet as not active yet and tells the Telegram group.
@@ -470,6 +566,11 @@
     // No name or Sign out in the bar (Kim, 2026-10-11): signing out is done from the home menu.
     $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
+    // Gallery for everyone and the ads menu for admins, once the server has them (Code.gs of 25 Oct 2026).
+    const adsOn = state.config.adsVersion !== undefined;
+    $('#galleryTab').hidden = !adsOn;
+    $('#adsTab').hidden = !(adsOn && state.config.isAdmin);
+    $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').length > 4);
     reviewBadge();
   }
 
@@ -507,6 +608,7 @@
   const TITLES = {
     new: ['បញ្ចូលថ្មី', 'New'], mine: ['របស់ខ្ញុំ', 'My entries'], review: ['អ្នកត្រួតពិនិត្យ', 'Reviewer'],
     detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
+    gallery: ['វិចិត្រសាល', 'Gallery'], ads: ['ផ្សព្វផ្សាយ', 'Ads'], adEdit: ['ផ្សព្វផ្សាយ', 'Ads'],
   };
 
   function go(screen, replace) {
@@ -555,7 +657,7 @@
     if (screen.s !== 'edit' && state.editing) leaveEdit();
     const tab = screen.s === 'detail' ? 'review'
       : screen.s === 'edit' ? (screen.from || 'mine')
-      : screen.s === 'success' ? 'new' : screen.s;
+      : screen.s === 'success' ? 'new' : screen.s === 'adEdit' ? 'ads' : screen.s;
     state.tab = tab;
     $$('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     $('#navBack').disabled = nav.i <= 0;
@@ -569,6 +671,9 @@
     else if (screen.s === 'detail') openDetail(screen.id);
     else if (screen.s === 'edit') openEdit(screen);
     else if (screen.s === 'success') renderSuccess(screen.ref);
+    else if (screen.s === 'gallery') renderGallery();
+    else if (screen.s === 'ads') renderAds();
+    else if (screen.s === 'adEdit') renderAdEdit(screen);
   }
 
   function show(tab) {
@@ -614,14 +719,14 @@
     if (t.meter === 'km' && f.plate && plateBroken(f.plate)) { f.meterBroken = true; f.autoBroken = true; }
   }
 
-  /** Puts a truck on the form: its usual driver (when it has only one) and the odometer-broken tick. */
+  /** Puts a truck on the form with its odometer-broken tick. The driver is left empty for the driver to pick (Kim, 19 Oct 2026). */
   function pickPlate(v, isNew) {
-    const f = state.form, cfg = state.config;
+    const f = state.form;
     f.plate = v;
     f.newPlate = !!isNew;
     if (f.remembered) f.remembered.plate = false;
-    const matches = cfg.drivers.filter(d => d.plate === v);
-    if (matches.length === 1) { f.driver = matches[0].name; f.newDriver = false; if (f.remembered) f.remembered.driver = false; }
+    f.driver = ''; f.newDriver = false;
+    if (f.remembered) f.remembered.driver = false;
     // Trucks marked "Odometer Broken? = Yes" in Driver & Truck get Meter broken ticked for them.
     if (plateBroken(v)) { f.meterBroken = true; f.km = ''; f.autoBroken = true; }
     else if (f.autoBroken) { f.meterBroken = false; f.autoBroken = false; }
@@ -629,7 +734,7 @@
 
   // ---------------- Truck QR code ----------------
   // Each truck has a sticker with a link like https://…/fuel/?plate=3F-5849. Scanning it in the app, or
-  // opening the link with the phone camera, fills the truck and its driver.
+  // opening the link with the phone camera, fills the truck.
   function plateFromCode(text) {
     const s = String(text || '').trim();
     let p = '';
@@ -763,6 +868,11 @@
     if (!(l > 0)) errors.push(L('ចំនួនចាក់ (លីត្រ)', 'Litres'));
     else if (l > state.config.litreLimit) warnings.push(L(`${fmtNum(l)} L លើស ${state.config.litreLimit} L`, `${fmtNum(l)} L is above the ${state.config.litreLimit} L limit`));
     if (!editing && state.gps.status !== 'ok') errors.push(L('ទីតាំង GPS', 'GPS location'));
+    ['odoPhoto', 'hourPhoto', 'pumpPhoto'].forEach(k => {
+      const m = readState(f, k, t);
+      if (m.state === 'wrong') warnings.push(L(`រូបថតខុស: មិនមែនជារូប${PC_NAME[k][0]}ទេ`, `Wrong photo: this is not the ${PC_NAME[k][1]}`));
+      if (m.state === 'bad') warnings.push(L(`លេខ ${m.typedTxt} មិនត្រូវនឹងរូបថត (រូបថតបង្ហាញ ${m.readTxt})`, `${m.typedTxt} does not match the photo (photo shows ${m.readTxt})`));
+    });
     const needNote = warnings.length > 0;
     if (needNote && !f.note.trim()) errors.push(L('សំគាល់ (ត្រូវការ)', 'Note required for the warning'));
     return { errors, warnings, needNote };
@@ -828,6 +938,7 @@
             <label class="broken ${toNum(f.km) > 0 && !f.meterBroken ? 'off' : ''}"><span>${L('កុងទ័រខូច', 'Meter broken')}</span>
               <input type="checkbox" id="meterBroken" ${f.meterBroken ? 'checked' : ''} ${toNum(f.km) > 0 && !f.meterBroken ? 'disabled' : ''}></label>
           </div>
+          <div class="pc-hint" data-pc="odoPhoto"></div>
           ${plateBroken(f.plate) ? `<div class="hint">🔧 ${L('ឡាននេះកុងទ័រខូច (Driver &amp; Truck)', 'This truck\'s odometer is marked broken (Driver &amp; Truck)')}</div>` : ''}
           ${last && last.km ? `<div class="hint">${L('លើកមុន', 'Last')}: <b>${fmtNum(last.km)} km</b> · ${fmtDate(last.kmAt)}</div>` : ''}
         </div>
@@ -839,6 +950,7 @@
         <div class="field">
           <div class="label"><span>${L('កុងទ័រម៉ោង', 'Hour meter')}${req}</span></div>
           <input type="text" inputmode="decimal" id="hour" class="big-input" value="${esc(f.hour)}" placeholder="0" autocomplete="off">
+          <div class="pc-hint" data-pc="hourPhoto"></div>
           ${last && last.hour ? `<div class="hint">${L('លើកមុន', 'Last')}: <b>${fmtNum(last.hour)} h</b> · ${fmtDate(last.hourAt)}</div>` : ''}
         </div>
       </div>` : ''}
@@ -848,12 +960,13 @@
         <div class="field">
           <div class="label"><span>${L('ចំនួនចាក់ (លីត្រ)', 'Litres')} <span class="req">*</span></span></div>
           <input type="text" inputmode="decimal" id="litres" class="big-input" value="${esc(f.litres)}" placeholder="0" autocomplete="off">
+          <div class="pc-hint" data-pc="pumpPhoto"></div>
         </div>
       </div>
 
       <div class="card">
         <div class="field">
-          <div class="label"><span>${L('សំគាល់', 'Note')} <span class="req" id="noteReq" hidden>*</span></span></div>
+          <div class="label"><span>${L('សំគាល់', 'Note')} <span class="req" id="noteReq" hidden>*</span></span>${voiceOK() ? `<button type="button" class="mic-btn" id="mic"></button>` : ''}</div>
           <textarea id="note" placeholder="${L('ឧ. ទៅកំពង់សោម', 'e.g. trip to Sihanoukville')}">${esc(f.note)}</textarea>
           <div id="warnBox"></div>
         </div>
@@ -941,6 +1054,7 @@
       const el = $('#' + k);
       if (el) el.oninput = () => { f[k] = el.value; updateWarnings(); };
     });
+    paintReads();
     // Meter broken and a km number exclude each other: ticking clears and locks Km, typing a number locks the tick box.
     const broken = $('#meterBroken');
     if (broken) {
@@ -954,6 +1068,7 @@
       broken.onchange = () => { f.meterBroken = broken.checked; if (f.meterBroken) f.km = ''; renderForm(); };
     }
     $('#note').oninput = e => { f.note = e.target.value; };
+    if ($('#mic')) { $('#mic').onclick = () => toggleVoice(f); paintMic(); }
 
     $$('[data-photo]').forEach(slot => slot.onclick = () => photoSheet(slot.dataset.photo, slot.dataset.title));
 
@@ -1057,7 +1172,7 @@
       ${f[key] ? `<button type="button" class="sheet-btn danger" data-remove><span class="ic">🗑</span><span>${L('ដករូបចេញ', 'Remove photo')}</span></button>` : ''}`);
     const stillHere = () => state.form === f && current() && (current().s === 'new' || current().s === 'edit');
     const rm = $('[data-remove]', sh.el);
-    if (rm) rm.onclick = () => { f[key] = null; if (f.stamped) delete f.stamped[key]; sh.close(); if (stillHere()) renderForm(); };
+    if (rm) rm.onclick = () => { f[key] = null; if (f.stamped) delete f.stamped[key]; if (f.reads) delete f.reads[key]; sh.close(); if (stillHere()) renderForm(); };
     $$('input[type=file]', sh.el).forEach(input => input.onchange = async () => {
       const file = input.files && input.files[0];
       sh.close();
@@ -1066,6 +1181,7 @@
         f[key] = await resizeImage(file, 1280, 0.72);
         if (f.stamped) delete f.stamped[key];
         if (stillHere()) renderForm();
+        readPhoto(f, key);
       } catch (e) { toast(L('រូបថតមិនត្រឹមត្រូវ', 'Could not read photo')); }
     });
   }
@@ -1076,6 +1192,125 @@
     const { warnings } = check();
     box.innerHTML = warnings.length ? `<div class="alert warn">⚠️ ${L('សូមសរសេរសំគាល់', 'Please add a note')}:<ul>${warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : '';
     $('#noteReq').hidden = !warnings.length;
+    paintReads();
+  }
+
+  // ---------------- Voice note (Kim, 19 Oct 2026) ----------------
+  // 🎤 next to Note: tap to talk, tap again to stop (stops by itself after a minute). Google's AI writes what was
+  // said into the Note box in Khmer, added after anything already typed. The recording itself is not kept.
+  const voice = { rec: null, chunks: [], t0: 0, timer: 0, busy: false };
+  const voiceOK = () => !!(window.MediaRecorder && navigator.mediaDevices && (DEMO || (state.config && state.config.photoCheck)));
+  const blobToDataUrl = blob => new Promise((resolve, reject) => {
+    const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(blob);
+  });
+
+  async function toggleVoice(f) {
+    if (voice.busy) return;
+    if (voice.rec) { voice.rec.stop(); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { toast(L('សូមអនុញ្ញាតឲ្យប្រើមីក្រូហ្វូន', 'Please allow the microphone')); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : {});
+    Object.assign(voice, { rec, chunks: [], t0: Date.now() });
+    rec.ondataavailable = e => { if (e.data && e.data.size) voice.chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(voice.timer);
+      voice.rec = null;
+      const blob = new Blob(voice.chunks, { type: rec.mimeType || mime || 'audio/webm' });
+      if (Date.now() - voice.t0 < 700 || !blob.size) { paintMic(); return; }   // a tap by mistake
+      voice.busy = true; paintMic();
+      try {
+        const audio = await blobToDataUrl(blob);
+        const res = await (DEMO ? demoApi('transcribe', { audio }) : callServer('transcribe', { audio }));
+        if (!res.text) toast(L('មិនឮសំឡេង សូមនិយាយម្តងទៀត', 'No speech heard. Please try again'));
+        else if (state.form === f) {
+          f.note = (f.note.trim() ? f.note.trim() + ' ' : '') + res.text;
+          const el = $('#note'); if (el) el.value = f.note;
+          updateWarnings();
+        }
+      } catch (e) { toast(e.message); }
+      voice.busy = false; paintMic();
+    };
+    rec.start(1000);
+    voice.timer = setInterval(() => { if (Date.now() - voice.t0 >= 60000 && voice.rec) voice.rec.stop(); else paintMic(); }, 500);
+    paintMic();
+  }
+
+  function paintMic() {
+    const b = $('#mic');
+    if (!b) return;
+    const secs = Math.floor((Date.now() - voice.t0) / 1000);
+    b.className = 'mic-btn' + (voice.rec ? ' on' : voice.busy ? ' busy' : '');
+    b.innerHTML = voice.rec ? `<span class="rec-dot"></span> ${L('ឈប់', 'Stop')} 0:${String(secs).padStart(2, '0')}`
+      : voice.busy ? `<span class="spin-sm"></span> ${L('កំពុងសរសេរ…', 'Writing…')}` : `🎤 ${L('និយាយ', 'Speak')}`;
+  }
+
+  // ---------------- Photo check while entering (Kim, 19 Oct 2026) ----------------
+  // As soon as a meter or pump photo is added, Google's AI reads its number in the background (the driver keeps
+  // typing). When the typed number is more than 1 away from the photo, the field turns red and Submit asks for a
+  // note, like the other warnings. No connection or no answer: nothing is shown and the entry goes as normal.
+  const PC_KIND = { odoPhoto: ['km', 'km'], hourPhoto: ['hour', 'h'], pumpPhoto: ['litres', 'L'] };
+  const PC_NAME = { odoPhoto: ['កុងទ័រឡាន', 'odometer'], hourPhoto: ['កុងទ័រម៉ោង', 'hour meter'], pumpPhoto: ['កុងទ័រសាំង', 'fuel pump'] };
+  const photoMark = d => d ? d.length + ':' + d.slice(-40) : '';
+
+  /** The server's own readings of these exact photos, so it doesn't read them again after Submit. */
+  function readTokens(f, t) {
+    const out = {};
+    ['odoPhoto', 'hourPhoto', 'pumpPhoto'].forEach(k => {
+      const r = f.reads && f.reads[k];
+      if (r && r.token && r.mark === photoMark(f[k]) && readState(f, k, t).state !== '') out[k] = r.token;
+    });
+    return out;
+  }
+
+  async function readPhoto(f, key) {
+    if (!DEMO && !(state.config && state.config.photoCheck)) return;
+    const data = f[key];
+    if (!data) return;
+    f.reads = f.reads || {};
+    const r = f.reads[key] = { status: 'reading', mark: photoMark(data) };
+    paintReads();
+    try {
+      const p = { kind: PC_KIND[key][0], photo: data };
+      const res = await (DEMO ? demoApi('readPhoto', p) : callServer('readPhoto', p));
+      if (f.reads[key] !== r) return;   // a newer photo replaced it
+      if (res.off) { delete f.reads[key]; return; }
+      r.status = 'done'; r.value = res.value == null ? null : Number(res.value); r.token = res.token || ''; r.wrong = !!res.wrong;
+      // A wrong photo is told straight away, wherever the driver is on the form.
+      if (r.wrong && state.form === f) toast(`⚠️ ${L(`រូបថតខុស! នេះមិនមែនជារូប${PC_NAME[key][0]}ទេ`, `Wrong photo! This is not the ${PC_NAME[key][1]}`)}`);
+    } catch (e) {
+      if (f.reads[key] === r) r.status = 'fail';
+    }
+    if (state.form === f) updateWarnings();
+  }
+
+  /** {state: ''|'reading'|'ok'|'bad'|'unread', typedTxt, readTxt} for one photo of the form. */
+  function readState(f, key, t) {
+    const r = f.reads && f.reads[key];
+    if (!r || r.mark !== photoMark(f[key]) || !t) return { state: '' };
+    if ((key === 'odoPhoto' && (t.meter !== 'km' || f.meterBroken)) || (key === 'hourPhoto' && t.meter !== 'hour')) return { state: '' };
+    if (r.status === 'reading') return { state: 'reading' };
+    if (r.status !== 'done') return { state: '' };
+    if (r.wrong) return { state: 'wrong' };
+    if (r.value === null) return { state: 'unread' };
+    const [field, unit] = PC_KIND[key], typed = toNum(f[field]);
+    if (!(typed > 0)) return { state: '' };
+    return { state: Math.abs(typed - r.value) <= 1 ? 'ok' : 'bad', typedTxt: fmtNum(typed) + ' ' + unit, readTxt: fmtNum(r.value) + ' ' + unit };
+  }
+
+  function paintReads() {
+    const f = state.form, t = typeInfo(f && f.type);
+    $$('[data-pc]').forEach(el => {
+      const m = readState(f, el.dataset.pc, t);
+      el.className = 'pc-hint ' + m.state;
+      el.innerHTML = m.state === 'reading' ? `<span class="spin-sm"></span> ${L('កំពុងអានលេខពីរូបថត…', 'Reading the photo…')}`
+        : m.state === 'ok' ? `✅ ${L('ត្រូវនឹងរូបថត', 'Matches the photo')}`
+        : m.state === 'bad' ? `⚠️ ${L(`រូបថតបង្ហាញ <b>${m.readTxt}</b> · សូមពិនិត្យលេខ ឬ ថតរូបម្តងទៀត`, `The photo shows <b>${m.readTxt}</b>. Check the number or retake the photo`)}`
+        : m.state === 'wrong' ? `❌ ${L(`រូបថតខុស! នេះមិនមែនជារូប${PC_NAME[el.dataset.pc][0]}ទេ · សូមថតម្តងទៀត`, `Wrong photo! This is not the ${PC_NAME[el.dataset.pc][1]}. Please retake it`)}`
+        : m.state === 'unread' ? `📷 ${L('អានលេខពីរូបមិនបាន · សូមថតឲ្យច្បាស់', 'Could not read the photo. Take a clearer one')}` : '';
+    });
   }
 
   async function submit() {
@@ -1106,6 +1341,7 @@
       hourPhoto: t.meter === 'hour' ? photos.hourPhoto : null,
       pumpPhoto: photos.pumpPhoto, signature: f.signature,
       newDriver: !!f.newDriver, newPlate: !!f.newPlate,
+      reads: readTokens(f, t),
     };
     try {
       if (state.editing) {
@@ -1438,12 +1674,21 @@
     if (years[0] && rv.open[years[0].key] === undefined) rv.open[years[0].key] = true;
     if (years[0] && years[0].months[0] && rv.open[years[0].months[0].key] === undefined) rv.open[years[0].months[0].key] = true;
 
-    const rowHtml = r => `
+    // The odometer photo (hour meter for machines) instead of the type icon; the icon stays when there is none.
+    const PC_SIGN = { ok: '✓', bad: '✕', unread: '?' };
+    const rowIcon = (r, pc) => {
+      const url = r.odoPhoto || r.hourPhoto;
+      const badge = pc ? `<span class="pc-b ${pc.mark}">${PC_SIGN[pc.mark]}</span>` : '';
+      if (!url) return `<span class="rv-ic">${esc(emojiOf(r.type))}${badge}</span>`;
+      const img = thumbs.get(url);
+      return `<span class="rv-ic thumb-ic ${img ? 'has-img' : ''}" data-thumb="${esc(url)}"${img ? ` style="background-image:url('${img}')"` : ''}>${esc(emojiOf(r.type))}${badge}</span>`;
+    };
+    const rowHtml = r => { const pc = pcResult(r); return `
       <button type="button" class="rv-row" data-open="${esc(r.id)}">
-        <span class="rv-ic">${esc(emojiOf(r.type))}</span>
-        <span class="rv-main"><b>${esc(r.plate || '–')}</b><small>${esc(r.driver || '–')} · ${timeOf(r.dateTime)}</small></span>
+        ${rowIcon(r, pc)}
+        <span class="rv-main"><b>${esc(r.plate || '–')}</b><small>${esc(r.driver || '–')} · ${timeOf(r.dateTime)}</small>${pc && pc.mark === 'bad' ? `<span class="pc-note">⚠ ${pc.parts.filter(x => x.state === 'bad' || x.state === 'wrong').map(x => esc(x.short)).join(' · ')}</span>` : ''}</span>
         <span class="rv-right"><b>${fmtNum(r.litres)} <i>L</i></b>${statusDot(r.status)}</span>
-      </button>`;
+      </button>`; };
 
     $('#view').innerHTML = `
       <div class="rv-head">
@@ -1456,6 +1701,7 @@
           <span class="seg-n">${rv.rows.filter(fn).length}</span><span class="seg-kh">${L(kh, en)}</span>
         </button>`).join('')}
       </div>
+      ${rv.rows.some(r => r.pc) ? `<div class="pc-legend"><span><b class="ok">✓</b> ${L('ត្រូវនឹងរូបថត', 'Matches the photo')}</span><span><b class="bad">✕</b> ${L('មិនត្រូវនឹងរូបថត', 'Does not match')}</span><span><b class="unread">?</b> ${L('អានរូបមិនបាន', 'Photo not readable')}</span></div>` : ''}
       ${years.length ? years.map(y => `
         <section class="rv-year ${rv.open[y.key] ? 'open' : ''}" data-key="${y.key}">
           <button type="button" class="yr-h" data-toggle aria-expanded="${!!rv.open[y.key]}"><span>${y.key}</span><span class="cnt">${y.count}</span><span class="chev" aria-hidden="true"></span></button>
@@ -1486,6 +1732,43 @@
     });
     $$('[data-open]').forEach(b => b.onclick = () => { rv.restoreY = window.scrollY; go({ s: 'detail', id: b.dataset.open }); });
     if (rv.restoreY != null) { window.scrollTo(0, rv.restoreY); rv.restoreY = null; }
+    thumbs.watch($('#view'));
+  }
+
+  /**
+   * The AI's readings of an entry's photos (Photo Check tab) against what was typed: one part per photo,
+   * and one mark for the row: ✕ when any part doesn't match or is the wrong photo, ? when one couldn't be read.
+   */
+  function pcResult(r) {
+    const c = r.pc;
+    if (!c) return null;
+    const parts = [];
+    const add = (key, typed, read, wrong) => {
+      const [, unit] = PC_KIND[key];
+      const state = wrong ? 'wrong' : read == null || typed == null ? 'unread' : Math.abs(typed - read) <= 1 ? 'ok' : 'bad';
+      parts.push({ key, state, typed, read, unit,
+        short: wrong ? L(`រូប${PC_NAME[key][0]}ខុស`, `Wrong ${PC_NAME[key][1]} photo`) : L(`រូបថតបង្ហាញ ${fmtNum(read)} ${unit}`, `Photo shows ${fmtNum(read)} ${unit}`) });
+    };
+    const meterKey = r.odoPhoto ? 'odoPhoto' : r.hourPhoto ? 'hourPhoto' : '';
+    if (meterKey && 'meter' in c) add(meterKey, meterKey === 'odoPhoto' ? r.km : r.hour, c.meter, c.meterWrong);
+    if (r.pumpPhoto && 'litres' in c) add('pumpPhoto', r.litres, c.litres, c.pumpWrong);
+    if (!parts.length) return null;
+    const mark = parts.some(x => x.state === 'bad' || x.state === 'wrong') ? 'bad' : parts.some(x => x.state === 'unread') ? 'unread' : 'ok';
+    return { parts, mark };
+  }
+
+  function pcCard(r) {
+    const pc = pcResult(r);
+    if (!pc) {
+      const waiting = state.config && state.config.photoCheck && (r.odoPhoto || r.hourPhoto || r.pumpPhoto) && r.status !== STATUS_BAD;
+      return waiting ? `<div class="pc-card"><h3>🤖 ${L('ពិនិត្យលេខពីរូបថត', 'Photo check')}</h3><div class="hint">⏳ ${L('កំពុងរង់ចាំអានរូបថត (ប្រហែល ៥ នាទី)', 'Waiting for the photos to be read (about 5 minutes)')}</div></div>` : '';
+    }
+    const pill = { ok: ['ok', '✓ ' + L('ត្រូវ', 'Match')], bad: ['bad', '✕ ' + L('មិនត្រូវ', 'No match')], wrong: ['bad', '✕ ' + L('រូបថតខុស', 'Wrong photo')], unread: ['unread', '? ' + L('អានមិនបាន', 'Not readable')] };
+    return `<div class="pc-card"><h3>🤖 ${L('ពិនិត្យលេខពីរូបថត', 'Photo check')}</h3>
+      ${pc.parts.map(x => `<div class="pc-row"><span class="lbl">${L(PC_NAME[x.key][0], PC_NAME[x.key][1].replace(/^./, ch => ch.toUpperCase()))}
+        <small>${L('វាយ', 'Typed')} ${x.typed == null ? '–' : fmtNum(x.typed) + ' ' + x.unit} · ${L('រូបថត', 'Photo')} ${x.state === 'wrong' ? L('មិនមែនរូបកុងទ័រ', 'not a meter') : x.read == null ? '–' : fmtNum(x.read) + ' ' + x.unit}</small></span>
+        <span class="pc-pill ${pill[x.state][0]}">${pill[x.state][1]}</span></div>`).join('')}
+    </div>`;
   }
 
   /** Reviewers, admins and people with the Dashboard ticked may open an entry's details (also from Telegram). */
@@ -1493,7 +1776,6 @@
     const c = state.config || {}, u = c.user || {};
     return c.canCheck != null ? !!c.canCheck : (u.role === 'reviewer' || u.role === 'admin');
   }
-  const isAdmin = () => (((state.config || {}).user || {}).role === 'admin');
   const canReview = () => { const u = (state.config || {}).user || {}; return u.role === 'reviewer' || u.role === 'admin'; };
 
   async function openDetail(id) {
@@ -1525,11 +1807,12 @@
         <div class="dt-big">${fmtNum(r.litres)}<span>${L('លីត្រ', 'litres')}</span></div>
         <div class="dt-sub">${fmtDate(r.dateTime)} · <span class="mono" lang="en">${esc(r.id)}</span></div>
       </div>
+      ${pcCard(r)}
       <div class="tiles">
         ${tile('ឈ្មោះតៃកុង', 'Driver', esc(r.driver || '–'))}
         ${r.km != null ? tile('លេខកុងទ័រ', 'Odometer', fmtNum(r.km) + ' km') : ''}
         ${r.hour != null ? tile('កុងទ័រម៉ោង', 'Hour meter', fmtNum(r.hour) + ' h') : ''}
-        ${r.status ? tile('ពិនិត្យដោយ', 'Reviewed by', `${esc(r.reviewedBy)}${r.reviewedAt ? '<small>' + fmtDate(r.reviewedAt) + '</small>' : ''}`) : ''}
+        ${r.status ? tile('ពិនិត្យដោយ', 'Reviewed by', `${esc(r.reviewedByName || String(r.reviewedBy || '').split('@')[0])}${r.reviewedAt ? '<small>' + fmtDate(r.reviewedAt) + '</small>' : ''}`) : ''}
         ${r.updatedAt ? tile('កែចុងក្រោយ', 'Last edited', fmtDate(r.updatedAt)) : ''}
         ${r.note ? tile('សំគាល់', 'Note', esc(r.note), true) : ''}
       </div>
@@ -1540,7 +1823,7 @@
       <div id="dReason"></div>
       <div class="decide ${r.status ? 'done' : ''}" ${canReview() ? '' : 'hidden'}>
         <button type="button" class="btn ok" id="dOk" ${r.status ? 'disabled' : ''}>✔ ${L('ត្រឹមត្រូវ', 'Correct')}</button>
-        <button type="button" class="btn ghost" id="dEdit" ${r.status && !isAdmin() ? 'disabled' : ''}>✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
+        <button type="button" class="btn ghost" id="dEdit" ${r.status ? 'disabled' : ''}>✏️ ${L('កែតម្រូវ', 'Correct data')}</button>
         <button type="button" class="btn bad" id="dCancel" ${r.status ? 'disabled' : ''}>🗑 ${L('លុបចោល', 'Cancel entry')}</button>
       </div>`;
 
@@ -1565,7 +1848,7 @@
     const setStatus = (status, note) => {
       note = (note || '').trim();
       const before = { status: r.status, reviewedBy: r.reviewedBy, reviewedAt: r.reviewedAt, note: r.note };
-      const after = { status, reviewedBy: state.config.user.email, reviewedAt: Date.now(),
+      const after = { status, reviewedBy: state.config.user.email, reviewedByName: state.config.user.name || '', reviewedAt: Date.now(),
         note: note ? (r.note ? r.note + ' | ' : '') + 'Review: ' + note : r.note };
       Object.assign(r, after);
       rv.pending[r.id] = after;
@@ -1637,6 +1920,387 @@
     else resetForm();
   }
 
+  // ---------------- Startup ads and Gallery (Kim, 25 Oct 2026) ----------------
+  // Each time the app opens, the newest ad that is switched on shows full screen for its 5–10 seconds, with Skip.
+  // The list is kept on the phone and only fetched again when the server says it changed (config.adsVersion);
+  // images and videos are downloaded once in the background and kept in IndexedDB, so the app never waits for them.
+
+  const ads = { list: null, version: null, syncing: null };
+  const adList = () => ads.list || (ads.list = (local.get('ads') || {}).ads || null);
+  const adActive = (a, now) => a.show && (!a.start || now >= a.start) && (!a.end || now <= a.end);
+  // Every ad that is switched on and in its dates takes turns at random (Kim, 25 Oct 2026).
+  const liveAds = () => (adList() || []).filter(a => adActive(a, Date.now()));
+  const AD_LAST = 'fr_ad_last';
+  const adsOn = () => !!state.config && state.config.adsVersion !== undefined;
+  const dayStr = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+  const dayShow = ms => { if (!ms) return ''; const d = new Date(ms); return `${pad2(d.getDate())}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
+
+  /** Ad files on this phone, by their Drive file id. */
+  const adStore = {
+    db: null,
+    open() {
+      if (this.db) return this.db;
+      return (this.db = new Promise(resolve => {
+        if (!window.indexedDB) return resolve(null);
+        try {
+          const rq = indexedDB.open('fr_ads', 1);
+          rq.onupgradeneeded = () => rq.result.createObjectStore('media', { keyPath: 'key' });
+          rq.onsuccess = () => resolve(rq.result);
+          rq.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      }));
+    },
+    async get(key) {
+      const db = await this.open();
+      if (!db || !key) return null;
+      return new Promise(resolve => {
+        try {
+          const rq = db.transaction('media').objectStore('media').get(key);
+          rq.onsuccess = () => resolve(rq.result ? rq.result.blob : null);
+          rq.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    },
+    async put(key, blob) {
+      const db = await this.open();
+      if (!db) return;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction('media', 'readwrite');
+          tx.objectStore('media').put({ key, blob, at: Date.now() });
+          tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        } catch (e) { resolve(); }
+      });
+    },
+    /** Removes files of ads that were deleted or replaced. */
+    async keepOnly(keys) {
+      const db = await this.open();
+      if (!db) return;
+      try {
+        const st = db.transaction('media', 'readwrite').objectStore('media');
+        const rq = st.getAllKeys();
+        rq.onsuccess = () => (rq.result || []).forEach(k => { if (!keys.includes(k)) st.delete(k); });
+      } catch (e) { /* ignore */ }
+    },
+  };
+  const dataUrlToBlob = dataUrl => fetch(dataUrl).then(r => r.blob());
+
+  /** The ad's file: from the phone, or downloaded once and kept. */
+  async function adBlob(ad, download) {
+    let blob = await adStore.get(ad.key);
+    if (blob || !download) return blob;
+    const res = await (DEMO ? demoApi('adMedia', { id: ad.id }) : callServer('adMedia', { id: ad.id }));
+    if (!res || !res.dataUrl) return null;
+    blob = await dataUrlToBlob(res.dataUrl);
+    await adStore.put(res.key || ad.key, blob);
+    return blob;
+  }
+
+  /** Fetches the list when it changed, then downloads the file of the ad that will show next time. */
+  function syncAds(force) {
+    if (!adsOn()) return Promise.resolve();
+    if (ads.syncing) return ads.syncing;
+    const saved = local.get('ads');
+    const fresh = saved && saved.version === state.config.adsVersion && !force;
+    ads.syncing = (async () => {
+      if (!fresh) {
+        const res = await (DEMO ? demoApi('ads', {}) : callServer('ads', {}));
+        ads.list = res.ads || [];
+        local.set('ads', { version: res.version, ads: ads.list });
+        adStore.keepOnly(ads.list.map(a => a.key));
+        const c = current();
+        if (c && (c.s === 'gallery' || c.s === 'ads')) paint(c);
+      }
+      // One at a time, so a phone on 4G is never busy with several big videos at once.
+      for (const a of liveAds()) await adBlob(a, true).catch(() => {});
+    })().catch(() => { /* offline: try again next time */ }).finally(() => { ads.syncing = null; });
+    return ads.syncing;
+  }
+
+  // ---- The startup screen ----
+  const splash = {
+    shown: false,
+    async start() {
+      if (this.shown) return;
+      this.shown = true;
+      if (!adsOn()) return;
+      // Only ads already on the phone can show; one still downloading joins from a later open.
+      const ready = [];
+      for (const a of liveAds()) { const blob = await adStore.get(a.key); if (blob) ready.push({ a, blob }); }
+      if (!ready.length) return;
+      const last = storeGet(AD_LAST);
+      const pool = ready.length > 1 ? ready.filter(r => r.a.id !== last) : ready;   // never the same one twice in a row
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      storeSet(AD_LAST, pick.a.id);
+      this.show(pick.a, pick.blob);
+    },
+    show(ad, blob) {
+      const url = URL.createObjectURL(blob), secs = ad.seconds || 7;
+      const video = ad.type === 'video';
+      const el = document.createElement('div');
+      el.className = 'ad-splash';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', L('ផ្សព្វផ្សាយ', 'Announcement'));
+      el.innerHTML = `
+        <div class="ad-top"><div class="ad-tag"><img src="../icons/isi-white.png" alt="">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
+          <button type="button" class="ad-skip">${L('រំលង', 'Skip')} <span class="ad-ring" style="--p:0"><b>${secs}</b></span></button></div>
+        <div class="ad-media">${video
+          ? `<video src="${url}" autoplay muted playsinline></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`
+          : `<img src="${url}" alt="">`}</div>
+        ${ad.text ? `<div class="ad-text">${esc(ad.text)}</div>` : ''}
+        <div class="ad-sub">${L(`ចូលទៅកម្មវិធីក្នុង <b>${secs}</b> វិនាទី · ចុច រំលង ដើម្បីចូលភ្លាម`, `Opening the app in <b>${secs}</b> s · tap Skip to go now`)}</div>
+        <div class="ad-bar"><i style="${video ? 'animation:none' : `animation-duration:${secs}s`}"></i></div>`;
+      document.body.appendChild(el);
+      document.body.classList.add('ad-open');
+      let left = secs, done = false, tick = null;
+      const ring = $('.ad-ring', el), num = $('.ad-ring b', el), sub = $('.ad-sub b', el);
+      const show = (n, part) => { num.textContent = n; if (sub) sub.textContent = n; ring.style.setProperty('--p', part); };
+      // Images: the admin's 5–10 seconds. Videos play to the end, with no limit, unless Skip is tapped (Kim, 25 Oct 2026).
+      const timer = () => {
+        if (tick) return;
+        tick = setInterval(() => {
+          left--;
+          if (left <= 0) return close(false);
+          show(left, (secs - left) / secs);
+        }, 1000);
+      };
+      if (video) {
+        const v = $('video', el), bar = $('.ad-bar i', el);
+        v.ontimeupdate = () => {
+          if (!v.duration || !isFinite(v.duration)) return;
+          show(Math.max(1, Math.ceil(v.duration - v.currentTime)), v.currentTime / v.duration);
+          bar.style.width = (v.currentTime / v.duration * 100) + '%';
+        };
+        v.onended = () => close(false);
+        // A video the phone can't play falls back to the seconds, so the app never gets stuck.
+        v.onerror = () => { bar.style.animation = ''; bar.style.animationDuration = secs + 's'; timer(); };
+        const p = v.play && v.play();
+        if (p && p.catch) p.catch(() => v.onerror());
+      } else timer();
+      const close = skipped => {
+        if (done) return;
+        done = true;
+        clearInterval(tick);
+        const v = $('video', el); if (v) v.pause();
+        el.classList.add('out');
+        document.body.classList.remove('ad-open');
+        setTimeout(() => { el.remove(); URL.revokeObjectURL(url); }, 250);
+        // Counted for the admin list; never waits and never shows an error.
+        (DEMO ? demoApi('adSeen', { id: ad.id, skipped }) : callServer('adSeen', { id: ad.id, skipped })).catch(() => {});
+      };
+      $('.ad-skip', el).onclick = () => close(true);
+      $('.ad-skip', el).focus();
+      const mute = $('.ad-mute', el);
+      if (mute) mute.onclick = () => { const v = $('video', el); v.muted = !v.muted; mute.textContent = v.muted ? '🔇' : '🔊'; };
+    },
+  };
+
+  // ---- Gallery: every ad, newest first, for everyone ----
+  function adThumb(a) {
+    return `<div class="ad-tn" style="${a.thumb ? `background-image:url('${a.thumb}')` : ''}">${a.thumb ? '' : (a.type === 'video' ? '🎬' : '🖼️')}${a.type === 'video' ? '<span class="ad-play">▶</span>' : ''}</div>`;
+  }
+
+  function renderGallery() {
+    const me = current();
+    const draw = () => {
+      if (current() !== me) return;
+      const list = adList();
+      const now = Date.now();
+      $('#view').innerHTML = `<h2>🖼️ ${L('វិចិត្រសាល', 'Gallery')}</h2>` + (!list ? '<div class="spinner"></div>'
+        : list.length ? `<div class="ad-gal">${list.map(a => `
+          <button type="button" class="ad-gi" data-ad="${esc(a.id)}">${adThumb(a)}
+            ${adActive(a, now) ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
+            <span class="ad-gtx">${a.text ? `<b>${esc(a.text)}</b>` : ''}<small>${dayShow(a.createdAt)}</small></span></button>`).join('')}</div>`
+        : `<div class="empty"><div class="big">🖼️</div>${L('មិនទាន់មានរូបភាព ឬ វីដេអូ', 'No images or videos yet')}</div>`);
+      $$('[data-ad]').forEach(b => b.onclick = () => { const a = adList().find(x => x.id === b.dataset.ad); if (a) viewAd(a); });
+    };
+    draw();
+    syncAds(true).then(draw);
+  }
+
+  /** Full screen view of one ad from the Gallery (downloads it the first time). */
+  async function viewAd(a) {
+    const lb = document.createElement('div');
+    lb.className = 'ad-view';
+    lb.innerHTML = `<button type="button" class="ad-close" aria-label="${L('បិទ', 'Close')}">✕</button>
+      <div class="ad-media"><div class="spinner"></div></div>${a.text ? `<div class="ad-text">${esc(a.text)}</div>` : ''}<div class="ad-sub">${dayShow(a.createdAt)}</div>`;
+    document.body.appendChild(lb);
+    let url = '';
+    const close = () => { lb.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); };
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    $('.ad-close', lb).onclick = close;
+    try {
+      const blob = await adBlob(a, true);
+      if (!lb.isConnected) return;
+      if (!blob) { $('.ad-media', lb).innerHTML = `<div class="ad-sub">${L('មិនអាចបង្ហាញបាន', 'Not available')}</div>`; return; }
+      url = URL.createObjectURL(blob);
+      $('.ad-media', lb).innerHTML = a.type === 'video' ? `<video src="${url}" controls autoplay playsinline></video>` : `<img src="${url}" alt="">`;
+    } catch (e) { if (lb.isConnected) $('.ad-media', lb).innerHTML = `<div class="ad-sub">${esc(e.message)}</div>`; }
+  }
+
+  // ---- Admin menu: post, switch on / off, edit, delete ----
+  function renderAds() {
+    const me = current();
+    if (!(state.config && state.config.isAdmin)) { $('#view').innerHTML = `<div class="empty"><div class="big">🔒</div>${L('សម្រាប់តែ Admin', 'Admins only')}</div>`; return; }
+    const draw = () => {
+      if (current() !== me) return;
+      const list = adList(), now = Date.now();
+      const row = a => `
+        <div class="ad-li">${adThumb(a)}
+          <div class="ad-li-t">${a.text ? `<b>${esc(a.text)}</b>` : `<b class="muted">${esc(a.name || a.id)}</b>`}
+            <small>${a.type === 'video' ? L('វីដេអូ · ចាក់ដល់ចប់', 'Video · plays to the end') : `${L('រូបភាព', 'Image')} · ${a.seconds} ${L('វិ', 's')}`}${a.start || a.end ? ` · ${dayShow(a.start) || '…'} → ${dayShow(a.end) || '…'}` : ''}</small>
+            <small>👁 ${a.views || 0} · ${L('រំលង', 'skipped')} ${a.views ? Math.round((a.skips || 0) / a.views * 100) : 0}%</small>
+            <div class="ad-acts"><button type="button" class="btn small" data-edit="${esc(a.id)}">✏️ ${L('កែ', 'Edit')}</button><button type="button" class="btn small ghost" data-del="${esc(a.id)}">🗑 ${L('លុប', 'Delete')}</button></div></div>
+          <button type="button" class="ad-sw ${a.show ? 'on' : ''}" data-sw="${esc(a.id)}" role="switch" aria-checked="${a.show}" aria-label="${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}"></button>
+        </div>`;
+      const live = (list || []).filter(a => adActive(a, now));
+      const rest = (list || []).filter(a => !live.includes(a));
+      $('#view').innerHTML = `
+        <h2>📣 ${L('ផ្សព្វផ្សាយ', 'Ads')} <small style="display:inline">· ${L('សម្រាប់តែ Admin', 'Admins only')}</small></h2>
+        <button type="button" class="btn primary" id="adNew">➕ ${L('បង្ហោះថ្មី', 'Post new')}</button>
+        ${!list ? '<div class="spinner"></div>' : `
+        <div class="card" style="margin-top:14px"><div class="sec-h" style="margin:0 0 4px">${L('កំពុងបង្ហាញ', 'Showing now')} <small>(${live.length})</small></div>
+          ${live.length ? live.map(row).join('') : `<div class="hint">${L('គ្មាន · បើក មួយខាងក្រោម', 'None · switch one on below')}</div>`}
+          ${live.length > 1 ? `<div class="hint">🔀 ${L('បង្ហាញម្តងមួយ ដោយចៃដន្យ រាល់ពេលបើកកម្មវិធី', 'One of these shows at random each time the app opens')}</div>` : ''}</div>
+        ${rest.length ? `<div class="card"><div class="sec-h" style="margin:0 0 4px">${L('ផ្សេងៗ', 'Others')} <small>(${rest.length})</small></div>${rest.map(row).join('')}</div>` : ''}`}`;
+      $('#adNew').onclick = () => go({ s: 'adEdit' });
+      $$('[data-edit]').forEach(b => b.onclick = () => go({ s: 'adEdit', id: b.dataset.edit }));
+      $$('[data-sw]').forEach(b => b.onclick = async () => {
+        const a = adList().find(x => x.id === b.dataset.sw);
+        if (!a) return;
+        b.disabled = true;
+        try {
+          await api('adSave', { id: a.id, text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: !a.show });
+          toast(!a.show ? '📣 ' + L('បានបើក', 'Switched on') : L('បានបិទ', 'Switched off'));
+          await refreshAdsNow();
+        } catch (e) { toast(e.message); b.disabled = false; }
+      });
+      $$('[data-del]').forEach(b => b.onclick = async () => {
+        if (!confirm(L('លុបផ្សព្វផ្សាយនេះ? វានឹងបាត់ពី វិចិត្រសាល ដែរ។', 'Delete this ad? It also leaves the Gallery.'))) return;
+        try { await api('adDelete', { id: b.dataset.del }); toast('🗑 ' + L('បានលុប', 'Deleted')); await refreshAdsNow(); }
+        catch (e) { toast(e.message); }
+      });
+    };
+    draw();
+    syncAds(true).then(draw);
+  }
+
+  /** After an admin change: the new list right away, so the screen and the next startup are up to date. */
+  async function refreshAdsNow() {
+    state.config.adsVersion = 'x' + Date.now();   // the next config brings the real one
+    await syncAds(true);
+    const c = current();
+    if (c && c.s === 'ads') renderAds();
+  }
+
+  function renderAdEdit(screen) {
+    if (!(state.config && state.config.isAdmin)) return renderAds();
+    const a = screen.id ? (adList() || []).find(x => x.id === screen.id) : null;
+    if (screen.id && !a) { go({ s: 'ads' }, true); return; }
+    const f = screen.f || (screen.f = a
+      ? { text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: a.show, file: null, preview: a.thumb, type: a.type, name: '' }
+      : { text: '', seconds: 7, start: dayStr(Date.now()), end: '', show: true, file: null, preview: '', type: '', name: '' });
+    $('#view').innerHTML = `
+      <h2>📣 ${a ? L('កែផ្សព្វផ្សាយ', 'Edit ad') : L('បង្ហោះថ្មី', 'Post new')}</h2>
+      <div class="card">
+        <div class="field"><div class="label"><span>${L('រូបភាព ឬ វីដេអូ', 'Image or video')} <span class="req">*</span></span><small>JPG · PNG · MP4 ≤ 20 MB</small></div>
+          <label class="ad-drop"><input type="file" accept="image/*,video/*" hidden>
+            <span class="ad-pv" style="${f.preview ? `background-image:url('${f.preview}')` : ''}">${f.preview ? (f.type === 'video' ? '<span class="ad-play">▶</span>' : '') : '📷'}</span>
+            <span style="flex:1;min-width:0"><b>${esc(f.name || (a ? L('ឯកសារបច្ចុប្បន្ន', 'Current file') : L('ជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Choose an image or a video')))}</b>
+              <small>${f.preview ? L('ចុចដើម្បីប្តូរ', 'Tap to change') : L('ពីទូរស័ព្ទ ឬ កុំព្យូទ័រ', 'From the phone or computer')}</small></span>
+            <span class="ps-add" aria-hidden="true">${f.preview ? '↻' : '+'}</span></label>
+          <div id="adFileErr"></div></div>
+        <div class="field"><div class="label"><span>${L('អក្សរក្រហមខាងក្រោម', 'Big red text below')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div>
+          <textarea id="adText" maxlength="200" placeholder="${L('ឧ. សូមពន្លត់ម៉ាស៊ីន មុនពេលចាក់សាំង!', 'e.g. Turn off the engine before refuelling!')}">${esc(f.text)}</textarea>
+          <div class="ad-redprev" id="adPrev">${esc(f.text)}</div></div>
+        <div class="field"><div class="label"><span>${L('បង្ហាញរយៈពេល (វិនាទី)', 'Show for (seconds)')}</span></div>
+          ${f.type === 'video' ? `<div class="hint">▶ ${L('វីដេអូ ចាក់រហូតដល់ចប់ (ឬ ចុច រំលង)', 'A video plays to the end (or until Skip)')}</div>`
+            : `<div class="ad-secs">${[5, 6, 7, 8, 9, 10].map(n => `<button type="button" class="${n === f.seconds ? 'on' : ''}" data-sec="${n}">${n}</button>`).join('')}</div>`}</div>
+        <div class="field"><div class="row">
+          <div><div class="label"><span>${L('ចាប់ពី', 'From')}</span></div><input type="date" class="ad-date" id="adStart" value="${f.start}"></div>
+          <div><div class="label"><span>${L('ដល់', 'Until')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div><input type="date" class="ad-date" id="adEnd" value="${f.end}"></div></div></div>
+        <label class="field ad-swrow"><span><b>${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}</b><small>${L('បិទ = ទុកតែក្នុង វិចិត្រសាល', 'Off = only in the Gallery')}</small></span>
+          <input type="checkbox" id="adShow" ${f.show ? 'checked' : ''}><span class="ad-sw ${f.show ? 'on' : ''}" aria-hidden="true"></span></label>
+      </div>
+      <div id="adErr"></div>
+      <button type="button" class="btn primary" id="adSave">📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}</button>
+      <p class="center"><button type="button" class="btn" id="adCancel">${L('បោះបង់', 'Cancel')}</button></p>`;
+
+    $('#adText').oninput = e => { f.text = e.target.value; $('#adPrev').textContent = f.text; };
+    $$('[data-sec]').forEach(b => b.onclick = () => { f.seconds = +b.dataset.sec; $$('[data-sec]').forEach(x => x.classList.toggle('on', x === b)); });
+    $('#adStart').onchange = e => { f.start = e.target.value; };
+    $('#adEnd').onchange = e => { f.end = e.target.value; };
+    $('#adShow').onchange = e => { f.show = e.target.checked; $('.ad-swrow .ad-sw').classList.toggle('on', f.show); };
+    $('#adCancel').onclick = back;
+    $('.ad-drop input').onchange = async e => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const err = msg => { $('#adFileErr').innerHTML = `<div class="alert bad">${msg}</div>`; };
+      $('#adFileErr').innerHTML = `<div class="hint"><span class="spin-sm"></span> ${L('កំពុងរៀបចំ…', 'Preparing…')}</div>`;
+      try {
+        if (/^video\//.test(file.type)) {
+          if (file.size > 20 * 1024 * 1024) return err(L('វីដេអូធំពេក (លើស 20 MB)។ សូមកាត់ឲ្យខ្លី។', 'The video is too big (over 20 MB). Please make it shorter.'));
+          const { thumb } = await videoInfo(file);
+          Object.assign(f, { file, type: 'video', preview: thumb, name: file.name });
+        } else if (/^image\//.test(file.type)) {
+          const thumb = await resizeImage(file, 320, 0.6);
+          Object.assign(f, { file, type: 'image', preview: thumb, name: file.name });
+        } else return err(L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video'));
+        renderAdEdit(screen);
+      } catch (x) { err(esc(x.message || L('មិនអាចអានឯកសារ', 'Could not read the file'))); }
+    };
+    $('#adSave').onclick = async () => {
+      if (!a && !f.file) { $('#adErr').innerHTML = `<div class="alert bad">${L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video')}</div>`; return; }
+      if (f.start && f.end && f.end < f.start) { $('#adErr').innerHTML = `<div class="alert bad">${L('ថ្ងៃ "ដល់" មុនថ្ងៃ "ចាប់ពី"', '"Until" is before "From"')}</div>`; return; }
+      const btn = $('#adSave');
+      btn.disabled = true; btn.innerHTML = `<span class="spinner sm" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> ${L('កំពុងបង្ហោះ…', 'Uploading…')}`;
+      try {
+        const payload = { id: a ? a.id : '', text: f.text.trim(), seconds: f.seconds, start: f.start, end: f.end, show: f.show };
+        let blob = null;
+        if (f.file) {
+          // Images are made smaller first (like the refill photos); videos go as they are.
+          payload.media = f.type === 'image' ? await resizeImage(f.file, 1600, 0.82) : await blobToDataUrl(f.file);
+          payload.thumb = f.preview; payload.name = f.name;
+          blob = f.type === 'image' ? await dataUrlToBlob(payload.media) : f.file;
+        }
+        const res = await api('adSave', payload);
+        state.config.adsVersion = 'x' + Date.now();
+        await syncAds(true);
+        // The admin's own phone keeps the file it just sent, so it doesn't download it again.
+        const saved = (adList() || []).find(x => x.id === res.id);
+        if (blob && saved) await adStore.put(saved.key, blob);
+        toast('📣 ' + L('បានបោះផ្សាយ', 'Posted'));
+        go({ s: 'ads' }, true);
+      } catch (e) {
+        if (!btn.isConnected) return;
+        $('#adErr').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
+        btn.disabled = false; btn.innerHTML = `📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}`;
+      }
+    };
+  }
+
+  /** Length of a video and a small picture of it (from about 1 second in). */
+  function videoInfo(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto';
+      const fail = () => { URL.revokeObjectURL(url); reject(new Error(L('មិនអាចអានវីដេអូនេះ', 'Could not read this video'))); };
+      v.onerror = fail;
+      v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
+      v.onseeked = () => {
+        const k = 320 / Math.max(v.videoWidth, v.videoHeight, 1), c = document.createElement('canvas');
+        c.width = Math.round(v.videoWidth * k) || 320; c.height = Math.round(v.videoHeight * k) || 180;
+        let thumb = '';
+        try { c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); thumb = c.toDataURL('image/jpeg', 0.6); } catch (e) { /* no picture */ }
+        const duration = v.duration;
+        URL.revokeObjectURL(url);
+        resolve({ duration, thumb });
+      };
+      v.src = url;
+    });
+  }
+
   // ---------------- Light / dark switch ----------------
 
   const THEME_KEY = 'fr_theme';
@@ -1661,6 +2325,7 @@
     ['#brandName', 'ចាក់សាំង', 'Fuel Refill'], ['#navBack span', 'ថយក្រោយ', 'Back'], ['#navFwd span', 'ទៅមុខ', 'Forward'],
     ['.home-tab .lb', 'ទំព័រដើម', 'Home'], ['[data-tab="new"] .lb', 'បញ្ចូលថ្មី', 'New'],
     ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'],
+    ['[data-tab="gallery"] .lb', 'វិចិត្រសាល', 'Gallery'], ['[data-tab="ads"] .lb', 'ផ្សព្វផ្សាយ', 'Ads'],
     ['#demoBanner', 'DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុកទេ', 'DEMO · Nothing is saved'],
   ];
   function paintStatic() {

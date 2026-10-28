@@ -12,7 +12,8 @@
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="apple-touch-icon" href="../icons/app-180.png">
   <link rel="manifest" href="../manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=20261017d">
+  <link rel="stylesheet" href="styles.css?v=20261025d">
+  <link rel="stylesheet" href="../sidenav.css?v=20261028a">
   <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
   <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
   <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
@@ -43,6 +44,8 @@
     <button data-tab="new" class="tab"><span>➕</span><b class="lb">បញ្ចូលថ្មី</b></button>
     <button data-tab="mine" class="tab"><span>📋</span><b class="lb">របស់ខ្ញុំ</b></button>
     <button data-tab="review" class="tab" id="reviewTab" hidden><span>✅</span><b class="lb">អ្នកត្រួតពិនិត្យ</b></button>
+    <button data-tab="gallery" class="tab" id="galleryTab" hidden><span>🖼️</span><b class="lb">វិចិត្រសាល</b></button>
+    <button data-tab="ads" class="tab" id="adsTab" hidden><span>📣</span><b class="lb">ផ្សព្វផ្សាយ</b></button>
   </nav>
 
   <nav class="tabs" id="homeOnly">
@@ -55,6 +58,6 @@
   <script src="../lang.js"></script>
   <script>if (!(window.APP_CONFIG || {}).API_URL) document.write('<script src="demo-data.js"><\/script>');</script>
   <script src="../request.js"></script>
-  <script src="app.js?v=20261017d"></script>
+  <script src="app.js?v=20261025d"></script>
 </body>
 </html>

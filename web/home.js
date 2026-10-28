@@ -10,7 +10,12 @@
     { key: 'transport', kh: 'ដឹកជញ្ជូន', en: 'Transport', url: 'delivery/' },
     { key: 'overtime', kh: 'ថែមម៉ោង', en: 'Overtime', url: 'overtime/' },
     { key: 'location', kh: 'ទីតាំងថ្មី', en: 'New Location', url: '' },
+    { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
+    { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
+    { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
+    // Admins only: the server adds 'users' for Role = admin (User Management, 28 Oct 2026).
+    { key: 'users', kh: 'អ្នកប្រើប្រាស់', en: 'Users', url: 'users/' },
   ];
 
   const CFG = window.APP_CONFIG || {};
@@ -80,9 +85,35 @@
       <div class="card"><div class="big">🗂️</div><h2>${t('មិនទាន់មានកម្មវិធី', 'No apps yet')}</h2>
         <p>${t('សូមស្នើអ្នកគ្រប់គ្រងឲ្យធីកកម្មវិធីសម្រាប់អ្នក។', 'Ask the admin to tick your apps in the Users sheet.')}</p>
         <button class="btn" id="retry">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>`;
+    fitGrid();
     document.querySelectorAll('[data-soon]').forEach(b => b.onclick = () => toast(b.dataset.soon + ' · ' + t('មកដល់ឆាប់ៗ', 'Coming soon')));
     if ($('#retry')) $('#retry').onclick = load;
   }
+
+  // On a phone every tile fits on one screen: the tiles grow or shrink with the screen height,
+  // and go to 3 across when 2 across would make them too small (Kim, 28 Oct 2026). Computers keep the normal grid.
+  function fitGrid() {
+    const g = document.querySelector('.grid');
+    if (!g) return;
+    const vw = window.innerWidth, vh = (window.visualViewport && visualViewport.height) || window.innerHeight;
+    if (vw >= 640) { g.classList.remove('fit'); g.removeAttribute('style'); return; }
+    const n = g.children.length, gap = 10;
+    const top = g.getBoundingClientRect().top + window.scrollY;
+    const room = vh - top - 14 - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-b')) || 0);
+    const height = cols => { const rows = Math.ceil(n / cols); return (room - gap * (rows - 1)) / rows; };
+    let cols = 2, h = height(2);
+    if (h < 118 && n > 2) { cols = 3; h = height(3); }
+    h = Math.max(92, Math.min(170, Math.floor(h)));
+    const ico = Math.round(Math.max(44, Math.min(77, h * 0.48)));
+    g.classList.add('fit');
+    g.classList.toggle('small', h < 125 || cols === 3);
+    g.style.cssText = `--cols:${cols};--gap:${gap}px;--tile-h:${h}px;--ico:${ico}px;--img:${Math.round(ico * 0.69)}px`;
+  }
+  let fitTimer = null;
+  const refit = () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitGrid, 60); };
+  window.addEventListener('resize', refit);
+  window.addEventListener('orientationchange', refit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit);
 
   function renderError(e, canRequest) {
     screen = () => renderError(e, canRequest);
@@ -207,7 +238,7 @@
     const box = $('#install');
     const hidden = Number(get(HIDE_KEY) || 0) > Date.now();
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
-    if (standalone() || hidden || (!installEvt && !ios)) { box.hidden = true; return; }
+    if (standalone() || hidden || (!installEvt && !ios)) { box.hidden = true; fitGrid(); return; }
     box.hidden = false;
     box.innerHTML = `<img src="icons/isi-logo.png" alt="" width="44" height="44">
       <div class="txt"><b>${t('ដំឡើង STEEL លើទូរស័ព្ទ', 'Install STEEL on your phone')}</b>
@@ -221,7 +252,7 @@
       try { await ev.userChoice; } catch (e) { /* ignore */ }
     };
     // "✕" hides it for 30 days.
-    $('#installX').onclick = () => { set(HIDE_KEY, String(Date.now() + 30 * 86400000)); box.hidden = true; };
+    $('#installX').onclick = () => { set(HIDE_KEY, String(Date.now() + 30 * 86400000)); box.hidden = true; fitGrid(); };
   }
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; paintInstall(); });
   window.addEventListener('appinstalled', () => { installEvt = null; paintInstall(); });
