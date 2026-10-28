@@ -130,6 +130,7 @@ function setup() {
     ['TELEGRAM_CHAT_ID', '', 'Telegram group for trucks arriving and receipts with damage or short qty (the Fuel app\'s TELEGRAM_CHAT_ID works). Empty = off.'],
     ['APP_URL', 'https://isteel-app.pages.dev/inbound/', 'Address of the app, used in Telegram buttons'],
     ['THREEPL_COMPANIES', 'FOXS, Queen Legacy, Srong Sal, Chroek Kimheng', '3PL companies in the app\'s list, comma separated (people can also add new ones)'],
+    ['EMAIL_NO_REPLY', 'No', 'Yes = report emails come from noreply@ your company domain (works only when this script is owned by a Google Workspace account, not a free Gmail)'],
     ['DAYS_SHOWN', '90', 'How many days of receipts the app loads (receipts of POs still in Incoming Plan always load)'],
   ]);
   sheet_(SH.MAIL, MAIL_COLS, MAIL_SEED);
@@ -611,8 +612,13 @@ function email_(p, user) {
     '<p style="color:#546274;font-size:12px">The PDF report is attached.</p>';
   const html = '<div style="font-family:Arial,\'Noto Sans Khmer\',sans-serif;font-size:14px;line-height:1.5;color:#011e41;max-width:680px">' +
     card + (note ? noteHtml_(note) : table) + '</div>';
-  MailApp.sendEmail({ to: to.join(','), subject: 'Goods receipt ' + rec.id + ': ' + rec.po + ' · ' + rec.truck + (dmg ? ' · DAMAGED' : '') + (less ? ' · RECEIVED LESS' : ''),
-    htmlBody: html, name: 'ISI Steel Inbound', replyTo: user.email || '', attachments: [file.getBlob().setName(rec.id + '.pdf')] });
+  const msg = { to: to.join(','), subject: 'Goods receipt ' + rec.id + ': ' + rec.po + ' · ' + rec.truck + (dmg ? ' · DAMAGED' : '') + (less ? ' · RECEIVED LESS' : ''),
+    htmlBody: html, name: 'ISI Steel Inbound', replyTo: user.email || '', attachments: [file.getBlob().setName(rec.id + '.pdf')] };
+  if (/^y/i.test(String(setting_('EMAIL_NO_REPLY')))) {
+    // Workspace only: hides the sender's address; a free Gmail account refuses it, so send normally then
+    try { MailApp.sendEmail(Object.assign({}, msg, { noReply: true })); return { sent: to.length }; } catch (e) { /* not Workspace */ }
+  }
+  MailApp.sendEmail(msg);
   return { sent: to.length };
 }
 
