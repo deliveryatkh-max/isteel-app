@@ -21,7 +21,7 @@ class Range {
     return this;
   }
   setValue(x) { return this.setValues([[x]]); }
-  setNumberFormat() { return this; } setFontWeight() { return this; } setBackground() { return this; } setFontColor() { return this; }
+  setNumberFormat() { return this; } clearContent() { return this.setValues(this.each(() => '')); } setFontWeight() { return this; } setBackground() { return this; } setFontColor() { return this; }
   insertCheckboxes() { return this; }
 }
 class Sheet {

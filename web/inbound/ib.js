@@ -168,7 +168,7 @@
     if (data.session) set(TOKEN_KEY, data.session);
     return data.data;
   }
-  const formOpen = () => /^#\/(new|edit\/)/.test(location.hash);
+  const formOpen = () => /^#\/(new|edit\/|plan-)/.test(location.hash);
   async function refresh() {
     if (DEMO) return;
     try {
@@ -205,7 +205,7 @@
   // ------------------------------------------------------------------ chrome
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
-  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; }
+  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
   const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
@@ -350,7 +350,7 @@
     const mode = started ? 'fin' : 'arr';
     const pend = r.po ? pendingLines(r.po, r.id) : [];
     view(`
-      <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/'}">✕</a></div>
+      <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('តែ PO មិនទាន់ទទួលគ្រប់', 'pending POs only')}</small></label>
@@ -519,9 +519,9 @@
     const st = $('#startBtn');
     if (st) st.onclick = async () => {
       collect(); const miss = need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
-      if (!DEMO) { const rec = await send('start', st); if (rec) { toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + rec.start); location.hash = '#/'; } return; }
+      if (!DEMO) { const rec = await send('start', st); if (rec) { toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + rec.start); location.hash = '#/today'; } return; }
       F.date = today(); F.start = nowHM(); F.id = 'IB' + F.date.slice(2).replace(/-/g, '') + '-' + pad(DATA.length + 1); F.by = t('អ្នក (សាកល្បង)', 'You (demo)');
-      DATA.push(JSON.parse(JSON.stringify(F))); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/';
+      DATA.push(JSON.parse(JSON.stringify(F))); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/today';
     };
     const en = $('#endBtn');
     if (en) en.onclick = async () => {
@@ -593,12 +593,12 @@
   // ------------------------------------------------------------------ one receipt
   function renderOne(id) {
     paintTabs('');
-    const r = byId(id); if (!r) { location.hash = '#/'; return; }
+    const r = byId(id); if (!r) { location.hash = '#/today'; return; }
     const m = spentMin(r), p = prod(r);
     const kv = (lbl, v, full) => `<div${full ? ' class="full"' : ''}><small>${lbl}</small><b>${v}</b></div>`;
     const ph = r.ph || {};
     view(`
-      <div class="head2"><h2>🚛 ${esc(r.truck)}</h2><a class="link" href="#/">✕</a></div>
+      <div class="head2"><h2>🚛 ${esc(r.truck)}</h2><a class="link" href="#/today">✕</a></div>
       <div style="margin:-4px 2px 12px">${badges(r)}</div>
       <section class="card"><div class="kvs">
         ${kv(t('លេខ PO', 'PO Number'), esc(r.po))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
@@ -663,6 +663,195 @@
     $$('[data-p]').forEach(b => { b.onclick = () => { SP = b.dataset.p; renderSum(); }; });
   }
 
+  // ------------------------------------------------------------------ start menu (Kim, 28 Oct 2026): Receive goods | Incoming Plan
+  const canPlan = () => DEMO || !!(USER && (USER.admin || USER.reviewer));
+  function renderMenu() {
+    paintTabs('');
+    const open = pendingPOs().length;
+    view(`
+      <div class="menu2">
+        <a class="mtile" href="#/today"><span class="mi">🚛</span><b>${t('ទទួលទំនិញ', 'Receive goods')}</b>
+          <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
+          <em>${DATA.filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
+        <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
+          <small>${t('ផ្ទុក Excel Packing List ឬបន្ថែម PO', 'Upload the Excel packing list or add a PO')}</small>
+          <em>${POS.length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
+      </div>`);
+  }
+
+  // ------------------------------------------------------------------ Incoming Plan (Supervisor / Admin)
+  const planKg = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + (+x.kg || 0), 0);
+  const poRecvd = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + recvd(x.po, x.material), 0);
+  const poHead = po => PLAN.find(x => x.po === po) || {};
+  const hasTrucks = po => DATA.some(r => r.po === po);
+  function poStatus(po) {
+    const k = planKg(po), r = poRecvd(po);
+    if (!r) return `<span class="badge live">🕓 ${t('មិនទាន់មក', 'Not arrived')}</span>`;
+    if (r < k) return `<span class="badge diff">◐ ${t('មកខ្លះ', 'Partly received')}</span>`;
+    return `<span class="badge ok">✅ ${t('ទទួលគ្រប់', 'Complete')}</span>`;
+  }
+  let PQ = '';
+  function renderPlan() {
+    paintTabs('plan');
+    if (!canPlan()) return view(`<div class="card done"><div class="emoji">🔒</div><h2>${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</h2></div>`);
+    const q = PQ.toLowerCase();
+    const pos = POS.filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
+      .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
+    view(`
+      <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
+      <button class="btn" id="addPo" style="width:100%;margin-bottom:14px">✍️ ${t('បន្ថែម PO ដោយដៃ', 'Add a PO by hand')}</button>
+      <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
+      <div class="list">${pos.map(po => {
+        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
+        return `<a class="item" href="#/plan/${encodeURIComponent(po)}">
+          <div class="top"><span class="id">📑 ${esc(po)}</span>${poStatus(po)}</div>
+          <div class="ttl">${esc(h.supplier || '–')}</div>
+          <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
+          <div class="prog"><i style="width:${k ? Math.min(100, r / k * 100) : 0}%"></i></div>
+          <div class="meta">${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</div></a>`;
+      }).join('') || `<div class="empty">${t('មិនទាន់មាន PO', 'No PO yet')}</div>`}</div>`);
+    $('#xfile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
+    $('#addPo').onclick = () => { location.hash = '#/plan-new'; };
+    const qi = $('#pq'); qi.oninput = () => { PQ = qi.value; const p = qi.selectionStart; renderPlan(); const n = $('#pq'); n.focus(); n.setSelectionRange(p, p); };
+  }
+  function renderPo(po) {
+    paintTabs('plan');
+    const lines = PLAN.filter(x => x.po === po); if (!lines.length) { location.hash = '#/plan'; return; }
+    const h = lines[0], kv = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+    view(`
+      <div class="head2"><h2>📑 ${esc(po)}</h2><a class="link" href="#/plan">✕</a></div>
+      <div style="margin:-4px 2px 12px">${poStatus(po)}</div>
+      <section class="card"><div class="kvs">
+        ${kv(t('លេខ Inbound', 'Inbound Number'), esc(h.inbound || '–'))}${kv('Ref. No.', esc(h.ref || '–'))}
+        ${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(h.supplier || '–'))}${kv('ETA', esc(showEta(h.eta) || '–'))}
+        ${kv(t('ផែនការ', 'Planned'), fmt(planKg(po)) + ' Kg')}${kv(t('បានទទួល', 'Received'), fmt(poRecvd(po)) + ' Kg')}
+      </div></section>
+      <section class="card"><h2>📦 ${t('មុខទំនិញ', 'Lines')} (${lines.length})</h2>
+        <table class="tb pl"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ផែនការ', 'Plan')}</th><th class="n">${t('ទទួល', 'Recv.')}</th><th class="n">${t('នៅសល់', 'Left')}</th></tr>
+        ${lines.map(x => { const r = recvd(x.po, x.material); return `<tr><td><b>${esc(x.material)}</b><small>${esc(x.desc)}</small></td><td class="n">${fmt(x.kg)}</td><td class="n">${fmt(r)}</td><td class="n${left(x) ? '' : ' okc'}">${left(x) ? fmt(left(x)) : '✅'}</td></tr>`; }).join('')}
+        </table><p class="hint">Kg · ${esc(h.plant || '')} ${esc(h.sloc || '')}</p></section>
+      ${hasTrucks(po) ? `<p class="hint center">🔒 ${t('មានឡានទទួលរួចហើយ មិនអាចលុប PO នេះបានទេ។ ផ្ទុក Excel ម្តងទៀតដើម្បីកែ។', 'Trucks were received on this PO, so it cannot be deleted. Upload the Excel again to update it.')}</p>`
+        : `<button class="btn bad" id="delPo" style="width:100%">🗑️ ${t('លុប PO នេះ', 'Delete this PO')}</button>`}`);
+    const d = $('#delPo'); if (d) d.onclick = () => {
+      if (d.dataset.sure !== '1') { d.dataset.sure = '1'; d.textContent = '⚠️ ' + t('ចុចម្តងទៀតដើម្បីលុប', 'Tap again to delete'); return; }
+      if (!DEMO) { planCall('planDel', { po }, d).then(p => { if (p) { toast('🗑️ ' + t('បានលុប ', 'Deleted ') + po); location.hash = '#/plan'; } }); return; }
+      setPlan(PLAN.filter(x => x.po !== po)); save(); toast('🗑️ ' + t('បានលុប ', 'Deleted ') + po); location.hash = '#/plan';
+    };
+  }
+
+  // Excel: Kim's "Incoming Packing List Template" (sheet PKL). The heading row is found by its names, so extra
+  // title rows or moved columns are fine.
+  let UP = null;   // { file, lines, skipped, missing }
+  const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['kg'], pcs: ['pcs'],
+    po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'] };
+  const NEED = ['material', 'kg', 'po'];
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+  }
+  const etaOf = v => {
+    if (v instanceof Date) return ymd(new Date(v.getTime() + 12 * 3600000));   // dates come in at UTC midnight: keep the day
+    const s = String(v == null ? '' : v).trim(); let m;
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + pad(m[2]) + '-' + pad(m[3]);
+    if ((m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) return m[3] + '-' + pad(m[2]) + '-' + pad(m[1]);
+    return s;
+  };
+  async function readExcel(f) {
+    toast('⏳ ' + t('កំពុងអាន ', 'Reading ') + f.name);
+    try {
+      await loadXlsx();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+      const ws = wb.Sheets['PKL'] || wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      const hi = rows.findIndex(r => r.some(c => String(c).trim().toLowerCase() === 'material') && r.some(c => /^po/i.test(String(c).trim())));
+      if (hi < 0) throw new Error(t('រកមិនឃើញជួរក្បាល (Material, Kg, PO Number)', 'Heading row not found (Material, Kg, PO Number)'));
+      const head = rows[hi].map(c => String(c).trim().toLowerCase());
+      const ix = {}; Object.keys(COLS).forEach(k => { ix[k] = head.findIndex(h => COLS[k].indexOf(h) >= 0); });
+      const missing = Object.keys(COLS).filter(k => ix[k] < 0);
+      if (NEED.some(k => ix[k] < 0)) throw new Error(t('ខ្វះជួរឈរ៖ ', 'Missing columns: ') + NEED.filter(k => ix[k] < 0).join(', '));
+      const v = (r, k) => ix[k] < 0 ? '' : r[ix[k]];
+      const lines = [], skipped = [];
+      rows.slice(hi + 1).forEach((r, i) => {
+        if (!r.some(c => String(c).trim())) return;
+        const l = { po: String(v(r, 'po')).replace(/\s+/g, '').toUpperCase(), material: String(v(r, 'material')).trim(), desc: String(v(r, 'desc')).trim(),
+          plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, pcs: String(v(r, 'pcs')).trim(),
+          inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim() };
+        if (l.po && !/^PO/.test(l.po)) l.po = 'PO' + l.po;
+        if (!l.po || !l.material || !l.kg) skipped.push(hi + i + 2); else lines.push(l);
+      });
+      if (!lines.length) throw new Error(t('គ្មានជួរដែលមាន PO, Material និង Kg', 'No rows with PO, Material and Kg'));
+      UP = { file: f.name, lines, skipped, missing };
+      location.hash = '#/plan-up';
+    } catch (e) { toast('⚠️ ' + (e.message || e)); }
+  }
+  // live: the server rewrites the Incoming Plan tab and sends the new plan back
+  async function planCall(action, payload, btn) {
+    if (sending) return null;
+    sending = true;
+    const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> ' + t('កំពុងរក្សាទុក…', 'Saving…');
+    try { const p = await api(action, payload); setPlan(p); save(); return p; }
+    catch (e) { toast('⚠️ ' + e.message); return null; }
+    finally { sending = false; if (btn.isConnected) { btn.disabled = false; btn.innerHTML = html; } }
+  }
+  // Same PO again: its lines are replaced by the file; lines already received and not in the file stay.
+  function mergePlan(lines) {
+    const pos = Array.from(new Set(lines.map(l => l.po)));
+    const keep = PLAN.filter(x => pos.indexOf(x.po) < 0 || (recvd(x.po, x.material) > 0 && !lines.some(l => l.po === x.po && l.material === x.material)));
+    return keep.concat(lines);
+  }
+  function renderUpload() {
+    paintTabs('plan');
+    if (!UP) { location.hash = '#/plan'; return; }
+    const pos = Array.from(new Set(UP.lines.map(l => l.po)));
+    view(`
+      <div class="head2"><h2>⬆️ ${t('ពិនិត្យមុនរក្សាទុក', 'Check before saving')}</h2><a class="link" href="#/plan">✕</a></div>
+      <p class="hint">📄 ${esc(UP.file)} · ${UP.lines.length} ${t('ជួរ', 'rows')} · ${pos.length} PO</p>
+      ${UP.skipped.length ? `<div class="cmp"><div class="warn">⚠️ ${t('រំលងជួរ (ខ្វះ PO / Material / Kg)៖ ', 'Rows skipped (no PO / Material / Kg): ')}${UP.skipped.slice(0, 12).join(', ')}${UP.skipped.length > 12 ? '…' : ''}</div></div>` : ''}
+      ${UP.missing.length ? `<div class="cmp"><div class="warn">ℹ️ ${t('គ្មានជួរឈរ៖ ', 'Columns not in the file: ')}${esc(UP.missing.join(', '))}</div></div>` : ''}
+      ${pos.map(po => {
+        const ls = UP.lines.filter(l => l.po === po), h = ls[0], old = PLAN.filter(x => x.po === po).length;
+        return `<section class="card mt"><div class="top"><h2 style="margin:0">📑 ${esc(po)}</h2>${old ? `<span class="badge diff">♻️ ${t('ជំនួស', 'Replaces')} ${old} ${t('ជួរ', 'lines')}</span>` : `<span class="badge ok">＋ ${t('ថ្មី', 'New')}</span>`}</div>
+          <div class="meta">${esc(h.supplier || '–')} · ${esc(h.inbound || '')} · ${esc(h.ref || '')} · ETA ${esc(showEta(h.eta) || '–')}</div>
+          <table class="tb pl mt"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">Kg</th><th class="n">PCS</th></tr>
+          ${ls.map(l => `<tr><td><b>${esc(l.material)}</b><small>${esc(l.desc)}</small></td><td class="n">${fmt(l.kg)}</td><td class="n">${esc(l.pcs)}</td></tr>`).join('')}
+          <tr class="totr"><td>${t('សរុប', 'Total')}</td><td class="n">${fmt(ls.reduce((s, l) => s + l.kg, 0))}</td><td></td></tr></table></section>`;
+      }).join('')}
+      <button class="btn ok big mt" id="saveUp">💾 ${t('រក្សាទុកក្នុងផែនការ', 'Save to Incoming Plan')}</button>`);
+    $('#saveUp').onclick = async () => {
+      if (!DEMO) { if (!await planCall('planSave', { lines: UP.lines }, $('#saveUp'))) return; } else { setPlan(mergePlan(UP.lines)); save(); } toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + UP.lines.length + t(' ជួរ', ' rows')); UP = null; location.hash = '#/plan'; };
+  }
+  // by hand: PO details once, then one or more lines
+  let NP = null;
+  function renderPlanNew() {
+    paintTabs('plan');
+    if (!NP) NP = { po: '', inbound: '', ref: '', eta: '', supplier: '', lines: [{ material: '', desc: '', kg: '', pcs: '' }] };
+    const f = (k, km, en, ty, req) => `<label class="lbl">${t(km, en)}${req ? ' <span class="req">*</span>' : ''}</label><input class="in" data-np="${k}" type="${ty || 'text'}" value="${esc(NP[k])}">`;
+    view(`
+      <div class="head2"><h2>✍️ ${t('បន្ថែម PO', 'Add a PO')}</h2><a class="link" href="#/plan">✕</a></div>
+      <section class="card">${f('po', 'លេខ PO', 'PO Number', '', 1)}${f('inbound', 'លេខ Inbound', 'Inbound Number')}${f('ref', 'Ref. No.', 'Ref. No.')}${f('eta', 'ETA', 'ETA', 'date')}${f('supplier', 'អ្នកផ្គត់ផ្គង់', 'Supplier')}</section>
+      ${NP.lines.map((l, i) => `<section class="card mt"><h2><span class="n">${i + 1}</span>${t('មុខទំនិញ', 'Line')}${NP.lines.length > 1 ? `<button class="btn sm ghost" data-rm="${i}" style="margin-left:auto">✕</button>` : ''}</h2>
+        <label class="lbl">${t('សម្ភារៈ', 'Material')} <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="material" value="${esc(l.material)}" inputmode="numeric">
+        <label class="lbl">${t('ការពិពណ៌នា', 'Description')}</label><input class="in" data-ln="${i}" data-k="desc" value="${esc(l.desc)}">
+        <div class="timebox"><div><label class="lbl">Kg <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="kg" value="${esc(l.kg)}" inputmode="decimal"></div>
+        <div><label class="lbl">PCS</label><input class="in" data-ln="${i}" data-k="pcs" value="${esc(l.pcs)}" inputmode="numeric"></div></div></section>`).join('')}
+      <button class="btn mt" id="addLn" style="width:100%">＋ ${t('បន្ថែមមុខទំនិញ', 'Add a line')}</button>
+      <button class="btn ok big mt" id="saveNp">💾 ${t('រក្សាទុក', 'Save')}</button>`);
+    const grab = () => { $$('[data-np]').forEach(el => { NP[el.dataset.np] = el.value.trim(); }); $$('[data-ln]').forEach(el => { NP.lines[+el.dataset.ln][el.dataset.k] = el.value.trim(); }); };
+    const mark = () => { $$('[data-np="po"],[data-k="material"],[data-k="kg"]').forEach(el => el.classList.toggle('need', !el.value.trim())); };
+    $$('#view input').forEach(el => { el.oninput = mark; }); mark();
+    $('#addLn').onclick = () => { grab(); NP.lines.push({ material: '', desc: '', kg: '', pcs: '' }); renderPlanNew(); };
+    $$('[data-rm]').forEach(b => { b.onclick = () => { grab(); NP.lines.splice(+b.dataset.rm, 1); renderPlanNew(); }; });
+    $('#saveNp').onclick = async () => {
+      grab();
+      let po = NP.po.replace(/\s+/g, '').toUpperCase(); if (po && !/^PO/.test(po)) po = 'PO' + po;
+      const ls = NP.lines.filter(l => l.material && +String(l.kg).replace(/,/g, '') > 0);
+      if (!po || !ls.length) { toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); return; }
+      if (POS.indexOf(po) >= 0) { toast('⚠️ ' + po + t(' មានរួចហើយ', ' already exists')); return; }
+      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs }));
+      if (!DEMO) { if (!await planCall('planSave', { lines: add }, $('#saveNp'))) return; } else { setPlan(PLAN.concat(add)); save(); } toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + po); NP = null; location.hash = '#/plan/' + encodeURIComponent(po);
+    };
+  }
+
   // ------------------------------------------------------------------ router
   function screen() {
     const h = location.hash.replace(/^#\/?/, '');
@@ -671,7 +860,12 @@
     if (h.indexOf('r/') === 0) return renderOne(h.slice(2));
     if (h === 'log') return renderLog();
     if (h === 'sum') return renderSum();
-    return renderHome();
+    if (h === 'plan') return renderPlan();
+    if (h === 'plan-up') return renderUpload();
+    if (h === 'plan-new') return renderPlanNew();
+    if (h.indexOf('plan/') === 0) return renderPo(decodeURIComponent(h.slice(5)));
+    if (h === 'today' || !canPlan()) return renderHome();
+    return renderMenu();
   }
   // live timers tick every 20 s without redrawing the screen
   setInterval(() => { $$('[data-timer]').forEach(el => { const r = byId(el.dataset.timer); if (r) { const m = spentMin(r); el.textContent = clock(m); el.classList.toggle('slow', m > 60); } }); }, 20000);

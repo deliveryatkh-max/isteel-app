@@ -26,10 +26,10 @@ Until step 5 is done the app runs in **DEMO** mode (sample POs and receipts kept
    - `TELEGRAM_BOT_TOKEN`: copy it from the Fuel app's Script properties (same bot). Optional, but needed for Telegram.
 3. **Run `setup()` once** (choose `setup` → Run → allow). It adds the tabs **Incoming Plan**, **GR Log**, **Receipts**
    and **IB Settings**, and the Drive folder **Inbound Photos**.
-4. **Incoming Plan.** Paste the rows of the Incoming Packing List (sheet PKL) under the headings of the **Incoming Plan**
-   tab: No, Material, Description, Plant, SLOC, Kg, t, PCS, Remark, No. of Truck, PO Number, Inbound No., Ref. No, ETA,
-   Supplier. Add new POs the same way whenever a packing list comes. A PO shows in the app while some of its Kg is not
-   yet received.
+4. **Incoming Plan.** Supervisors and admins (role reviewer or admin in Users) fill it from the app: Inbound → 📑 Incoming
+   Plan → *Upload Excel packing list* (Kim's template, sheet PKL) or *Add a PO by hand*. Uploading a PO again replaces its
+   lines; lines already received stay. A PO can be deleted only while no truck was received on it. Pasting rows straight
+   into the **Incoming Plan** tab still works. A PO shows in *Receive goods* while some of its Kg is not yet received.
 5. **IB Settings tab**: put the Telegram group id in `TELEGRAM_CHAT_ID` (the Fuel app's `TELEGRAM_CHAT_ID` works),
    check the 3PL company list.
 6. **Deploy**: Deploy → New deployment → *Web app* → Execute as **Me** → Who has access **Anyone** → Deploy.
