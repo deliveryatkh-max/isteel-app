@@ -74,11 +74,12 @@ Each report is one row in the **Incidents** tab (same columns as the Excel Incid
 
 ## PDF template
 
-The PDF is filled in from the Word template `web/incident/ir-template.docx` (copy in `templates/`). The first PDF turns
-it into a Google Doc called **Incident Report Template** in the reports folder and keeps its ID in IR Settings
-(`PDF_TEMPLATE_ID`). To change the layout, edit that Doc and keep the `{{...}}` words; the row with `{{action.what}}`
-repeats once per action. Delete the Doc to load the Word file again. If the template can't be used, the app falls back
-to its built-in one-page layout.
+Put a Google Drive link in IR Settings **PDF_TEMPLATE_LINK**: a Google Doc, a Word file, or a folder (the newest Doc or
+Word file in it is used). Every PDF reads the template from that link, so an edited or new template shows in the next
+PDF, and saved PDFs made with an older template are made again when opened. Keep the `{{...}}` words; the row with
+`{{action.what}}` repeats once per action. A Word file is turned into a Google Doc in the reports folder whenever it
+changes. With no link the app uses `web/incident/ir-template.docx`; if the template can't be used, it falls back to its
+built-in one-page layout and writes the reason in **PDF_TEMPLATE_ERROR**.
 
 ## Limits
 

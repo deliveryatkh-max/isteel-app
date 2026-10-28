@@ -66,6 +66,7 @@ const STATUS = { wait: 'Waiting supervisor', back: 'Returned', signed: 'Signed',
 function doGet() { return json_({ ok: true, app: 'Incident Report' }); }
 
 function doPost(e) {
+  tplMemo_ = null;   // the template is looked up once per request
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
@@ -166,6 +167,7 @@ function setup() {
     ['TELEGRAM_CHAT_ID', '', 'Telegram group for new and signed reports (the Fuel app\'s TELEGRAM_CHAT_ID works). Empty = off.'],
     ['APP_URL', 'https://isteel-app.pages.dev/incident/', 'Address of the app, used in Telegram buttons and emails'],
     ['PUBLIC_LINK', 'Yes', 'Yes = drivers can report through the QR / link without signing in'],
+    ['PDF_TEMPLATE_LINK', '', 'Drive link to the PDF template: a Google Doc, a Word file or a folder (newest file used). Empty = built-in template.'],
   ]);
   sheet_(SH.TXT, TXT_COLS);
   const props = PropertiesService.getScriptProperties();
@@ -607,7 +609,7 @@ const LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAtZElEQVR42u19eX
 /** The PDF is filled in from Kim's Word template; if that ever fails, the built-in one-page layout is used. */
 // Bump PDF_VER when the layout changes: saved PDFs from an older layout are made again the next time they are opened.
 const PDF_VER = 2;
-const pdfInfo_ = (file, at) => ({ id: file.getId(), url: file.getUrl(), at, v: PDF_VER });
+const pdfInfo_ = (file, at) => ({ id: file.getId(), url: file.getUrl(), at, v: pdfVer_() });
 function makePdf_(d, folder) {
   try {
     const f = templatePdf_(d, folder);
@@ -620,26 +622,55 @@ function makePdf_(d, folder) {
   }
 }
 
-// ---- Word template (web/incident/ir-template.docx). It is turned into a Google Doc once, in the reports folder,
-// and its ID kept in IR Settings (PDF_TEMPLATE_ID). Edit that Doc to change the layout; delete it to load the Word file again.
+// ---- PDF template. IR Settings PDF_TEMPLATE_LINK = a Drive link to a Google Doc, a Word file or a folder (the newest
+// Doc / Word file in it is used), so a new or edited template shows in the next PDF. A Google Doc is used as it is;
+// a Word file is turned into a Google Doc again whenever it changes (kept as PDF_TEMPLATE_ID / PDF_TEMPLATE_STAMP).
+// With no link, web/incident/ir-template.docx is used.
 const TEMPLATE_URL = 'https://isteel-app.pages.dev/incident/ir-template.docx';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-function templateId_() {
-  const id = setting_('PDF_TEMPLATE_ID');
-  if (id) { try { if (!DriveApp.getFileById(id).isTrashed()) return id; } catch (e) { /* gone: load it again */ } }
-  const docx = UrlFetchApp.fetch(setting_('PDF_TEMPLATE_URL') || TEMPLATE_URL).getBlob().getBytes();
+const GDOC_MIME = 'application/vnd.google-apps.document';
+function templateSource_() {
+  const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
+  if (!link) return null;
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) throw new Error('PDF_TEMPLATE_LINK is not a Google Drive link');
+  if (!m[2]) return DriveApp.getFileById(m[1] || m[3] || m[4]);
+  let best = null;
+  const it = DriveApp.getFolderById(m[2]).getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.isTrashed() || [GDOC_MIME, DOCX_MIME].indexOf(f.getMimeType()) < 0) continue;
+    if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f;
+  }
+  if (!best) throw new Error('No Google Doc or Word file in the PDF_TEMPLATE_LINK folder');
+  return best;
+}
+let tplMemo_ = null;
+/** { id, stamp } of the Google Doc to copy; the stamp changes whenever the template does. */
+function template_() {
+  if (tplMemo_) return tplMemo_;
+  const src = templateSource_();
+  if (src && src.getMimeType() === GDOC_MIME) return (tplMemo_ = { id: src.getId(), stamp: src.getId() + '@' + src.getLastUpdated().getTime() });
+  const stamp = src ? src.getId() + '@' + src.getLastUpdated().getTime() : TEMPLATE_URL + '#' + PDF_VER;
+  const old = setting_('PDF_TEMPLATE_ID');
+  if (old && setting_('PDF_TEMPLATE_STAMP') === stamp) { try { if (!DriveApp.getFileById(old).isTrashed()) return (tplMemo_ = { id: old, stamp }); } catch (e) { /* gone: convert again */ } }
+  const docx = src ? src.getBlob().getBytes() : UrlFetchApp.fetch(TEMPLATE_URL).getBlob().getBytes();
   const b = 'irtpl' + Date.now();
-  const meta = { name: 'Incident Report Template', mimeType: 'application/vnd.google-apps.document', parents: [root_().getId()] };
-  const bytes = s => Utilities.newBlob(s).getBytes();
+  const meta = { name: 'Incident Report Template (made from ' + (src ? src.getName() : 'ir-template.docx') + ')', mimeType: GDOC_MIME, parents: [root_().getId()] };
+  const bytes = x => Utilities.newBlob(x).getBytes();
   const payload = bytes('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + DOCX_MIME + '\r\n\r\n')
     .concat(docx, bytes('\r\n--' + b + '--'));
   const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
     method: 'post', contentType: 'multipart/related; boundary=' + b, payload, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (r.getResponseCode() !== 200) throw new Error('template upload ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
-  const nid = JSON.parse(r.getContentText()).id;
-  setSetting_('PDF_TEMPLATE_ID', nid);
-  return nid;
+  const id = JSON.parse(r.getContentText()).id;
+  if (old && old !== id) { try { DriveApp.getFileById(old).setTrashed(true); } catch (e) { /* already gone */ } }
+  setSetting_('PDF_TEMPLATE_ID', id);
+  setSetting_('PDF_TEMPLATE_STAMP', stamp);
+  return (tplMemo_ = { id, stamp });
 }
+/** Version of the PDF layout right now; a saved PDF with another version is made again. */
+function pdfVer_() { try { return PDF_VER + '|' + template_().stamp; } catch (e) { return PDF_VER + '|basic'; } }
 /** Text for each {{placeholder}} in the template. */
 function pdfValues_(d) {
   const t = TYPES[d.type] || {}, sc = d.severity && d.likelihood ? d.severity * d.likelihood : 0;
@@ -661,7 +692,7 @@ function pdfValues_(d) {
   };
 }
 function templatePdf_(d, folder) {
-  const copy = DriveApp.getFileById(templateId_()).makeCopy(d.id + ' (pdf)', folder);
+  const copy = DriveApp.getFileById(template_().id).makeCopy(d.id + ' (pdf)', folder);
   try {
     const doc = DocumentApp.openById(copy.getId()), body = doc.getBody();
     actionRows_(body, d.actions || []);
@@ -849,7 +880,7 @@ function grid_(body, rows) {
 function pdf_(p, user) {
   const d = getReport_(p.id, user);
   let file = null;
-  if (d.pdf && d.pdf.id && d.pdf.v === PDF_VER) { try { file = DriveApp.getFileById(d.pdf.id); if (file.isTrashed()) file = null; } catch (e) { file = null; } }
+  if (d.pdf && d.pdf.id && d.pdf.v === pdfVer_()) { try { file = DriveApp.getFileById(d.pdf.id); if (file.isTrashed()) file = null; } catch (e) { file = null; } }
   if (!file) {
     file = makePdf_(d, folder_(d.id, true));
     if (d.status !== STATUS.wait) withLock_(() => { const x = load_(d.id); x.pdf = pdfInfo_(file, now_()); store_(x); });
@@ -908,7 +939,7 @@ function email_(p, user) {
   if (to.length > 40) fail_('BAD', 'Up to 40 people per email.', 'អាចផ្ញើបានច្រើនបំផុត 40 នាក់ក្នុងមួយអ៊ីមែល។');
   return withLock_(() => {
     let file = null;
-    try { file = d.pdf && d.pdf.v === PDF_VER && DriveApp.getFileById(d.pdf.id); file.getName(); } catch (e) { file = null; }
+    try { file = d.pdf && d.pdf.v === pdfVer_() && DriveApp.getFileById(d.pdf.id); file.getName(); } catch (e) { file = null; }
     if (!file) { file = makePdf_(d, folder_(d.id, true)); d.pdf = pdfInfo_(file, now_()); }
     const n = sendMail_(d, file, to, user, clip_(p.note, 1000));
     d.history = (d.history || []).concat([{ at: now_(), by: user.name, what: 'Emailed to ' + n + ' people' }]);

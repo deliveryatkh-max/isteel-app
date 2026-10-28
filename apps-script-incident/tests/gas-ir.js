@@ -71,7 +71,7 @@ function makeEnv(opts) {
   function fileApi(f) {
     return {
       getId: () => f.id, getName: () => f.name, getUrl: () => 'https://drive.google.com/file/d/' + f.id,
-      getBlob: () => blob(f.data, f.mime, f.name), setContent(s) { f.data = Buffer.from(String(s), 'utf8'); return this; },
+      getBlob: () => blob(f.data, f.mime, f.name), getMimeType: () => f.mime || '', getLastUpdated: () => new Date(f.updated || 0), setContent(s) { f.data = Buffer.from(String(s), 'utf8'); return this; },
       getAs: mime => blob('%PDF-' + (docs[f.id] ? docs[f.id].parts.join('\n') : ''), mime, f.name + '.pdf'), getThumbnail: () => null, isTrashed: () => f.trashed,
       setDescription(d) { f.desc = d; return this; }, setTrashed(v) { f.trashed = v; return this; },
       moveTo(folder) { f.parent = folder.getId(); return this; },
@@ -84,6 +84,7 @@ function makeEnv(opts) {
       getId: () => d.id, getName: () => d.name, getUrl: () => 'https://drive.google.com/drive/folders/' + d.id,
       getFoldersByName: n => iter(Object.values(folders).filter(x => x.parent === d.id && x.name === n && !x.trashed).map(folderApi)),
       getFilesByName: n => iter(Object.values(files).filter(x => x.parent === d.id && x.name === n && !x.trashed).map(fileApi)),
+      getFiles: () => iter(Object.values(files).filter(x => x.parent === d.id).map(fileApi)),
       createFolder: n => makeFolder(n, d.id), createFile: b => makeFile(b, d.id), setTrashed(v) { d.trashed = v; return this; },
     };
   }
