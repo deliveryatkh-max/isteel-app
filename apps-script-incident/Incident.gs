@@ -239,7 +239,7 @@ function authenticate_(token) {
   const u = usersCached_().find(x => x.email === email && x.ok);
   if (!u) fail_('NOACCESS', email + ' has no Incident Report access. Ask the admin to tick ' + APP_COL + ' in Users.',
     email + ' មិនទាន់មានសិទ្ធិប្រើ ' + APP_COL + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
-  const sups = supervisors_();
+  const sups = supsCached_();
   const mine = sups.filter(s => s.email === email || s.backup === email).map(s => s.warehouse);
   return { email: email, name: u.name || email, phone: u.phone || '', admin: u.admin, reviewer: u.reviewer, supervisorOf: mine, session: session };
 }
@@ -276,6 +276,14 @@ function setting_(k) { const r = objs_(SH.SET, SET_COLS).find(o => o.Setting ===
 function supervisors_() {
   return objs_(SH.SUP, SUP_COLS).filter(o => o.Warehouse || o.Email).map(o => ({
     warehouse: o.Warehouse, name: o.Name, email: o.Email.toLowerCase(), backup: o['Backup Email'].toLowerCase() }));
+}
+function supsCached_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('ir_sups');
+  if (hit) return JSON.parse(hit);
+  const s = supervisors_();
+  try { cache.put('ir_sups', JSON.stringify(s), 300); } catch (e) { /* too big: read each time */ }
+  return s;
 }
 function categories_() {
   return objs_(SH.CAT, CAT_COLS).filter(o => o.Category && (o.Active === '' || yes_(o.Active))).map(o => ({
@@ -374,17 +382,27 @@ function folder_(id, make) {
   if (it.hasNext()) return it.next();
   return make ? root_().createFolder(id) : null;
 }
+// report.json is also kept in the cache (6 h), so opening a report does not have to search Drive.
+const repKey_ = id => 'irrep:' + id;
 function load_(id) {
+  const hit = CacheService.getScriptCache().get(repKey_(String(id || '')));
+  if (hit) return JSON.parse(hit);
   const f = folder_(String(id || ''), false);
   const it = f && f.getFilesByName('report.json');
   if (!it || !it.hasNext()) fail_('NOTFOUND', 'Report not found.', 'រកមិនឃើញរបាយការណ៍នេះទេ។');
-  return JSON.parse(it.next().getBlob().getDataAsString('UTF-8'));
+  const json = it.next().getBlob().getDataAsString('UTF-8');
+  cacheReport_(id, json);
+  return JSON.parse(json);
+}
+function cacheReport_(id, json) {
+  try { if (json.length < 95000) CacheService.getScriptCache().put(repKey_(id), json, 21600); else CacheService.getScriptCache().remove(repKey_(id)); } catch (e) { /* cache full */ }
 }
 function store_(d) {
   const folder = folder_(d.id, true);
   const it = folder.getFilesByName('report.json');
   const s = JSON.stringify(d);
   if (it.hasNext()) it.next().setContent(s); else folder.createFile(Utilities.newBlob(s, 'application/json', 'report.json'));
+  cacheReport_(d.id, s);
   writeRow_(d, folder);
 }
 function getReport_(id, user) {
@@ -1086,6 +1104,7 @@ function saveSettings_(p, user) {
         return [clip_(s.warehouse, 80), clip_(s.name, 100), e, b];
       });
       rewrite_(SH.SUP, SUP_COLS, rows);
+      CacheService.getScriptCache().remove('ir_sups');
     }
     if (Array.isArray(p.categories)) {
       rewrite_(SH.CAT, CAT_COLS, p.categories.filter(c => c && clip_(c.en, 80)).map(c => [clip_(c.en, 80), clip_(c.km, 80),
