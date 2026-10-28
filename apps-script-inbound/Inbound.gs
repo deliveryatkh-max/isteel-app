@@ -566,6 +566,23 @@ function pdf_(p, user) {
   return { name: rec.id + '.pdf', b64: Utilities.base64Encode(pdfFile_(rec).getBlob().getBytes()) };
 }
 /** Send Email button: p.lists (names), p.extra (typed addresses), p.note. */
+/** Message text to e-mail HTML: blank lines split paragraphs, "- " lines become a list, "Heading:" lines are bold. */
+function noteHtml_(note) {
+  return String(note).replace(/\r/g, '').split(/\n\s*\n/).map(block => {
+    const lines = block.split('\n').filter(x => x.trim() !== '');
+    let out = '', list = [];
+    const flush = () => { if (list.length) out += '<ul style="margin:4px 0 0;padding-left:20px">' + list.map(x => '<li style="margin:2px 0">' + x + '</li>').join('') + '</ul>'; list = []; };
+    lines.forEach(l => {
+      const m = /^\s*[-•*]\s+(.*)$/.exec(l);
+      if (m) { const kv = /^([^:]{1,40}):\s*(.*)$/.exec(m[1]); list.push(kv ? '<b>' + esc_(kv[1]) + ':</b> ' + esc_(kv[2]) : esc_(m[1])); return; }
+      flush();
+      out += /^[^:]{1,40}:$/.test(l.trim()) ? '<div style="font-weight:700;margin-top:4px">' + esc_(l.trim()) + '</div>' : (out && !/<\/ul>$/.test(out) ? '<br>' : '') + esc_(l);
+    });
+    flush();
+    return '<div style="margin:0 0 12px">' + out + '</div>';
+  }).join('');
+}
+
 function email_(p, user) {
   const rec = doneRec_(p.id);
   const extra = String(p.extra || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
@@ -581,19 +598,19 @@ function email_(p, user) {
   const file = pdfFile_(rec);
   const less = rec.items.some(isLess_), dmg = rec.items.some(i => Number(i.dmgQty) > 0);
   const row = (k, v) => (v === '' || v == null ? '' : '<tr><td style="padding:4px 8px;background:#f2f5f9;font-weight:600;border:1px solid #d6dee8">' + esc_(k) + '</td><td style="padding:4px 8px;border:1px solid #d6dee8">' + esc_(v) + '</td></tr>');
-  const note = clip_(p.note, 4000), url = setting_('APP_URL');
-  const html = '<div style="font-family:Arial,\'Noto Sans Khmer\',sans-serif;color:#011e41;max-width:680px">' +
-    (note ? '<p style="white-space:pre-line">' + esc_(note) + '</p>' : '') +
-    '<div style="background:#011e41;color:#fff;padding:12px 16px;border-radius:8px"><div style="font-size:12px;opacity:.8">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>' +
+  const note = clip_(p.note, 4000);
+  const card = '<div style="background:#011e41;color:#fff;padding:12px 16px;border-radius:8px;margin-bottom:14px"><div style="font-size:12px;opacity:.8">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>' +
     '<div style="font-size:18px;font-weight:700">' + esc_(rec.id) + ' · ' + esc_(rec.truck) + '</div><div style="font-size:12px;opacity:.85">' +
-    esc_([rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>' +
-    '<table style="border-collapse:collapse;width:100%;margin-top:10px;font-size:13px">' +
+    esc_([rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>';
+  // With a message, the message carries the summary; without one, a details table is shown instead
+  const table = '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
     row('Inbound / Ref.', [rec.inbound, rec.ref].filter(String).join(' · ')) + row('3PL DN', rec.dn3pl) + row('Items', rec.items.length) +
     row('Received', kg_(tot_(rec, 'grQty')) + ' ' + rec.uom + ' of ' + kg_(tot_(rec, 'arrQty')) + ' arrived') +
     row('Damaged', dmg ? kg_(tot_(rec, 'dmgQty')) + ' ' + rec.uom : 'No') + row('Received less', less ? 'Yes' : 'No') +
     row('Time spent', spent_(rec) + ' min · ' + rec.manpower + ' people') + row('Remark', rec.remark) + '</table>' +
-    (url ? '<p><a href="' + esc_(url) + '#/r/' + encodeURIComponent(rec.id) + '">Open in the iSteel app</a></p>' : '') +
-    '<p style="color:#546274;font-size:12px">The PDF report is attached.</p></div>';
+    '<p style="color:#546274;font-size:12px">The PDF report is attached.</p>';
+  const html = '<div style="font-family:Arial,\'Noto Sans Khmer\',sans-serif;font-size:14px;line-height:1.5;color:#011e41;max-width:680px">' +
+    card + (note ? noteHtml_(note) : table) + '</div>';
   MailApp.sendEmail({ to: to.join(','), subject: 'Goods receipt ' + rec.id + ': ' + rec.po + ' · ' + rec.truck + (dmg ? ' · DAMAGED' : '') + (less ? ' · RECEIVED LESS' : ''),
     htmlBody: html, name: 'ISI Steel Inbound', replyTo: user.email || '', attachments: [file.getBlob().setName(rec.id + '.pdf')] });
   return { sent: to.length };
