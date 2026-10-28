@@ -855,7 +855,7 @@
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
-    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.voiceData ? `<div class="kv"><span>🎤 ${t('សំឡេង', 'Voice')}</span></div><audio controls preload="none" src="${d.voiceData}"></audio>` : ''}${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
+    html += sec(`📝 ${t('អ្វីកើតឡើង', 'What happened')}`, `<p class="story">${esc(d.story)}</p>${d.voice ? `<div class="kv"><span>🎤 ${t('សំឡេង', 'Voice')}</span></div><div id="voiceSlot">${d.voiceData ? `<audio controls preload="none" src="${d.voiceData}"></audio>` : `<p class="hint">${t('កំពុងផ្ទុក…', 'Loading…')}</p>`}</div>` : ''}${d.couldHappen ? `<p class="hint">${t('អាចកើតឡើង៖', 'Could have happened:')} ${esc(d.couldHappen)}</p>` : ''}
       ${(d.people || []).map(p => `<div class="kv"><span>${p.injured ? '🤕' : '👤'} ${esc(p.name)}</span><b>${esc([pick(ROLES, p.role), pick(COMPANIES, p.company), p.injury].filter(Boolean).join(' · '))}</b></div>`).join('')}`);
     html += sec(`🩹 ${t('របួស និងការខូចខាត', 'Injury and damage')}`, kv('មានអ្នករងរបួស', 'Anyone injured', pick(YESNO, d.anyInjured)) +
       (d.injuredList || []).map(x => `<div class="kv"><span>🤕 ${esc(x.name)}</span><b>${esc([pick(INJ_TYPES, x.type), x.lti ? 'LTI' : ''].filter(Boolean).join(' · '))}</b></div>`).join('') +
@@ -873,15 +873,45 @@
         : `<p class="hint">${t('មិនទាន់មានវិធានការ', 'No actions yet')}</p>`}
       ${c.actions ? `<div class="newact">${recTicks(d.type)}<input class="in opt" id="naWhat" placeholder="${esc(t('វិធានការផ្សេងទៀត (បើមិនមានក្នុងបញ្ជី)', 'Other action (if not in the list)'))}"><div class="row2"><input class="in" id="naOwner" placeholder="${esc(t('អ្នកទទួលខុសត្រូវ', 'Owner'))}"><input class="in" id="naDue" type="date"></div></div>` : ''}
       ${c.actions || c.close ? `<div class="actbtns${c.actions && c.close ? ' two' : ''}">${c.actions ? `<button class="btn big" id="saveActs">💾 ${t('រក្សាទុកវិធានការ', 'Save actions')}</button>` : ''}${c.close ? `<button class="btn big" id="closeBtn">🔒 ${t('បិទករណីនេះ', 'Close this case')}</button>` : ''}</div>` : ''}</div>`;
-    if ((d.photoThumbs || []).length) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')}</h2><div class="photos">${d.photoThumbs.map(u => `<a class="ph" href="${u}" target="_blank" rel="noopener"><img src="${u}" alt=""></a>`).join('')}</div></div>`;
+    const nPh = (d.photos || []).length;
+    if (nPh) html += `<div class="card sec"><h2>📷 ${t('រូបថត', 'Photos')} (${nPh})</h2><div class="photos">${d.photos.map((x, i) => `<button type="button" class="ph view" data-ph="${i}">${(d.photoThumbs || [])[i] ? `<img src="${d.photoThumbs[i]}" alt="">` : '<span class="spin"></span>'}</button>`).join('')}</div></div>`;
     html += sec(`🕓 ${t('ប្រវត្តិ', 'History')}`, (d.history || []).slice().reverse().map(h => `<div class="kv"><span>${esc(h.at)}</span><b>${esc(h.by)}: ${esc(h.what)}</b></div>`).join(''));
     $('#view').innerHTML = html;
     wireReport();
   }
 
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
+  // Photos and the voice note load after the report is on screen; tapping a photo opens it here, in the app.
+  async function loadMedia(d) {
+    if (d.photoThumbs || !((d.photos || []).length || d.voice)) return;
+    try {
+      const m = await api('media', { id: d.id });
+      d.photoThumbs = m.photos || []; d.voiceData = m.voice || '';
+    } catch (e) { d.photoThumbs = []; d.voiceData = ''; }
+    if (cur !== d) return;
+    $$('[data-ph]').forEach(b => { const u = d.photoThumbs[+b.dataset.ph]; b.innerHTML = u ? `<img src="${u}" alt="">` : '⚠️'; });
+    const vs = $('#voiceSlot');
+    if (vs) vs.innerHTML = d.voiceData ? `<audio controls preload="none" src="${d.voiceData}"></audio>` : `<p class="hint">${t('មិនអាចបើកសំឡេង', 'Voice note could not be loaded')}</p>`;
+  }
+  function viewPhoto(d, i) {
+    const box = document.createElement('div');
+    box.className = 'lightbox';
+    box.innerHTML = `<button type="button" class="lb-x" aria-label="Close">✕</button>${(d.photoThumbs || [])[i] ? `<img src="${d.photoThumbs[i]}" alt="">` : ''}<span class="spin"></span>`;
+    const close = () => { box.remove(); document.removeEventListener('keydown', esc_); };
+    const esc_ = e => { if (e.key === 'Escape') close(); };
+    box.onclick = close;
+    document.addEventListener('keydown', esc_);
+    document.body.appendChild(box);
+    d.fullPhotos = d.fullPhotos || {};
+    const show = u => { if (!box.isConnected) return; const sp = box.querySelector('.spin'); if (sp) sp.remove(); let im = box.querySelector('img'); if (!im) { im = document.createElement('img'); box.appendChild(im); } im.src = u; };
+    if (d.fullPhotos[i]) return show(d.fullPhotos[i]);
+    api('photo', { id: d.id, i }).then(r => { d.fullPhotos[i] = r.data; show(r.data); }).catch(() => { const sp = box.querySelector('.spin'); if (sp) sp.remove(); });
+  }
+
   function wireReport() {
     const d = cur;
+    $$('[data-ph]').forEach(b => { b.onclick = () => viewPhoto(d, +b.dataset.ph); });
+    loadMedia(d);
     $('#pdfBtn').onclick = async () => {
       const b = $('#pdfBtn'); busy(b, true, 'PDF');
       try {
@@ -1123,7 +1153,9 @@
       if (action === 'boot' || action === 'publicBoot') return boot();
       if (action === 'list') return boot().reports;
       const find = id => db.reports.find(x => x.id === id) || fail('Report not found.', 'រកមិនឃើញរបាយការណ៍នេះទេ។');
-      if (action === 'get') { const d = find(p.id); return Object.assign({}, d, { can: can(d) }); }
+      if (action === 'get') { const d = find(p.id); const o = Object.assign({}, d, { can: can(d), photos: d.photos || (d.photoThumbs || []).map((x, i) => 'demo' + i) }); delete o.photoThumbs; delete o.voiceData; return o; }
+      if (action === 'media') { const d = find(p.id); return { photos: d.photoThumbs || [], voice: d.voiceData || '' }; }
+      if (action === 'photo') { const d = find(p.id); return { data: (d.photoThumbs || [])[p.i] || '' }; }
       if (action === 'submit' || action === 'publicSubmit') {
         if (!p.anonymous && !p.signature) fail('Please sign before sending.', 'សូមចុះហត្ថលេខាមុនពេលផ្ញើ។');
         const old = p.id ? find(p.id) : null;

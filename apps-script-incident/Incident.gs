@@ -88,6 +88,8 @@ function route_(action, p, user) {
     case 'boot': return boot_(user);
     case 'list': return list_(user);
     case 'get': return view_(getReport_(p.id, user), user);
+    case 'media': return media_(getReport_(p.id, user));
+    case 'photo': return photo_(getReport_(p.id, user), Number(p.i) || 0);
     case 'submit': return submit_(p, user);
     case 'sign': return sign_(p, user);
     case 'sendBack': return sendBack_(p, user);
@@ -391,20 +393,11 @@ function getReport_(id, user) {
   if (!canSee_(row, user)) fail_('DENIED', 'You cannot open this report.', 'អ្នកមិនអាចបើករបាយការណ៍នេះបានទេ។');
   return d;
 }
-/** What the app gets: the report plus what this person may do with it. Signature/photo files stay in Drive. */
+/** What the app gets: the report plus what this person may do with it. Photos and the voice note come separately
+ *  (media_), so the report opens straight away. */
 function view_(d, user) {
   const sup = isSupervisorFor_(d, user);
-  // Photos come back small (Drive thumbnail, or the photo itself, already shrunk on the phone) so the supervisor sees them.
-  const thumbs = (d.photos || []).map(id => {
-    try {
-      const f = DriveApp.getFileById(id);
-      const b = f.getThumbnail() || f.getBlob();
-      return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
-    } catch (e) { return ''; }
-  }).filter(Boolean);
-  let voiceData = '';
-  if (d.voice) try { const b = DriveApp.getFileById(d.voice).getBlob(); voiceData = 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) { /* file gone */ }
-  return Object.assign({}, d, { photoThumbs: thumbs, voiceData: voiceData,
+  return Object.assign({}, d, {
     can: {
       edit: d.status === STATUS.back && d.reporter.email === user.email,
       sign: d.status === STATUS.wait && sup,
@@ -413,6 +406,30 @@ function view_(d, user) {
       email: d.status === STATUS.signed || d.status === STATUS.closed,
     },
   });
+}
+
+const dataUrl_ = (b, type) => 'data:' + (b.getContentType() || type) + ';base64,' + Utilities.base64Encode(b.getBytes());
+/** Small photos (Drive thumbnail, kept in the cache) and the voice note for the report screen. */
+function media_(d) {
+  const cache = CacheService.getScriptCache();
+  const photos = (d.photos || []).map(id => {
+    const k = 'irth:' + id, hit = cache.get(k);
+    if (hit) return hit;
+    try {
+      const f = DriveApp.getFileById(id), u = dataUrl_(f.getThumbnail() || f.getBlob(), 'image/jpeg');
+      if (u.length < 95000) cache.put(k, u, 21600);
+      return u;
+    } catch (e) { return ''; }
+  });
+  let voice = '';
+  if (d.voice) try { voice = dataUrl_(DriveApp.getFileById(d.voice).getBlob(), 'audio/webm'); } catch (e) { /* file gone */ }
+  return { photos, voice };
+}
+/** One photo in full size, for the photo viewer. */
+function photo_(d, i) {
+  const id = (d.photos || [])[i];
+  if (!id) fail_('BAD', 'Photo not found.', 'រកមិនឃើញរូបថត។');
+  return { data: dataUrl_(DriveApp.getFileById(id).getBlob(), 'image/jpeg') };
 }
 
 function nextId_() {
