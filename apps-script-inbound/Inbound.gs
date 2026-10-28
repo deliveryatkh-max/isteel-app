@@ -114,6 +114,13 @@ function objs_(name, cols) {
 
 // ---------------------------------------------------------------- setup (run once from the editor)
 /** Adds the tabs and the Drive folder. Safe to run again. */
+/** Run once from the editor to allow Google Docs (PDF) and email. */
+function authorize() {
+  var doc = DocumentApp.create('Inbound permission check');
+  DriveApp.getFileById(doc.getId()).setTrashed(true);
+  Logger.log('OK. Emails left today: ' + MailApp.getRemainingDailyQuota());
+}
+
 function setup() {
   const plan = sheet_(SH.PLAN, PLAN_COLS);
   plan.getRange(1, 6, plan.getMaxRows(), 1).setNumberFormat('#,##0');   // Kg stays a number
