@@ -22,7 +22,7 @@ const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpeg-photo').toString('ba
 const env = makeEnv({ file: path.join(ROOT, 'apps-script-inbound/Inbound.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
   props: { SESSION_SECRET: 's3cret', USERS_SHEET_ID: 'USERS', GOOGLE_CLIENT_ID: 'cid', TELEGRAM_BOT_TOKEN: 'bot' } });
 env.g.setup();
-eq(env.ss.getSheets().map(s => s.getName()), ['Incoming Plan', 'GR Log', 'Receipts', 'IB Settings'], 'tabs (empty Sheet1 removed)');
+eq(env.ss.getSheets().map(s => s.getName()), ['Incoming Plan', 'GR Log', 'Receipts', 'IB Settings', 'Email Lists'], 'tabs (empty Sheet1 removed)');
 ok(env.props.IB_FOLDER_ID, 'photo folder made');
 
 // Kim pastes the Incoming Packing List (dates and numbers as Sheets gives them)
@@ -114,5 +114,19 @@ ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012725' })
 pl = must(call('kim@x.com', 'planDel', { po: 'PO5100099999' }));
 eq(pl.map(x => x.po).sort(), ['PO5100012725', 'PO5100012725', 'PO5100012751'], 'PO deleted');
 eq(env.ss.getSheetByName('Incoming Plan').rows.slice(1).filter(r => r && r.some(c => String(c).trim())).map(r => r[0]), ['1', '2', '3'], 'No. renumbered');
+
+// PDF report and email
+ok(/finished/.test(call('sok@x.com', 'pdf', { id: r2.id }).error), 'no PDF while unloading');
+const pd = must(call('sok@x.com', 'pdf', { id: r.id }));
+ok(pd.name === r.id + '.pdf' && pd.b64.length > 0, 'PDF made');
+const mail = env.ss.getSheetByName('Email Lists'); ok(mail, 'Email Lists tab');
+mail.rows[1][1] = 'wh1@x.com, wh2@x.com; bad';
+eq(must(call('sok@x.com', 'boot', {})).lists, [{ name: 'Warehouse', count: 2 }], 'lists with emails only');
+ok(/Check these/.test(call('sok@x.com', 'email', { id: r.id, extra: 'nope' }).error), 'bad email refused');
+ok(/Tick a list/.test(call('sok@x.com', 'email', { id: r.id }).error), 'nobody to send to');
+eq(must(call('sok@x.com', 'email', { id: r.id, lists: ['Warehouse'], extra: 'boss@x.com wh1@x.com', note: 'hi' })), { sent: 3 }, 'sent once per person');
+const m = env.mails[env.mails.length - 1];
+ok(Object.values(env.files).filter(f => f.name === r.id + '.pdf' && !f.trashed).length === 1, 'PDF reused, not made twice');
+ok(m.to === 'wh1@x.com,wh2@x.com,boss@x.com' && m.attachments.length === 1 && /Goods receipt/.test(m.subject), 'email with PDF');
 
 console.log('Inbound.gs: ' + pass + ' checks passed');

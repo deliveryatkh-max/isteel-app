@@ -16,6 +16,7 @@
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
   let CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'];
+  let LISTS = [{ name: 'Warehouse', count: 3 }, { name: 'Procurement', count: 2 }, { name: 'Finance', count: 1 }];   // email lists (Email Lists tab)
 
   // ------------------------------------------------------------------ time helpers
   const pad = n => String(n).padStart(2, '0');
@@ -135,6 +136,7 @@
     setPlan(d.plan || []); DATA = d.receipts || []; USER = d.user || null;
     if (d.plates && d.plates.length) PLATES = d.plates;
     if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
+    LISTS = d.lists || [];
   }
   function load() {
     if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
@@ -144,7 +146,7 @@
   }
   function save() {
     if (DEMO) set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA }));
-    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER }));
+    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER, lists: LISTS }));
   }
   const canEdit = r => DEMO || (USER && (USER.admin || USER.reviewer || r.byEmail === USER.email));
 
@@ -336,7 +338,7 @@
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl">
-      <thead><tr><th class="n c1">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
+      <thead><tr><th class="n c1">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួល', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
@@ -616,8 +618,78 @@
       </div>
       <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
       </section>
-      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `<button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
+      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `
+      <section class="card rep"><h2>📄 ${t('របាយការណ៍', 'Report')}</h2>
+        <div class="rep2"><button class="btn ok big" id="pdfBtn">📄 ${t('បង្កើតរបាយការណ៍ PDF', 'Generate Report (PDF)')}</button>
+        <button class="btn big" id="mailBtn">✉️ ${t('ផ្ញើអ៊ីមែល', 'Send Email')}</button></div><div id="mailBox"></div></section>
+      <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
+    if (!isLive(r)) {
+      $('#pdfBtn').onclick = () => makePdf(r, $('#pdfBtn'));
+      $('#mailBtn').onclick = () => paintMail(r);
+    }
     const b = $('#fin') || $('#edit'); if (!canEdit(r) && !isLive(r)) { b.remove(); return; } b.onclick = () => { F = null; location.hash = '#/edit/' + id; };
+  }
+
+  // ------------------------------------------------------------------ PDF report + email (Kim, 28 Oct 2026)
+  function busy(b, on, txt) {
+    if (on) { b.dataset.html = b.innerHTML; b.disabled = true; b.innerHTML = '<span class="spinner"></span> ' + (txt || t('កំពុងដំណើរការ…', 'Working…')); }
+    else if (b.isConnected) { b.disabled = false; b.innerHTML = b.dataset.html || b.innerHTML; }
+  }
+  // the Apps Script is updated by hand after a web release: say so instead of "Unknown action"
+  const oldScript = e => (/Unknown action/i.test(e.message) ? t('សូមឲ្យ Admin ធ្វើបច្ចុប្បន្នភាព Inbound Apps Script', 'Ask the admin to update the Inbound Apps Script') : e.message);
+  async function makePdf(r, b) {
+    if (DEMO) { preview(r); return; }
+    busy(b, true, t('កំពុងបង្កើត PDF…', 'Making the PDF…'));
+    try {
+      const x = await api('pdf', { id: r.id });
+      const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = x.name || r.id + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { toast('⚠️ ' + oldScript(e)); }
+    busy(b, false);
+  }
+  function paintMail(r) {
+    const box = $('#mailBox');
+    if (box.innerHTML) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="mailbox"><b>✉️ ${t('ផ្ញើរបាយការណ៍តាមអ៊ីមែល', 'Email the report')}</b>
+      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}"> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
+        : `<p class="hint">${t('មិនទាន់មានបញ្ជីអ៊ីមែលទេ (Email Lists ក្នុង Sheet)', 'No email lists yet (Email Lists tab in the Sheet)')}</p>`}
+      <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
+      <label class="f" for="mailNote">${t('សារ (បើមាន)', 'Message (optional)')}</label><textarea class="in" id="mailNote" rows="2"></textarea>
+      <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF', 'The PDF report is attached')}</p>
+      <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button></div>`;
+    $('#mailSend').onclick = async () => {
+      const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = $('#mailExtra').value.trim();
+      if (!lists.length && !extra) { toast('⚠️ ' + t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
+      if (DEMO) { const n = LISTS.filter(l => lists.indexOf(l.name) >= 0).reduce((s, l) => s + l.count, 0) + (extra ? extra.split(/[\s,;]+/).length : 0); toast('🧪 ' + t('សាកល្បង៖ នឹងផ្ញើទៅ ', 'Demo: would send to ') + n + t(' នាក់', ' people')); box.innerHTML = ''; return; }
+      const b = $('#mailSend'); busy(b, true, t('កំពុងផ្ញើ…', 'Sending…'));
+      try { const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value }); toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people')); box.innerHTML = ''; }
+      catch (e) { toast('⚠️ ' + oldScript(e)); busy(b, false); }
+    };
+  }
+  // Demo only: how the PDF page looks (the real one is made by the Apps Script)
+  function preview(r) {
+    const two = (km, en) => `${km} · ${en}`, ph = r.ph || {}, v = x => (x === '' || x == null ? '-' : esc(x));
+    const kv = rows => `<table class="pkv">${rows.map(q => `<tr><th>${q[0]}</th><td>${v(q[1])}</td><th>${q[2]}</th><td>${v(q[3])}</td></tr>`).join('')}</table>`;
+    const dp = [].concat.apply([], (r.items || []).map(i => i.dmgPh || []));
+    const box = document.createElement('div'); box.className = 'pdfv';
+    box.innerHTML = `<div class="pbar"><b>📄 ${esc(r.id)}.pdf</b><button type="button" class="btn sm" id="pvX">✕</button></div><div class="page">
+      <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><div class="plogo">ISI <span>STEEL</span></div></div>
+      <h4>A. ${two('ព័ត៌មានទទួល', 'RECEIPT')}</h4>${kv([[two('លេខ PO', 'PO Number'), r.po, two('លេខ Inbound', 'Inbound No.'), r.inbound], ['Ref. No.', r.ref, two('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
+        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : '']])}
+      <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
+      <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
+        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc((DMG.find(d => d[0] === i.dmgType) || [, , , ''])[3]) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
+        <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
+      <h4>C. ${two('ពេលវេលា និងកម្មករ', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('កម្មករ', 'Manpower'), r.manpower],
+        [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
+      <h4>D. ${two('រូបថតឡាន', 'TRUCK PHOTOS')}</h4><div class="pph">${PHOTOS.map(x => `<div>${phImg(ph[x[0]], x[1])}</div>`).join('')}</div>
+      ${dp.length ? `<h4>E. ${two('រូបថតខូចខាត', 'DAMAGE PHOTOS')} (${dp.length})</h4><div class="pph sm">${dp.map(x => `<div>${phImg(x, '⚠️')}</div>`).join('')}</div>` : ''}
+      <h4>${two('អ្នកកត់ត្រា', 'RECORDED BY')}</h4>${kv([[two('មកដល់', 'Arrival by'), r.by, two('បញ្ចប់ដោយ', 'Finished by'), r.finishedBy || r.by]])}
+    </div>`;
+    document.body.appendChild(box);
+    $('#pvX').onclick = () => box.remove();
   }
 
   // ------------------------------------------------------------------ Summary
@@ -825,15 +897,15 @@
   function renderPlanNew() {
     paintTabs('plan');
     if (!NP) NP = { po: '', inbound: '', ref: '', eta: '', supplier: '', lines: [{ material: '', desc: '', kg: '', pcs: '' }] };
-    const f = (k, km, en, ty, req) => `<label class="lbl">${t(km, en)}${req ? ' <span class="req">*</span>' : ''}</label><input class="in" data-np="${k}" type="${ty || 'text'}" value="${esc(NP[k])}">`;
+    const f = (k, km, en, ty, req) => `<label class="f">${t(km, en)}${req ? ' <span class="req">*</span>' : ''}</label><input class="in" data-np="${k}" type="${ty || 'text'}" value="${esc(NP[k])}">`;
     view(`
       <div class="head2"><h2>✍️ ${t('បន្ថែម PO', 'Add a PO')}</h2><a class="link" href="#/plan">✕</a></div>
       <section class="card">${f('po', 'លេខ PO', 'PO Number', '', 1)}${f('inbound', 'លេខ Inbound', 'Inbound Number')}${f('ref', 'Ref. No.', 'Ref. No.')}${f('eta', 'ETA', 'ETA', 'date')}${f('supplier', 'អ្នកផ្គត់ផ្គង់', 'Supplier')}</section>
       ${NP.lines.map((l, i) => `<section class="card mt"><h2><span class="n">${i + 1}</span>${t('មុខទំនិញ', 'Line')}${NP.lines.length > 1 ? `<button class="btn sm ghost" data-rm="${i}" style="margin-left:auto">✕</button>` : ''}</h2>
-        <label class="lbl">${t('សម្ភារៈ', 'Material')} <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="material" value="${esc(l.material)}" inputmode="numeric">
-        <label class="lbl">${t('ការពិពណ៌នា', 'Description')}</label><input class="in" data-ln="${i}" data-k="desc" value="${esc(l.desc)}">
-        <div class="timebox"><div><label class="lbl">Kg <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="kg" value="${esc(l.kg)}" inputmode="decimal"></div>
-        <div><label class="lbl">PCS</label><input class="in" data-ln="${i}" data-k="pcs" value="${esc(l.pcs)}" inputmode="numeric"></div></div></section>`).join('')}
+        <label class="f">${t('សម្ភារៈ', 'Material')} <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="material" value="${esc(l.material)}" inputmode="numeric">
+        <label class="f">${t('ការពិពណ៌នា', 'Description')}</label><input class="in" data-ln="${i}" data-k="desc" value="${esc(l.desc)}">
+        <div class="timebox"><div><label class="f">Kg <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="kg" value="${esc(l.kg)}" inputmode="decimal"></div>
+        <div><label class="f">PCS</label><input class="in" data-ln="${i}" data-k="pcs" value="${esc(l.pcs)}" inputmode="numeric"></div></div></section>`).join('')}
       <button class="btn mt" id="addLn" style="width:100%">＋ ${t('បន្ថែមមុខទំនិញ', 'Add a line')}</button>
       <button class="btn ok big mt" id="saveNp">💾 ${t('រក្សាទុក', 'Save')}</button>`);
     const grab = () => { $$('[data-np]').forEach(el => { NP[el.dataset.np] = el.value.trim(); }); $$('[data-ln]').forEach(el => { NP.lines[+el.dataset.ln][el.dataset.k] = el.value.trim(); }); };
