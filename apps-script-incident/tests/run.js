@@ -82,8 +82,13 @@ const supList = must(call('sup@x.com', 'list', {}));
 ok(supList[0].toSign, 'supervisor has it to sign');
 ok(/^DENIED/.test(call('other@x.com', 'get', { id: r1.id }).error), 'other cannot open');
 let d = must(call('driver@x.com', 'get', { id: r1.id }));
-eq(d.photos.length, 2); eq(d.photoThumbs.length, 2, 'photos come back');
-ok(d.voice && /^data:audio\/webm;base64,/.test(d.voiceData), 'voice note saved and comes back');
+eq(d.photos.length, 2); ok(!d.photoThumbs && !d.voiceData, 'report comes back without media');
+const md = must(call('sup@x.com', 'media', { id: d.id }));
+eq(md.photos.length, 2, 'photos come back');
+ok(d.voice && /^data:audio\/webm;base64,/.test(md.voice), 'voice note saved and comes back');
+eq(must(call('sup@x.com', 'media', { id: d.id })).photos, md.photos, 'thumbnails from the cache');
+ok(/^data:image\//.test(must(call('sup@x.com', 'photo', { id: d.id, i: 1 })).data), 'full photo');
+ok(call('nobody@x.com', 'media', { id: d.id }).error, 'media needs access');
 ok(!d.can.sign && !d.can.edit, 'reporter cannot sign');
 ok(/^DENIED/.test(call('driver@x.com', 'sign', { id: r1.id, signature: SIG }).error), 'reporter cannot sign');
 
@@ -115,10 +120,56 @@ ok(Object.values(env.files).filter(f => f.name === r1.id + '.pdf' && !f.trashed)
 ok(Object.values(env.files).filter(f => /document/.test(f.mime)).every(f => f.trashed), 'temp Doc trashed');
 row = env.ss.getSheetByName('Incidents').rows[1];
 eq(col('Supervisor'), 'Pisey'); ok(col('PDF Link'), 'PDF link in sheet');
+ok(pdfDoc.tpl, 'PDF filled from the Word template');
+eq(pdfDoc.font, 'Kantumruy Pro', 'PDF font set to a Google font');
+ok(!/\{\{/.test(text), 'no placeholders left: ' + (text.match(/\{\{[^}]*\}\}/g) || []).join(' '));
+ok(/8100452231/.test(text) && /Pisey/.test(text), 'values filled');
+const tplFile = Object.values(env.files).find(f => f.tpl && f.name === 'Incident Report Template');
+ok(tplFile && !tplFile.trashed && env.templateUploads === 1, 'template loaded once and kept');
 
 // pdf for the app
 const pdf = must(call('driver@x.com', 'pdf', { id: r1.id }));
 ok(Buffer.from(pdf.b64, 'base64').toString().startsWith('%PDF'), 'pdf bytes');
+// a PDF saved by the old layout (no version) is made again from the template
+{ const x = env.g.load_(r1.id); x.pdf.v = undefined; env.g.store_(x); }
+const nDocs = Object.keys(env.docs).length;
+must(call('driver@x.com', 'pdf', { id: r1.id }));
+ok(Object.keys(env.docs).length === nDocs + 1 && Object.values(env.docs).pop().tpl, 'old-layout PDF remade from the template');
+ok(/^2\|/.test(env.g.load_(r1.id).pdf.v), 'new PDF stamped');
+must(call('driver@x.com', 'pdf', { id: r1.id }));
+eq(Object.keys(env.docs).length, nDocs + 1, 'same template: saved PDF reused');
+
+// template from Kim's Drive link: a Google Doc is used as it is, and an edit shows in the next PDF
+const GDOC = 'application/vnd.google-apps.document', DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const remade = () => { const n = Object.keys(env.docs).length; must(call('driver@x.com', 'pdf', { id: r1.id })); return Object.keys(env.docs).length > n; };
+env.files.gdocKimTemplate000000001 = { id: 'gdocKimTemplate000000001', name: 'Kim template', data: Buffer.from(''), mime: GDOC, parent: 'root', trashed: false, tpl: true, updated: 1000 };
+env.g.setSetting_('PDF_TEMPLATE_LINK', 'https://docs.google.com/document/d/gdocKimTemplate000000001/edit?usp=sharing');
+let up = env.templateUploads;
+ok(remade(), 'new template link: PDF remade');
+ok(!remade(), 'unchanged: PDF reused');
+env.files.gdocKimTemplate000000001.updated = 2000;
+ok(remade(), 'Doc edited: PDF remade');
+eq(env.templateUploads, up, 'Google Doc used without converting');
+// a Word file is converted again only when it changes
+env.files.docxKimTemplate000000001 = { id: 'docxKimTemplate000000001', name: 'Kim.docx', data: Buffer.from('PK'), mime: DOCX, parent: 'root', trashed: false, updated: 1000 };
+env.g.setSetting_('PDF_TEMPLATE_LINK', 'https://drive.google.com/file/d/docxKimTemplate000000001/view');
+ok(remade() && env.templateUploads === up + 1, 'Word link converted');
+ok(!remade() && env.templateUploads === up + 1, 'Word unchanged: no new conversion');
+env.files.docxKimTemplate000000001.updated = 3000;
+ok(remade() && env.templateUploads === up + 2, 'Word replaced: converted again');
+// a folder link uses the newest template in it
+env.folders.dKimTemplates0000000001 = { id: 'dKimTemplates0000000001', name: 'Templates', parent: 'root', trashed: false };
+env.files.gdocNewest00000000000001 = { id: 'gdocNewest00000000000001', name: 'v3', data: Buffer.from(''), mime: GDOC, parent: 'dKimTemplates0000000001', trashed: false, tpl: true, updated: 9000 };
+env.files.docxOlder000000000000001 = { id: 'docxOlder000000000000001', name: 'v2.docx', data: Buffer.from('PK'), mime: DOCX, parent: 'dKimTemplates0000000001', trashed: false, updated: 5000 };
+env.g.setSetting_('PDF_TEMPLATE_LINK', 'https://drive.google.com/drive/folders/dKimTemplates0000000001');
+ok(remade() && /^2\|gdocNewest/.test(env.g.load_(r1.id).pdf.v), 'folder: newest template used');
+env.g.setSetting_('PDF_TEMPLATE_LINK', '');
+// template gone and the Word file can't be fetched: built-in layout instead
+Object.values(env.files).filter(f => f.name === r1.id + '.pdf').forEach(f => { f.trashed = true; });
+tplFile.trashed = true; env.noTemplate = true;
+ok(must(call('driver@x.com', 'pdf', { id: r1.id })).b64, 'pdf without the template');
+ok(!Object.values(env.docs).pop().tpl && /Template PDF failed/.test(env.errors.pop()), 'fell back to the built-in layout');
+env.noTemplate = false;
 
 // email button
 ok(/list|email/i.test(call('driver@x.com', 'email', { id: r1.id, lists: [] }).error), 'needs a list');
