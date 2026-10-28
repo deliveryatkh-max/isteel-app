@@ -336,7 +336,7 @@
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl">
-      <thead><tr><th class="n">${t('បរិមាណ PO', 'PO Qty')}</th><th class="n${mode === 'arr' ? ' on' : ''}">${t('បរិមាណមកដល់', 'Arrival Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u">${t('ឯកតា', 'UoM')}</th></tr></thead>
+      <thead><tr><th class="n">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n${mode === 'arr' ? ' on' : ''}">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
@@ -500,7 +500,7 @@
       const miss = [];
       if (!F.po) miss.push(t('លេខ PO', 'PO number'));
       if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
-      else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('បរិមាណមកដល់', 'Arrival Qty'));
+      else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
       if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
@@ -606,7 +606,7 @@
         ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
       </div></section>
-      <section class="card"><h2>📦 ${t('ទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
+      <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
       <section class="card"><div class="kvs">
         ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនកម្មករ', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
