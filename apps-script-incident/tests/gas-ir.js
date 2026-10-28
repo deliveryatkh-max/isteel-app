@@ -95,7 +95,7 @@ function makeEnv(opts) {
       setGlyphType: () => o, setSpacingBefore: () => o, setSpacingAfter: () => o, appendInlineImage: () => img(), appendText: () => o, asParagraph: () => o,
       asText: () => ({ getText: () => text }), removeFromParent: () => { doc.parts.shift(); } }; return o; };
     const table = rows => { const cell = { setBackgroundColor: () => cell, editAsText: () => cell, setForegroundColor: () => cell, setBold: () => cell, setFontSize: () => cell, getChild: () => el('') };
-      return { setBorderColor() {}, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
+      return { setBorderColor() {}, editAsText: () => cell, getRow: () => ({ getNumCells: () => rows[0].length, getCell: () => cell }), getNumRows: () => rows.length }; };
     const body = {
       setMarginTop: () => body, setMarginBottom: () => body, setMarginLeft: () => body, setMarginRight: () => body, setAttributes: () => body,
       appendParagraph: t => { doc.parts.push(String(t)); return el(t); }, appendListItem: t => { doc.parts.push('• ' + t); return el(t); },

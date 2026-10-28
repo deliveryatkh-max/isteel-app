@@ -195,7 +195,7 @@
   function renderList(mode) {
     screen = () => renderList(mode);
     const all = mode === 'sign' ? toSign() : reports();
-    const draft = getJ('ir_draft', null);
+    const draft = getJ(draftKey(), null);
     const yr = String(new Date().getFullYear());
     const year = reports().filter(r => String(r.date || r.reported).slice(0, 4) === yr);
     const open = reports().filter(r => r.status !== 'Closed').length;
@@ -244,7 +244,11 @@
   let f = null;           // the report being filled in
   let editId = '';        // a returned report being sent again
   let sending = false;
-  const saveDraft = () => { if (!editId && f) set(PUBLIC ? 'ir_pdraft' : 'ir_draft', JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3), voice: f.voice && f.voice.length < 1500000 ? f.voice : '' }))); };
+  // A draft belongs to the person signed in, so a shared phone never shows someone else's report.
+  // The driver link (no sign-in) keeps no draft at all.
+  const draftKey = () => { const c = !PUBLIC && claims(); const em = (c && c.email) || (DEMO && B && B.user && B.user.email); return em ? 'ir_draft:' + String(em).toLowerCase() : ''; };
+  set('ir_draft', null); set('ir_pdraft', null);   // old shared drafts from before
+  const saveDraft = () => { if (!editId && f && draftKey()) set(draftKey(), JSON.stringify(Object.assign({}, f, { photos: f.photos.slice(0, 3), voice: f.voice && f.voice.length < 1500000 ? f.voice : '' }))); };
 
   async function openEdit(id) {
     $('#view').innerHTML = loader('កំពុងបើករបាយការណ៍', 'Opening the report');
@@ -261,7 +265,7 @@
   function renderForm(start, keep) {
     if (!keep) {
       editId = '';
-      f = start || Object.assign(EMPTY(), getJ(PUBLIC ? 'ir_pdraft' : 'ir_draft', {}));
+      f = start || Object.assign(EMPTY(), (draftKey() ? getJ(draftKey(), {}) : {}));
       if (!f.whys || f.whys.length < 5) f.whys = (f.whys || []).concat(['', '', '', '', '']).slice(0, 5);
       if (!f.reporterName && B && B.user) f.reporterName = B.user.name || '';
       if (!f.reporterPhone && B && B.user) f.reporterPhone = B.user.phone || '';
@@ -458,6 +462,8 @@
     $('#view').innerHTML = `${PUBLIC ? `<div class="alert ok pubnote">🚚 ${t('រាយការណ៍ដោយមិនចាំបាច់ចូលគណនី', 'Report without signing in')}</div>` : ''}
       <div class="formhead"><div class="head2"><h2>${editId ? t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again') + ' · ' + esc(editId) : t('រាយការណ៍ថ្មី', 'New report')}</h2><small>${t('ជំហាន', 'Step')} ${s}/5 <b class="pct">${Math.round(s / 5 * 100)}%</b></small></div>
       ${head}</div>${body}${nav}`;
+    // no browser suggestions from earlier reports or other people on this phone
+    $$('#view input, #view textarea').forEach(el => { if (el.type !== 'checkbox' && el.type !== 'radio' && el.type !== 'file') el.setAttribute('autocomplete', 'off'); });
     wireForm();
   }
 
@@ -556,7 +562,7 @@
     const cancel = $('#cancelForm');
     if (cancel) cancel.onclick = e => {
       if (!confirmBox(cancel, t('លុបសេចក្តីព្រាងនេះ?', 'Delete this draft?'))) { e.preventDefault(); return; }
-      set(PUBLIC ? 'ir_pdraft' : 'ir_draft', null); f = null;
+      if (draftKey()) set(draftKey(), null); f = null;
       if (PUBLIC) { e.preventDefault(); renderForm(null); }
     };
     const pl = $('#plate');
@@ -799,7 +805,7 @@
     delete payload.step; delete payload.can; delete payload.history; delete payload.dmg; delete payload.voiceData;
     try {
       const r = await api(PUBLIC ? 'publicSubmit' : 'submit', payload);
-      set(PUBLIC ? 'ir_pdraft' : 'ir_draft', null);
+      if (draftKey()) set(draftKey(), null);
       sending = false;
       const id = r.id;
       f = null; editId = ''; screen = () => {};
