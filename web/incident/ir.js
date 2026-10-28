@@ -823,16 +823,41 @@
 
   // ---------------------------------------------------------------- one report
   let cur = null;
+  // Reports opened before show at once from this phone's copy, then refresh quietly (photos stay in memory only).
+  const repKey = () => { const k = draftKey(); return k ? k.replace('ir_draft:', 'ir_reps:') : ''; };
+  const repStore = () => (repKey() ? getJ(repKey(), {}) : {});
+  const plain = d => { const o = Object.assign({}, d); delete o.photoThumbs; delete o.voiceData; delete o.fullPhotos; delete o.mediaBusy; return o; };
+  function keepReport(d) {
+    if (!repKey()) return;
+    const all = repStore(); all[d.id] = Object.assign(plain(d), { _at: Date.now() });
+    const ids = Object.keys(all).sort((a, b) => all[b]._at - all[a]._at);
+    ids.slice(20).forEach(k => delete all[k]);
+    set(repKey(), JSON.stringify(all));
+  }
+  const memMedia = {};
+  const mediaKey = d => JSON.stringify(d.photos || []) + '|' + (d.voice || '');
+  const withMedia = d => { const m = memMedia[d.id]; if (!d.photoThumbs && m && m.k === mediaKey(d)) { d.photoThumbs = m.photoThumbs; d.voiceData = m.voiceData; } return d; };
   async function openReport(id) {
     screen = () => (cur && cur.id === id ? paintReport() : openReport(id));
-    const brief = reports().find(r => r.id === id);
-    $('#view').innerHTML = brief ? `<div class="item">${item(brief).replace(/^<a[^>]*>|<\/a>$/g, '')}</div>${loader('កំពុងបើករបាយការណ៍', 'Opening the report')}` : loader('កំពុងបើករបាយការណ៍', 'Opening the report');
-    try { cur = await api('get', { id }); paintReport(); }
-    catch (e) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><a class="btn mt" href="#/">${t('ទៅបញ្ជី', 'Back to the list')}</a></div>`; }
+    const saved = repStore()[id];
+    if (saved) { cur = Object.assign({}, saved); paintReport(); }
+    else {
+      const brief = reports().find(r => r.id === id);
+      $('#view').innerHTML = brief ? `<div class="item">${item(brief).replace(/^<a[^>]*>|<\/a>$/g, '')}</div>${loader('កំពុងបើករបាយការណ៍', 'Opening the report')}` : loader('កំពុងបើករបាយការណ៍', 'Opening the report');
+    }
+    try {
+      const d = await api('get', { id });
+      const same = saved && JSON.stringify(Object.assign({}, plain(saved), { _at: 0 })) === JSON.stringify(Object.assign({}, plain(d), { _at: 0 }));
+      keepReport(d);
+      if (!location.hash.endsWith('/r/' + encodeURIComponent(id)) && !location.hash.endsWith('/r/' + id)) return;
+      if (same) return;
+      cur = d; paintReport();
+    } catch (e) { if (!saved) $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><a class="btn mt" href="#/">${t('ទៅបញ្ជី', 'Back to the list')}</a></div>`; }
   }
 
   const kv = (km, en, v) => (v ? `<div class="kv"><span>${esc(t(km, en))}</span><b>${esc(v)}</b></div>` : '');
   function paintReport() {
+    withMedia(cur); keepReport(cur);
     const d = cur, c = d.can || {};
     const sc = d.severity && d.likelihood ? d.severity * d.likelihood : 0;
     const sec = (title, inner) => (inner.trim() ? `<div class="card sec"><h2>${title}</h2>${inner}</div>` : '');
@@ -883,13 +908,24 @@
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
   // Photos and the voice note load after the report is on screen; tapping a photo opens it here, in the app.
   async function loadMedia(d) {
-    if (d.photoThumbs || !((d.photos || []).length || d.voice)) return;
+    if ((d.photoThumbs && d.photoThumbs.some(Boolean)) || d.mediaBusy || !((d.photos || []).length || d.voice)) return;
+    d.mediaBusy = true;
+    let why = '';
     try {
       const m = await api('media', { id: d.id });
       d.photoThumbs = m.photos || []; d.voiceData = m.voice || '';
-    } catch (e) { d.photoThumbs = []; d.voiceData = ''; }
+      if (d.photoThumbs.some(Boolean)) memMedia[d.id] = { k: mediaKey(d), photoThumbs: d.photoThumbs, voiceData: d.voiceData };
+    } catch (e) { why = e.message; }
+    if (!(d.photoThumbs || []).some(Boolean)) {
+      // an Apps Script from before 'media' sends the photos with the report itself
+      try { const g = await api('get', { id: d.id }); if ((g.photoThumbs || []).some(Boolean)) { d.photoThumbs = g.photoThumbs; d.voiceData = g.voiceData || d.voiceData || ''; } }
+      catch (x) { why = why || x.message; }
+    }
+    d.mediaBusy = false;
+    d.photoThumbs = d.photoThumbs || []; d.voiceData = d.voiceData || '';
     if (cur !== d) return;
     $$('[data-ph]').forEach(b => { const u = d.photoThumbs[+b.dataset.ph]; b.innerHTML = u ? `<img src="${u}" alt="">` : '⚠️'; });
+    if (!d.photoThumbs.some(Boolean) && $('[data-ph]')) { const box = $('[data-ph]').parentElement; if (box && !box.nextElementSibling) box.insertAdjacentHTML('afterend', `<p class="hint">⚠️ ${t('មិនអាចបើករូបថត', 'Photos could not be loaded')}${why ? ': ' + esc(why) : ''}</p>`); }
     const vs = $('#voiceSlot');
     if (vs) vs.innerHTML = d.voiceData ? `<audio controls preload="none" src="${d.voiceData}"></audio>` : `<p class="hint">${t('មិនអាចបើកសំឡេង', 'Voice note could not be loaded')}</p>`;
   }
