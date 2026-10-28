@@ -186,3 +186,24 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .tb .totr td { font-weight: 700; border-top: 2px solid var(--line); }
 .btn.bad { color: var(--bad); border-color: var(--bad); }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* items table: one colour per column, same colour on the number boxes (Kim, 28 Oct 2026) */
+:root { --c1: #475569; --c1b: #eef2f6; --c2: #0b62a4; --c2b: #e3f0fb; --c3: #1e7a3c; --c3b: #e3f4e7; --c4: #b45309; --c4b: #fdf0dc; --c5: #6b3fa0; --c5b: #f1e9f9; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c1: #cbd5e1; --c1b: #2a3442; --c2: #8cc8f5; --c2b: #12324d; --c3: #8fdca6; --c3b: #143a24; --c4: #f6c27a; --c4b: #45300f; --c5: #d1b3f2; --c5b: #34234a; } }
+:root[data-theme="dark"] { --c1: #cbd5e1; --c1b: #2a3442; --c2: #8cc8f5; --c2b: #12324d; --c3: #8fdca6; --c3b: #143a24; --c4: #f6c27a; --c4b: #45300f; --c5: #d1b3f2; --c5b: #34234a; }
+.itbl thead th { text-align: center; border-bottom: 0; padding: 6px 3px; }
+.itbl thead th + th { border-left: 2px solid var(--card); }
+.itbl .qrow td.u { text-align: center; }
+.itbl .qrow .qro, .itbl .qrow .qin { max-width: none; }
+.itbl th.c1, .itbl .qrow .c1 .qro, .itbl .qrow .c1 .qin { color: var(--c1); background: var(--c1b); }
+.itbl .qrow .c1 .qin { border-color: var(--c1); }
+.itbl th.c2, .itbl .qrow .c2 .qro, .itbl .qrow .c2 .qin { color: var(--c2); background: var(--c2b); }
+.itbl .qrow .c2 .qin { border-color: var(--c2); }
+.itbl th.c3, .itbl .qrow .c3 .qro, .itbl .qrow .c3 .qin { color: var(--c3); background: var(--c3b); }
+.itbl .qrow .c3 .qin { border-color: var(--c3); }
+.itbl th.c4, .itbl .qrow .c4 .qro, .itbl .qrow .c4 .qin { color: var(--c4); background: var(--c4b); }
+.itbl .qrow .c4 .qin { border-color: var(--c4); }
+.itbl th.c5, .itbl .qrow .c5 .qro, .itbl .qrow .c5 .qin { color: var(--c5); background: var(--c5b); }
+.itbl .qrow .c5 .qin { border-color: var(--c5); }
+.itbl .qrow .qro { font-weight: 600; text-align: right; }
+.itbl .qrow .c5 .qro { text-align: center; }
