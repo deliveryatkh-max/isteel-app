@@ -97,6 +97,12 @@ const ACTIONS = {
   adSave: saveAd_,
   adDelete: deleteAd_,
   adSeen: adSeen_,
+  umList: umList_,
+  umSave: umSave_,
+  umBulk: umBulk_,
+  umDept: umDeptSave_,
+  umOt: umOt_,
+  umOtSave: umOtSave_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -145,6 +151,12 @@ function homeApps_(p, user) {
   if (isReviewer_(user) && canUse_(user, 'fuel')) {
     const n = pendingCount_();
     if (n) out.badges = { fuel: n };
+  }
+  // 👥 User Management: admins only, with the number of access requests waiting (Kim, 28 Oct 2026).
+  if (isAdmin_(user)) {
+    out.apps.push('users');
+    const w = umWaiting_();
+    if (w) out.badges = Object.assign(out.badges || {}, { users: w });
   }
   return out;
 }
@@ -456,7 +468,7 @@ function requestAccess_(token, p) {
         dept ? '📱 ' + HOME_APPS.filter(a => apps[a.key]).map(a => a.col).join(', ') : null,
         '📧 ' + esc(email),
         '',
-        'Users sheet: Active = Yes ដើម្បីអនុញ្ញាត (កម្មវិធីតាមផ្នែកបានធីករួច) / set Active = Yes to allow (the apps for their department are already ticked).',
+        'អនុញ្ញាតនៅ 👥 អ្នកប្រើប្រាស់ / Approve in 👥 Users: https://isteel-app.pages.dev/users/#/req',
       ].filter(x => x !== null).join('\n') });
     } catch (e) { /* the request is saved in the sheet even if Telegram fails */ }
   }
@@ -2375,4 +2387,367 @@ function adSeen_(p, user) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------- User Management (Kim, 28 Oct 2026) ----------
+// One screen for admins (web/users/, the 👥 tile) to manage everyone for every iSteel app. It edits the same
+// Users tab every app already reads, so the apps need no change. Admins only. Nobody is deleted: switching a
+// person off keeps their history (Off At / Off Note). Every change is written to the "User Log" tab.
+// A person who sent "Request to Admin" is a row with Active = No and no Off At: that is the Requests list.
+
+const UM_LOG = 'User Log';
+const UM_LOG_COLS = ['Time', 'By', 'Email', 'Name', 'Change'];
+const UM_ROLES = ['user', 'reviewer', 'admin'];
+const DELIVERY_ROLES = ['Security', 'Logistics', 'Warehouse', 'Driver', 'Supervisor', 'Admin'];   // as in Delivery.gs
+const DELIVERY_ROLE_HEAD = 'Delivery Role';
+// The OT app's own sheet (SSK_OT_DATA): line managers live in its "Employee & Approver" tab.
+const OT_SHEET_DEFAULT = '1K3rRyfY6jw-NmUAlKF4W8P246BjxfD78SVul72qkk44';
+const OT_EMP_TAB = 'Employee & Approver';
+
+function needAdmin_(user) {
+  if (!isAdmin_(user)) throw new Error('NOACCESS: Admins only. / សម្រាប់តែ Admin ប៉ុណ្ណោះ។');
+}
+
+/** The Users tab with its header; any of the named columns that are missing are added at the end. */
+function umSheet_(need) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.USERS);
+  let header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  (need || []).filter(h => header.indexOf(h) < 0).forEach(h => {
+    sheet.getRange(1, header.length + 1).setValue(h).setFontWeight('bold');
+    header.push(h);
+  });
+  const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
+  return { sheet, header, values, col: h => header.indexOf(h) };
+}
+
+function umUser_(ctx, r) {
+  const g = h => (ctx.col(h) >= 0 ? r[ctx.col(h)] : '');
+  const apps = {};
+  HOME_APPS.forEach(a => { if (ctx.col(a.col) >= 0) apps[a.key] = g(a.col) === true || isYes_(g(a.col)); });
+  const off = g('Off At');
+  const role = String(g('Role') || 'user').trim().toLowerCase();
+  return {
+    email: String(g('Email') || '').trim().toLowerCase(),
+    name: String(g('Name') || '').trim(),
+    role: UM_ROLES.indexOf(role) >= 0 ? role : 'user',
+    active: g('Active') === true || isYes_(g('Active')),
+    empId: String(g('Employee ID') || '').trim(),
+    dept: String(g('Department') || '').trim(),
+    apps: apps,
+    dRole: String(g(DELIVERY_ROLE_HEAD) || '').trim(),
+    offAt: off instanceof Date ? off.getTime() : (off ? new Date(off).getTime() || 0 : 0),
+    offNote: String(g('Off Note') || '').trim(),
+  };
+}
+
+/** Everything the screen needs in one call. */
+function umList_(p, user) {
+  needAdmin_(user);
+  const ctx = umSheet_();
+  return {
+    me: user.email,
+    users: ctx.values.map(r => umUser_(ctx, r)).filter(u => u.email),
+    apps: HOME_APPS.map(a => ({ key: a.key, col: a.col })),
+    depts: deptTable_(),
+    dRoles: DELIVERY_ROLES,
+    log: umLogRead_(60),
+  };
+}
+
+/** Count for the red badge on the 👥 tile: people waiting for an answer. */
+function umWaiting_() {
+  return readTable_(SHEETS.USERS).filter(u => String(u['Email'] || '').trim() && !(u['Active'] === true || isYes_(u['Active'])) && !u['Off At']).length;
+}
+
+function umCheck_(p, isNew) {
+  const out = {};
+  if (isNew) {
+    const email = String(p.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email. / សូមបញ្ចូលអ៊ីមែលឲ្យត្រឹមត្រូវ។');
+    out.email = email;
+  }
+  if (p.name !== undefined) {
+    out.name = String(p.name || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    if (!out.name) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
+  }
+  if (p.empId !== undefined) {
+    out.empId = String(p.empId || '').replace(/[០-៩]/g, d => String('០១២៣៤៥៦៧៨៩'.indexOf(d))).replace(/\s+/g, '');
+    if (out.empId && (!/^\d+$/.test(out.empId) || +out.empId < EMP_ID_MIN || +out.empId > EMP_ID_MAX)) {
+      throw new Error('Employee ID must be a number from ' + EMP_ID_MIN + ' to ' + EMP_ID_MAX + '. / លេខសម្គាល់បុគ្គលិក ត្រូវជាលេខពី ' + EMP_ID_MIN + ' ដល់ ' + EMP_ID_MAX + '។');
+    }
+  }
+  if (p.dept !== undefined) out.dept = String(p.dept || '').trim().slice(0, 100);
+  if (p.role !== undefined) {
+    out.role = String(p.role || '').toLowerCase();
+    if (UM_ROLES.indexOf(out.role) < 0) throw new Error('Unknown role.');
+  }
+  if (p.active !== undefined) out.active = !!p.active;
+  if (p.offNote !== undefined) out.offNote = String(p.offNote || '').trim().slice(0, 200);
+  if (p.dRole !== undefined) {
+    out.dRole = String(p.dRole || '').trim();
+    if (out.dRole && DELIVERY_ROLES.indexOf(out.dRole) < 0) throw new Error('Unknown Delivery Role.');
+  }
+  if (p.apps) {
+    out.apps = {};
+    HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
+  }
+  return out;
+}
+
+/** Writes one person's changes into the open Users tab; returns the log lines. Only cells that change are written. */
+function umWrite_(ctx, email, v, by, isNew) {
+  let i = ctx.values.findIndex(r => String(r[ctx.col('Email')] || '').trim().toLowerCase() === email);
+  if (isNew && i >= 0) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។');
+  if (!isNew && i < 0) throw new Error(email + ' is not in the Users tab.');
+  // Never lock yourself out.
+  if (email === by && ((v.role && v.role !== 'admin') || v.active === false)) {
+    throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។');
+  }
+  const log = [];
+  const sample = ctx.values.length ? ctx.values[0][ctx.col('Active')] : '';
+  const yesNo = (cur, on) => (typeof cur === 'boolean' || (isNew && typeof sample === 'boolean') ? on : (on ? 'Yes' : 'No'));
+  if (i < 0) {
+    const row = ctx.header.map(() => '');
+    row[ctx.col('Email')] = email;
+    ctx.sheet.appendRow(row);
+    ctx.values.push(row);
+    i = ctx.values.length - 1;
+    log.push('Added');
+  }
+  const r = i + 2, cur = ctx.values[i];
+  const before = umUser_(ctx, cur);
+  const set = (h, val, fmtText) => {
+    const c = ctx.col(h);
+    const cell = ctx.sheet.getRange(r, c + 1);
+    if (fmtText) cell.setNumberFormat('@');
+    cell.setValue(val);
+    cur[c] = val;
+  };
+  if (v.name !== undefined && v.name !== before.name) { set('Name', v.name); if (!isNew) log.push('Name: ' + before.name + ' → ' + v.name); }
+  if (v.empId !== undefined && v.empId !== before.empId) { set('Employee ID', v.empId, true); log.push('Employee ID: ' + (before.empId || '–') + ' → ' + (v.empId || '–')); }
+  if (v.dept !== undefined && v.dept !== before.dept) { set('Department', v.dept); log.push('Department: ' + (before.dept || '–') + ' → ' + (v.dept || '–')); }
+  if (v.role !== undefined && (v.role !== before.role || isNew)) { set('Role', v.role); log.push('Role: ' + (isNew ? '' : before.role + ' → ') + v.role); }
+  if (v.dRole !== undefined && v.dRole !== before.dRole) { set(DELIVERY_ROLE_HEAD, v.dRole); log.push('Delivery Role: ' + (before.dRole || '–') + ' → ' + (v.dRole || '–')); }
+  if (v.apps) HOME_APPS.forEach(a => {
+    const on = v.apps[a.key];
+    if (on === undefined || (!isNew && before.apps[a.key] === on) || ctx.col(a.col) < 0) return;
+    const c = ctx.col(a.col);
+    ctx.sheet.getRange(r, c + 1).insertCheckboxes().setValue(on);
+    cur[c] = on;
+    log.push(a.col + (on ? ' ✓' : ' ✗'));
+  });
+  // Rejecting a request: Active is already No, so the change is stamping Off At (it leaves the Requests list).
+  if (v.active !== undefined && (v.active !== before.active || isNew || (!v.active && !before.offAt))) {
+    set('Active', yesNo(cur[ctx.col('Active')], v.active));
+    if (v.active) { set('Off At', ''); set('Off Note', ''); log.push(isNew ? 'Active' : before.offAt ? 'Switched on' : 'Approved'); }
+    else if (!isNew) { set('Off At', new Date()); set('Off Note', v.offNote || ''); const what = before.offAt || before.active ? 'Switched off' : 'Request rejected'; log.push(what + (v.offNote && v.offNote !== what ? ' (' + v.offNote + ')' : '')); }
+  } else if (v.offNote !== undefined && !before.active && v.offNote !== before.offNote) {
+    set('Off Note', v.offNote);
+  }
+  return { user: umUser_(ctx, cur), log };
+}
+
+function umLog_(by, email, name, lines) {
+  if (!lines.length) return [];
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(UM_LOG);
+  if (!sh) {
+    sh = ss.insertSheet(UM_LOG);
+    sh.getRange(1, 1, 1, UM_LOG_COLS.length).setValues([UM_LOG_COLS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const now = new Date();
+  const row = [now, by, email, name, lines.join('; ')];
+  sh.appendRow(row);
+  return [{ time: now.getTime(), by, email, name, change: row[4] }];
+}
+
+function umLogRead_(n) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(UM_LOG);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const last = sh.getLastRow(), k = Math.min(n, last - 1);
+  return sh.getRange(last - k + 1, 1, k, UM_LOG_COLS.length).getValues().reverse().map(r => ({
+    time: r[0] instanceof Date ? r[0].getTime() : 0, by: String(r[1]), email: String(r[2]), name: String(r[3]), change: String(r[4]),
+  }));
+}
+
+function umNeedCols_(v) {
+  const need = ['Active', 'Off At', 'Off Note'];
+  if (v.empId !== undefined) need.push('Employee ID');
+  if (v.dept !== undefined) need.push('Department');
+  if (v.dRole !== undefined) need.push(DELIVERY_ROLE_HEAD);
+  return need;
+}
+
+/** Add or change one person. */
+function umSave_(p, user) {
+  needAdmin_(user);
+  const isNew = !!p.isNew;
+  const v = umCheck_(p, isNew);
+  const email = isNew ? v.email : String(p.email || '').trim().toLowerCase();
+  if (isNew) {
+    if (v.name === undefined) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
+    if (v.role === undefined) v.role = 'user';
+    if (v.active === undefined) v.active = true;
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let out;
+  try {
+    const ctx = umSheet_(umNeedCols_(v));
+    out = umWrite_(ctx, email, v, user.email, isNew);
+    out.log = umLog_(user.name || user.email, email, out.user.name, out.log);
+  } finally {
+    lock.releaseLock();
+    delete tableCache_[SHEETS.USERS];
+  }
+  return out;
+}
+
+/** The same change for many people at once (from the computer table). */
+function umBulk_(p, user) {
+  needAdmin_(user);
+  const emails = (p.emails || []).map(e => String(e).trim().toLowerCase()).filter(Boolean).slice(0, 300);
+  if (!emails.length) throw new Error('Nobody selected.');
+  const v = umCheck_(p.patch || {}, false);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  const users = [], log = [];
+  try {
+    const ctx = umSheet_(umNeedCols_(v));
+    emails.forEach(email => {
+      if (email === user.email && ((v.role && v.role !== 'admin') || v.active === false)) return;   // never yourself
+      const o = umWrite_(ctx, email, v, user.email, false);
+      users.push(o.user);
+      Array.prototype.push.apply(log, umLog_(user.name || user.email, email, o.user.name, o.log));
+    });
+  } finally {
+    lock.releaseLock();
+    delete tableCache_[SHEETS.USERS];
+  }
+  return { users, log };
+}
+
+/** A department's default apps (what a new request from that department gets), or a new department. */
+function umDeptSave_(p, user) {
+  needAdmin_(user);
+  const name = String(p.name || '').trim().slice(0, 100);
+  if (!name) throw new Error('Department name is required. / សូមបញ្ចូលឈ្មោះផ្នែក។');
+  deptTable_();   // makes sure the sheet and its app columns exist
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  const lines = [];
+  try {
+    const sheet = SpreadsheetApp.getActive().getSheetByName(DEPT_SHEET);
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const lower = header.map(h => h.toLowerCase());
+    const nameCol = Math.max(0, lower.findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
+    let activeCol = lower.indexOf('active');
+    if (activeCol < 0 && p.active !== undefined) { activeCol = header.length; sheet.getRange(1, activeCol + 1).setValue('Active').setFontWeight('bold'); }
+    const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
+    let i = values.findIndex(r => String(r[nameCol] || '').trim() === name);
+    if (p.isNew && i >= 0) throw new Error(name + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។');
+    if (i < 0) {
+      if (!p.isNew) throw new Error(name + ' is not in the Department tab.');
+      const row = header.map(() => '');
+      row[nameCol] = name;
+      sheet.appendRow(row);
+      i = values.length;
+      values.push(row);
+      lines.push('New department');
+      // A new department starts with the usual apps unless the screen sent its own ticks.
+      if (!p.apps) { p.apps = {}; HOME_APPS.forEach(a => { p.apps[a.key] = DEFAULT_APPS.indexOf(a.key) >= 0; }); }
+      if (p.active === undefined) p.active = true;
+    }
+    const r = i + 2;
+    if (p.active !== undefined && activeCol >= 0) {
+      const was = !isNo_(values[i][activeCol]);
+      if (was !== !!p.active || lines.length) { sheet.getRange(r, activeCol + 1).setValue(p.active ? 'Yes' : 'No'); lines.push(p.active ? 'Department on' : 'Department off'); }
+    }
+    if (p.apps) HOME_APPS.forEach(a => {
+      const c = header.indexOf(a.col);
+      if (c < 0 || p.apps[a.key] === undefined) return;
+      const was = values[i][c] === true || isYes_(values[i][c]);
+      if (was === !!p.apps[a.key] && !lines.length) return;
+      sheet.getRange(r, c + 1).insertCheckboxes().setValue(!!p.apps[a.key]);
+      lines.push(a.col + (p.apps[a.key] ? ' ✓' : ' ✗'));
+    });
+  } finally {
+    lock.releaseLock();
+    deptCache_ = null;
+  }
+  const log = umLog_(user.name || user.email, '', 'Department: ' + name, lines);
+  return { depts: deptTable_(), log };
+}
+
+// ---- OT line manager (the OT app's own sheet) ----
+function otEmpSheet_() {
+  const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
+  const sh = SpreadsheetApp.openById(id).getSheetByName(OT_EMP_TAB);
+  if (!sh) throw new Error('"' + OT_EMP_TAB + '" tab not found in the OT sheet.');
+  const values = sh.getDataRange().getValues();
+  const keys = (values[0] || []).map(h => String(h).toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const col = test => keys.findIndex(test);
+  const c = {
+    id: col(k => k === 'idno' || k === 'employeeid' || k === 'id'),
+    en: col(k => k === 'name' || k === 'englishname' || k === 'employeename'),
+    mgr: col(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0),
+    tg: col(k => k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0),
+  };
+  if (c.id < 0 || c.mgr < 0) throw new Error('"' + OT_EMP_TAB + '" needs ID No. and Direct Manager (Approver) columns.');
+  return { sh, values, c };
+}
+const otId_ = v => String(v == null ? '' : v).trim().replace(/\.0+$/, '');
+
+/** Each employee's OT approver, and the approvers to choose from (a manager always goes with their own Telegram). */
+function umOt_(p, user) {
+  needAdmin_(user);
+  try {
+    const o = otEmpSheet_();
+    const byId = {}, seen = {}, managers = [];
+    for (let r = 1; r < o.values.length; r++) {
+      const id = otId_(o.values[r][o.c.id]);
+      const mgr = String(o.values[r][o.c.mgr] || '').trim();
+      const tg = o.c.tg >= 0 ? String(o.values[r][o.c.tg] || '').trim() : '';
+      if (id) byId[id] = { manager: mgr, tg: tg, name: o.c.en >= 0 ? String(o.values[r][o.c.en] || '').trim() : '' };
+      if (mgr && !seen[mgr + '|' + tg]) { seen[mgr + '|' + tg] = 1; managers.push({ name: mgr, tg: tg }); }
+    }
+    managers.sort((a, b) => a.name.localeCompare(b.name));
+    return { ok: true, byId, managers };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+function umOtSave_(p, user) {
+  needAdmin_(user);
+  const id = otId_(p.empId);
+  if (!id) throw new Error('Employee ID is required.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let before = '', name = '';
+  try {
+    const o = otEmpSheet_();
+    // Only a manager already in the list, with the Telegram that goes with them, so requests still reach the right person.
+    const pick = [];
+    for (let r = 1; r < o.values.length; r++) {
+      const m = String(o.values[r][o.c.mgr] || '').trim(), t = o.c.tg >= 0 ? String(o.values[r][o.c.tg] || '').trim() : '';
+      if (m === String(p.manager || '').trim() && t === String(p.tg || '').trim()) { pick.push(m, t); break; }
+    }
+    if (!pick.length) throw new Error('Choose an approver from the list.');
+    let n = 0;
+    for (let r = 1; r < o.values.length; r++) {
+      if (otId_(o.values[r][o.c.id]) !== id) continue;
+      before = String(o.values[r][o.c.mgr] || '');
+      name = o.c.en >= 0 ? String(o.values[r][o.c.en] || '') : '';
+      o.sh.getRange(r + 1, o.c.mgr + 1).setValue(pick[0]);
+      if (o.c.tg >= 0) o.sh.getRange(r + 1, o.c.tg + 1).setValue(pick[1]);
+      n++;
+    }
+    if (!n) throw new Error('Employee ID ' + id + ' is not in the OT employee list.');
+  } finally {
+    lock.releaseLock();
+  }
+  const log = umLog_(user.name || user.email, String(p.email || ''), name, ['OT approver: ' + (before || '–') + ' → ' + p.manager]);
+  return { manager: p.manager, tg: p.tg, log };
 }
