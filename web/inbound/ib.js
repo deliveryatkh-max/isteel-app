@@ -317,11 +317,11 @@
       const less = isLessItem(i), dm = +i.dmgQty > 0;
       let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
-        <td class="n">${cell(i, n, 'poQty', false)}</td>
-        <td class="n">${cell(i, n, 'arrQty', mode === 'arr')}</td>
-        <td class="n">${cell(i, n, 'grQty', mode === 'fin')}</td>
-        <td class="n">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
-        <td class="u">${esc(r.uom)}</td></tr>`;
+        <td class="n c1">${cell(i, n, 'poQty', false)}</td>
+        <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr')}</td>
+        <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
+        <td class="n c4">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
+        <td class="u c5"><span class="qro">${esc(r.uom)}</span></td></tr>`;
       if (dm) {
         const ph = i.dmgPh || [];
         out += `<tr class="dmgrow"><td colspan="5">
@@ -336,7 +336,7 @@
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl">
-      <thead><tr><th class="n">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n${mode === 'arr' ? ' on' : ''}">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u">${t('ឯកតា', 'UoM')}</th></tr></thead>
+      <thead><tr><th class="n c1">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
