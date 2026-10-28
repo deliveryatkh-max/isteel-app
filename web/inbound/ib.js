@@ -675,7 +675,7 @@
     const dp = [].concat.apply([], (r.items || []).map(i => i.dmgPh || []));
     const box = document.createElement('div'); box.className = 'pdfv';
     box.innerHTML = `<div class="pbar"><b>📄 ${esc(r.id)}.pdf</b><button type="button" class="btn sm" id="pvX">✕</button></div><div class="page">
-      <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><div class="plogo">ISI <span>STEEL</span></div></div>
+      <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><img class="plogo" src="../icons/isi-steel-logo.png" alt="ISI STEEL"></div>
       <h4>A. ${two('ព័ត៌មានទទួល', 'RECEIPT')}</h4>${kv([[two('លេខ PO', 'PO Number'), r.po, two('លេខ Inbound', 'Inbound No.'), r.inbound], ['Ref. No.', r.ref, two('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
         ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : '']])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
@@ -687,6 +687,7 @@
       <h4>D. ${two('រូបថតឡាន', 'TRUCK PHOTOS')}</h4><div class="pph">${PHOTOS.map(x => `<div>${phImg(ph[x[0]], x[1])}</div>`).join('')}</div>
       ${dp.length ? `<h4>E. ${two('រូបថតខូចខាត', 'DAMAGE PHOTOS')} (${dp.length})</h4><div class="pph sm">${dp.map(x => `<div>${phImg(x, '⚠️')}</div>`).join('')}</div>` : ''}
       <h4>${two('អ្នកកត់ត្រា', 'RECORDED BY')}</h4>${kv([[two('មកដល់', 'Arrival by'), r.by, two('បញ្ចប់ដោយ', 'Finished by'), r.finishedBy || r.by]])}
+      <div class="pnote">This is a computer-generated document. No signature is required.</div>
     </div>`;
     document.body.appendChild(box);
     $('#pvX').onclick = () => box.remove();
