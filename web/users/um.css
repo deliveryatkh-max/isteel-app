@@ -156,22 +156,15 @@ small.inl { display: inline; }
 .le small { margin-top: 2px; }
 
 /* Computer: wider page, tabs become a side menu on the left. */
+/* Computer: wider page; the navy side menu comes from ../sidenav.css. */
 @media (min-width: 900px) {
-  body { padding-bottom: 0; }
-  main, .demo { margin-left: 210px; }
   main { max-width: none; padding: 22px 28px 40px; }
-  .tabs { top: calc(54px + env(safe-area-inset-top)); bottom: 0; right: auto; width: 210px; display: flex; flex-direction: column; gap: 2px; padding: 14px 10px; border-top: 0; border-right: 1px solid var(--line); }
-  .tab { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 46px; padding: 0 14px; border-radius: 12px; font-size: 15px; }
-  .tab.on { background: var(--soft); }
-  .tab .count { position: static; display: inline-block; margin-left: 6px; vertical-align: 2px; }
-  .tab span { white-space: nowrap; }
   .stats { grid-template-columns: repeat(3, minmax(0, 220px)); }
   .filters .q { max-width: 420px; }
   .filters .chips { flex-wrap: wrap; margin: 0; padding: 0; overflow: visible; }
   .reqgrid, .deptgrid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
   #view > .card:not(.done):not(.empty), #view > .prof, #view > .sec, #view > .apps2, #view > #eErr, #view > .savebar { max-width: 680px; }
-  #view > .back + .prof ~ .card, #view > .apps2 { max-width: 680px; }
   .log, #lq, #view > .hint.top { max-width: 860px; }
   .savebar { bottom: 0; }
-  .toast { bottom: 24px; }
+  .bulk { top: calc(56px + env(safe-area-inset-top)); }
 }

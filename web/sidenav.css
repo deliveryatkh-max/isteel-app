@@ -1,0 +1,56 @@
+/* Computers (900px and wider): every app's menu is a navy side menu on the left, under the ISI STEEL banner
+   (Kim picked option C, 28 Oct 2026). Phones keep the bottom bar. Load this file after the app's own CSS. */
+@media (min-width: 900px) {
+  body:has(> nav.tabs:not([hidden])) { padding-left: 240px; padding-bottom: 24px !important; }
+  /* The banner stays full width over the menu. */
+  body > header.bar, .head > .topbar { margin-left: -240px; }
+
+  nav.tabs:not([hidden]) {
+    top: calc(54px + env(safe-area-inset-top)); bottom: 0; left: 0; right: auto; width: 240px; z-index: 8;
+    display: flex; flex-direction: column; gap: 4px; padding: 14px 12px 20px; overflow-y: auto;
+    border: 0; box-shadow: none; background: #091f3f url(icons/banner-pattern.png) left -54px / auto 120px repeat;
+  }
+  nav.tabs .tab, nav.tabs a.tab, #tabs.many .tab, #tabs.many .tab.home-tab {
+    flex: 0 0 auto; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px;
+    width: 100%; min-width: 0; min-height: 46px; margin: 0; padding: 8px 14px; border: 0; border-radius: 12px;
+    background: none; color: rgba(255, 255, 255, .8); font-size: 15px; line-height: 1.3; text-align: left; text-decoration: none;
+  }
+  nav.tabs .tab > span, nav.tabs .tab > img, #tabs.many .tab span {
+    display: flex; align-items: center; justify-content: center; flex: none; width: 26px; height: auto; margin: 0;
+    font-size: 21px; position: relative; background: none; border: 0; box-shadow: none; border-radius: 0;
+  }
+  nav.tabs .tab img { width: 24px; height: 24px; }
+  nav.tabs .tab b, nav.tabs .tab .lb, #tabs.many .tab .lb { font-weight: 600; color: inherit; white-space: normal; overflow: visible; }
+  nav.tabs .tab:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  nav.tabs .tab.on { background: rgba(97, 203, 244, .18); color: #fff; box-shadow: inset 3px 0 0 #61cbf4; }
+  nav.tabs .tab.on b, nav.tabs .tab.on .lb { font-weight: 700; }
+  /* Home first, with a line under it. */
+  nav.tabs .tab:first-child { position: relative; margin-bottom: 9px; }
+  nav.tabs .tab:first-child::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -6px; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+  /* Counts sit after the name instead of on the icon. */
+  nav.tabs .tab .count { top: -7px; right: -10px; }
+
+  /* Meetings: the round red Record button becomes a normal line with its name. */
+  nav.tabs .tab.mic span { width: 26px; height: 26px; margin: 0; border: 0; border-radius: 50%; background: #d93a3f; box-shadow: none; font-size: 14px; }
+  nav.tabs .tab.mic::after { content: attr(aria-label); font-weight: 600; }
+
+  /* Things that sat just above the bottom bar move down, and centred pop-ups shift right of the menu. */
+  .toast { left: calc(50% + 120px); bottom: 24px; }
+  .navrow { left: 240px; bottom: 0; padding-left: max(16px, calc((100% - 640px) / 2)); padding-right: max(16px, calc((100% - 640px) / 2)); }
+
+  /* Delivery keeps its own side menu (⇄ left/right, drag to reorder), in the same navy style and width. */
+  .side-nav { width: 240px; padding: 14px 12px 14px; border: 0 !important; background: #091f3f url(icons/banner-pattern.png) left -54px / auto 120px repeat; }
+  body.nav-left .app-body { padding-left: 240px; }
+  body.nav-right .app-body { padding-right: 240px; }
+  .side-item { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 46px; padding: 8px 14px; color: rgba(255, 255, 255, .8); font-size: 15px; }
+  .side-item b { text-align: left; }
+  .side-item:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  .side-item.on { background: rgba(97, 203, 244, .18); color: #fff; box-shadow: inset 3px 0 0 #61cbf4; }
+  .side-big { width: 34px; height: 34px; font-size: 18px; background: #0b76a0; }
+  .side-nav.editing .side-item { border-color: rgba(255, 255, 255, .3); }
+  .side-nav.editing .side-item::after { color: rgba(255, 255, 255, .6); }
+  .side-item.over { background: rgba(97, 203, 244, .18); }
+  .side-tools { grid-template-columns: repeat(3, 1fr); }
+  .side-tool { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .2); color: #fff; }
+  .side-hint { color: rgba(255, 255, 255, .7); }
+}
