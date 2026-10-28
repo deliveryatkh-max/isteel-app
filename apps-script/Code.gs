@@ -109,9 +109,11 @@ const HOME_APPS = [
   { key: 'dashboard', col: 'Dashboard' },
   { key: 'meeting', col: 'ប្រជុំ' },
   { key: 'incident', col: 'គ្រោះថ្នាក់' },
+  { key: 'inbound', col: 'ទទួលទំនិញ' },
 ];
 // Ticked for every user by default (Kim, 10 Oct 2026). Dashboard stays for reviewers and admins.
 // Incident Report: anyone can report, so it starts ticked too (Kim, 25 Oct 2026); untick to hide it.
+// Inbound (goods receipt) is not a default: tick ទទួលទំនិញ for the warehouse staff who receive goods.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
   config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel',
