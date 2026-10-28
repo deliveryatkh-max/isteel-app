@@ -46,6 +46,9 @@ changes) and **✉️ Send Email** (tick lists from the **Email Lists** tab and/
 Fill the **Email Lists** tab: *List* (name shown in the app), *Emails* (comma separated), *Active* (Yes/No). The first
 time after this update, paste the new `Inbound.gs` + `appsscript.json`, deploy a **New version** and allow the new
 permissions (Google Docs to make the PDF, send email as you). Gmail sends up to 100 emails a day from a free account.
+A free Gmail always shows its address as the sender. To send from `noreply@<your domain>` instead, the sheet and script must be
+owned by a Google Workspace account (paid): move them to that account, deploy from it, and set `EMAIL_NO_REPLY` to `Yes` in
+**IB Settings** (add the row if it is missing).
 
 ## Sheet tabs
 
