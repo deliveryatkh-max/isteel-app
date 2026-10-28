@@ -826,7 +826,7 @@
   // Reports opened before show at once from this phone's copy, then refresh quietly (photos stay in memory only).
   const repKey = () => { const k = draftKey(); return k ? k.replace('ir_draft:', 'ir_reps:') : ''; };
   const repStore = () => (repKey() ? getJ(repKey(), {}) : {});
-  const plain = d => { const o = Object.assign({}, d); delete o.photoThumbs; delete o.voiceData; delete o.fullPhotos; return o; };
+  const plain = d => { const o = Object.assign({}, d); delete o.photoThumbs; delete o.voiceData; delete o.fullPhotos; delete o.mediaBusy; return o; };
   function keepReport(d) {
     if (!repKey()) return;
     const all = repStore(); all[d.id] = Object.assign(plain(d), { _at: Date.now() });
@@ -908,18 +908,24 @@
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
   // Photos and the voice note load after the report is on screen; tapping a photo opens it here, in the app.
   async function loadMedia(d) {
-    if (d.photoThumbs || !((d.photos || []).length || d.voice)) return;
+    if ((d.photoThumbs && d.photoThumbs.some(Boolean)) || d.mediaBusy || !((d.photos || []).length || d.voice)) return;
+    d.mediaBusy = true;
+    let why = '';
     try {
       const m = await api('media', { id: d.id });
       d.photoThumbs = m.photos || []; d.voiceData = m.voice || '';
-      memMedia[d.id] = { k: mediaKey(d), photoThumbs: d.photoThumbs, voiceData: d.voiceData };
-    } catch (e) {
+      if (d.photoThumbs.some(Boolean)) memMedia[d.id] = { k: mediaKey(d), photoThumbs: d.photoThumbs, voiceData: d.voiceData };
+    } catch (e) { why = e.message; }
+    if (!(d.photoThumbs || []).some(Boolean)) {
       // an Apps Script from before 'media' sends the photos with the report itself
-      try { const g = await api('get', { id: d.id }); d.photoThumbs = g.photoThumbs || []; d.voiceData = g.voiceData || ''; }
-      catch (x) { d.photoThumbs = []; d.voiceData = ''; }
+      try { const g = await api('get', { id: d.id }); if ((g.photoThumbs || []).some(Boolean)) { d.photoThumbs = g.photoThumbs; d.voiceData = g.voiceData || d.voiceData || ''; } }
+      catch (x) { why = why || x.message; }
     }
+    d.mediaBusy = false;
+    d.photoThumbs = d.photoThumbs || []; d.voiceData = d.voiceData || '';
     if (cur !== d) return;
     $$('[data-ph]').forEach(b => { const u = d.photoThumbs[+b.dataset.ph]; b.innerHTML = u ? `<img src="${u}" alt="">` : '⚠️'; });
+    if (!d.photoThumbs.some(Boolean) && $('[data-ph]')) { const box = $('[data-ph]').parentElement; if (box && !box.nextElementSibling) box.insertAdjacentHTML('afterend', `<p class="hint">⚠️ ${t('មិនអាចបើករូបថត', 'Photos could not be loaded')}${why ? ': ' + esc(why) : ''}</p>`); }
     const vs = $('#voiceSlot');
     if (vs) vs.innerHTML = d.voiceData ? `<audio controls preload="none" src="${d.voiceData}"></audio>` : `<p class="hint">${t('មិនអាចបើកសំឡេង', 'Voice note could not be loaded')}</p>`;
   }
