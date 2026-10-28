@@ -66,7 +66,7 @@ const STATUS = { wait: 'Waiting supervisor', back: 'Returned', signed: 'Signed',
 function doGet() { return json_({ ok: true, app: 'Incident Report' }); }
 
 function doPost(e) {
-  tplMemo_ = null;   // the template is looked up once per request
+  tplMemo_ = null; setMemo_ = null;   // the template and settings are looked up once per request
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
@@ -272,7 +272,12 @@ function usersCached_() {
 }
 
 // ---------------------------------------------------------------- lists (Settings tabs)
-function setting_(k) { const r = objs_(SH.SET, SET_COLS).find(o => o.Setting === k); return r ? r.Value : ''; }
+// IR Settings is read once per request (a PDF asks for several settings).
+let setMemo_ = null;
+function setting_(k) {
+  if (!setMemo_) { setMemo_ = {}; objs_(SH.SET, SET_COLS).forEach(o => { if (o.Setting && !(o.Setting in setMemo_)) setMemo_[o.Setting] = o.Value; }); }
+  return setMemo_[k] || '';
+}
 function supervisors_() {
   return objs_(SH.SUP, SUP_COLS).filter(o => o.Warehouse || o.Email).map(o => ({
     warehouse: o.Warehouse, name: o.Name, email: o.Email.toLowerCase(), backup: o['Backup Email'].toLowerCase() }));
@@ -1079,6 +1084,7 @@ function settings_(user) {
   };
 }
 function setSetting_(k, v) {
+  setMemo_ = null;
   const sh = sheet_(SH.SET, SET_COLS);
   const t = table_(sh);
   const i = t.rows.findIndex(r => r[0] === k);

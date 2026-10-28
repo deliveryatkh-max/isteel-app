@@ -267,6 +267,8 @@ window.IR_TEXTS = [
   ["History","One report","ប្រវត្តិ","","ប្រវត្តិ","History"],
   ["Photos could not be loaded","One report","ប្រវត្តិ","","មិនអាចបើករូបថត","Photos could not be loaded"],
   ["Voice note could not be loaded","One report","ប្រវត្តិ","","មិនអាចបើកសំឡេង","Voice note could not be loaded"],
+  ["Open PDF","One report","ប្រវត្តិ","","បើក PDF","Open PDF"],
+  ["Making the PDF…","One report","ប្រវត្តិ","","កំពុងបង្កើត PDF…","Making the PDF…"],
   ["Please sign first","One report","ប្រវត្តិ","","សូមចុះហត្ថលេខាជាមុនសិន","Please sign first"],
   ["Making the PDF...","One report","ប្រវត្តិ","","កំពុងបង្កើត PDF...","Making the PDF..."],
   ["Signed","One report","ប្រវត្តិ","","បានចុះហត្ថលេខា","Signed"],

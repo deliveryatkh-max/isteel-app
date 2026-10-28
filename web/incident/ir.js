@@ -880,7 +880,7 @@
       <div class="row-btns"><button class="btn sm" id="pdfBtn">📄 PDF</button>${c.email ? `<button class="btn sm ok" id="mailBtn">✉️ ${t('ផ្ញើតាមអ៊ីមែល', 'Send by email')}</button>` : ''}
         ${c.edit ? `<a class="btn sm ok" href="#/edit/${encodeURIComponent(d.id)}">✏️ ${t('កែ និងផ្ញើម្តងទៀត', 'Edit and send again')}</a>` : ''}</div>
       ${d.status === 'Returned' && d.returnNote ? `<div class="alert warn">↩️ ${esc(d.returnNote)}</div>` : ''}
-      <div id="mailBox"></div></div>`;
+      <div id="pdfLink"></div><div id="mailBox"></div></div>`;
     html += sec(`🚛 ${t('ពេល ទីកន្លែង ឡាន', 'When, where, truck')}`, kv('វេន', 'Shift', pick(SHIFTS, d.shift)) + kv('ឃ្លាំង', 'Warehouse', d.warehouse) + kv('GPS', 'GPS', d.gps) +
       kv('ផ្លូវ', 'Road / site', d.road) + kv('អាកាសធាតុ', 'Weather', d.weather) + kv('ផ្លាកលេខ', 'Plate', d.plate) + kv('តៃកុង', 'Driver', [d.driver, d.driverId].filter(Boolean).join(' · ')) +
       kv('ក្រុមហ៊ុន', 'Company', pick(COMPANIES, d.company)) + kv('Trip ID', 'Trip ID', d.tripId) + kv('DN', 'DN', d.dn) + kv('អតិថិជន', 'Customer', d.customer) + kv('ទំនិញ', 'Load', d.load));
@@ -916,6 +916,18 @@
   }
 
   function busy(btn, on, label) { btn.disabled = on; if (on) { btn.dataset.l = btn.innerHTML; btn.innerHTML = `<span class="sp"></span> ${label || ''}`; } else if (btn.dataset.l) btn.innerHTML = btn.dataset.l; }
+  const pdfWait = {}, pdfKey = {};   // report id -> Promise of { url, name }, and the report version it was made for
+  const verOf = d => d.id + '|' + (d.updated || '') + '|' + (d.status || '') + '|' + JSON.stringify(d.actions || []);
+  function getPdf(d) {
+    pdfKey[d.id] = verOf(d);
+    const p = api('pdf', { id: d.id }).then(r => {
+      const bytes = Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0));
+      return { url: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), name: r.name || d.id + '.pdf' };
+    });
+    pdfWait[d.id] = p;
+    p.catch(() => { if (pdfWait[d.id] === p) delete pdfWait[d.id]; });   // a failed try is not kept: the next tap asks again
+    return p;
+  }
   // Photos and the voice note load after the report is on screen; tapping a photo opens it here, in the app.
   async function loadMedia(d) {
     if ((d.photoThumbs && d.photoThumbs.some(Boolean)) || d.mediaBusy || !((d.photos || []).length || d.voice)) return;
@@ -958,17 +970,22 @@
     const d = cur;
     $$('[data-ph]').forEach(b => { b.onclick = () => viewPhoto(d, +b.dataset.ph); });
     loadMedia(d);
-    $('#pdfBtn').onclick = async () => {
-      const b = $('#pdfBtn'); busy(b, true, 'PDF');
-      try {
-        const r = await api('pdf', { id: d.id });
-        const bytes = Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0));
-        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-        const a = document.createElement('a'); a.href = url; a.download = r.name || d.id + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      } catch (e) { toast(e.message); }
-      busy(b, false);
+    // The PDF is fetched once per report and kept while the app is open; signed reports start fetching it in the
+    // background as soon as the report opens, so the button is usually instant. If the phone blocks the automatic
+    // download, an "Open PDF" link stays on screen to tap.
+    const pb = $('#pdfBtn');
+    const openPdf = r => {
+      const a = document.createElement('a'); a.href = r.url; a.download = r.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      const box = $('#pdfLink');
+      if (box) box.innerHTML = `<a class="btn sm ghost" href="${r.url}" download="${esc(r.name)}" target="_blank" rel="noopener">⬇️ ${t('បើក PDF', 'Open PDF')}</a>`;
     };
+    pb.onclick = async () => {
+      if (pdfWait[d.id] === undefined || pdfKey[d.id] !== verOf(d)) getPdf(d);
+      busy(pb, true, t('កំពុងបង្កើត PDF…', 'Making the PDF…'));
+      try { openPdf(await pdfWait[d.id]); } catch (e) { toast(e.message); }
+      busy(pb, false);
+    };
+    if (d.status === 'Signed' || d.status === 'Closed') setTimeout(() => { if (cur === d && pdfWait[d.id] === undefined) getPdf(d).catch(() => {}); }, 1500);
     const mb = $('#mailBtn');
     if (mb) mb.onclick = () => paintMail();
     if ($('#sig')) sigPad($('#sig'), $('#sigClear'));
