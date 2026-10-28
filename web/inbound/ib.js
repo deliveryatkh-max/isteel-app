@@ -1,6 +1,6 @@
 // Inbound: goods receipt log (Kim's template "GOODS RECEIPT LOG", 26 Oct 2026).
-// One record per truck: PO, Inbound no., truck, PO/DN/actual qty, UoM, date, start/end time,
-// time spent, productivity, manpower, truck owner, damage, remark.
+// One record per truck (several items from one PO): arrival / GR / damaged qty per item, date,
+// start/end time, time spent, productivity, manpower, truck owner, remark.
 // Demo mode while IB_CONFIG.API_URL is empty: data lives in this browser only.
 (function () {
   'use strict';
@@ -29,13 +29,18 @@
   const showSpent = m => m == null ? '–' : (m >= 60 ? Math.floor(m / 60) + t('ម៉ោង ', 'h ') + pad(m % 60) + t('នាទី', 'm') : m + t(' នាទី', ' min'));
   const clock = m => (m == null ? '–' : m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60) : m + t(' នាទី', ' min'));
   const fmt = (n, d = 0) => n == null || isNaN(n) ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
-  const tons = r => { const q = +r.actQty || 0; if (r.uom === 'Kg') return q / 1000; if (r.uom === 'Ton') return q; return null; };
-  // Productivity = what one person unloads in one hour (tonnes for Kg/Ton, otherwise the UoM itself).
+  // A receipt (one truck) carries several items: { material, desc, poQty, arrQty, grQty, dmgQty, dmgType, dmgPh[] }.
+  const tot = (r, k) => (r.items || []).reduce((s, i) => s + (+i[k] || 0), 0);
+  const tons = r => tot(r, 'grQty') / 1000;
+  const isDamaged = r => (r.items || []).some(i => +i.dmgQty > 0);
+  const isLessItem = i => i.grQty !== '' && i.grQty != null && +i.grQty < +i.arrQty;
+  const isLess = r => !!r.end && (r.items || []).some(isLessItem);
+  // Productivity = what one person unloads in one hour (tonnes).
   const prod = r => {
-    const m = r.end ? spentMin(r) : null; const mp = +r.manpower || 0; if (!m || !mp || !r.actQty) return null;
-    const q = tons(r) != null ? tons(r) : +r.actQty; return q / (m / 60) / mp;
+    const m = r.end ? spentMin(r) : null; const mp = +r.manpower || 0; const q = tons(r); if (!m || !mp || !q) return null;
+    return q / (m / 60) / mp;
   };
-  const prodUnit = r => (tons(r) != null ? t('តោន/នាក់/ម៉ោង', 't/person/h') : r.uom + t('/នាក់/ម៉ោង', '/person/h'));
+  const prodUnit = () => t('តោន/នាក់/ម៉ោង', 't/person/h');
   const diffPct = (a, b) => (!a || !b ? null : (a - b) / b * 100);
 
   // ------------------------------------------------------------------ incoming plan (Kim's "Incoming Packing List Template")
@@ -60,31 +65,43 @@
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
   const showEta = s => showDate(s);
 
+  // damage types (Kim, 28 Oct 2026: Dent, Rust, ... "suggest more")
+  const DMG = [
+    ['dent', '🔨', 'ផត / បុក', 'Dent'],
+    ['rust', '🟤', 'ច្រេះ', 'Rust'],
+    ['wet', '💧', 'ទទឹកទឹក', 'Wet / water'],
+    ['edge', '🧩', 'ខូចគែម', 'Edge damage'],
+    ['scratch', '〰️', 'ស្នាមឆ្កូត', 'Scratch'],
+    ['bent', '↪️', 'កោង / ខូចរាង', 'Bent / out of shape'],
+    ['coat', '🎨', 'របកថ្នាំ / ស្រទាប់', 'Coating peeled'],
+    ['pack', '📦', 'វេចខ្ចប់រហែក', 'Packing torn'],
+    ['wrong', '❌', 'ទំនិញខុស', 'Wrong item'],
+    ['other', '❓', 'ផ្សេងៗ', 'Other'],
+  ];
+  const dmgName = k => { const d = DMG.find(x => x[0] === k); return d ? d[1] + ' ' + t(d[2], d[3]) : (k || ''); };
+  const MAX_DMG_PH = 6;
+
   // ------------------------------------------------------------------ data (demo)
   let DATA = [];
   function seed() {
     const out = []; const base = new Date(); base.setHours(0, 0, 0, 0);
     const rows = [
-      // daysAgo, start, minutes, plan line, act diff kg, men, owner, carrier, damaged, detail
-      [0, '-420', 48, 0, 0, 3, '3PL', 'FOXS', false, ''],
-      [0, '-330', 62, 2, -260, 2, 'ISI', '', true, 'ដែកដុំរឡូ 1 ដុំ ខូចគែម / 1 coil edge damaged'],
-      [0, '-200', 35, 18, 0, 4, '3PL', 'Queen Legacy', false, ''],
-      [0, '-52', null, 19, 0, 3, '3PL', 'Srong Sal', false, ''],
-      [0, '-25', null, 4, 0, 2, 'ISI', '', false, ''],
-      [1, '07:30', 55, 1, 0, 3, '3PL', 'FOXS', false, ''],
-      [1, '09:10', 71, 3, 0, 2, 'ISI', '', false, ''],
-      [1, '11:00', 40, 21, -500, 4, '3PL', 'Chroek Kimheng', true, 'ហ៊ិប 1 ខូច / 1 bundle damaged'],
-      [1, '14:30', 55, 5, 0, 2, 'ISI', '', false, ''],
-      [1, '15:50', 66, 6, 0, 3, '3PL', 'Queen Legacy', false, ''],
-      [2, '08:00', 50, 9, 0, 3, '3PL', 'FOXS', false, ''],
-      [2, '10:45', 90, 10, 0, 2, '3PL', 'Vannoun', false, ''],
-      [2, '13:20', 38, 11, 0, 2, 'ISI', '', false, ''],
-      [3, '07:50', 58, 12, 0, 3, 'ISI', '', false, ''],
-      [3, '09:30', 64, 14, -50, 3, '3PL', 'Srong Sal', false, ''],
-      [3, '14:10', 45, 17, 0, 2, '3PL', 'FOXS', false, ''],
-      [4, '08:15', 52, 20, 0, 3, '3PL', 'Queen Legacy', false, ''],
-      [4, '10:00', 75, 13, -600, 2, 'ISI', '', true, 'ដែកដុំរឡូ ច្រេះ / coil rust'],
-      [4, '15:00', 49, 8, 0, 3, '3PL', 'Chroek Kimheng', false, ''],
+      // daysAgo, start, minutes, items [plan line, arrival kg, GR diff, damaged qty, damage type], men, owner, carrier
+      [0, '-420', 48, [[0, 32520, 0]], 3, '3PL', 'FOXS'],
+      [0, '-330', 62, [[1, 23550, -120, 1, 'dent'], [6, 18400, 0]], 2, 'ISI', ''],
+      [0, '-200', 35, [[21, 25000, 0]], 4, '3PL', 'Queen Legacy'],
+      [0, '-52', null, [[18, 41200]], 3, '3PL', 'Srong Sal'],
+      [0, '-25', null, [[3, 36230]], 2, 'ISI', ''],
+      [1, '07:30', 55, [[2, 40000, 0]], 3, '3PL', 'FOXS'],
+      [1, '09:10', 71, [[4, 26140, 0], [11, 12830, 0]], 2, 'ISI', ''],
+      [1, '11:00', 40, [[19, 38900, -500, 2, 'rust']], 4, '3PL', 'Chroek Kimheng'],
+      [1, '14:30', 55, [[5, 40000, 0]], 2, 'ISI', ''],
+      [2, '08:00', 50, [[7, 40000, 0]], 3, '3PL', 'FOXS'],
+      [2, '10:45', 90, [[7, 40000, 0]], 2, '3PL', 'Vannoun'],
+      [3, '07:50', 58, [[8, 38000, 0]], 3, 'ISI', ''],
+      [3, '09:30', 64, [[15, 40000, -50]], 3, '3PL', 'Srong Sal'],
+      [4, '08:15', 52, [[15, 40000, 0]], 3, '3PL', 'Queen Legacy'],
+      [4, '10:00', 75, [[16, 39000, -600, 1, 'edge']], 2, 'ISI', ''],
     ];
     rows.forEach((x, i) => {
       const d = new Date(base); d.setDate(d.getDate() - x[0]);
@@ -92,52 +109,57 @@
       // today's rows are placed relative to now so the demo always looks live
       if (start[0] === '-') { const s = new Date(Math.max(base.getTime(), Date.now() + (+start) * 60000)); start = hm(s); }
       const end = x[2] == null ? '' : hm(new Date(d.getTime() + (toMin(start) + x[2]) * 60000));
-      const p = PLAN[x[3]];
-      out.push(Object.assign(fromPlan(p), {
-        id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length],
-        dnQty: i === 14 ? p.kg - 50 : p.kg, actQty: end ? p.kg + x[4] : '', date: ymd(d), start, end,
-        manpower: x[5], owner: end ? x[6] : '', carrier: x[7], damaged: end ? x[8] : null, damageDetail: x[9],
-        remark: i === 11 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
+      const p0 = PLAN[x[3][0][0]];
+      out.push(Object.assign(header(p0), {
+        id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length], dn3pl: 'DN-' + (26100 + i * 7),
+        items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
+        date: ymd(d), start, end, manpower: x[4], owner: end ? x[5] : '', carrier: x[6],
+        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
     });
     return out;
   }
-  // the greyed fields copied from the plan line
-  function fromPlan(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, material: p.material, desc: p.desc, poQty: p.kg, uom: 'Kg', pcs: p.pcs }; }
-  // kg already received (or being unloaded) against one plan line
-  const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.material === mat && r.id !== skip).reduce((s, r) => s + (+r.actQty || 0), 0);
+  // the greyed fields copied from the plan
+  function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
+  function item(p) { return { material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgPh: [] }; }
+  // kg already arrived (being unloaded) or received against one plan line
+  const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
+  const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
+  // a PO is pending while any of its lines still has kg to receive
+  const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
+  const pendingPOs = skip => POS.filter(po => pendingLines(po, skip).length);
   function load() {
-    const s = get('ib_demo_v4');
+    const s = get('ib_demo_v5');
     if (s) { try { const o = JSON.parse(s); if (o.day === today()) { DATA = o.rows; return; } } catch (e) { /* reseed */ } }
     DATA = seed(); save();
   }
-  function save() { set('ib_demo_v4', JSON.stringify({ day: today(), rows: DATA })); }
+  function save() { set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA })); }
   const byId = id => DATA.find(r => r.id === id);
   const isLive = r => r.start && !r.end;
 
   // ------------------------------------------------------------------ chrome
-  function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2200); }
+  function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
   function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; }
   const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; };
 
+  const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
   function badges(r) {
     const b = [];
     if (isLive(r)) b.push(`<span class="badge live">⏱ ${t('កំពុងទម្លាក់', 'Unloading')}</span>`);
     else b.push(`<span class="badge ok">✅ ${t('រួចរាល់', 'Done')}</span>`);
-    if (r.damaged) b.push(`<span class="badge dmg">⚠️ ${t('ខូចខាត', 'Damaged')}</span>`);
-    const d = r.end ? diffPct(+r.actQty, +r.dnQty) : null;
-    if (d) b.push(`<span class="badge diff">${d > 0 ? '+' : ''}${fmt(d, 1)}% DN</span>`);
+    if (isDamaged(r)) b.push(`<span class="badge dmg">⚠️ ${t('ខូចខាត', 'Damaged')} ${fmt(tot(r, 'dmgQty'))}</span>`);
+    if (isLess(r)) b.push(lessBadge());
     return b.join(' ');
   }
   const ownerTxt = r => r.owner === 'ISI' ? t('ឡាន ISI', 'ISI truck') : '3PL' + (r.carrier ? ' · ' + r.carrier : '');
   function itemHTML(r) {
-    const m = spentMin(r);
+    const m = spentMin(r), its = r.items || [];
     return `<a class="item${isLive(r) ? ' live' : ''}" href="#/r/${r.id}">
       <div class="top"><span class="id">🚛 ${esc(r.truck)}</span>${isLive(r) ? `<span class="timer${m > 60 ? ' slow' : ''}" data-timer="${r.id}">${clock(m)}</span>` : `<span>${badges(r)}</span>`}</div>
-      <div class="ttl">${esc(r.desc || r.material)}</div>
+      <div class="ttl">${esc(its[0] ? its[0].desc : '')}${its.length > 1 ? ` <small class="il">+${its.length - 1} ${t('មុខទៀត', 'more')}</small>` : ''}</div>
       <div class="meta">${esc(r.po)} · ${esc(r.supplier)}</div>
-      <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.actQty || r.dnQty))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
+      <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
     </a>`;
   }
@@ -147,7 +169,7 @@
     paintTabs('home');
     const td = DATA.filter(r => r.date === today());
     const live = td.filter(isLive), done = td.filter(r => r.end);
-    const tn = done.reduce((s, r) => s + (tons(r) || 0), 0);
+    const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
     view(`
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
@@ -169,29 +191,31 @@
   function renderLog() {
     paintTabs('log');
     const q = LQ.toLowerCase();
-    const F = { all: () => true, live: isLive, done: r => !!r.end, dmg: r => r.damaged, diff: r => r.end && !!diffPct(+r.actQty, +r.dnQty) };
-    const rows = DATA.filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.material, r.desc, r.truck, r.carrier, r.owner, r.remark, r.damageDetail].join(' ').toLowerCase().includes(q))
+    const F = { all: () => true, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess };
+    const rows = DATA.filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
     rows.forEach(r => { if (r.date !== last) { last = r.date; html += `<div class="daylabel">${r.date === today() ? t('ថ្ងៃនេះ', 'Today') + ' · ' : ''}${showDate(r.date)}</div>`; } html += itemHTML(r); });
     const chip = (k, km, en) => `<button class="chip${LF === k ? ' on' : ''}" data-f="${k}">${t(km, en)}</button>`;
     view(`
-      <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, អ្នកផ្គត់ផ្គង់', 'Search: PO, material, plate, supplier'))}" value="${esc(LQ)}">
-      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('diff', '± ខុសបរិមាណ', '± Qty diff')}</div>
+      <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
+      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
       <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
     $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : exportCsv(rows));
   }
+  // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
-    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'DN Qty', 'Actual Receipt Qty', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity', 'Manpower used to Unload/Receive', 'Truck Owner', 'Damaged?', 'Damage Detail', 'Remark'];
+    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Remark'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const lines = [H.map(q).join(',')].concat(rows.map(r => [
-      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.material, r.desc, r.truck, r.poQty, r.dnQty, r.actQty, r.uom, showDate(r.date), r.start, r.end,
-      r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2) + ' ' + prodUnit(r), r.manpower,
-      r.owner === 'ISI' ? 'ISI Truck' : '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : ''), r.damaged ? 'Yes' : 'No', r.damageDetail, r.remark,
-    ].map(q).join(',')));
+    const lines = [H.map(q).join(',')];
+    rows.forEach(r => (r.items || []).forEach(i => lines.push([
+      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG.find(d => d[0] === i.dmgType)[3] : '', isLessItem(i) ? 'Yes' : '', r.uom,
+      showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
+      r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.remark,
+    ].map(q).join(','))));
     try {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' }));
@@ -200,50 +224,75 @@
   }
 
   // ------------------------------------------------------------------ form
-  // Step 1 (arrival): pick PO + material from the incoming plan (rest is filled and greyed),
-  // type the truck number, take 3 photos; receipt date = today. Step 2 (finish): actual qty, owner, manpower, damage.
+  // Step 1 (arrival): pick a pending PO, tick the items on this truck, type arrival qty, 3PL DN no., truck, 3 photos.
+  // Step 2 (finish): actual GR qty + damaged qty per item (damage type + up to 6 photos), owner, manpower.
   let F = null;
   const PHOTOS = [
     ['front', '🚛', 'រូបថតមុខឡាន (ឃើញផ្លាកលេខ)', 'Front of truck (plate visible)'],
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', material: '', desc: '', truck: '', poQty: '', dnQty: '', actQty: '', uom: 'Kg', pcs: '', date: today(), start: '', end: '', manpower: 2, owner: '', carrier: '', damaged: null, damageDetail: '', remark: '', ph: {} }; }
+  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: 2, owner: '', carrier: '', remark: '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
-  const lineSub = (x, skip) => { const got = recvd(x.po, x.material, skip), left = x.kg - got; return fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' + (got ? ' · ' + (left > 0 ? t('នៅសល់ ', 'left ') + fmt(left) + ' Kg' : '✓ ' + t('ទទួលគ្រប់', 'all received')) : ''); };
-  const grey = (lbl, v, id) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" ${id ? `id="${id}" ` : ''}value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
+  const grey = (lbl, v) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
+  const phImg = (v, ic) => v && v !== 'sample' ? `<img src="${v}" alt="">` : `<span class="sam">${ic}<small>${v ? t('គំរូ', 'sample') : t('ថត', 'Take')}</small></span>`;
   function phTile(k, ic, km, en) {
     const v = F.ph && F.ph[k];
-    const img = v && v !== 'sample' ? `<img src="${v}" alt="">` : v ? `<span class="sam">${ic}<small>${t('គំរូ', 'sample')}</small></span>` : `<span class="sam">📷<small>${t('ថត', 'Take')}</small></span>`;
-    return `<label class="shot${v ? ' has' : ''}"><input type="file" accept="image/*" capture="environment" data-ph="${k}" hidden><div class="ph">${img}</div><small>${ic} ${t(km, en)} <span class="req">*</span></small></label>`;
+    return `<label class="shot${v ? ' has' : ''}"><input type="file" accept="image/*" capture="environment" data-ph="${k}" hidden><div class="ph">${phImg(v, v ? ic : '📷')}</div><small>${ic} ${t(km, en)} <span class="req">*</span></small></label>`;
+  }
+  // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
+  // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
+  function itemsTable(r, mode) {
+    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="${k === 'grQty' ? esc(i.arrQty) : k === 'dmgQty' ? '0' : ''}">`
+      : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
+    const rows = r.items.map((i, n) => {
+      const less = isLessItem(i), dm = +i.dmgQty > 0;
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
+        <tr class="qrow${less ? ' lessrow' : ''}">
+        <td class="n">${cell(i, n, 'poQty', false)}</td>
+        <td class="n">${cell(i, n, 'arrQty', mode === 'arr')}</td>
+        <td class="n">${cell(i, n, 'grQty', mode === 'fin')}</td>
+        <td class="n">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
+        <td class="u">${esc(r.uom)}</td></tr>`;
+      if (dm) {
+        const ph = i.dmgPh || [];
+        out += `<tr class="dmgrow"><td colspan="5">
+          <div class="dmgbox">
+            <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
+            ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
+            <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
+            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" capture="environment" data-dph="${n}" hidden>📷</label>` : ''}</div>
+          </div></td></tr>`;
+      }
+      return out;
+    }).join('');
+    const sum = k => fmt(tot(r, k));
+    return `<div class="tblwrap"><table class="itbl">
+      <thead><tr><th class="n">${t('បរិមាណ PO', 'PO Qty')}</th><th class="n${mode === 'arr' ? ' on' : ''}">${t('បរិមាណមកដល់', 'Arrival Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ទទួលជាក់ស្តែង', 'Actual GR Qty')}</th><th class="n${mode === 'fin' ? ' on' : ''}">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u">${t('ឯកតា', 'UoM')}</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
+    </table></div>`;
   }
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
     const r = F, started = !!r.start, editing = !!r.id;
     const m = r.start ? spentMin(r) : null, p = prod(r);
-    const act = diffPct(+r.actQty, +r.dnQty);
-    const cmp = (lbl, d) => d == null ? '' : `<div class="${Math.abs(d) < 0.05 ? 'okk' : 'warn'}"><span>${lbl}</span><b>${Math.abs(d) < 0.05 ? '✓ ' + t('ត្រូវគ្នា', 'Match') : (d > 0 ? '+' : '') + fmt(d, 2) + '%'}</b></div>`;
-    const lines = r.po ? PLAN.filter(x => x.po === r.po) : [];
     const lock = editing ? ' off' : '';
+    const mode = started ? 'fin' : 'arr';
+    const pend = r.po ? pendingLines(r.po, r.id) : [];
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/'}">✕</a></div>
 
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
-        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span></label>
+        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('តែ PO មិនទាន់ទទួលគ្រប់', 'pending POs only')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
         ${r.po ? `
-        <div class="field"><label class="f">${t('សម្ភារៈ', 'Material')} <span class="req">*</span> <small class="il">${lines.length} ${t('មុខ', 'lines')}</small></label>
-          ${pickBtn('material', r.material ? r.material + ' · ' + r.desc : '', lock)}</div>
-        <div class="greys">
-          <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey('Ref. No.', r.ref)}</div>
-          <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
-          <div class="row2">${grey(t('សម្ភារៈ', 'Material'), r.material)}${grey(t('ឯកតា', 'UoM'), r.material ? r.uom : '')}</div>
-          ${grey(t('ការពិពណ៌នាសម្ភារៈ', 'Material Description'), r.desc)}
-          <div class="row2">${grey(t('បរិមាណ PO', 'PO Qty'), r.material ? fmt(r.poQty) : '')}
-            <div class="field"><label class="f">${t('បរិមាណ DN', 'DN Qty')} <span class="req">*</span></label><input class="in" id="dnQty" inputmode="decimal" value="${esc(r.dnQty)}" placeholder="${t('តាមឯកសារ DN', 'From the DN')}"></div></div>
-          <div class="cmp">${cmp(t('DN ធៀប PO', 'DN vs PO'), diffPct(+r.dnQty, +r.poQty))}</div>
-        </div>` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
+        <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey('Ref. No.', r.ref)}</div>
+        <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
+        <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
+          ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
+        ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
       </section>
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
@@ -252,17 +301,13 @@
             ${pickBtn('truck', r.truck, '', r.newTruck)}</div>
           ${grey(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}
         </div>
+        <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
         <div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>
       </section>
 
       ${started ? `
-      <section class="card"><h2>⚖️ ${t('ទទួលជាក់ស្តែង', 'Actual receipt')}</h2>
-        <div class="row2">
-          <div class="field"><label class="f">${t('ទទួលជាក់ស្តែង', 'Actual receipt Qty')} <span class="req">*</span></label><input class="in" id="actQty" inputmode="decimal" value="${esc(r.actQty)}" placeholder="${esc(r.dnQty)}"></div>
-          ${grey(t('ឯកតា', 'UoM'), r.uom)}
-        </div>
-        <div class="cmp">${cmp(t('ជាក់ស្តែង ធៀប DN', 'Actual vs DN'), act)}</div>
-        <div class="field mt"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
+      <section class="card"><h2>👷 ${t('ឡាន និងកម្មករ', 'Truck owner and manpower')}</h2>
+        <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
           <div class="seg"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
         ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
         <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')}</label>
@@ -276,17 +321,11 @@
         </div>
         <div class="calc">
           <div class="tbox"><small>${t('រយៈពេល', 'Time spent')}</small><b>${showSpent(m)}</b></div>
-          <div class="tbox"><small>${t('ផលិតភាព', 'Productivity')}</small><b>${p == null ? '–' : fmt(p, 1)}</b><small>${p == null ? t('គណនាពេលបញ្ចប់', 'Shown at finish') : esc(prodUnit(r))}</small></div>
+          <div class="tbox"><small>${t('ផលិតភាព', 'Productivity')}</small><b>${p == null ? '–' : fmt(p, 1)}</b><small>${p == null ? t('គណនាពេលបញ្ចប់', 'Shown at finish') : esc(prodUnit())}</small></div>
         </div>
       </section>
-
-      <section class="card"><h2>🔍 ${t('ការខូចខាត', 'Damage')}</h2>
-        <div class="field"><label class="f">${t('មានខូចខាតទេ?', 'Damaged?')} <span class="req">*</span></label>
-          <div class="seg"><button type="button" data-dmg="0" class="${r.damaged === false ? 'on' : ''}">👍 ${t('ទេ', 'No')}</button><button type="button" data-dmg="1" class="${r.damaged ? 'on bad' : ''}">⚠️ ${t('បាទ/ចាស មាន', 'Yes')}</button></div></div>
-        ${r.damaged ? `<div class="field"><label class="f">${t('ព័ត៌មានលម្អិតការខូចខាត', 'Damage detail')}</label><textarea class="in" id="damageDetail" rows="2">${esc(r.damageDetail)}</textarea></div>` : ''}
-      </section>
       <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea></section>` : `
-      <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ បរិមាណជាក់ស្តែង និងការខូចខាត បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. Actual qty and damage are filled at finish.')}</p>`}
+      <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ បរិមាណទទួលជាក់ស្តែង និងខូចខាត បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. Actual GR qty and damaged qty are filled at finish.')}</p>`}
 
       ${!started ? `<button class="btn ok big bigstart" id="startBtn">▶ ${t('ចាប់ផ្តើមទម្លាក់ឥឡូវ', 'Start unloading now')}</button>`
         : isLive(r) ? `<button class="btn big bigstart endbtn" id="endBtn">⏹ ${t('បញ្ចប់ការទម្លាក់ ហើយរក្សាទុក', 'Finish unloading & save')}</button><button class="btn mt" id="saveBtn">💾 ${t('រក្សាទុក (មិនទាន់បញ្ចប់)', 'Save (not finished)')}</button>`
@@ -295,16 +334,15 @@
     bindForm();
   }
   function collect() {
-    ['dnQty', 'actQty', 'start', 'end', 'remark', 'damageDetail'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
+    ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
+    $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
   }
-  function pickLine(po, mat) {
-    const keep = { id: F.id, dnQty: F.dnQty, truck: F.truck, newTruck: F.newTruck, newCarrier: F.newCarrier, by: F.by, ph: F.ph, date: F.date, start: F.start, end: F.end, actQty: F.actQty, manpower: F.manpower, owner: F.owner, carrier: F.carrier, damaged: F.damaged, damageDetail: F.damageDetail, remark: F.remark };
-    const b = blank(); b.po = po;
-    const lines = PLAN.filter(x => x.po === po);
-    if (!mat && lines.length === 1) mat = lines[0].material;
-    const p = mat && lineOf(po, mat);
-    if (p) Object.assign(b, fromPlan(p)); else if (lines[0]) Object.assign(b, { inbound: lines[0].inbound, ref: lines[0].ref, supplier: lines[0].supplier, eta: lines[0].eta });
-    F = Object.assign(b, keep);
+  function pickPO(po) {
+    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower };
+    const b = blank(); const l = PLAN.find(x => x.po === po);
+    F = Object.assign(b, l ? header(l) : {}, keep);
+    const pend = pendingLines(po, F.id);
+    if (pend.length === 1) F.items = [Object.assign(item(pend[0]), { arrQty: left(pend[0], F.id) })];
   }
   // photos are shrunk on the phone (long side 1280 px, JPEG) so saving stays fast on 4G
   function shrink(file, done) {
@@ -312,15 +350,53 @@
     rd.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); done(c.toDataURL('image/jpeg', 0.72)); }; im.onerror = () => done(rd.result); im.src = rd.result; };
     rd.readAsDataURL(file);
   }
+  // tick several items at once (same look as the picker)
+  function openMulti(o) {
+    const chosen = new Set(o.value);
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet picker-sheet" role="dialog" aria-modal="true" aria-label="${esc(o.title)}">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(o.title)}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <label class="search"><span aria-hidden="true">🔍</span><input type="search" placeholder="${esc(t('ស្វែងរក', 'Search'))}" autocomplete="off" enterkeyhint="search"></label>
+        <div class="pick-list"></div>
+        <button type="button" class="btn ok big mt" data-done></button></div>`;
+    const input = bg.querySelector('input'), list = bg.querySelector('.pick-list'), done = bg.querySelector('[data-done]');
+    const close = () => { bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const norm = v => String(v || '').toLowerCase().replace(/[\s\-.]/g, '');
+    const draw = () => {
+      const q = norm(input.value);
+      const items = o.items.filter(it => !q || norm(it.label).includes(q) || norm(it.sub).includes(q));
+      list.innerHTML = items.map(it => `<label class="pick-item mchk${chosen.has(it.value) ? ' on' : ''}"><span><b>${esc(it.label)}</b><small>${esc(it.sub)}</small></span><input type="checkbox" data-v="${esc(it.value)}"${chosen.has(it.value) ? ' checked' : ''}></label>`).join('') || `<div class="empty">${esc(t('រកមិនឃើញ', 'No match'))}</div>`;
+      done.textContent = '✓ ' + t('រួចរាល់', 'Done') + ' (' + chosen.size + ')';
+    };
+    input.oninput = draw;
+    list.onchange = e => { const c = e.target.closest('[data-v]'); if (!c) return; if (c.checked) chosen.add(c.dataset.v); else chosen.delete(c.dataset.v); draw(); };
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-close]')) close();
+      else if (e.target.closest('[data-done]')) { close(); o.onDone(Array.from(chosen)); }
+    };
+    document.body.appendChild(bg);
+    draw();
+    requestAnimationFrame(() => bg.classList.add('open'));
+  }
   function bindForm() {
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
-    pk('po', () => ({ title: t('លេខ PO', 'PO Number'), value: F.po,
-      groups: [{ items: POS.map(x => { const l = PLAN.filter(y => y.po === x); return { value: x, sub: l[0].supplier + ' · ' + l[0].inbound + ' · ETA ' + showEta(l[0].eta) + ' · ' + l.length + t(' មុខ', ' lines') }; }) }],
-      onPick: v => { pickLine(v, ''); re(); } }));
-    pk('material', () => ({ title: t('សម្ភារៈ', 'Material'), value: F.material ? F.material + ' · ' + F.desc : '',
-      groups: [{ items: PLAN.filter(x => x.po === F.po).map(x => ({ value: x.material + ' · ' + x.desc, sub: lineSub(x, F.id) })) }],
-      onPick: v => { pickLine(F.po, v.split(' · ')[0]); re(); } }));
+    pk('po', () => ({ title: t('លេខ PO (មិនទាន់ទទួលគ្រប់)', 'PO Number (pending only)'), value: F.po,
+      groups: [{ items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }) }],
+      onPick: v => { pickPO(v); re(); } }));
+    const it = $('#items');
+    if (it) it.onclick = () => { collect(); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(i => i.material),
+      items: pendingLines(F.po, F.id).map(x => ({ value: x.material, label: x.desc, sub: x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })),
+      onDone: mats => { const had = {}; F.items.forEach(i => { had[i.material] = i; }); F.items = mats.map(mt => had[mt] || Object.assign(item(lineOf(F.po, mt)), { arrQty: left(lineOf(F.po, mt), F.id) })); re(); } }); };
+    $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
+    $$('[data-it]').forEach(el => { el.onchange = re; });
+    F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
+      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })) }],
+      onPick: v => { const d = DMG.find(x => x[1] + ' ' + t(x[2], x[3]) === v); i.dmgType = d ? d[0] : v; re(); } })));
+    $$('[data-dph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); const i = F.items[+inp.dataset.dph]; shrink(f, url => { i.dmgPh = (i.dmgPh || []).concat(url).slice(0, MAX_DMG_PH); re(); }); }; });
+    $$('[data-delph]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, j] = b.dataset.delph.split(':'); F.items[+n].dmgPh.splice(+j, 1); re(); }; });
     const plate = v => String(v || '').toUpperCase().replace(/\s+/g, '');
     pk('truck', () => { const used = Array.from(new Set(DATA.map(r => r.truck).concat(PLATES))); return { title: t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck number / trailer'), value: F.truck,
       groups: [{ items: used.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមឡានថ្មី', 'Add new truck'), clean: plate },
@@ -329,16 +405,27 @@
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
     $$('[data-own]').forEach(b => { b.onclick = () => { F.owner = b.dataset.own; if (F.owner === 'ISI') F.carrier = ''; re(); }; });
-    $$('[data-dmg]').forEach(b => { b.onclick = () => { F.damaged = b.dataset.dmg === '1'; re(); }; });
     const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = Math.max(1, (+F.manpower || 1) - 1); $('#mp').textContent = F.manpower; };
     const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; };
-    ['dnQty', 'actQty', 'start', 'end'].forEach(k => { const el = $('#' + k); if (el) el.onchange = re; });
+    ['start', 'end'].forEach(k => { const el = $('#' + k); if (el) el.onchange = re; });
     $$('[data-ph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); shrink(f, url => { F.ph = Object.assign({}, F.ph, { [inp.dataset.ph]: url }); re(); }); }; });
     const need = () => {
       const miss = [];
-      if (!F.po) miss.push(t('លេខ PO', 'PO number')); if (!F.material) miss.push(t('សម្ភារៈ', 'Material'));
-      if (!F.dnQty) miss.push(t('បរិមាណ DN', 'DN Qty')); if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number'));
+      if (!F.po) miss.push(t('លេខ PO', 'PO number'));
+      if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
+      else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('បរិមាណមកដល់', 'Arrival Qty'));
+      if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
+      return miss;
+    };
+    const needFin = () => {
+      const miss = need();
+      if (F.items.some(i => i.grQty === '' || i.grQty == null)) miss.push(t('ទទួលជាក់ស្តែង', 'Actual GR Qty'));
+      F.items.forEach(i => { if (i.dmgQty === '' || i.dmgQty == null) i.dmgQty = 0; });
+      const dm = F.items.filter(i => +i.dmgQty > 0);
+      if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
+      if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
+      if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
       return miss;
     };
     const st = $('#startBtn');
@@ -349,12 +436,11 @@
     };
     const en = $('#endBtn');
     if (en) en.onclick = () => {
-      collect(); const miss = need(); if (!F.actQty) miss.push(t('ទទួលជាក់ស្តែង', 'Actual qty')); if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner')); if (F.damaged == null) miss.push(t('ខូចខាត?', 'Damaged?'));
-      if (miss.length) return toast('⚠️ ' + miss.join(', '));
+      collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       F.end = nowHM(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
-    if (sv) sv.onclick = () => { collect(); const miss = need(); if (miss.length) return toast('⚠️ ' + miss.join(', ')); store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+    if (sv) sv.onclick = () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', ')); store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
@@ -397,6 +483,7 @@
 
   function store() { const i = DATA.findIndex(x => x.id === F.id); const c = JSON.parse(JSON.stringify(F)); if (i >= 0) DATA[i] = c; else DATA.push(c); save(); }
 
+
   // ------------------------------------------------------------------ one receipt
   function renderOne(id) {
     paintTabs('');
@@ -410,19 +497,18 @@
       <section class="card"><div class="kvs">
         ${kv(t('លេខ PO', 'PO Number'), esc(r.po))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
-        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('សម្ភារៈ', 'Material'), esc(r.material))}
-        ${kv(t('ការពិពណ៌នាសម្ភារៈ', 'Material Description'), esc(r.desc), 1)}
+        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
-        ${kv(t('បរិមាណ PO', 'PO Qty'), fmt(r.poQty) + ' ' + esc(r.uom))}${kv(t('បរិមាណ DN', 'DN Qty'), fmt(r.dnQty) + ' ' + esc(r.uom))}
-        ${kv(t('ទទួលជាក់ស្តែង', 'Actual receipt Qty'), r.actQty === '' ? '–' : fmt(r.actQty) + ' ' + esc(r.uom))}${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}
+      </div></section>
+      <section class="card"><h2>📦 ${t('ទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
+      <section class="card"><div class="kvs">
+        ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនកម្មករ', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
-        ${kv(t('រយៈពេល', 'Time spent'), (isLive(r) ? '⏱ ' : '') + showSpent(m))}${kv(t('ផលិតភាព', 'Productivity'), p == null ? '–' : fmt(p, 1) + ' <small>' + esc(prodUnit(r)) + '</small>')}
-        ${kv(t('ចំនួនកម្មករ', 'Manpower'), '👷 ' + esc(r.manpower))}${kv(t('ខូចខាត?', 'Damaged?'), r.end ? (r.damaged ? '⚠️ ' + t('បាទ/ចាស', 'Yes') : t('ទេ', 'No')) : '–')}
-        ${r.damaged ? kv(t('ព័ត៌មានលម្អិតការខូចខាត', 'Damage detail'), esc(r.damageDetail || '–'), 1) : ''}
+        ${kv(t('រយៈពេល', 'Time spent'), (isLive(r) ? '⏱ ' : '') + showSpent(m))}${kv(t('ផលិតភាព', 'Productivity'), p == null ? '–' : fmt(p, 1) + ' <small>' + esc(prodUnit()) + '</small>')}
         ${kv(t('សំគាល់', 'Remark'), esc(r.remark || '–'), 1)}
         ${kv(t('កត់ត្រាដោយ', 'Recorded by'), esc(r.by || '–'), 1)}
       </div>
-      <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${ph[x[0]] && ph[x[0]] !== 'sample' ? `<img src="${ph[x[0]]}" alt="">` : `<span class="sam">${x[1]}<small>${ph[x[0]] ? t('គំរូ', 'sample') : '–'}</small></span>`}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
+      <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
       </section>
       ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `<button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
     const b = $('#fin') || $('#edit'); b.onclick = () => { F = null; location.hash = '#/edit/' + id; };
@@ -436,10 +522,10 @@
     const rows = DATA.filter(r => r.end && r.date >= ymd(from));
     const tn = rows.reduce((s, r) => s + (tons(r) || 0), 0);
     const avgM = rows.length ? rows.reduce((s, r) => s + spentMin(r), 0) / rows.length : null;
-    const tr = rows.filter(r => tons(r) != null && prod(r) != null);
+    const tr = rows.filter(r => prod(r) != null);
     const manH = tr.reduce((s, r) => s + spentMin(r) / 60 * r.manpower, 0);
     const avgP = manH ? tr.reduce((s, r) => s + tons(r), 0) / manH : null;
-    const dmg = rows.filter(r => r.damaged).length, diff = rows.filter(r => diffPct(+r.actQty, +r.dnQty)).length;
+    const dmg = rows.filter(isDamaged).length, diff = rows.filter(isLess).length;
     // tonnes by day
     const days = {}; rows.forEach(r => { days[r.date] = (days[r.date] || 0) + (tons(r) || 0); });
     const dk = Object.keys(days).sort(); const mx = Math.max(1, ...dk.map(k => days[k]));
@@ -455,7 +541,7 @@
         <div class="stat"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></div>
         <div class="stat"><small>${t('ផលិតភាពមធ្យម', 'Avg productivity')}</small><b>${avgP == null ? '–' : fmt(avgP, 1)}<em>${t('ត/នាក់/ម៉', 't/person/h')}</em></b></div>
         <div class="stat"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></div>
-        <div class="stat"><small>${t('ខុសពី DN', 'Qty ≠ DN')}</small><b style="color:var(--warn)">${diff}</b></div>
+        <div class="stat"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></div>
       </div>
       <section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
         <div class="bars">${dk.map(k => `<div class="barrow"><span>${showDate(k).slice(0, 5)}</span><div class="tr"><i style="width:${days[k] / mx * 100}%"></i></div><span>${fmt(days[k], 1)} t</span></div>`).join('') || `<div class="empty">–</div>`}</div>
