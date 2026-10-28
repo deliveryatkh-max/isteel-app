@@ -124,6 +124,12 @@ ok(tplFile && !tplFile.trashed && env.templateUploads === 1, 'template loaded on
 // pdf for the app
 const pdf = must(call('driver@x.com', 'pdf', { id: r1.id }));
 ok(Buffer.from(pdf.b64, 'base64').toString().startsWith('%PDF'), 'pdf bytes');
+// a PDF saved by the old layout (no version) is made again from the template
+{ const x = env.g.load_(r1.id); x.pdf.v = undefined; env.g.store_(x); }
+const nDocs = Object.keys(env.docs).length;
+must(call('driver@x.com', 'pdf', { id: r1.id }));
+ok(Object.keys(env.docs).length === nDocs + 1 && Object.values(env.docs).pop().tpl, 'old-layout PDF remade from the template');
+eq(env.g.load_(r1.id).pdf.v, env.g.PDF_VER === undefined ? 2 : env.g.PDF_VER, 'new PDF stamped');
 // template gone and the Word file can't be fetched: built-in layout instead
 Object.values(env.files).filter(f => f.name === r1.id + '.pdf').forEach(f => { f.trashed = true; });
 tplFile.trashed = true; env.noTemplate = true;
