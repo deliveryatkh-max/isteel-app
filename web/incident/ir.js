@@ -913,7 +913,11 @@
       const m = await api('media', { id: d.id });
       d.photoThumbs = m.photos || []; d.voiceData = m.voice || '';
       memMedia[d.id] = { k: mediaKey(d), photoThumbs: d.photoThumbs, voiceData: d.voiceData };
-    } catch (e) { d.photoThumbs = []; d.voiceData = ''; }
+    } catch (e) {
+      // an Apps Script from before 'media' sends the photos with the report itself
+      try { const g = await api('get', { id: d.id }); d.photoThumbs = g.photoThumbs || []; d.voiceData = g.voiceData || ''; }
+      catch (x) { d.photoThumbs = []; d.voiceData = ''; }
+    }
     if (cur !== d) return;
     $$('[data-ph]').forEach(b => { const u = d.photoThumbs[+b.dataset.ph]; b.innerHTML = u ? `<img src="${u}" alt="">` : '⚠️'; });
     const vs = $('#voiceSlot');
