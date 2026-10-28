@@ -72,6 +72,14 @@ needed. The sheet keeps the sender's email in *Reporter Email* so they can find 
 Each report is one row in the **Incidents** tab (same columns as the Excel Incident Log) and one folder in
 **Incident Reports** (report.json, photos, signatures, PDF).
 
+## PDF template
+
+The PDF is filled in from the Word template `web/incident/ir-template.docx` (copy in `templates/`). The first PDF turns
+it into a Google Doc called **Incident Report Template** in the reports folder and keeps its ID in IR Settings
+(`PDF_TEMPLATE_ID`). To change the layout, edit that Doc and keep the `{{...}}` words; the row with `{{action.what}}`
+repeats once per action. Delete the Doc to load the Word file again. If the template can't be used, the app falls back
+to its built-in one-page layout.
+
 ## Limits
 
 - Up to 6 photos per report, shrunk on the phone to 1280 px and stamped with the date and time.
