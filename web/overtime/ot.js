@@ -29,6 +29,7 @@
     GPS: 'អ្នកត្រូវនៅជិតកន្លែងធ្វើការរបស់អ្នក។',
     NOSHIFT: 'សូមជ្រើសរើសវេនការងាររបស់អ្នក។',
     BAD_QR: 'QR Code នេះមិនត្រឹមត្រូវទេ។ សូមស្កេន QR Code របស់ផ្នែកអ្នកម្តងទៀត។',
+    SHORT: 'សូមវាយយ៉ាងហោចណាស់ ២ តួ នៃលេខកាត ឬឈ្មោះរបស់អ្នក។',
   };
   function niceError(e) {
     const code = e.code || '';
@@ -139,12 +140,8 @@
 
   async function loadConfig() {
     try {
-      // One call brings the settings, holidays and the employee list (for the search box).
-      const c = await api('config', { withEmployees: true });
-      if (c.list) {
-        state.people = c.list; delete c.list;
-        set(K.people, JSON.stringify({ at: Date.now(), list: state.people }));
-      }
+      // Settings and holidays. The staff list stays on the server: the Search button asks for matches.
+      const c = await api('config', {});
       if (c.serverNow) state.skew = c.serverNow - Date.now();
       cfg = c; set(K.cfg, JSON.stringify(c));
       if (state.tab === 'new' && !state.result && !scanner.on) renderNew(true);
@@ -421,61 +418,51 @@
   }
 
   // ---------- employee search (ID, English or Khmer name) ----------
+  // Only people found by a search on this phone are kept (ID and names), never the whole staff list.
   const people = () => (state.people || []);
-  const fold = s => String(s || '').toLowerCase().replace(/[\s.\-_]+/g, '');
-  function search(q) {
-    const f = fold(q);
-    if (!f) return [];
-    const out = [];
-    for (const p of people()) {
-      const id = fold(p.id), en = fold(p.en), kh = fold(p.kh);
-      let score = -1;
-      if (id === f) score = 0;
-      else if (id.startsWith(f)) score = 1;
-      else if (en.startsWith(f) || kh.startsWith(f)) score = 2;
-      else if (en.includes(f) || kh.includes(f) || id.includes(f)) score = 3;
-      if (score >= 0) out.push({ p, score });
-    }
-    out.sort((a, b) => a.score - b.score || a.p.en.localeCompare(b.p.en));
-    return out.slice(0, 8).map(x => x.p);
+  function remember(list) {
+    const known = people().filter(x => !list.some(p => p.id === x.id));
+    state.people = list.concat(known).slice(0, 40);
   }
-  function showSugg(q) {
+  function showSugg(hits) {
     const box = $('#sugg');
-    if (!box) return [];
-    const hits = state.emp ? [] : search(q);
-    if (!hits.length || (hits.length === 1 && hits[0].id === q.trim())) { hideSugg(); return hits; }
+    if (!box || state.emp || !hits.length) { hideSugg(); return; }
     box.innerHTML = hits.map((p, i) => `<div class="opt${i === 0 ? ' on' : ''}" role="option" data-id="${esc(p.id)}"><b>${esc(p.id)}</b><span>${esc(p.en)}</span><span class="kh">${esc(p.kh || '')}</span></div>`).join('');
     box.hidden = false;
     $('#empId').setAttribute('aria-expanded', 'true');
-    return hits;
   }
   function hideSugg() { const box = $('#sugg'); if (box) { box.hidden = true; box.innerHTML = ''; } const el = $('#empId'); if (el) el.setAttribute('aria-expanded', 'false'); }
   function pick(id) {
     hideSugg();
     const el = $('#empId'); if (el) el.value = id;
-    const p = people().find(x => x.id === id);
-    if (p && 'manager' in p) {   // instant: no wait for the server (it re-checks on submit)
-      state.emp = { id: p.id, en: p.en, kh: p.kh, manager: p.manager, ready: p.ready !== false, shift: p.shift || '', shiftTime: p.shiftTime || '', otStart: p.otStart || '' };
-      state.lookupErr = ''; set(K.id, p.id); renderNew(true); return;
-    }
     lookup(id);
   }
-  function find(chosen) {
+  async function find(chosen) {
     const v = $('#empId').value.trim();
     if (chosen) return pick(chosen);
     if (!v) return lookup('');
-    const hits = search(v);
+    state.lookingUp = true; state.lookupErr = ''; renderNew(true);
+    let hits = [];
+    try {
+      hits = (await api('find', { q: v, dept: state.dept ? state.dept.code : '' })).list || [];
+    } catch (e) {
+      state.lookingUp = false;
+      // The OT script not updated yet (no "find"): an Employee ID still works through lookup.
+      if (/Unknown action/i.test(e.message) && /^[A-Za-z0-9-]{1,20}$/.test(v) && /\d/.test(v)) return lookup(v);
+      state.emp = null; state.lookupErr = niceError(e);
+      if (e.code === 'BAD_QR') setDept(null);
+      return renderNew(true);
+    }
+    state.lookingUp = false;
+    if ($('#empId') && $('#empId').value.trim() !== v) return renderNew(true);   // typed something else meanwhile
+    remember(hits);
     const exact = hits.find(p => p.id === v);
-    if (exact || hits.length === 1) return pick((exact || hits[0]).id);
-    if (hits.length) { showSugg(v); return; }
-    if (/^[A-Za-z0-9-]{1,20}$/.test(v) && /\d/.test(v)) return lookup(v);   // an ID not in the saved list yet
+    if (exact || hits.length === 1) return lookup((exact || hits[0]).id);
+    if (hits.length) { renderNew(true); showSugg(hits); return; }
     state.emp = null; state.lookupErr = t('រកមិនឃើញបុគ្គលិកដែលមានលេខកាត ឬឈ្មោះនេះទេ។', 'No employee found with that ID or name.'); renderNew(true);
   }
-  // The list saved on the phone is used at once; loadConfig() refreshes it in the background.
-  function loadPeople() {
-    const saved = getJ(K.people, null);
-    if (saved && saved.list) state.people = saved.list;
-  }
+  // Phones that opened the old version kept the whole staff list: remove it.
+  function loadPeople() { set(K.people, null); }
 
   // ---------- OT date: public holiday from the Setting sheet ----------
   function dayHtml(ymd) {
@@ -502,12 +489,13 @@
     if (hit && Date.now() - hit.at < 120000) { state.emp = hit.emp; state.lookupErr = ''; set(K.id, id); return renderNew(true); }
     state.lookingUp = true; state.lookupErr = ''; renderNew(true);
     try {
-      const emp = await api('lookup', { id });
+      const emp = await api('lookup', { id, dept: state.dept ? state.dept.code : '' });
       lookupCache[id] = { emp, at: Date.now() };
       if ($('#empId') && $('#empId').value.trim() !== id) return;   // typed something else meanwhile
       state.emp = emp; set(K.id, emp.id);
     } catch (e) {
       state.emp = null; state.lookupErr = niceError(e);
+      if (e.code === 'BAD_QR') setDept(null);
     } finally {
       state.lookingUp = false;
       if (state.tab === 'new' && !state.result) renderNew(true);
@@ -644,7 +632,7 @@
     const today = (cfg && cfg.today) || localYmd();
     const f = state.sumF = Object.assign({ from: monthStart(today), to: today }, state.sumF || {}, { id: me });
     const cacheKey = () => sumKey(f.id, f.from, f.to);
-    const nameOf = id => { const p = people().find(x => x.id === id); return p ? p.en + (p.kh ? ' · ' + p.kh : '') : ''; };
+    const nameOf = id => { const p = (state.emp && state.emp.id === id) ? state.emp : people().find(x => x.id === id); return p ? p.en + (p.kh ? ' · ' + p.kh : '') : ''; };
     const draw = (res, loading, err) => {
       const tt = res && res.totals;
       $('#view').innerHTML = `
@@ -765,9 +753,9 @@
     const db = getJ('ot_demo_db', {});
     return wait(350).then(() => {
       if (action === 'config') return { shifts: [{ name: 'Shift 1', time: '7:00 AM – 4:00 PM', otStart: '16:00' }, { name: 'Shift 2', time: '4:00 PM – 12:00 AM', otStart: '00:00' }, { name: 'Shift 3', time: '12:00 AM – 8:00 AM', otStart: '08:00' }], timeMode: 'auto', serverNow: Date.now(), maxAutoHours: 16, needDept: true, reasons: ['ធ្វើការថ្ងៃបុណ្យ...', 'រៀបចំទំនិញសម្រាប់ដឹកជញ្ជូន...'], overnight: true, needGps: false, maxHours: null, maxPast: 7, today: localYmd(),
-        holidays: [{ date: '2026-10-10', en: 'Phcum Ben Festival', kh: 'ពិធីបុណ្យភ្ជុំបិណ្ឌ' }, { date: '2026-10-15', en: "Commemoration Day of King's Father", kh: 'ទិវាប្រារព្ធពិធីគោរពព្រះវិញ្ញាណក្ខន្ធ ព្រះករុណា ព្រះបាទសម្តេចព្រះ នរោត្តម សីហនុ' }], list: p.withEmployees ? Object.values(EMP) : undefined };
+        holidays: [{ date: '2026-10-10', en: 'Phcum Ben Festival', kh: 'ពិធីបុណ្យភ្ជុំបិណ្ឌ' }, { date: '2026-10-15', en: "Commemoration Day of King's Father", kh: 'ទិវាប្រារព្ធពិធីគោរពព្រះវិញ្ញាណក្ខន្ធ ព្រះករុណា ព្រះបាទសម្តេចព្រះ នរោត្តម សីហនុ' }] };
       if (action === 'dept') { const c = String(p.code || '').replace(/^.*[?&]d=/, '').toUpperCase(); if (c !== 'D-DEMO01') throw Object.assign(new Error('Wrong QR code.'), { code: 'BAD_QR' }); return { code: c, name: 'Warehouse (demo)' }; }
-      if (action === 'employees') return { list: Object.values(EMP) };
+      if (action === 'find') { const f = String(p.q || '').toLowerCase().replace(/[\s.\-_]+/g, ''); return { list: Object.values(EMP).filter(e => (e.id + e.en.toLowerCase().replace(/\s+/g, '') + e.kh).includes(f)).map(e => ({ id: e.id, en: e.en, kh: e.kh })) }; }
       if (action === 'lookup') { const e = EMP[p.id]; if (!e) throw Object.assign(new Error('Employee ID not found.'), { code: 'NOTFOUND' }); return e; }
       if (action === 'submit') {
         if (db['k_' + p.key]) return { reqId: db['k_' + p.key], status: 'Pending', repeated: true };

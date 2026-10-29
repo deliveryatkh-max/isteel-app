@@ -80,9 +80,9 @@ function doPost(e) {
     if (body.action === 'telegram') { handleTelegram_(body); return json_({ ok: true }); }
     const p = body.payload || {};
     switch (body.action) {
-      case 'config': return json_({ ok: true, data: Object.assign(publicConfig_(), p.withEmployees ? employeeList_() : {}) });
-      case 'lookup': return json_({ ok: true, data: lookupPublic_(p.id) });
-      case 'employees': return json_({ ok: true, data: employeeList_() });
+      case 'config': return json_({ ok: true, data: publicConfig_() });
+      case 'lookup': deptGate_(p.dept); return json_({ ok: true, data: lookupPublic_(p.id) });
+      case 'find': deptGate_(p.dept); return json_({ ok: true, data: findPublic_(p.q) });
       case 'dept': return json_({ ok: true, data: deptPublic_(p.code) });
       case 'submit': return json_({ ok: true, data: submit_(p) });
       case 'status': return json_({ ok: true, data: statusFor_(p) });
@@ -368,19 +368,33 @@ function employeesCached_() {
 // For the search box: ID, English name and Khmer name of every employee (no Telegram details).
 // It also carries each person's line manager name and whether that manager can get Telegram yet, so picking a
 // name fills the form at once. The server still re-checks the employee and manager on every submit.
-function employeeList_() {
+// The staff list is never sent to the phone (security check, 29 Oct 2026): the form asks for at most 8 matches
+// of what was typed, with ID and names only. The manager and shift come from lookupPublic_ for the one picked.
+function findPublic_(q) {
+  const fold = s => String(s == null ? '' : s).toLowerCase().replace(/[\s.\-_]+/g, '');
+  const f = fold(q).slice(0, 60);
+  if (f.length < 2) fail_('SHORT', 'Please type at least 2 letters or digits of your ID or name.');
   const employees = employeesCached_();
-  const approvers = readApprovers_();
   const kh = khmerFromHistory_();
-  const list = [];
+  const out = [];
   Object.keys(employees).forEach(id => {
     if (employees[id].length > 1) return;   // duplicated IDs are refused at lookup and submit
     const e = employees[id][0];
-    const r = resolveApprover_(id, employees, approvers);
-    list.push({ id, en: e.en, kh: e.kh || kh[id] || '', manager: e.manager || '', ready: r.ok, shift: e.shift || '', shiftTime: e.shiftTime || '', otStart: shiftEndHHMM_(e.shiftTime) });
+    const fi = fold(id), fe = fold(e.en), fk = fold(e.kh || kh[id]);
+    let score = -1;
+    if (fi === f) score = 0;
+    else if (fi.startsWith(f)) score = 1;
+    else if (fe.startsWith(f) || fk.startsWith(f)) score = 2;
+    else if (fe.includes(f) || fk.includes(f) || fi.includes(f)) score = 3;
+    if (score >= 0) out.push({ score, p: { id, en: e.en, kh: e.kh || kh[id] || '' } });
   });
-  list.sort((a, b) => a.en.localeCompare(b.en));
-  return { list };
+  out.sort((a, b) => a.score - b.score || a.p.en.localeCompare(b.p.en));
+  return { list: out.slice(0, 8).map(x => x.p) };
+}
+
+// Once department QR codes are set up, searching staff needs a scanned department code too.
+function deptGate_(raw) {
+  if (Object.keys(depts_()).length) deptPublic_(raw);
 }
 
 function lookupPublic_(id) {

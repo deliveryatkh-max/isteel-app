@@ -850,7 +850,7 @@
   const NEED = ['material', 'kg', 'po'];
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve();
-    return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js?v=0.20.3'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
   }
   const etaOf = v => {
     if (v instanceof Date) return ymd(new Date(v.getTime() + 12 * 3600000));   // dates come in at UTC midnight: keep the day
