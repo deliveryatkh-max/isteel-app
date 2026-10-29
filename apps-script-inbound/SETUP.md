@@ -59,7 +59,9 @@ standard template. Edit it in Word, keep the `{{...}}` words, upload it again an
 made again). The row holding `{{item.material}}` repeats once per item. Placeholders: `{{id}} {{date}} {{status}} {{po}}
 {{inbound}} {{ref}} {{supplier}} {{eta}} {{dn3pl}} {{truck}} {{owner}} {{itemCount}} {{item.no}} {{item.material}}
 {{item.poQty}} {{item.arrQty}} {{item.grQty}} {{item.dmgQty}} {{item.uom}} {{totPo}} {{totArr}} {{totGr}} {{totDmg}} {{uom}}
-{{start}} {{end}} {{spent}} {{manpower}} {{productivity}} {{remark}} {{truckPhotos}} {{damagePhotos}} {{by}} {{finishedBy}}`.
+{{start}} {{end}} {{spent}} {{manpower}} {{productivity}} {{remark}} {{truckPhotos}} {{damagePhotos}} {{by}} {{finishedBy}}`,
+plus `{{barcode}}` (Code 128 barcode of the receipt number IB-…) and `{{inboundBarcode}}` (barcode of the Inbound No.);
+put a barcode code on a line of its own.
 Google can only print Google fonts, so the text is set in **PDF_FONT** (Kantumruy Pro; `-` keeps the template's fonts).
 If the template fails, the built-in layout is used and the reason is written in **PDF_TEMPLATE_ERROR**.
 
