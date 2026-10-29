@@ -111,7 +111,7 @@ function makeEnv(opts) {
   }
 
   // Word template as a Google Doc: paragraphs and tables of placeholder text, filled with findText/insertText/deleteText.
-  const TPL = ['GOODS RECEIPT REPORT', '{{id}} · {{date}} · {{status}}',
+  const TPL = ['GOODS RECEIPT REPORT', '{{id}} · {{date}} · {{status}}', '{{barcode}}',
     [['PO', '{{po}}', 'Inbound', '{{inbound}}'], ['Ref', '{{ref}}', 'Supplier', '{{supplier}}'], ['ETA', '{{eta}}', '3PL DN', '{{dn3pl}}'], ['Truck', '{{truck}}', 'Owner', '{{owner}}']],
     'B. ITEMS ({{itemCount}})',
     [['#', 'Material', 'PO', 'Arr', 'GR', 'Dmg', 'UoM'], ['{{item.no}}', '{{item.material}}', '{{item.poQty}}', '{{item.arrQty}}', '{{item.grQty}}', '{{item.dmgQty}}', '{{item.uom}}'],

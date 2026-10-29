@@ -693,7 +693,7 @@ function pdfValues_(r) {
     dn3pl: r.dn3pl, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '',
     itemCount: r.items.length, totPo: kg_(tot_(r, 'poQty')), totArr: kg_(tot_(r, 'arrQty')), totGr: kg_(tot_(r, 'grQty')), totDmg: kg_(tot_(r, 'dmgQty')), uom: r.uom,
     start: r.start, end: r.end, spent: sp === '' ? '' : sp + ' min', manpower: r.manpower, productivity: pr === '' ? '' : pr + ' t/person/h', remark: r.remark,
-    by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '',
+    by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '', barcode: r.id, inboundBarcode: r.inbound,
   };
 }
 function templatePdf_(r, folder, name) {
@@ -705,6 +705,10 @@ function templatePdf_(r, folder, name) {
     itemRows_(body, r);
     images_(body, '{{truckPhotos}}', PHOTOS.map(k => (r.ph || {})[k]).filter(Boolean), 170, 120);
     images_(body, '{{damagePhotos}}', [].concat.apply([], r.items.map(i => i.dmgPh || [])).slice(0, 12), 125, 90);
+    [body, doc.getHeader(), doc.getFooter()].filter(Boolean).forEach(el => {
+      put_(el, '{{barcode}}', [barcodePng_(r.id)], 190, 40);
+      if (r.inbound) put_(el, '{{inboundBarcode}}', [barcodePng_(r.inbound)], 190, 40);
+    });
     const v = pdfValues_(r);
     const parts = [body, doc.getHeader(), doc.getFooter()].filter(Boolean);
     parts.forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
@@ -746,7 +750,9 @@ function itemRows_(body, r) {
 }
 /** Pictures where the placeholder is; with none, the placeholder is left for fill_ ("-"). */
 function images_(body, key, ids, w, h) {
-  const blobs = ids.map(id => { try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; } }).filter(Boolean);
+  put_(body, key, ids.map(id => { try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; } }).filter(Boolean), w, h);
+}
+function put_(body, key, blobs, w, h) {
   if (!blobs.length) return;
   const f = body.findText(pat_(key));
   if (!f) return;
@@ -757,6 +763,56 @@ function images_(body, key, ids, w, h) {
   while (p && p.getType() !== DocumentApp.ElementType.PARAGRAPH) p = p.getParent();
   if (!p) return;
   blobs.forEach(b => { try { fit_(p.appendInlineImage(b), w, h); p.appendText(' '); } catch (e) { /* not an image */ } });
+}
+
+// ---- Barcode for {{barcode}}: Code 128 (set B) drawn as a black-and-white PNG, made here so no outside service is needed.
+const C128 = ('212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 ' +
+  '221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 ' +
+  '231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 ' +
+  '314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 ' +
+  '111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 ' +
+  '114131 311141 411131 211412 211214 211232 2331112').split(' ');
+/** Bar widths (modules) for text in Code 128 B: start, data, check, stop. */
+function code128_(text) {
+  const codes = [104];
+  String(text).split('').forEach(ch => { const c = ch.charCodeAt(0); if (c >= 32 && c <= 126) codes.push(c - 32); });
+  codes.push(codes.reduce((s, c, i) => s + c * (i || 1), 0) % 103, 106);
+  return codes.map(c => C128[c]).join('').split('').map(Number);
+}
+/** PNG (8-bit grey, no compression) of the barcode: 2 px per module, 10-module quiet zone each side. */
+function barcodePng_(text, h) {
+  const widths = code128_(text), px = 2, quiet = 10 * px;
+  const bars = [];
+  widths.forEach((w, i) => { for (let k = 0; k < w * px; k++) bars.push(i % 2 ? 255 : 0); });
+  const w = bars.length + 2 * quiet;
+  h = h || 60;
+  const line = [0];   // filter byte
+  for (let x = 0; x < quiet; x++) line.push(255);
+  bars.forEach(v => line.push(v));
+  for (let x = 0; x < quiet; x++) line.push(255);
+  let raw = [];
+  for (let y = 0; y < h; y++) raw = raw.concat(line);
+  // zlib with stored (uncompressed) blocks of up to 65535 bytes
+  const z = [0x78, 0x01];
+  for (let i = 0; i < raw.length; i += 65535) {
+    const part = raw.slice(i, i + 65535), last = i + 65535 >= raw.length ? 1 : 0, n = part.length;
+    z.push(last, n & 255, n >> 8, ~n & 255, (~n >> 8) & 255);
+    for (let j = 0; j < n; j++) z.push(part[j]);
+  }
+  let a = 1, b = 0;
+  raw.forEach(v => { a = (a + v) % 65521; b = (b + a) % 65521; });
+  z.push(b >> 8, b & 255, a >> 8, a & 255);
+  const crcT = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT.push(c >>> 0); }
+  const u32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  const chunk = (type, data) => {
+    const td = type.split('').map(c => c.charCodeAt(0)).concat(data);
+    let c = 0xffffffff;
+    td.forEach(v => { c = crcT[(c ^ v) & 255] ^ (c >>> 8); });
+    return u32(data.length).concat(td, u32((c ^ 0xffffffff) >>> 0));
+  };
+  const png = [137, 80, 78, 71, 13, 10, 26, 10].concat(chunk('IHDR', u32(w).concat(u32(h), [8, 0, 0, 0, 0])), chunk('IDAT', z), chunk('IEND', []));
+  return Utilities.newBlob(png.map(v => (v > 127 ? v - 256 : v)), 'image/png', 'barcode.png');
 }
 
 const NAVY = '#011e41', SOFT = '#d4e1f5', LINE = '#b9c3cf', PAGE_W = 539, LABEL_W = 92;

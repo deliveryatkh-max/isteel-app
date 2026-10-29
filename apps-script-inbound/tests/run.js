@@ -146,6 +146,8 @@ const txt = td.parts.join('\n');
 ok(txt.indexOf('{{') < 0 && txt.indexOf(r.id) >= 0 && txt.indexOf(r.po) >= 0, 'placeholders filled');
 eq(td.parts.filter(x => x === '1' || x === '2').length >= 1, true, 'item rows numbered');
 ok(td.font === 'Kantumruy Pro', 'PDF font set');
+ok(td.parts[2] === ' ', 'barcode picture in place of {{barcode}}');
+{ const png = Buffer.from(env.g.barcodePng_('IB-261028-02').getBytes().map(v => v & 255)); ok(png.slice(1, 4).toString() === 'PNG' && png.length > 1000, 'barcode PNG made'); }
 must(call('sok@x.com', 'pdf', { id: r.id }));
 ok(Object.keys(env.docs).length === nDocs + 1 && env.templateUploads === 1, 'same template: saved PDF reused');
 seeded.updated = Date.now();
