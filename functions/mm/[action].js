@@ -237,7 +237,9 @@ const clock = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 36
  *  Pieces Whisper marks as probably not speech, or that only repeat the hint it was given, are dropped (it makes those up on silence). */
 export function whisperText(d, hint) {
   const echo = String(hint || '').toLowerCase();
-  const segs = ((d && d.segments) || []).filter(g => !(g.no_speech_prob > 0.8) && !(echo && echo.indexOf(String(g.text || '').trim().toLowerCase()) >= 0));
+  // Same rule as Whisper itself: silence only when it is probably not speech AND the words are a weak guess.
+  const silent = g => g.no_speech_prob > 0.6 && g.avg_logprob < -1;
+  const segs = ((d && d.segments) || []).filter(g => !silent(g) && !(echo && echo.indexOf(String(g.text || '').trim().toLowerCase()) >= 0));
   if (d && d.segments && d.segments.length && !segs.length) return '';
   if (!segs.length) return String((d && d.text) || '').trim();
   const lines = [];
@@ -264,10 +266,12 @@ async function groqUpload(request, env) {
   form.append('model', env.GROQ_STT_MODEL || GROQ_STT);
   form.append('response_format', 'verbose_json');
   form.append('temperature', '0');
-  const lang = request.headers.get('X-MM-Lang');
-  if (lang === 'km' || lang === 'en') form.append('language', lang);
-  // The names of the people help Whisper spell them. (A list of company words was tried: on a quiet recording Whisper wrote it back as speech.)
-  const hint = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 150).trim();
+  // "Khmer + English" is sent as Khmer: left to guess, Whisper can take Khmer for another language and spoil the whole
+  // file. A short Khmer sentence with English words in it shows the style wanted: Khmer script, English words in English.
+  const lang = request.headers.get('X-MM-Lang') === 'en' ? 'en' : 'km';
+  form.append('language', lang);
+  const names = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 120).trim();
+  const hint = ((lang === 'km' ? 'ការប្រជុំនៅ ISI Steel អំពី DN, SAP និង truck។ ' : '') + names).trim();
   if (hint) form.append('prompt', hint);
   const r = await groqFetch(env, '/audio/transcriptions', { method: 'POST', body: form });
   const text = whisperText(await r.json(), hint);

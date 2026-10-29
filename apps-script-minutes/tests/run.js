@@ -196,7 +196,8 @@ async function groqRelay() {
   eq(mod.provider({}), '');
   eq(mod.whisperText({ segments: [{ start: 0, end: 4, text: ' Hello ' }, { start: 4, end: 9, text: 'team.' }, { start: 40, end: 42, text: 'Next.' }, { start: 3725, end: 3727, text: 'Bye.' }] }),
     '[00:00] Hello team.\n[00:40] Next.\n[1:02:05] Bye.', 'Whisper pieces joined into timed lines');
-  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'Kim, Dara' }, { start: 3, end: 5, text: 'Thank you.', no_speech_prob: 0.95 }] }, 'Kim, Dara'), '', 'echoed hint and silence dropped');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'Kim, Dara' }, { start: 3, end: 5, text: 'Thank you.', no_speech_prob: 0.95, avg_logprob: -1.4 }] }, 'Kim, Dara'), '', 'echoed hint and silence dropped');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'សួស្តី', no_speech_prob: 0.9, avg_logprob: -0.3 }] }), '[00:00] សួស្តី', 'clear Khmer kept even when Whisper doubts it is speech');
   const E = {};
   eq(mod.groqCandidates(['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'whisper-large-v3'], 'text', E), ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'], 'only models Groq still has');
   eq(mod.groqCandidates([], 'text', { GROQ_MODEL: 'x/y' })[0], 'x/y', 'model set in Cloudflare first');
@@ -234,7 +235,9 @@ async function groqRelay() {
     const form = calls[0].o.body;
     eq(form.get('model'), 'whisper-large-v3');
     eq(form.get('language'), 'km');
-    ok(/សុខ, Dara/.test(form.get('prompt')), 'names hint passed');
+    ok(/សុខ, Dara/.test(form.get('prompt')) && /ISI Steel/.test(form.get('prompt')), 'Khmer style hint and names passed');
+    await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm', 'X-MM-Lang': 'auto' }, H), body: Buffer.from('audio') });
+    eq(calls[calls.length - 1].o.body.get('language'), 'km', 'Khmer + English is sent as Khmer');
     ok(/\.webm$/.test(form.get('file').name), 'file name gets a sound extension: ' + form.get('file').name);
     res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/pdf' }, H), body: Buffer.from('%PDF') });
     eq(res.status, 415, 'PDF not sent to the free AI');
