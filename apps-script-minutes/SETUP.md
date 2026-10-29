@@ -16,7 +16,8 @@ Claude cannot listen to audio, so the relay uses one of two services:
 
 - **Groq (free, no card), used now.** Google refused Gemini for Kim's account (403 "denied access", 20 Oct 2026),
   so Groq was added on 21 Oct 2026. Whisper large-v3 writes out the speech (Khmer and English); a text model
-  (GPT-OSS 120B first, then others Groq has) writes the minutes, and a photo model reads photos when Groq has one.
+  (GPT-OSS 120B first, then others Groq has) writes the minutes, and photos are read by a Groq photo model, or, when Groq has none (Oct 2026), by Cloudflare's free Workers AI
+  (the `AI` binding the Fuel app's photo check also uses).
   Groq retires models often, so the relay checks Groq's list itself. Limits of the free plan: sound files up to 25 MB each (about 1 h 45 min of a phone
   recording), about 8 hours of audio a day, and a per-minute word allowance (the relay waits and tries again when
   it is hit). It does not tell speakers apart, it cannot read PDF files (take a photo or screenshot of the pages),
@@ -45,7 +46,8 @@ Claude cannot listen to audio, so the relay uses one of two services:
    - `GROQ_API_KEY` = the key from step 5
    - `MM_SECRET` = the value `setup()` made in Script properties (step 3)
    Then Deployments → the latest one → ⋯ → *Retry deployment* (secrets only reach the site on the next deployment).
-   Check: `https://isteel-app.pages.dev/mm/ping` shows `"ai":true,"provider":"groq","ticket":true`.
+   Check: `https://isteel-app.pages.dev/mm/ping` shows `"ai":true,"provider":"groq","ticket":true,"photos":true`.
+   If `photos` is false: Settings → Bindings → Add → Workers AI, variable name `AI`, then retry the deployment.
    (For Gemini instead: a key from https://aistudio.google.com/apikey saved as `GEMINI_API_KEY`.)
 7. **Home menu tile**: paste the new `apps-script/Code.gs` into the **Fuel** Apps Script and deploy a new version
    (Deploy → Manage deployments → ✎ → New version). A **ប្រជុំ** tick box column appears in Users. Admins see the
