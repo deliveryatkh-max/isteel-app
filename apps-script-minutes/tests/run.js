@@ -167,7 +167,7 @@ async function relay() {
   try {
     const req = (action, init) => mod.onRequest({ request: new Request('https://isteel-app.pages.dev/mm/' + action, init), env, params: { action } });
     let res = await req('ping', { method: 'GET' });
-    eq(await res.json(), { ok: true, ai: true, provider: 'gemini', ticket: true });
+    eq(await res.json(), { ok: true, ai: true, provider: 'gemini', ticket: true, photos: true });
     res = await req('generate', { method: 'POST', body: '{}' });
     eq(res.status, 401, 'no ticket');
     res = await req('upload', { method: 'POST', headers: { 'X-MM-Ticket': tk, 'Content-Type': 'audio/webm;codecs=opus', 'X-File-Name': encodeURIComponent('ការថត.webm') }, body: Buffer.from('audio') });
@@ -196,7 +196,8 @@ async function groqRelay() {
   eq(mod.provider({}), '');
   eq(mod.whisperText({ segments: [{ start: 0, end: 4, text: ' Hello ' }, { start: 4, end: 9, text: 'team.' }, { start: 40, end: 42, text: 'Next.' }, { start: 3725, end: 3727, text: 'Bye.' }] }),
     '[00:00] Hello team.\n[00:40] Next.\n[1:02:05] Bye.', 'Whisper pieces joined into timed lines');
-  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'Kim, Dara' }, { start: 3, end: 5, text: 'Thank you.', no_speech_prob: 0.95 }] }, 'Kim, Dara'), '', 'echoed hint and silence dropped');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'Kim, Dara' }, { start: 3, end: 5, text: 'Thank you.', no_speech_prob: 0.95, avg_logprob: -1.4 }] }, 'Kim, Dara'), '', 'echoed hint and silence dropped');
+  eq(mod.whisperText({ segments: [{ start: 0, end: 3, text: 'សួស្តី', no_speech_prob: 0.9, avg_logprob: -0.3 }] }), '[00:00] សួស្តី', 'clear Khmer kept even when Whisper doubts it is speech');
   const E = {};
   eq(mod.groqCandidates(['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'whisper-large-v3'], 'text', E), ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'], 'only models Groq still has');
   eq(mod.groqCandidates([], 'text', { GROQ_MODEL: 'x/y' })[0], 'x/y', 'model set in Cloudflare first');
@@ -226,7 +227,7 @@ async function groqRelay() {
   try {
     const req = (action, init) => mod.onRequest({ request: new Request('https://isteel-app.pages.dev/mm/' + action, init), env, params: { action } });
     let res = await req('ping', { method: 'GET' });
-    eq(await res.json(), { ok: true, ai: true, provider: 'groq', ticket: true });
+    eq(await res.json(), { ok: true, ai: true, provider: 'groq', ticket: true, photos: false });
     const H = { 'X-MM-Ticket': tk };
     res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm;codecs=opus', 'X-File-Name': encodeURIComponent('ការថត'), 'X-MM-Lang': 'km', 'X-MM-Hint': encodeURIComponent('សុខ, Dara') }, H), body: Buffer.from('audio') });
     const up = await res.json();
@@ -234,7 +235,9 @@ async function groqRelay() {
     const form = calls[0].o.body;
     eq(form.get('model'), 'whisper-large-v3');
     eq(form.get('language'), 'km');
-    ok(/សុខ, Dara/.test(form.get('prompt')), 'names hint passed');
+    ok(/សុខ, Dara/.test(form.get('prompt')) && /ISI Steel/.test(form.get('prompt')), 'Khmer style hint and names passed');
+    await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/webm', 'X-MM-Lang': 'auto' }, H), body: Buffer.from('audio') });
+    eq(calls[calls.length - 1].o.body.get('language'), 'km', 'Khmer + English is sent as Khmer');
     ok(/\.webm$/.test(form.get('file').name), 'file name gets a sound extension: ' + form.get('file').name);
     res = await req('upload', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/pdf' }, H), body: Buffer.from('%PDF') });
     eq(res.status, 415, 'PDF not sent to the free AI');
@@ -260,7 +263,21 @@ async function groqRelay() {
     const img = 'data:image/jpeg;base64,AAAA';
     const files = [1, 2, 3, 4, 5, 6].map(() => ({ inline: img })).concat([{ skipped: 'plan.pdf' }, { plain: 'typed note', name: 'n.txt' }]);
     let ocr = one(await gen({ kind: 'ocr', files }));
-    ok(/5 photo\(s\) not read/.test(ocr) && /typed note/.test(ocr), 'no photo model: minutes still go on: ' + ocr);
+    ok(/photo 6 not read: no photo reader/.test(ocr) && /typed note/.test(ocr), 'no photo model anywhere: minutes still go on: ' + ocr);
+    // Groq has no photo model, Cloudflare Workers AI reads them one by one (first model fails, the next answers)
+    const aiCalls = [];
+    env.AI = { run: async (model, inp) => { aiCalls.push({ model, inp }); if (/llama-4-scout/.test(model)) throw new Error('capacity'); return { response: 'MOM text ' + aiCalls.length }; } };
+    ocr = one(await gen({ kind: 'ocr', files: [{ inline: img }, { inline: img }] }));
+    eq(aiCalls.map(c => c.model.split('/').pop()), ['llama-4-scout-17b-16e-instruct', 'mistral-small-3.1-24b-instruct', 'llama-4-scout-17b-16e-instruct', 'mistral-small-3.1-24b-instruct']);
+    ok(/MOM text 2/.test(ocr) && /MOM text 4/.test(ocr) && /File 2\./.test(aiCalls[2].inp.messages[0].content[0].text), 'Workers AI read both photos: ' + ocr);
+    eq(aiCalls[1].inp.messages[0].content[1].image_url.url, img);
+    delete env.AI;
+    // nothing read at all: a clear message instead of empty minutes
+    ok(mod.nothingToWrite({ transcript: '', ocr: '[photo 1 not read: x]\n\n[1 photo(s) not read: y]', notes: ' ' }), 'only not-read notes = nothing');
+    ok(!mod.nothingToWrite({ ocr: 'Defects: friction' }), 'real text is something');
+    const er = await req('generate', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, H), body: JSON.stringify({ kind: 'minutes', ocr: '[photo 1 not read: x]' }) });
+    eq(er.status, 422);
+    ok(/^EMPTY: Nothing could be read/.test((await er.json()).error), 'empty material refused');
     models.push('meta-llama/llama-4-maverick-17b-128e-instruct');
     mod.__resetGroq && mod.__resetGroq();
     const m = calls.length;
