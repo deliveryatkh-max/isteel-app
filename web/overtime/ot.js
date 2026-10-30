@@ -633,7 +633,9 @@
     const f = state.sumF || { from: monthStart(today), to: today };
     fetchSummary(me, f.from, f.to).catch(() => { /* shown when the tab opens */ });
   }
-  async function renderMine() {
+  // quiet = background refresh: draws again only when the numbers changed, and keeps the scroll position
+  async function renderMine(quiet) {
+    quiet = quiet === true;
     scanner.stop();
     state.tab = 'mine'; paintTabs();
     // Only the person using the phone now (the last Employee ID found on the form, or checked below) is shown,
@@ -694,14 +696,16 @@
       $('#qBtn').onclick = check;
     };
     redraw = () => draw(getJ(cacheKey(), null), false);
-    if (!ids.length) return draw(null, false);
+    if (!ids.length) return quiet ? undefined : draw(null, false);
     const cached = getJ(cacheKey(), null);
-    draw(cached, true);
+    if (!quiet) draw(cached, true);
     const key = cacheKey();
     try {
       const res = await fetchSummary(f.id, f.from, f.to);
-      if (state.tab === 'mine' && key === cacheKey()) draw(res, false);
+      if (quiet && JSON.stringify(res) === JSON.stringify(cached)) return;
+      if (state.tab === 'mine' && key === cacheKey()) { if (quiet) LIVE.keep(() => draw(res, false)); else draw(res, false); }
     } catch (e) {
+      if (quiet) throw e;
       if (state.tab === 'mine' && key === cacheKey()) draw(cached, false, niceError(e));
     }
   }
@@ -800,4 +804,6 @@
   loadPeople();
   if (get(K.id) && !state.emp) pick(get(K.id));
   setTimeout(preloadSummary, 1500);   // My requests then opens with fresh numbers
+  // My requests refreshes in the background every minute, so approvals show without pressing Refresh
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => renderMine(true), busy: () => state.tab !== 'mine' });
 })();

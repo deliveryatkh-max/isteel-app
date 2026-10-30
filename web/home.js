@@ -177,20 +177,25 @@
   }
 
   // Opens at once from the saved menu, then checks with the server in the background.
-  async function load() {
+  // quiet = background refresh (new apps ticked, waiting counts): no spinner, redraws only on a change
+  async function load(quiet) {
+    quiet = quiet === true;
     if (!CFG.API_URL) { renderMenu({ user: { name: 'Demo' }, apps: APPS.map(a => a.key) }); return; }
     if (!tokenValid()) { renderLogin(); return; }
     const key = CACHE_KEY + email();
     let cached = null;
     try { cached = JSON.parse(get(key) || 'null'); } catch (e) { /* ignore */ }
-    if (cached) renderMenu(cached); else $('#view').innerHTML = '<div class="spinner"></div>';
-    $('#bar').classList.add('busy');
+    if (!quiet) {
+      if (cached) renderMenu(cached); else $('#view').innerHTML = '<div class="spinner"></div>';
+      $('#bar').classList.add('busy');
+    }
     try {
       const d = await api('home');
       set(key, JSON.stringify(d));
       if (JSON.stringify(d) !== JSON.stringify(cached)) renderMenu(d);
     } catch (e) {
       if (e.code === 'AUTH') { set(TOKEN_KEY, null); renderLogin(); }
+      else if (quiet) throw e;
       // Apps Script not updated yet: show today's apps (each app still checks access when opened).
       else if (/Unknown action/i.test(e.message)) renderMenu({ user: { name: email() }, apps: ['fuel', 'dashboard'] });
       else if (e.code === 'NOACCESS') { set(key, null); renderError(e, true); }
@@ -273,4 +278,6 @@
   // Coming back to the menu (phone back button) shows any change made by the admin.
   window.addEventListener('pageshow', e => { if (e.persisted) load(); });
   load();
+  // The menu also refreshes in the background every minute while it is open on a signed-in phone.
+  if (window.LIVE && CFG.API_URL) LIVE.start({ run: () => load(true), busy: () => !tokenValid() || !$('#view .tile') });
 })();

@@ -865,15 +865,19 @@
   }
 
   // ---------------------------------------------------------------- start
-  async function refreshList() {
+  // quiet = background refresh: redraws the list only when it changed, and keeps the scroll position
+  async function refreshList(quiet) {
+    quiet = quiet === true;
     try {
       const d = await api(boot ? 'list' : 'boot');
+      if (quiet && Array.isArray(d) && boot && JSON.stringify(d) === JSON.stringify(boot.recent)) return;
       if (Array.isArray(d)) boot = Object.assign({}, boot, { recent: d });
       else { boot = d; if (d.ticket) { ticket = { v: d.ticket, until: Date.now() + 11 * 3600000, email: myEmail() }; set('mm_ticket', JSON.stringify(ticket)); } }
       set('mm_boot_' + myEmail(), JSON.stringify(boot));
-      if (location.hash === '' || location.hash === '#/' || location.hash === '#') renderHome();
+      if (location.hash === '' || location.hash === '#/' || location.hash === '#') { if (quiet) LIVE.keep(renderHome); else renderHome(); }
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS') return showBlocked(e);
+      if (quiet) throw e;
       if (!boot && (location.hash === '' || location.hash === '#/')) $('#list').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
     }
   }
@@ -893,6 +897,8 @@
   let lastW = isDesk();
   window.addEventListener('resize', () => { if (isDesk() !== lastW) { lastW = isDesk(); if (/^#\/m\//.test(location.hash)) { collect(); paintMeeting(); } } });
   document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+  // the meetings list refreshes in the background every minute (not while recording or the AI is working)
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refreshList(true), busy: () => rec.on || running || !/^(#\/?)?$/.test(location.hash) });
 
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { route(); refreshList(); }

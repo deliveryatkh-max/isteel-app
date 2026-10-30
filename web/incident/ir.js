@@ -136,17 +136,26 @@
   const reports = () => (B && B.reports) || [];
   const toSign = () => reports().filter(r => r.toSign);
 
-  async function refresh() {
+  let lastBoot = '';
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  async function refresh(quiet) {
+    quiet = quiet === true;
     try {
       const d = PUBLIC ? await api('publicBoot', { key: PUBLIC_KEY }) : await api('boot');
+      const json = JSON.stringify(d);
+      if (quiet && json === lastBoot) return liveReport();
+      lastBoot = json;
       B = PUBLIC ? Object.assign({ user: null, reports: [] }, d) : d;
       CATS = B.categories || [];
       useTexts(B.texts);
       if (!PUBLIC) set('ir_boot', JSON.stringify(B));
       paintTabs();
-      screen();
+      if (!quiet) screen();
+      else if (cur && /^#\/?r\//.test(location.hash)) await liveReport();
+      else LIVE.keep(screen);
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ir_boot', null); B = null; showBlocked(e); return; }
+      if (quiet) throw e;
       if (!B) $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><button class="btn mt" id="retry">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>`, $('#retry').onclick = refresh;
       else toast(e.message);
     }
@@ -865,6 +874,15 @@
     } catch (e) { if (!saved) $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><a class="btn mt" href="#/">${t('ទៅបញ្ជី', 'Back to the list')}</a></div>`; }
   }
 
+  // Background refresh of the open report: repaints only when it changed on the server.
+  async function liveReport() {
+    if (!cur || !/^#\/?r\//.test(location.hash)) return;
+    const id = cur.id, d = await api('get', { id });
+    if (!cur || cur.id !== id || JSON.stringify(Object.assign({}, plain(cur), { _at: 0 })) === JSON.stringify(Object.assign({}, plain(d), { _at: 0 }))) return;
+    keepReport(d);
+    cur = d; LIVE.keep(paintReport);
+  }
+
   const kv = (km, en, v) => (v ? `<div class="kv"><span>${esc(t(km, en))}</span><b>${esc(v)}</b></div>` : '');
   function paintReport() {
     withMedia(cur); keepReport(cur);
@@ -1197,8 +1215,8 @@
   if (B) CATS = B.categories || [];
   if (!DEMO && !PUBLIC && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { if (B) paintTabs(); route(); refresh(); }
-  // Screens auto-refresh when the phone comes back to the app (not while a form is open).
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !PUBLIC && !(f && $('#view .steps'))) refresh(); });
+  // Screens refresh in the background every minute and when the phone comes back to the app (not while a form is open).
+  if (window.LIVE && !PUBLIC && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => sending || !!(f && $('#view .steps')) });
 
   // ---------------------------------------------------------------- demo (no API_URL in config.js)
   function demoApi(action, p) {
