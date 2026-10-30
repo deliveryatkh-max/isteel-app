@@ -839,13 +839,17 @@
     const back = `<button type="button" class="btn back" id="suBack">← ${t('ត្រឡប់', 'Back')}</button>`;
     if (su.job && !su.job.loading) return renderSignupJob(back);
     const busy = !!(su.job && su.job.loading);
+    // Signed in on the home menu: the ID is filled in and greyed out, so the manager just taps Search (Kim, 30 Oct 2026).
+    const me = getJ('steel_me', null), myId = me && /^\d{6}$/.test(String(me.id || '')) ? String(me.id) : '';
+    if (myId) su.id = myId;
     $('#view').innerHTML = `${back}
       <section class="card">
         <h2><span class="n">1</span>${t('លេខកាតសំគាល់ខ្លួនបុគ្គលិក', 'Employee ID')}</h2>
         <div class="idrow">
-          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('ឧ. 123456', 'e.g. 123456'))}" value="${esc(su.id)}">
+          <input class="in${su.err ? ' err' : ''}${myId ? ' locked' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('ឧ. 123456', 'e.g. 123456'))}" value="${esc(su.id)}" ${myId ? 'readonly aria-readonly="true"' : ''}>
           <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
         </div>
+        ${myId ? `<div class="hint">🔒 ${t('លេខកាតរបស់អ្នក (បានចូលគណនី)។ ចុចស្វែងរក។', 'Your ID (signed in). Tap Search.')}</div>` : ''}
         ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : ''}
       </section>`;
     const inp = $('#suId');
