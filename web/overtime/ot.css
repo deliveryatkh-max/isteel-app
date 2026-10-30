@@ -225,3 +225,20 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .bar-right { gap: 5px; }
 /* Every app header is the same height, with the same logo and buttons (Kim, 2026-10-11). */
 .bar { min-height: calc(54px + env(safe-area-inset-top)); padding-bottom: 0; padding-top: env(safe-area-inset-top); }
+
+/* Start menu (Overtime | Sign up as OT approver) and the sign-up screen */
+.menu2 { display: grid; gap: 14px; margin-top: 6px; }
+.mtile { display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto; column-gap: 14px; align-items: center; padding: 18px 16px; border-radius: 18px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-align: left; font: inherit; cursor: pointer; width: 100%; }
+.mtile .mi { grid-row: 1 / 3; width: 64px; height: 64px; border-radius: 16px; background: var(--soft); display: flex; align-items: center; justify-content: center; font-size: 36px; }
+.mtile b { font-size: 19px; }
+.mtile small { color: var(--muted); font-size: 14px; }
+.btn.back { margin-bottom: 12px; }
+.sulist { margin-top: 12px; }
+.supick { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; font: inherit; font-size: 16px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; min-height: 52px; }
+.suwait { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 14px; }
+.suwait .sp { width: 16px; height: 16px; border: 2.5px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+.sudone { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.sudone div { background: var(--soft); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.sudone small { display: block; color: var(--muted); font-size: 12.5px; }
+.sudone b { display: block; font-size: 15.5px; overflow-wrap: anywhere; }

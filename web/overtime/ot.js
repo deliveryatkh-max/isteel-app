@@ -750,6 +750,103 @@
     finally { if ($('#qBtn')) $('#qBtn').disabled = false; }
   }
 
+  // ---------- start menu (Kim, 30 Oct 2026): Overtime | Sign up as OT approver ----------
+  function openForm() { renderNew(); if (get(K.id) && !state.emp) pick(get(K.id)); }
+  function renderMenu() {
+    state.tab = 'menu'; paintTabs(); redraw = renderMenu; stopSignupPoll();
+    $('#view').innerHTML = `
+      <div class="menu2">
+        <button type="button" class="mtile" id="mOt"><span class="mi">⏱️</span><b>${t('ថែមម៉ោង', 'Overtime')}</b>
+          <small>${t('ស្កេន QR របស់ផ្នែក ហើយស្នើសុំថែមម៉ោង', 'Scan your department QR and request OT')}</small></button>
+        <button type="button" class="mtile" id="mSign"><span class="mi">📲</span><b>${t('ចុះឈ្មោះជាអ្នកអនុម័ត OT', 'Sign up as OT approver')}</b>
+          <small>${t('សម្រាប់ប្រធានផ្នែក៖ ភ្ជាប់ Telegram ដើម្បីអនុម័តថែមម៉ោង', 'For line managers: link your Telegram to approve OT')}</small></button>
+      </div>`;
+    $('#mOt').onclick = openForm;
+    $('#mSign').onclick = () => renderSignup();
+  }
+
+  // Sign up as OT approver: pick your name, open Telegram, press Start. The bot saves the chat ID and
+  // username in "OT Approvers"; this screen watches for it and shows what was saved.
+  const su = { list: null, err: '', q: '', job: null, status: null, timer: 0, until: 0 };
+  function stopSignupPoll() { clearTimeout(su.timer); su.timer = 0; }
+  async function loadManagers() {
+    try { const r = await api('managers', {}); su.list = r.list || []; su.err = ''; }
+    catch (e) { su.list = null; su.err = /unknown action/i.test(e.message) ? t('Admin ត្រូវធ្វើបច្ចុប្បន្នភាព OT script ជាមុនសិន។', 'The admin needs to update the OT script first.') : niceError(e); }
+    if (state.tab === 'signup' && !su.job) renderSignup();
+  }
+  function renderSignup() {
+    state.tab = 'signup'; paintTabs(); redraw = renderSignup;
+    const back = `<button type="button" class="btn back" id="suBack">← ${t('ត្រឡប់', 'Back')}</button>`;
+    if (su.job) return renderSignupJob(back);
+    if (!su.list && !su.err) { $('#view').innerHTML = back + '<div class="spinner" aria-label="Loading"></div>'; loadManagers(); }
+    else {
+      const q = su.q.toLowerCase();
+      const rows = (su.list || []).filter(m => !q || m.name.toLowerCase().includes(q));
+      $('#view').innerHTML = `${back}
+        <section class="card">
+          <h2><span class="n">1</span>${t('ជ្រើសរើសឈ្មោះរបស់អ្នក', 'Pick your name')}</h2>
+          ${su.err ? `<div class="alert bad" role="alert">${esc(su.err)}</div>` : `
+          <input class="in" id="suQ" type="search" autocomplete="off" placeholder="🔎 ${esc(t('ស្វែងរកឈ្មោះ', 'Search your name'))}" value="${esc(su.q)}">
+          <div class="list sulist">${rows.map(m => `<button type="button" class="item supick" data-n="${esc(m.name)}"><span>${esc(m.name)}</span>${m.ready ? `<span class="badge approved">✅ ${t('បានចុះឈ្មោះ', 'Signed up')}</span>` : ''}</button>`).join('') || `<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`}</div>
+          <p class="hint">${t('មិនឃើញឈ្មោះរបស់អ្នក? សូមប្រាប់ Admin ឱ្យបញ្ចូលឈ្មោះអ្នកក្នុង "Employee & Approver"។', 'Name not listed? Ask the admin to put your name in "Employee & Approver".')}</p>`}
+        </section>`;
+      const qi = $('#suQ');
+      if (qi) qi.oninput = () => { su.q = qi.value; const p = qi.selectionStart; renderSignup(); const n = $('#suQ'); n.focus(); n.setSelectionRange(p, p); };
+      document.querySelectorAll('.supick').forEach(b => b.onclick = () => startSignup(b.dataset.n));
+    }
+    $('#suBack').onclick = renderMenu;
+  }
+  async function startSignup(name) {
+    su.job = { manager: name, loading: true }; su.status = null; renderSignup();
+    try { su.job = await api('signup', { manager: name }); su.until = Date.now() + 14 * 60000; pollSignup(); }
+    catch (e) { su.job = null; su.err = ''; toast(niceError(e)); }
+    if (state.tab === 'signup') renderSignup();
+  }
+  function pollSignup(ms) {
+    stopSignupPoll();
+    su.timer = setTimeout(async () => {
+      if (state.tab !== 'signup' || !su.job || !su.job.code) return;
+      if (Date.now() > su.until) { su.status = { expired: true }; return renderSignup(); }
+      try { su.status = await api('signupStatus', { code: su.job.code }); } catch (e) { /* try again */ }
+      const st = su.status || {};
+      if (st.ok || st.err || st.expired) { if (st.ok) su.list = null; return renderSignup(); }
+      pollSignup();
+    }, ms == null ? 2500 : ms);
+  }
+  function renderSignupJob(back) {
+    const j = su.job, st = su.status || {};
+    const again = `<button type="button" class="btn big" id="suAgain">${t('ជ្រើសឈ្មោះផ្សេង', 'Pick another name')}</button>`;
+    let body;
+    if (j.loading) body = '<div class="spinner" aria-label="Loading"></div>';
+    else if (st.ok) body = `
+      <div class="alert ok">✅ ${t('បានចុះឈ្មោះរួចរាល់! សំណើថែមម៉ោងពីក្រុមរបស់អ្នកនឹងផ្ញើមក Telegram នេះ។', 'Signed up! OT requests from your team will come to this Telegram.')}</div>
+      <div class="sudone">
+        <div><small>${t('ឈ្មោះ', 'Name')}</small><b>${esc(j.manager)}</b></div>
+        <div><small>Telegram</small><b>${esc(st.tgName || '—')}</b></div>
+        <div><small>Username</small><b>${esc(st.username || '—')}</b></div>
+        <div><small>Chat ID</small><b>${esc(st.chatId)}</b></div>
+      </div>`;
+    else if (st.err) body = `<div class="alert bad" role="alert">❌ ${st.err === 'MISMATCH'
+      ? esc(t('Telegram នេះមិនត្រូវនឹងគណនីក្នុង Sheet (' + st.expect + ') ទេ។ សូមប្រើ Telegram នោះ ឬប្រាប់ Admin ឱ្យកែ។', 'This Telegram is not the one in the sheet (' + st.expect + '). Use that Telegram, or ask the admin to correct it.'))
+      : st.err === 'TAKEN' ? t('ឈ្មោះនេះបានចុះឈ្មោះជាមួយ Telegram ផ្សេងរួចហើយ។ សូមប្រាប់ Admin។', 'This name is already signed up with another Telegram. Please ask the admin.')
+      : esc(st.err)}</div>${again}`;
+    else if (st.expired) body = `<div class="alert warn">${t('តំណផុតកំណត់ហើយ។ សូមព្យាយាមម្តងទៀត។', 'The link has expired. Please try again.')}</div>${again}`;
+    else body = `
+      <p class="hint">${t('ចុចប៊ូតុងខាងក្រោម ដើម្បីបើក Telegram រួចចុច <b>Start</b>។ បន្ទាប់មកត្រឡប់មកទីនេះវិញ។', 'Tap the button below to open Telegram, then press <b>Start</b>. Then come back here.')}</p>
+      <a class="btn ok big" id="suTg" href="${esc(j.link)}" target="_blank" rel="noopener">📲 ${t('បើក Telegram', 'Open Telegram')}</a>
+      <p class="hint center suwait"><span class="sp"></span> ${t('កំពុងរង់ចាំអ្នកចុច Start…', 'Waiting for you to press Start…')}</p>
+      ${j.ready ? `<div class="alert warn">${t('ឈ្មោះនេះបានចុះឈ្មោះរួចហើយ។ ចុះឈ្មោះម្តងទៀតតែពី Telegram ដដែលប៉ុណ្ណោះ។', 'This name is already signed up. Sign up again only from the same Telegram.')}</div>` : ''}`;
+    $('#view').innerHTML = `${back}
+      <section class="card">
+        <h2><span class="n">2</span>${esc(j.manager)}</h2>
+        ${body}
+      </section>`;
+    $('#suBack').onclick = () => { su.job = null; stopSignupPoll(); renderSignup(); };
+    if ($('#suAgain')) $('#suAgain').onclick = () => { su.job = null; su.status = null; renderSignup(); };
+  }
+  // Coming back from Telegram: check at once instead of waiting for the next tick.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'signup' && su.timer) pollSignup(0); });
+
   // ---------- chrome ----------
   function paintTabs() {
     document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
@@ -760,7 +857,7 @@
     $('#themeBtn').title = t('ពន្លឺ / ងងឹត', 'Light / Dark');
     if (DEMO) { $('#demo').hidden = false; $('#demo').textContent = t('DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុក ហើយមិនផ្ញើ Telegram ទេ', 'DEMO · nothing is saved and no Telegram message is sent'); }
   }
-  document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => (b.dataset.tab === 'mine' ? renderMine() : renderNew()));
+  document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => { stopSignupPoll(); return b.dataset.tab === 'mine' ? renderMine() : openForm(); });
 
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   function paintTheme() { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; }
@@ -786,6 +883,9 @@
         holidays: [{ date: '2026-10-10', en: 'Phcum Ben Festival', kh: 'ពិធីបុណ្យភ្ជុំបិណ្ឌ' }, { date: '2026-10-15', en: "Commemoration Day of King's Father", kh: 'ទិវាប្រារព្ធពិធីគោរពព្រះវិញ្ញាណក្ខន្ធ ព្រះករុណា ព្រះបាទសម្តេចព្រះ នរោត្តម សីហនុ' }], list: p.withEmployees ? Object.values(EMP) : undefined };
       if (action === 'dept') { const c = String(p.code || '').replace(/^.*[?&]d=/, '').toUpperCase(); if (c !== 'D-DEMO01') throw Object.assign(new Error('Wrong QR code.'), { code: 'BAD_QR' }); return { code: c, name: 'Warehouse (demo)' }; }
       if (action === 'employees') return { list: Object.values(EMP) };
+      if (action === 'managers') return { list: [{ name: 'Kim Sopheakdey', ready: true }, { name: 'Ngin Tangvey', ready: false }] };
+      if (action === 'signup') return { code: 'DEMO', link: 'https://t.me/', manager: p.manager, ready: p.manager === 'Kim Sopheakdey' };
+      if (action === 'signupStatus') { const n = +(get('ot_demo_su') || 0) + 1; set('ot_demo_su', n > 2 ? null : String(n)); return n > 2 ? { ok: true, username: '@demo_manager', tgName: 'Demo Manager', chatId: '123456789' } : {}; }
       if (action === 'lookup') { const e = EMP[p.id]; if (!e) throw Object.assign(new Error('Employee ID not found.'), { code: 'NOTFOUND' }); return e; }
       if (action === 'submit') {
         if (db['k_' + p.key]) return { reqId: db['k_' + p.key], status: 'Pending', repeated: true };
@@ -812,12 +912,11 @@
   // Opened from the printed QR with the phone camera: check that code, then tidy the address bar.
   const urlDept = new URLSearchParams(location.search).get('d');
   if (urlDept) { try { history.replaceState(null, '', location.pathname); } catch (e) { /* old phone */ } }
-  if (urlDept) resetForm();
-  renderNew();
-  if (urlDept) checkDept(urlDept, true);
+  // Opened from the home menu: the two-choice menu. Opened from a QR scan: straight to the form.
+  if (urlDept) { resetForm(); renderNew(); checkDept(urlDept, true); } else renderMenu();
   loadConfig();
   loadPeople();
-  if (get(K.id) && !state.emp) pick(get(K.id));
+  if (urlDept && get(K.id) && !state.emp) pick(get(K.id));
   setTimeout(preloadSummary, 1500);   // My requests then opens with fresh numbers
   // My requests refreshes in the background every minute, so approvals show without pressing Refresh
   if (window.LIVE && !DEMO) LIVE.start({ run: () => renderMine(true), busy: () => state.tab !== 'mine' });
