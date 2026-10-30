@@ -92,6 +92,9 @@ function doPost(e) {
       case 'submit': return json_({ ok: true, data: submit_(p) });
       case 'status': return json_({ ok: true, data: statusFor_(p) });
       case 'summary': return json_({ ok: true, data: summary_(p) });
+      case 'managers': return json_({ ok: true, data: managersPublic_() });
+      case 'signup': return json_({ ok: true, data: signupStart_(p) });
+      case 'signupStatus': return json_({ ok: true, data: signupStatus_(p) });
       default: return json_({ ok: false, error: 'Unknown action' });
     }
   } catch (err) {
@@ -948,6 +951,7 @@ function registerApprover_(m) {
   const username = normUser_(from.username);
   const payload = String(m.text || '').trim().split(/\s+/)[1] || '';
   if (/^ap_/i.test(payload)) return registerFromLink_(m, payload);
+  if (/^su_[A-Za-z0-9]{16}$/.test(payload)) return registerFromApp_(m, payload.slice(3));
   if (!username) {
     return tg_('sendMessage', { chat_id: chatId, text: 'Please set a Telegram username first (Settings → Username), then press /start again.' });
   }
@@ -983,19 +987,50 @@ function registerApprover_(m) {
 // The manager opened their own sign-up link (t.me/<bot>?start=ap_…): the link says who they are,
 // so no Telegram username needs to be typed into the sheet first.
 function registerFromLink_(m, code) {
-  const from = m.from || {};
-  const chatId = String(m.chat.id);
-  const username = normUser_(from.username);
-  const tgName = [from.first_name, from.last_name].filter(Boolean).join(' ');
-  const who = (username ? '@' + username : tgName) + ' (' + chatId + ')';
   const sign = ss_().getSheetByName(OT.SIGNUP);
   const rows = sign && sign.getLastRow() > 1 ? sign.getRange(2, 1, sign.getLastRow() - 1, SIGNUP_COLS.length).getValues() : [];
   const at = rows.findIndex(r => String(r[1]).trim() === code);
   const manager = at >= 0 ? String(rows[at][0]).trim() : '';
   if (!manager) {
-    log_('', 'REGISTER_REFUSED', who, 'Unknown sign-up link ' + code.slice(0, 40));
-    return tg_('sendMessage', { chat_id: chatId, text: 'This sign-up link is old or wrong. Please ask the admin for your new OT sign-up link.' });
+    const from = m.from || {};
+    log_('', 'REGISTER_REFUSED', (from.username ? '@' + from.username : '') + ' (' + m.chat.id + ')', 'Unknown sign-up link ' + code.slice(0, 40));
+    return tg_('sendMessage', { chat_id: String(m.chat.id), text: 'This sign-up link is old or wrong. Please ask the admin for your new OT sign-up link.' });
   }
+  registerManager_(m, manager, 'sign-up link', (who) => {
+    sign.getRange(at + 2, 5, 1, 2).setValues([['Registered ' + Utilities.formatDate(new Date(), 'Asia/Phnom_Penh', 'd-MMM-yy h:mm a'), who]]);
+  });
+}
+
+// The manager tapped "Sign up as OT approver" in the OT app, picked their name and pressed Start (t.me/<bot>?start=su_…).
+// The code lives 15 minutes in the cache; the app watches it to show the saved chat ID and username.
+function registerFromApp_(m, code) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('su_' + code);
+  const chatId = String(m.chat.id);
+  if (!hit) return tg_('sendMessage', { chat_id: chatId, text: 'This sign-up link has expired. Open the OT app → Sign up as OT approver and try again.' });
+  const job = JSON.parse(hit);
+  const done = res => { try { cache.put('su_' + code, JSON.stringify(Object.assign(job, res)), 900); } catch (e) { /* page shows a timeout */ } };
+  // If HR already typed this manager's Telegram username, only that Telegram account may sign up as them.
+  const username = normUser_((m.from || {}).username);
+  const employees = readEmployees_();
+  const typed = Array.from(new Set([].concat.apply([], Object.keys(employees).map(k => employees[k]))
+    .filter(e => normName_(e.manager) === normName_(job.manager)).map(e => normUser_(e.telegram)).filter(Boolean)));
+  if (typed.length && typed.indexOf(username) < 0) {
+    log_('', 'REGISTER_REFUSED', (username ? '@' + username : '') + ' (' + chatId + ')', job.manager + ': Telegram does not match ' + typed.map(u => '@' + u).join(', '));
+    done({ err: 'MISMATCH', expect: typed.map(u => '@' + u).join(', ') });
+    return tg_('sendMessage', { chat_id: chatId, text: 'The OT sheet lists ' + job.manager + ' with Telegram ' + typed.map(u => '@' + u).join(', ') + '. Please sign up from that Telegram account, or ask the admin to correct "' + OT.EMP + '".' });
+  }
+  const r = registerManager_(m, job.manager, 'OT app sign-up');
+  done(r.ok ? { ok: true, username: r.username, tgName: r.tgName, chatId: r.chatId } : { err: r.code });
+}
+
+/** Saves one manager's Telegram chat in "OT Approvers" and answers them in Telegram. Returns { ok, code?, username, tgName, chatId }. */
+function registerManager_(m, manager, how, after) {
+  const from = m.from || {};
+  const chatId = String(m.chat.id);
+  const username = normUser_(from.username);
+  const tgName = [from.first_name, from.last_name].filter(Boolean).join(' ');
+  const who = (username ? '@' + username + ' · ' : '') + tgName + ' · ' + chatId;
   const result = withLock_(() => {
     const sh = ensureSheet_(OT.APPROVERS, APPROVER_COLS);
     const mk = normName_(manager);
@@ -1009,17 +1044,56 @@ function registerFromLink_(m, code) {
     sh.getRange(row, 1, 1, APPROVER_COLS.length).setValues([[username ? '@' + username : '', manager, chatId, tgName, new Date(), 'Yes']]);
     let filled = { filled: 0, other: 0 };
     try { if (username) filled = fillManagerTelegram_(manager, username); } catch (e) { console.error('Telegram fill failed: ' + e); }
-    sign.getRange(at + 2, 5, 1, 2).setValues([['Registered ' + Utilities.formatDate(new Date(), 'Asia/Phnom_Penh', 'd-MMM-yy h:mm a'), (username ? '@' + username + ' · ' : '') + tgName + ' · ' + chatId]]);
+    try { if (after) after(who); } catch (e) { console.error('Sign-up tab update failed: ' + e); }
     CacheService.getScriptCache().remove('emp_v2');
     return filled;
   });
   if (result === 'conflict') {
     log_('', 'REGISTER_REFUSED', who, manager + ' is already registered to another Telegram account');
-    return tg_('sendMessage', { chat_id: chatId, text: manager + ' is already registered to another Telegram account. Ask the admin to set Active = No on the old row in "' + OT.APPROVERS + '", then open the link again.' });
+    tg_('sendMessage', { chat_id: chatId, text: manager + ' is already registered to another Telegram account. Ask the admin to set Active = No on the old row in "' + OT.APPROVERS + '", then try again.' });
+    return { ok: false, code: 'TAKEN' };
   }
-  log_('', 'REGISTERED', who, manager + ' (sign-up link' + (result.filled ? ', Telegram filled for ' + result.filled + ' staff' : '') + (result.other ? ', ' + result.other + ' rows have another Telegram' : '') + ')');
+  log_('', 'REGISTERED', who, manager + ' (' + how + (result.filled ? ', Telegram filled for ' + result.filled + ' staff' : '') + (result.other ? ', ' + result.other + ' rows have another Telegram' : '') + ')');
   tg_('sendMessage', { chat_id: chatId, text: '✅ Registered as ' + manager + '. OT requests from your team will come here for approval.' });
   resendFollowUps_();
+  return { ok: true, username: username ? '@' + username : '', tgName, chatId };
+}
+
+// ---- OT app: "Sign up as OT approver" screen
+// Line managers to pick from (names only, plus whether they are already signed up).
+function managersPublic_() {
+  const employees = employeesCached_(), approvers = readApprovers_();
+  const seen = {};
+  Object.keys(employees).forEach(k => employees[k].forEach(e => {
+    const key = normName_(e.manager);
+    if (!key || seen[key]) return;
+    seen[key] = { name: e.manager, ready: resolveApprover_(e.id, employees, approvers).ok };
+  }));
+  return { list: Object.keys(seen).map(k => seen[k]).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+function botUsername_() {
+  const cache = CacheService.getScriptCache();
+  let u = cache.get('bot_user');
+  if (!u) { u = tg_('getMe', {}).username; cache.put('bot_user', u, 21600); }
+  return u;
+}
+function signupStart_(p) {
+  const name = String(p.manager || '').trim().slice(0, 120);
+  const pick = managersPublic_().list.find(x => normName_(x.name) === normName_(name));
+  if (!pick) fail_('NOTFOUND', 'This name is not a line manager in "' + OT.EMP + '".');
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let code = '';
+  for (let i = 0; i < 16; i++) code += abc[Math.floor(Math.random() * abc.length)];
+  CacheService.getScriptCache().put('su_' + code, JSON.stringify({ manager: pick.name }), 900);
+  return { code, link: 'https://t.me/' + botUsername_() + '?start=su_' + code, manager: pick.name, ready: pick.ready };
+}
+function signupStatus_(p) {
+  const code = String(p.code || '');
+  if (!/^[A-Za-z0-9]{16}$/.test(code)) fail_('INVALID', 'Bad code.');
+  const hit = CacheService.getScriptCache().get('su_' + code);
+  if (!hit) return { expired: true };
+  const j = JSON.parse(hit);
+  return { ok: !!j.ok, err: j.err || '', expect: j.expect || '', username: j.username || '', tgName: j.tgName || '', chatId: j.chatId || '' };
 }
 
 // After a link sign-up: writes the manager's @username into the empty Telegram cells of their staff in
