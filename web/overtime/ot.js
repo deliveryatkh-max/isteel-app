@@ -776,9 +776,9 @@
     const busy = !!(su.job && su.job.loading);
     $('#view').innerHTML = `${back}
       <section class="card">
-        <h2><span class="n">1</span>${t('លេខកាតប្រធានផ្នែក', 'Line Manager ID')}</h2>
+        <h2><span class="n">1</span>${t('សុំបញ្ចូលលេខកាតសំគាល់ខ្លួនបុគ្គលិកអ្នក', 'Enter your employee ID')}</h2>
         <div class="idrow">
-          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="${esc(t('ឧ. 107598', 'e.g. 107598'))}" value="${esc(su.id)}">
+          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('សុំបញ្ចូលលេខកាត៦ខ្ទង់', 'Enter your 6-digit ID'))}" value="${esc(su.id)}">
           <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
         </div>
         ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : `<p class="hint">${t('បញ្ចូលលេខកាតបុគ្គលិករបស់អ្នក ហើយចុចស្វែងរក។', 'Enter your employee ID and tap Search.')}</p>`}
@@ -790,7 +790,7 @@
     $('#suBack').onclick = () => { su.err = ''; renderMenu(); };
   }
   async function startSignup(id) {
-    if (!id) { su.err = t('សូមបញ្ចូលលេខកាត។', 'Please enter your ID.'); return renderSignup(); }
+    if (!/^\d{6}$/.test(id)) { su.err = t('សុំបញ្ចូលលេខកាត៦ខ្ទង់។', 'Please enter your 6-digit ID.'); return renderSignup(); }
     su.err = ''; su.job = { loading: true }; su.status = null; renderSignup();
     try { su.job = await api('signup', { id }); su.until = Date.now() + 14 * 60000; pollSignup(); }
     catch (e) {
