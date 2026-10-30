@@ -234,8 +234,6 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .mtile b { font-size: 19px; }
 .mtile small { color: var(--muted); font-size: 14px; }
 .btn.back { margin-bottom: 12px; }
-.sulist { margin-top: 12px; }
-.supick { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; font: inherit; font-size: 16px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; min-height: 52px; }
 .suwait { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 14px; }
 .suwait .sp { width: 16px; height: 16px; border: 2.5px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 .sudone { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }

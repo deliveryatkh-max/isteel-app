@@ -765,41 +765,40 @@
     $('#mSign').onclick = () => renderSignup();
   }
 
-  // Sign up as OT approver: pick your name, open Telegram, press Start. The bot saves the chat ID and
-  // username in "OT Approvers"; this screen watches for it and shows what was saved.
-  const su = { list: null, err: '', q: '', job: null, status: null, timer: 0, until: 0 };
+  // Sign up as OT approver: type your Line Manager ID, open Telegram, press Start. The bot saves the chat ID and
+  // username in "OT Approvers"; this screen watches for it and shows what was saved. No list of names is shown (Kim, 30 Oct 2026).
+  const su = { id: '', err: '', job: null, status: null, timer: 0, until: 0 };
   function stopSignupPoll() { clearTimeout(su.timer); su.timer = 0; }
-  async function loadManagers() {
-    try { const r = await api('managers', {}); su.list = r.list || []; su.err = ''; }
-    catch (e) { su.list = null; su.err = /unknown action/i.test(e.message) ? t('Admin ត្រូវធ្វើបច្ចុប្បន្នភាព OT script ជាមុនសិន។', 'The admin needs to update the OT script first.') : niceError(e); }
-    if (state.tab === 'signup' && !su.job) renderSignup();
-  }
   function renderSignup() {
     state.tab = 'signup'; paintTabs(); redraw = renderSignup;
     const back = `<button type="button" class="btn back" id="suBack">← ${t('ត្រឡប់', 'Back')}</button>`;
-    if (su.job) return renderSignupJob(back);
-    if (!su.list && !su.err) { $('#view').innerHTML = back + '<div class="spinner" aria-label="Loading"></div>'; loadManagers(); }
-    else {
-      const q = su.q.toLowerCase();
-      const rows = (su.list || []).filter(m => !q || m.name.toLowerCase().includes(q));
-      $('#view').innerHTML = `${back}
-        <section class="card">
-          <h2><span class="n">1</span>${t('ជ្រើសរើសឈ្មោះរបស់អ្នក', 'Pick your name')}</h2>
-          ${su.err ? `<div class="alert bad" role="alert">${esc(su.err)}</div>` : `
-          <input class="in" id="suQ" type="search" autocomplete="off" placeholder="🔎 ${esc(t('ស្វែងរកឈ្មោះ', 'Search your name'))}" value="${esc(su.q)}">
-          <div class="list sulist">${rows.map(m => `<button type="button" class="item supick" data-n="${esc(m.name)}"><span>${esc(m.name)}</span>${m.ready ? `<span class="badge approved">✅ ${t('បានចុះឈ្មោះ', 'Signed up')}</span>` : ''}</button>`).join('') || `<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`}</div>
-          <p class="hint">${t('មិនឃើញឈ្មោះរបស់អ្នក? សូមប្រាប់ Admin ឱ្យបញ្ចូលឈ្មោះអ្នកក្នុង "Employee & Approver"។', 'Name not listed? Ask the admin to put your name in "Employee & Approver".')}</p>`}
-        </section>`;
-      const qi = $('#suQ');
-      if (qi) qi.oninput = () => { su.q = qi.value; const p = qi.selectionStart; renderSignup(); const n = $('#suQ'); n.focus(); n.setSelectionRange(p, p); };
-      document.querySelectorAll('.supick').forEach(b => b.onclick = () => startSignup(b.dataset.n));
-    }
-    $('#suBack').onclick = renderMenu;
+    if (su.job && !su.job.loading) return renderSignupJob(back);
+    const busy = !!(su.job && su.job.loading);
+    $('#view').innerHTML = `${back}
+      <section class="card">
+        <h2><span class="n">1</span>${t('លេខកាតប្រធានផ្នែក', 'Line Manager ID')}</h2>
+        <div class="idrow">
+          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="${esc(t('ឧ. 107598', 'e.g. 107598'))}" value="${esc(su.id)}">
+          <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
+        </div>
+        ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : `<p class="hint">${t('បញ្ចូលលេខកាតបុគ្គលិករបស់អ្នក ហើយចុចស្វែងរក។', 'Enter your employee ID and tap Search.')}</p>`}
+      </section>`;
+    const inp = $('#suId');
+    const go = () => { su.id = inp.value.trim(); startSignup(su.id); };
+    $('#suFind').onclick = go;
+    inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+    $('#suBack').onclick = () => { su.err = ''; renderMenu(); };
   }
-  async function startSignup(name) {
-    su.job = { manager: name, loading: true }; su.status = null; renderSignup();
-    try { su.job = await api('signup', { manager: name }); su.until = Date.now() + 14 * 60000; pollSignup(); }
-    catch (e) { su.job = null; su.err = ''; toast(niceError(e)); }
+  async function startSignup(id) {
+    if (!id) { su.err = t('សូមបញ្ចូលលេខកាត។', 'Please enter your ID.'); return renderSignup(); }
+    su.err = ''; su.job = { loading: true }; su.status = null; renderSignup();
+    try { su.job = await api('signup', { id }); su.until = Date.now() + 14 * 60000; pollSignup(); }
+    catch (e) {
+      su.job = null;
+      su.err = e.code === 'NOTFOUND' ? t('រកមិនឃើញ៖ លេខកាតនេះមិនមែនជាប្រធានផ្នែកទេ។ សូមប្រាប់ Admin។', 'Not found: this ID is not a line manager. Please ask the admin.')
+        : /unknown action|manager/i.test(e.message) && !e.code ? t('Admin ត្រូវធ្វើបច្ចុប្បន្នភាព OT script ជាមុនសិន។', 'The admin needs to update the OT script first.')
+        : niceError(e);
+    }
     if (state.tab === 'signup') renderSignup();
   }
   function pollSignup(ms) {
@@ -809,13 +808,13 @@
       if (Date.now() > su.until) { su.status = { expired: true }; return renderSignup(); }
       try { su.status = await api('signupStatus', { code: su.job.code }); } catch (e) { /* try again */ }
       const st = su.status || {};
-      if (st.ok || st.err || st.expired) { if (st.ok) su.list = null; return renderSignup(); }
+      if (st.ok || st.err || st.expired) { return renderSignup(); }
       pollSignup();
     }, ms == null ? 2500 : ms);
   }
   function renderSignupJob(back) {
     const j = su.job, st = su.status || {};
-    const again = `<button type="button" class="btn big" id="suAgain">${t('ជ្រើសឈ្មោះផ្សេង', 'Pick another name')}</button>`;
+    const again = `<button type="button" class="btn big" id="suAgain">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button>`;
     let body;
     if (j.loading) body = '<div class="spinner" aria-label="Loading"></div>';
     else if (st.ok) body = `
@@ -883,8 +882,7 @@
         holidays: [{ date: '2026-10-10', en: 'Phcum Ben Festival', kh: 'ពិធីបុណ្យភ្ជុំបិណ្ឌ' }, { date: '2026-10-15', en: "Commemoration Day of King's Father", kh: 'ទិវាប្រារព្ធពិធីគោរពព្រះវិញ្ញាណក្ខន្ធ ព្រះករុណា ព្រះបាទសម្តេចព្រះ នរោត្តម សីហនុ' }], list: p.withEmployees ? Object.values(EMP) : undefined };
       if (action === 'dept') { const c = String(p.code || '').replace(/^.*[?&]d=/, '').toUpperCase(); if (c !== 'D-DEMO01') throw Object.assign(new Error('Wrong QR code.'), { code: 'BAD_QR' }); return { code: c, name: 'Warehouse (demo)' }; }
       if (action === 'employees') return { list: Object.values(EMP) };
-      if (action === 'managers') return { list: [{ name: 'Kim Sopheakdey', ready: true }, { name: 'Ngin Tangvey', ready: false }] };
-      if (action === 'signup') return { code: 'DEMO', link: 'https://t.me/', manager: p.manager, ready: p.manager === 'Kim Sopheakdey' };
+      if (action === 'signup') { const m = { 107598: 'KIM SOPHEAKDEY', 100825: 'ENG SONGPHLY' }[p.id]; if (!m) throw Object.assign(new Error('This ID is not a line manager.'), { code: 'NOTFOUND' }); return { code: 'DEMO', link: 'https://t.me/', manager: m, ready: false }; }
       if (action === 'signupStatus') { const n = +(get('ot_demo_su') || 0) + 1; set('ot_demo_su', n > 2 ? null : String(n)); return n > 2 ? { ok: true, username: '@demo_manager', tgName: 'Demo Manager', chatId: '123456789' } : {}; }
       if (action === 'lookup') { const e = EMP[p.id]; if (!e) throw Object.assign(new Error('Employee ID not found.'), { code: 'NOTFOUND' }); return e; }
       if (action === 'submit') {
