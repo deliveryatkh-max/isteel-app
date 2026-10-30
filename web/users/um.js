@@ -430,12 +430,17 @@
   }
 
   // ------------------------------------------------------------------ start
-  async function refresh() {
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  async function refresh(quiet) {
+    quiet = quiet === true;
     try {
-      D = await api('umList'); save();
-      if (!E) screen(); else paintTabs('list');
+      const d = await api('umList');
+      if (quiet && JSON.stringify(d) === JSON.stringify(D)) return;
+      D = d; save();
+      if (E) paintTabs('list'); else if (quiet) LIVE.keep(screen); else screen();
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS' || e.code === 'OLD') { set(bootKey(), null); D = null; blocked(e); return; }
+      if (quiet) throw e;
       if (!D) view(`<div class="card done"><div class="emoji">⚠️</div><p>${esc(e.message)}</p><button class="btn ok" id="retry">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>`), $('#retry').onclick = refresh;
       else toast(e.message);
     }
@@ -455,6 +460,7 @@
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintDemo(); screen(); }); }
   paintDemo(); paintStatic();
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D });
   window.ISTEEL_REFRESH = () => { if (E) { toast(t('កំពុងកែ · ចុច រក្សាទុក ឬ ថយក្រោយ', 'Editing · tap Save or Back')); return; } refresh(); };
   window.addEventListener('hashchange', () => { if (!/^#\/(u\/|new)/.test(location.hash)) E = null; screen(); window.scrollTo(0, 0); });
   let wasWide = wide();

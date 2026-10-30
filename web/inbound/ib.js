@@ -173,13 +173,21 @@
     return data.data;
   }
   const formOpen = () => /^#\/(new|edit\/|plan-)/.test(location.hash);
-  async function refresh() {
+  let lastBoot = '';
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  async function refresh(quiet) {
     if (DEMO) return;
     try {
-      applyBoot(await api('boot')); save();
-      if (!formOpen()) screen(); else paintTabs('');
+      const d = await api('boot'), json = JSON.stringify(d);
+      if (quiet === true && json === lastBoot) return;
+      lastBoot = json;
+      applyBoot(d); save();
+      if (formOpen()) paintTabs('');
+      else if (quiet === true && window.LIVE) LIVE.keep(screen);
+      else screen();
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ib_boot', null); showBlocked(e); return; }
+      if (quiet === true) throw e;
       toast(e.message);
     }
   }
@@ -1032,6 +1040,6 @@
   load(); paintStatic(); window.addEventListener('hashchange', screen);
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { screen(); refresh(); }
-  // screens refresh when the phone comes back to the app (not while a form is open)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !formOpen()) refresh(); });
+  // screens refresh in the background every minute and when the phone comes back to the app (not while a form is open)
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: formOpen });
 })();

@@ -1596,6 +1596,26 @@
     if (current() === me && (changed || !have) && !state.editing) drawMine();
   }
 
+  /** Background refresh (every minute while the app is on screen): My entries and the Reviewer list pick up
+   *  changes made by others without pressing Refresh. Never while an entry is being typed or edited. */
+  async function liveRefresh() {
+    const me = current();
+    if (!me || $('#tabs').hidden || state.editing) return;
+    if (me.s === 'mine') {
+      let rows = await api('mine');
+      const fresh = (state.mine || []).filter(r => Date.now() - (r.dateTime || 0) < 120000 && !rows.some(x => x.id === r.id));
+      rows = fresh.concat(rows);
+      if (sameData(rows, state.mine)) return;
+      state.mine = rows; local.set('mine', rows);
+      if (current() === me && !state.editing) LIVE.keep(drawMine);
+    } else if (me.s === 'review') {
+      const changed = await refreshRows();
+      reviewBadge();
+      if (changed && current() === me) await LIVE.keep(() => renderReview());
+    }
+  }
+  if (window.LIVE && !DEMO) LIVE.start({ run: liveRefresh, busy: () => { const c = current(); return !c || (c.s !== 'mine' && c.s !== 'review') || !!state.editing; } });
+
   // ---------------- Reviewer tab ----------------
 
   const KH_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
