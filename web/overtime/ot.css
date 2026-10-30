@@ -246,3 +246,15 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .btn.gps-again { display: flex; margin-top: 8px; min-height: 40px; font-size: 14px; }
 .gpsbox { margin: 0 0 12px; }
 .gpsbox .alert { margin: 0; }
+/* Employee details after the scan: greyed out, from Employee & Approver (2026-10-30) */
+.empro { display: grid; gap: 0; }
+.empro .field { margin-bottom: 10px; }
+.empro .in.ro { color: #4a5a70; background: #e9edf2; font-weight: 600; font-size: 16px; min-height: 48px; }
+:root[data-theme="dark"] .empro .in.ro { color: #b6c4d4; background: #16273b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .empro .in.ro { color: #b6c4d4; background: #16273b; } }
+.empro .lock { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.empro #notMe { justify-self: start; }
+.in.need { border-color: var(--bad); background: var(--bad-soft); }
+.in.locked { color: #4a5a70; background: #e9edf2; font-weight: 600; cursor: default; }
+:root[data-theme="dark"] .in.locked { color: #b6c4d4; background: #16273b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .in.locked { color: #b6c4d4; background: #16273b; } }
