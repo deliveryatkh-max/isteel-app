@@ -14,6 +14,10 @@
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
+    // Everyone (switched off in the Gallery Manager's Settings): every ad, to watch again (Kim, 30 Oct 2026).
+    { key: 'gallery', kh: 'វិចិត្រសាល', en: 'Gallery', url: 'gallery/' },
+    // Admins only: post and manage the startup ads of every app.
+    { key: 'adsmgr', kh: 'គ្រប់គ្រងវិចិត្រសាល', en: 'Gallery Manager', url: 'gallery/#/manage' },
     // Admins only: the server adds 'users' for Role = admin (User Management, 28 Oct 2026).
     { key: 'users', kh: 'អ្នកប្រើប្រាស់', en: 'Users', url: 'users/' },
   ];
@@ -68,7 +72,9 @@
     $('#who').textContent = name;
     // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
     if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '' }));
-    const mine = APPS.filter(a => d.apps.indexOf(a.key) >= 0);
+    // Admins keep the Gallery Manager tile even before the new Code.gs is pasted (the screen then says so).
+    const apps = d.apps.concat(d.user && d.user.role === 'admin' && d.apps.indexOf('adsmgr') < 0 ? ['adsmgr'] : []);
+    const mine = APPS.filter(a => apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
       <div class="grid">${mine.map(a => {
