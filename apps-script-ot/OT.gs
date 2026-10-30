@@ -665,6 +665,23 @@ function findOverlap_(ds, id, v) {
   return null;
 }
 
+// Khmer letters (and spaces) only, at least 2 of them.
+const isKhmerName_ = s => /^[\u1780-\u17FF\u19E0-\u19FF ]+$/.test(s) && s.replace(/ /g, '').length >= 2 && s.length <= 60;
+// Writes a typed Khmer name into an empty "Khmer Name" cell of that employee's row (never over an existing name).
+function saveKhmerName_(emp, kh) {
+  try {
+    const sh = sheet_(OT.EMP);
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(norm_);
+    const col = head.indexOf('khmername');
+    if (col < 0 || !emp.row) return;
+    const cell = sh.getRange(emp.row, col + 1);
+    if (String(cell.getValue()).trim()) return;
+    cell.setValue(kh);
+    CacheService.getScriptCache().remove('emp_v2');
+    log_('', 'KHMER_NAME', emp.id + ' ' + emp.en, kh);
+  } catch (e) { console.error('Khmer name save failed: ' + e); }
+}
+
 function submit_(p) {
   const key = String(p.key || '');
   if (!/^[A-Za-z0-9-]{12,64}$/.test(key)) fail_('INVALID', 'Please reload the page and try again.');
@@ -710,7 +727,14 @@ function submit_(p) {
 
     const reqId = newRequestId_(ds);
     const now = new Date();
-    const kh = emp.kh || khmerFromHistory_()[emp.id] || '';
+    let kh = emp.kh || khmerFromHistory_()[emp.id] || '';
+    // No Khmer name on file yet: the employee typed it on the form (Khmer letters only). Kept for next time.
+    const typedKh = String(p.kh || '').trim().replace(/\s+/g, ' ');
+    if (!kh && typedKh) {
+      if (!isKhmerName_(typedKh)) fail_('INVALID', 'Please type your name in Khmer letters only.');
+      kh = typedKh;
+      saveKhmerName_(emp, kh);
+    }
     const last = ds.sh.getLastRow();
     const row = last + 1;
     const vals = new Array(ds.width).fill('');

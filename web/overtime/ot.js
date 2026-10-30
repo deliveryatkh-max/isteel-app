@@ -181,6 +181,7 @@
         ${c.needGps ? `<div class="gpsbox">${gpsHtml(c)}</div>` : ''}
         <section class="card">
           <h2><span class="n">1</span>${t('បុគ្គលិក', 'Employee')}</h2>
+          ${state.emp ? empHtml(state.emp, d) : `
           <label class="f" for="empId">${t('លេខកាត ឬឈ្មោះបុគ្គលិក', 'Employee ID or name')} <span class="req">*</span></label>
           <div class="idrow">
             <div class="search">
@@ -189,15 +190,7 @@
             </div>
             <button type="button" class="btn" id="findBtn" ${state.lookingUp ? 'disabled' : ''}>${state.lookingUp ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
           </div>
-          ${state.lookupErr ? `<div class="msg-err" role="alert">${esc(state.lookupErr)}</div>` : ''}
-          ${state.emp ? `
-          <div class="emp" aria-live="polite">
-            <div class="kv"><span>${t('ឈ្មោះ (អង់គ្លេស)', 'Name (English)')}</span><b>${esc(state.emp.en)}</b></div>
-            <div class="kv"><span>${t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)')}</span><b>${esc(state.emp.kh || '—')}</b></div>
-            <div class="kv"><span>${t('អ្នកគ្រប់គ្រងផ្ទាល់', 'Line manager')}</span><b>${esc(state.emp.manager || '—')}</b></div>
-            <div class="lock">🔒 ${t('ព័ត៌មាននេះមកពីបញ្ជីបុគ្គលិក មិនអាចកែបានទេ។', 'From the employee list. It cannot be changed here.')}</div>
-          </div>
-          ${state.emp.ready ? '' : `<div class="alert warn">${t('អ្នកគ្រប់គ្រងរបស់អ្នកមិនទាន់ភ្ជាប់ Telegram ទេ។ សំណើនឹងត្រូវរក្សាទុក ហើយផ្ញើទៅពេលក្រោយ។', "Your line manager is not connected to Telegram yet. Your request will be saved and sent once they are.")}</div>`}` : ''}
+          ${state.lookupErr ? `<div class="msg-err" role="alert">${esc(state.lookupErr)}</div>` : ''}`}
         </section>
 
         <section class="card">
@@ -260,6 +253,7 @@
       </form>`;
 
     const idEl = $('#empId');
+    if (idEl) {
     // Nothing is searched while typing: results appear only after the Search button (or Enter).
     idEl.addEventListener('input', () => {
       const v = idEl.value.trim();
@@ -280,6 +274,15 @@
     $('#sugg').addEventListener('mousedown', e => e.preventDefault());   // keep focus so the tap lands
     $('#sugg').addEventListener('click', e => { const o = e.target.closest('.opt'); if (o) pick(o.dataset.id); });
     $('#findBtn').onclick = () => find(null);
+    }
+    if ($('#notMe')) $('#notMe').onclick = () => { state.emp = null; d.kh = ''; saveDraft(); state.lookupErr = ''; set(K.id, null); renderNew(); const el = $('#empId'); if (el) { el.value = ''; el.focus(); } };
+    const khEl = $('#khName');
+    if (khEl) khEl.addEventListener('input', () => {
+      d.kh = khEl.value; saveDraft();
+      const v = khEl.value.trim(), bad = v && !/^[\u1780-\u17FF\u19E0-\u19FF ]+$/.test(v);
+      khEl.classList.toggle('need', !v); khEl.classList.toggle('err', !!bad);
+      $('#khErr').hidden = !bad;
+    });
     if ($('#rescan')) $('#rescan').onclick = () => { setDept(null); renderNew(); };
     $('#form').addEventListener('click', e => { if (!e.target.closest('.idrow')) hideSugg(); });
 
@@ -301,6 +304,28 @@
       if (other) $('#otReason').focus();
     });
     $('#form').onsubmit = e => { e.preventDefault(); submit(); };
+  }
+  // After the scan the person's details from Employee & Approver are shown greyed out (Kim, 2026-10-30).
+  // A missing Khmer name is typed once (Khmer letters only) and saved to the sheet with the request.
+  const KH_RE = /^[\u1780-\u17FF\u19E0-\u19FF ]+$/;
+  const khOk = s => KH_RE.test(s) && s.replace(/ /g, '').length >= 2 && s.length <= 60;
+  function empHtml(e, d) {
+    const ro = (lbl, v, id) => `<div class="field"><label class="f">${lbl} 🔒</label><div class="in ro"${id ? ` id="${id}"` : ''}>${esc(v || '—')}</div></div>`;
+    const kv = String(d.kh || ''), bad = kv.trim() && !KH_RE.test(kv.trim());
+    return `<div class="empro" aria-live="polite">
+      ${ro(t('លេខកាតបុគ្គលិក', 'Employee ID'), e.id, 'roId')}
+      ${ro(t('ឈ្មោះ (អង់គ្លេស)', 'Name (English)'), e.en, 'roEn')}
+      ${e.kh ? ro(t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)'), e.kh, 'roKh') : `<div class="field">
+        <label class="f" for="khName">${t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)')} <span class="req">*</span></label>
+        <input class="in${kv.trim() ? '' : ' need'}${bad ? ' err' : ''}" id="khName" lang="km" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${esc(t('វាយឈ្មោះជាអក្សរខ្មែរ', 'Type your name in Khmer'))}" value="${esc(kv)}">
+        <div class="msg-err" id="khErr" role="alert" ${bad ? '' : 'hidden'}>❌ ${t('សូមវាយជាអក្សរខ្មែរតែប៉ុណ្ណោះ (មិនអនុញ្ញាតអក្សរអង់គ្លេស ឬលេខ)។', 'Khmer letters only (no English letters or numbers).')}</div>
+        <div class="hint">⌨️ ${t('មិនទាន់មានឈ្មោះខ្មែរក្នុងបញ្ជី។ សូមវាយជាអក្សរខ្មែរតែប៉ុណ្ណោះ។ ឈ្មោះនេះនឹងរក្សាទុកក្នុង Sheet។', 'Your Khmer name is not in the list yet. Type it in Khmer letters only. It will be saved to the sheet.')}</div>
+      </div>`}
+      ${ro(t('ប្រធានផ្នែក (អ្នកអនុម័ត)', 'Line manager (approver)'), e.manager, 'roMgr')}
+      <div class="lock">🔒 ${t('ព័ត៌មាននេះមកពីសន្លឹក Employee & Approver មិនអាចកែបានទេ។', 'From the Employee & Approver sheet. It cannot be changed here.')}</div>
+      <button type="button" class="link" id="notMe">${t('មិនមែនខ្ញុំ? ប្តូរលេខកាត', 'Not me? Change ID')}</button>
+    </div>
+    ${e.ready ? '' : `<div class="alert warn">${t('អ្នកគ្រប់គ្រងរបស់អ្នកមិនទាន់ភ្ជាប់ Telegram ទេ។ សំណើនឹងត្រូវរក្សាទុក ហើយផ្ញើទៅពេលក្រោយ។', "Your line manager is not connected to Telegram yet. Your request will be saved and sent once they are.")}</div>`}`;
   }
   function placeCaret() { const el = $('#empId'); if (el) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* number input */ } } }
 
@@ -573,9 +598,10 @@
   async function submit() {
     if (state.sending) return;   // double tap
     const d = state.draft, c = cfg || {};
-    const idNow = $('#empId').value.trim();
     const problems = [];
-    if (!state.emp || state.emp.id !== idNow) problems.push(t('សូមស្វែងរកលេខកាតបុគ្គលិករបស់អ្នកជាមុន។', 'Please find your Employee ID first.'));
+    if (!state.emp) problems.push(t('សូមស្វែងរកលេខកាតបុគ្គលិករបស់អ្នកជាមុន។', 'Please find your Employee ID first.'));
+    const khTyped = String(d.kh || '').trim().replace(/\s+/g, ' ');
+    if (state.emp && !state.emp.kh && !khOk(khTyped)) problems.push(t('សូមវាយឈ្មោះរបស់អ្នកជាអក្សរខ្មែរ។', 'Please type your name in Khmer letters.'));
     const auto = c.timeMode === 'auto', ac = auto ? autoCalc(state.emp) : null;
     const shNow = myShift();
     if (shiftList().length && !shNow) problems.push(t(ERR_KM.NOSHIFT, 'Please choose your shift.'));
@@ -597,9 +623,15 @@
     try {
       const tm = auto ? ac : d;   // in Auto the server sets the date and times itself
       const payload = { key: d.key, id: state.emp.id, date: tm.date, start: tm.start, end: tm.end, reason: String(d.reason).trim(), dept: state.dept ? state.dept.code : '', shift: shNow ? shNow.name : '' };
+      if (!state.emp.kh && khTyped) payload.kh = khTyped;
       if (c.needGps) Object.assign(payload, await getGps());
       const r = await api('submit', payload);
       remember(state.emp.id, r.reqId);
+      if (payload.kh) {   // shown greyed next time, before the list refreshes
+        state.emp = Object.assign({}, state.emp, { kh: payload.kh });
+        const p = people().find(x => x.id === state.emp.id); if (p && !p.kh) { p.kh = payload.kh; set(K.people, JSON.stringify({ at: Date.now(), list: state.people })); }
+        Object.keys(lookupCache).forEach(k => delete lookupCache[k]);
+      }
       if (shNow) chooseShift(shNow.name);   // remembered for this Employee ID next time
       state.shiftPick = '';                 // the next person on this phone starts from their own last shift
       // A new reason typed under Other is added to the sheet's list by the server; show it here at once too.
