@@ -184,7 +184,7 @@ function ensureAppColumns_() {
       sheet.getRange(1, c).setValue(a.col).setFontWeight('bold');
       // Only the rows that exist: blank tick boxes below would count as data and push new rows down the sheet.
       if (rows) sheet.getRange(2, c, rows, 1).insertCheckboxes().setValues(roles.map(r =>
-        [DEFAULT_APPS.indexOf(a.key) >= 0 || (a.key === 'dashboard' && (r === 'reviewer' || r === 'admin'))]));
+        [DEFAULT_APPS.indexOf(a.key) >= 0 || (a.key === 'dashboard' && accessLevel_(r) !== 'user')]));
     });
     if (!props.getProperty('APPS_DEFAULT_DONE')) {
       const cols = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
@@ -232,7 +232,7 @@ function authenticate_(token) {
   if (!user) throw new Error('NOACCESS: ' + email + ' is not allowed to use this app. Ask the admin to add you to the Users sheet.');
   const apps = {};
   HOME_APPS.forEach(a => { if (a.col in user) apps[a.key] = isYes_(user[a.col]); });
-  return { email: email, name: user['Name'] || '', role: String(user['Role'] || 'user').toLowerCase(), apps: apps, session: session,
+  return { email: email, name: user['Name'] || '', role: accessLevel_(user['Role']), job: String(user['Role'] || 'user').trim().toLowerCase(), apps: apps, session: session,
     employeeId: String(user['Employee ID'] || '').trim() };
 }
 
@@ -2216,6 +2216,52 @@ const AD_HEAD = ['ID_AD', 'Type', 'File', 'File ID', 'Name', 'Red Text', 'Second
 const AD_MAX_BYTES = 20 * 1024 * 1024;   // about 30 seconds of phone video at 720p
 
 function isAdmin_(user) { return user.role === 'admin'; }
+/** What a Role means in this app: admin, reviewer (reviewer or supervisor) or user (every job role). */
+function accessLevel_(role) {
+  const r = String(role || '').trim().toLowerCase();
+  return r === 'admin' ? 'admin' : r === 'reviewer' || r === 'supervisor' ? 'reviewer' : 'user';
+}
+
+/**
+ * Run once from the editor (Kim, 30 Oct 2026), after the new Delivery.gs is deployed: copies each "Delivery Role"
+ * into Role, then removes the Delivery Role column. Admins stay admin; a reviewer keeps reviewer (Delivery reads it as
+ * Supervisor). Every change goes to the User Log. Nothing is removed if a row could not be copied.
+ */
+function mergeDeliveryRoles() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ctx = umSheet_();
+    const dc = ctx.col(DELIVERY_ROLE_HEAD), rc = ctx.col('Role');
+    if (dc < 0) return 'There is no Delivery Role column: nothing to do.';
+    if (rc < 0) throw new Error('The Users tab has no Role column.');
+    const out = [];
+    ctx.values.forEach((row, i) => {
+      const email = String(row[ctx.col('Email')] || '').trim().toLowerCase();
+      const job = String(row[dc] || '').trim().toLowerCase();
+      if (!email || !job) return;
+      const now = String(row[rc] || 'user').trim().toLowerCase();
+      let next = now;
+      if (now === 'admin' || now === 'supervisor') next = now;
+      else if (job === 'admin' || job === 'supervisor') next = job;
+      else if (now === 'reviewer') next = 'reviewer';
+      else if (UM_ROLES.indexOf(job) >= 0) next = job;
+      else { out.push(email + ': unknown Delivery Role "' + row[dc] + '" left as ' + now); return; }
+      if (next !== now) {
+        ctx.sheet.getRange(i + 2, rc + 1).setValue(next);
+        umLog_('mergeDeliveryRoles', email, String(row[ctx.col('Name')] || ''), ['Role: ' + now + ' → ' + next + ' (from Delivery Role ' + row[dc] + ')']);
+      }
+      out.push(email + ': Role ' + next + (next !== now ? ' (was ' + now + ')' : '') + ', Delivery Role was ' + row[dc]);
+    });
+    if (out.some(x => /unknown/.test(x))) out.push('Delivery Role column kept: fix the rows above, then run again.');
+    else { ctx.sheet.deleteColumn(dc + 1); out.push('Delivery Role column removed.'); }
+    const msg = out.join('\n');
+    console.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 function adSheet_() {
   const ss = SpreadsheetApp.getActive();
@@ -2397,9 +2443,13 @@ function adSeen_(p, user) {
 
 const UM_LOG = 'User Log';
 const UM_LOG_COLS = ['Time', 'By', 'Email', 'Name', 'Change'];
-const UM_ROLES = ['user', 'reviewer', 'admin'];
-const DELIVERY_ROLES = ['Security', 'Logistics', 'Warehouse', 'Driver', 'Supervisor', 'Admin'];   // as in Delivery.gs
-const DELIVERY_ROLE_HEAD = 'Delivery Role';
+/**
+ * One Role column for every app (Kim, 30 Oct 2026): the old "Delivery Role" column is merged into Role.
+ * admin = everything; supervisor and reviewer check entries in the other apps; the job roles
+ * (logistics, warehouse, security, driver) say which Delivery steps a person records and are plain users elsewhere.
+ */
+const UM_ROLES = ['user', 'driver', 'security', 'warehouse', 'logistics', 'reviewer', 'supervisor', 'admin'];
+const DELIVERY_ROLE_HEAD = 'Delivery Role';   // old column, only read by mergeDeliveryRoles()
 // The OT app's own sheet (SSK_OT_DATA): line managers live in its "Employee & Approver" tab.
 const OT_SHEET_DEFAULT = '1K3rRyfY6jw-NmUAlKF4W8P246BjxfD78SVul72qkk44';
 const OT_EMP_TAB = 'Employee & Approver';
@@ -2434,7 +2484,6 @@ function umUser_(ctx, r) {
     empId: String(g('Employee ID') || '').trim(),
     dept: String(g('Department') || '').trim(),
     apps: apps,
-    dRole: String(g(DELIVERY_ROLE_HEAD) || '').trim(),
     offAt: off instanceof Date ? off.getTime() : (off ? new Date(off).getTime() || 0 : 0),
     offNote: String(g('Off Note') || '').trim(),
   };
@@ -2449,7 +2498,6 @@ function umList_(p, user) {
     users: ctx.values.map(r => umUser_(ctx, r)).filter(u => u.email),
     apps: HOME_APPS.map(a => ({ key: a.key, col: a.col })),
     depts: deptTable_(),
-    dRoles: DELIVERY_ROLES,
     log: umLogRead_(60),
   };
 }
@@ -2483,10 +2531,6 @@ function umCheck_(p, isNew) {
   }
   if (p.active !== undefined) out.active = !!p.active;
   if (p.offNote !== undefined) out.offNote = String(p.offNote || '').trim().slice(0, 200);
-  if (p.dRole !== undefined) {
-    out.dRole = String(p.dRole || '').trim();
-    if (out.dRole && DELIVERY_ROLES.indexOf(out.dRole) < 0) throw new Error('Unknown Delivery Role.');
-  }
   if (p.apps) {
     out.apps = {};
     HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
@@ -2527,7 +2571,6 @@ function umWrite_(ctx, email, v, by, isNew) {
   if (v.empId !== undefined && v.empId !== before.empId) { set('Employee ID', v.empId, true); log.push('Employee ID: ' + (before.empId || '–') + ' → ' + (v.empId || '–')); }
   if (v.dept !== undefined && v.dept !== before.dept) { set('Department', v.dept); log.push('Department: ' + (before.dept || '–') + ' → ' + (v.dept || '–')); }
   if (v.role !== undefined && (v.role !== before.role || isNew)) { set('Role', v.role); log.push('Role: ' + (isNew ? '' : before.role + ' → ') + v.role); }
-  if (v.dRole !== undefined && v.dRole !== before.dRole) { set(DELIVERY_ROLE_HEAD, v.dRole); log.push('Delivery Role: ' + (before.dRole || '–') + ' → ' + (v.dRole || '–')); }
   if (v.apps) HOME_APPS.forEach(a => {
     const on = v.apps[a.key];
     if (on === undefined || (!isNew && before.apps[a.key] === on) || ctx.col(a.col) < 0) return;
@@ -2575,7 +2618,6 @@ function umNeedCols_(v) {
   const need = ['Active', 'Off At', 'Off Note'];
   if (v.empId !== undefined) need.push('Employee ID');
   if (v.dept !== undefined) need.push('Department');
-  if (v.dRole !== undefined) need.push(DELIVERY_ROLE_HEAD);
   return need;
 }
 

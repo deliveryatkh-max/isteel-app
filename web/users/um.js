@@ -22,7 +22,16 @@
   };
   const appName = a => { const n = APP_NAMES[a.key]; return n ? t(n[0], n[1]) : a.col; };
   const appIcon = (key, size) => `<img src="../icons/${esc(key)}.svg" alt="" width="${size}" height="${size}">`;
-  const ROLES = [['user', 'អ្នកប្រើ', 'User'], ['reviewer', 'អ្នកពិនិត្យ', 'Reviewer'], ['admin', 'Admin', 'Admin']];
+  // One Role column for every app (Kim, 30 Oct 2026). The job roles say which Delivery steps a person records.
+  const ROLES = [['user', 'អ្នកប្រើ', 'User', 'ប្រើកម្មវិធី', 'Uses the apps'],
+    ['driver', 'តៃកុង', 'Driver', 'ដឹកជញ្ជូន៖ ជំហានតៃកុង', 'Delivery: driver steps'],
+    ['security', 'សន្តិសុខ', 'Security', 'ដឹកជញ្ជូន៖ ចូល/ចេញ ថ្លឹង', 'Delivery: gate in and out'],
+    ['warehouse', 'ឃ្លាំង', 'Warehouse', 'ដឹកជញ្ជូន៖ ជំហានឃ្លាំង', 'Delivery: loading steps'],
+    ['logistics', 'ភស្តុភារ', 'Logistics', 'ដឹកជញ្ជូន៖ ជំហានភស្តុភារ', 'Delivery: logistics steps'],
+    ['reviewer', 'អ្នកពិនិត្យ', 'Reviewer', 'ពិនិត្យការចាក់សាំង គ្រោះថ្នាក់ ទទួលទំនិញ', 'Checks Fuel, Incident and Inbound entries'],
+    ['supervisor', 'ប្រធាន', 'Supervisor', 'ពិនិត្យ + គ្រប់ជំហានដឹកជញ្ជូន', 'Checks entries + every Delivery step'],
+    ['admin', 'Admin', 'Admin', 'គ្រប់យ៉ាង', 'Everything']];
+  const isChecker = r => r === 'reviewer' || r === 'supervisor';
   const roleName = r => { const x = ROLES.find(y => y[0] === r) || ROLES[0]; return t(x[1], x[2]); };
   const COLORS = ['#0B76A0', '#084F6A', '#7a5af8', '#d9480f', '#2b8a3e', '#c2255c', '#5c7cfa', '#e67700', '#0c8599', '#9c36b5'];
   const color = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
@@ -34,7 +43,7 @@
   const isWaiting = u => !u.active && !u.offAt;
 
   // ------------------------------------------------------------------ data
-  let D = null;        // { me, users, apps, depts, dRoles, log }
+  let D = null;        // { me, users, apps, depts, log }
   let OT = null;       // OT line managers, loaded when an edit screen needs them
   let otBusy = null;
   const sel = new Set();   // selected people in the computer table
@@ -107,7 +116,7 @@
     const us = D.users.filter(inDept);
     const c = [['all', t('ទាំងអស់', 'All'), us.filter(u => !isWaiting(u)).length],
       ['admin', 'Admin', us.filter(u => u.role === 'admin').length],
-      ['reviewer', t('អ្នកពិនិត្យ', 'Reviewer'), us.filter(u => u.role === 'reviewer').length],
+      ['reviewer', t('អ្នកពិនិត្យ', 'Reviewer'), us.filter(u => isChecker(u.role)).length],
       ['off', t('បិទ', 'Off'), us.filter(u => !u.active && u.offAt).length]];
     D.apps.forEach(a => c.push(['app:' + a.key, appName(a), us.filter(u => u.active && u.apps[a.key]).length, a.key]));
     return c;
@@ -118,11 +127,11 @@
       if (!inDept(u)) return false;
       if (F.chip === 'all' && isWaiting(u)) return false;
       if (F.chip === 'admin' && u.role !== 'admin') return false;
-      if (F.chip === 'reviewer' && u.role !== 'reviewer') return false;
+      if (F.chip === 'reviewer' && !isChecker(u.role)) return false;
       if (F.chip === 'off' && !(!u.active && u.offAt)) return false;
       if (F.chip.indexOf('app:') === 0 && !(u.active && u.apps[F.chip.slice(4)])) return false;
       if (!q) return true;
-      return [u.name, u.email, u.empId, u.dept, u.dRole, roleName(u.role)].join(' ').toLowerCase().indexOf(q) >= 0;
+      return [u.name, u.email, u.empId, u.dept, roleName(u.role)].join(' ').toLowerCase().indexOf(q) >= 0;
     }).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
   }
   const pill = u => `<span class="rp ${u.role}">${esc(roleName(u.role))}</span>${isWaiting(u) ? ` <span class="rp wait">${t('រង់ចាំ', 'Waiting')}</span>` : ''}`;
@@ -155,13 +164,13 @@
     if (wide()) {
       box.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
         <th><input type="checkbox" id="selAll" aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}></th>
-        <th>${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th><th>Delivery Role</th>
+        <th>${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th>
         ${D.apps.map(a => `<th class="tk" title="${esc(appName(a))}">${appIcon(a.key, 22)}<small>${esc(appName(a))}</small></th>`).join('')}
         <th>${t('សកម្ម', 'Active')}</th><th></th></tr></thead><tbody>${list.map(u => `
         <tr class="${u.active ? '' : 'off'}${sel.has(u.email) ? ' pick' : ''}" data-row="${esc(u.email)}">
           <td><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
           <td><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></span></a></td>
-          <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td><td>${esc(u.dRole || '–')}</td>
+          <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td>
           ${D.apps.map(a => `<td class="tk"><button type="button" class="tick${u.apps[a.key] ? ' on' : ''}" data-tick="${esc(u.email)}" data-app="${a.key}" aria-pressed="${!!u.apps[a.key]}" aria-label="${esc(appName(a))}">${u.apps[a.key] ? '✓' : ''}</button></td>`).join('')}
           <td>${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</td>
           <td><a class="ed" href="#/u/${encodeURIComponent(u.email)}" aria-label="${t('កែ', 'Edit')}">✏️</a></td></tr>`).join('')}</tbody></table></div>
@@ -243,7 +252,7 @@
     if (!E || E.key !== key) {
       const u = isNew ? null : byEmail(email);
       if (!isNew && !u) { view(`<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`); return; }
-      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, dRole: '', offNote: '' };
+      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '' };
       if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'location', 'incident'].indexOf(a.key) >= 0; });
       const orig = JSON.parse(JSON.stringify(u || blank));
       E = { key, isNew, orig, f: JSON.parse(JSON.stringify(orig)), ot: null, otOrig: null, tried: false };
@@ -267,7 +276,7 @@
           <select class="in" id="fDept"><option value="">–</option>${deptOpts.map(d => `<option ${d === f.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
           ${!isNew && deptApps ? `<button type="button" class="link" id="useDept">${t('ប្រើកម្មវិធីតាមផ្នែកនេះ', 'Use this department\'s apps')}</button>` : ''}</div>
         <div class="field"><label class="f">${t('តួនាទី', 'Role')}</label>
-          <div class="seg">${ROLES.map(r => `<button type="button" class="${f.role === r[0] ? 'on' : ''}" data-role="${r[0]}" ${me ? 'disabled' : ''}>${esc(t(r[1], r[2]))}<small>${r[0] === 'user' ? t('ប្រើកម្មវិធី', 'Uses the apps') : r[0] === 'reviewer' ? t('ពិនិត្យការចាក់សាំង', 'Checks fuel entries') : t('គ្រប់យ៉ាង', 'Everything')}</small></button>`).join('')}</div>
+          <div class="seg roles">${ROLES.map(r => `<button type="button" class="${f.role === r[0] ? 'on' : ''}" data-role="${r[0]}" ${me ? 'disabled' : ''}>${esc(t(r[1], r[2]))}<small>${esc(t(r[3], r[4]))}</small></button>`).join('')}</div>
           ${me ? `<div class="hint">${t('អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ', 'You can\'t remove your own admin access')}</div>` : f.role === 'admin' ? `<div class="hint">${t('Admin បើកបានគ្រប់កម្មវិធី និងគ្រប់គ្រងអ្នកប្រើ', 'Admins can open every app and manage users')}</div>` : ''}</div>
         <div class="swrow"><span><b>${t('សកម្ម', 'Active')}</b><small>${t('បិទ = ចូលកម្មវិធីណាមួយមិនបាន ប្រវត្តិនៅដដែល', 'Off = can\'t open any app, history stays')}</small></span>${sw(f.active, `id="fActive" ${me ? 'disabled' : ''}`, t('សកម្ម', 'Active'))}</div>
         ${!f.active && !isNew ? `<div class="field"><label class="f" for="fNote">${t('មូលហេតុ', 'Reason')} <small class="inl">${t('ស្រេចចិត្ត', 'optional')}</small></label><input class="in" id="fNote" placeholder="${t('ឧ. ឈប់ធ្វើការ', 'e.g. Left the company')}" value="${esc(f.offNote)}"></div>` : ''}
@@ -292,19 +301,15 @@
     $$('[data-role]').forEach(b => b.onclick = () => { f.role = b.dataset.role; renderEdit(email); });
     $('#fActive').onclick = () => { if (me) return; f.active = !f.active; renderEdit(email); };
     $$('.aline [data-app]').forEach(b => b.onclick = () => { f.apps[b.dataset.app] = !f.apps[b.dataset.app]; renderEdit(email); });
-    const dr = $('#fDRole'); if (dr) dr.onchange = e => { f.dRole = e.target.value; };
     const om = $('#fOt'); if (om) om.onchange = e => { E.ot = e.target.value ? JSON.parse(e.target.value) : null; };
     $('#fSave').onclick = () => saveEdit(email);
     if (f.apps.overtime && !OT) loadOt().then(() => { if (E && E.key === key) renderEdit(email); });
   }
 
-  // Extra choices under some apps: Delivery Role for Transport, the line manager for Overtime.
+  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role).
   function appExtra(key) {
     const f = E.f;
     if (!f.apps[key]) return '';
-    if (key === 'transport') {
-      return `<div class="sub"><label for="fDRole">Delivery Role</label><select class="in sm" id="fDRole"><option value="">–</option>${D.dRoles.map(r => `<option ${r === f.dRole ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>`;
-    }
     if (key === 'overtime') {
       if (!OT) return `<div class="sub hint"><span class="sp"></span> ${t('កំពុងផ្ទុកអ្នកអនុម័ត…', 'Loading approvers…')}</div>`;
       if (!OT.ok) return `<div class="sub hint">⚠️ ${t('អានសន្លឹក OT មិនបាន', 'Could not read the OT sheet')}: ${esc(OT.error)}</div>`;
@@ -328,7 +333,7 @@
     const missing = (isNew && !f.email.trim()) || !f.name.trim();
     if (missing) { renderEdit(email); $('#eErr').innerHTML = `<div class="alert bad">${t('សូមបំពេញប្រអប់ក្រហម', 'Please fill in the red boxes')}</div>`; return; }
     const p = isNew ? { isNew: true, email: f.email.trim() } : { email: o.email };
-    ['name', 'empId', 'dept', 'role', 'active', 'dRole'].forEach(k => { if (isNew || f[k] !== o[k]) p[k] = f[k]; });
+    ['name', 'empId', 'dept', 'role', 'active'].forEach(k => { if (isNew || f[k] !== o[k]) p[k] = f[k]; });
     if (!f.active && (f.active !== o.active || f.offNote !== o.offNote)) p.offNote = f.offNote;
     const apps = {};
     D.apps.forEach(a => { if (isNew || !!f.apps[a.key] !== !!o.apps[a.key]) apps[a.key] = !!f.apps[a.key]; });
@@ -480,9 +485,9 @@
           const out = [], logs = [];
           emails.forEach(email => {
             let u = S.users.find(x => x.email === email);
-            if (p.isNew) { if (u) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។'); u = { email, name: '', role: 'user', active: true, empId: '', dept: '', apps: {}, dRole: '', offAt: 0, offNote: '' }; S.users.push(u); }
+            if (p.isNew) { if (u) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។'); u = { email, name: '', role: 'user', active: true, empId: '', dept: '', apps: {}, offAt: 0, offNote: '' }; S.users.push(u); }
             if (email === S.me && (patch.role && patch.role !== 'admin' || patch.active === false)) { if (action === 'umSave') throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។'); return; }
-            ['name', 'empId', 'dept', 'role', 'dRole'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
+            ['name', 'empId', 'dept', 'role'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
             if (patch.apps) Object.assign(u.apps, patch.apps);
             if (patch.active !== undefined && (patch.active !== u.active || (!patch.active && !u.offAt))) { u.active = patch.active; u.offAt = patch.active ? 0 : Date.now(); u.offNote = patch.active ? '' : (patch.offNote || ''); }
             out.push(clone(u));
@@ -509,17 +514,16 @@
     return {
       me: 'admin.demo@gmail.com',
       apps: ['fuel', 'transport', 'overtime', 'location', 'meeting', 'incident', 'inbound', 'dashboard'].map(key => ({ key, col: APP_NAMES[key][0] })),
-      dRoles: ['Security', 'Logistics', 'Warehouse', 'Driver', 'Supervisor', 'Admin'],
       depts: [{ name: 'Warehouse', active: true, apps: A('10101110') }, { name: 'Transport', active: true, apps: A('11110100') }, { name: 'Security', active: true, apps: A('01100100') }, { name: 'HR', active: false, apps: A('00101100') }],
       users: [
-        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), dRole: '', offAt: 0, offNote: '' },
-        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'reviewer', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), dRole: 'Supervisor', offAt: 0, offNote: '' },
-        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'user', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), dRole: 'Driver', offAt: 0, offNote: '' },
-        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'user', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), dRole: 'Warehouse', offAt: 0, offNote: '' },
-        { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'user', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), dRole: 'Security', offAt: 0, offNote: '' },
-        { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), dRole: '', offAt: now - 2 * day, offNote: 'Left the company' },
-        { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), dRole: '', offAt: 0, offNote: '' },
-        { email: 'sovann.ly@gmail.com', name: 'Ly Sovann', role: 'user', active: false, empId: '158004', dept: 'Warehouse', apps: A('10101110'), dRole: '', offAt: 0, offNote: '' },
+        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), offAt: 0, offNote: '' },
+        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'supervisor', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), offAt: 0, offNote: '' },
+        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'driver', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), offAt: 0, offNote: '' },
+        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'warehouse', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
+        { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'security', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), offAt: 0, offNote: '' },
+        { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), offAt: now - 2 * day, offNote: 'Left the company' },
+        { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), offAt: 0, offNote: '' },
+        { email: 'sovann.ly@gmail.com', name: 'Ly Sovann', role: 'user', active: false, empId: '158004', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
       ],
       log: [
         { time: now - 3 * 3600e3, by: 'Demo Admin', email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', change: 'ទទួលទំនិញ ✓' },

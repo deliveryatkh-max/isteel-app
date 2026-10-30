@@ -439,40 +439,52 @@ test('findZeroPlates lists rows saved as 0 and changes nothing else', () => {
   assert.strictEqual(pc[1][5], 'TEST-0001');   // Driver A's own truck
 });
 
-test('one user list: Delivery signs in from the Fuel Refill Users tab (Kim, 17 Oct 2026)', () => {
+test('one user list and one Role column for every app (Kim, 17 and 30 Oct 2026)', () => {
   const H = ['Email', 'Name', 'Role', 'Active', 'Employee ID', 'Department', 'ចាក់សាំង', 'ដឹកជញ្ជូន', 'ថែមម៉ោង', 'ទីតាំងថ្មី', 'Dashboard'];
   const fuelUsers = [H,
     ['admin@test.kh', 'Kim', 'admin', 'Yes', '1', 'Logistics', true, true, true, true, true],
-    ['wh@test.kh', 'Store', 'user', 'Yes', '2', 'Warehouse', true, false, true, true, false],
-    ['off@test.kh', 'Gone', 'user', 'No', '3', 'Warehouse', true, true, true, true, false]];
+    ['wh@test.kh', 'Store', 'warehouse', 'Yes', '2', 'Warehouse', true, true, true, true, false],
+    ['guard@test.kh', 'Guard', 'Security', 'Yes', '3', 'Warehouse', false, true, false, false, false],
+    ['sup@test.kh', 'Sup', 'supervisor', 'Yes', '4', 'Fleet', true, true, true, true, true],
+    ['rev@test.kh', 'Rev', 'reviewer', 'Yes', '5', 'Fleet', true, true, true, true, true],
+    ['logi@test.kh', 'Plain', 'user', 'Yes', '6', 'Fleet', true, true, true, true, false],
+    ['nottick@test.kh', 'No tick', 'driver', 'Yes', '7', 'Fleet', true, false, true, true, false],
+    ['off@test.kh', 'Gone', 'logistics', 'No', '8', 'Warehouse', true, true, true, true, false]];
   const e = makeEnv(fixture(), { props: { USERS_SHEET_ID: 'fuel' }, books: { fuel: { Users: fuelUsers } } });
   e.run('setup()');
   const um = JSON.stringify(e.ss.getSheetByName('User Manager').rows);
-  // a Fuel admin without a Delivery Role is a Delivery admin; people not yet in the list have no access
-  assert.ok(e.call('boot', {}, ADMIN).ok);
-  assert.match(e.call('boot', {}, GUARD).error, /^NOACCESS/);
+  const key = t => ok(e.call('boot', {}, t)).user.roleKey;
+  assert.strictEqual(key(ADMIN), 'admin');
+  assert.strictEqual(key(WH), 'warehouse');
+  assert.strictEqual(key(GUARD), 'security', 'Role is read without caring about capitals');
+  assert.strictEqual(key(SUP), 'supervisor');
+  assert.strictEqual(key(as('rev@test.kh')), 'supervisor', 'a reviewer counts as Supervisor');
+  assert.match(e.call('boot', {}, LOGI).error, /^NOACCESS.*Role/, 'a plain user records nothing');
+  assert.match(e.call('boot', {}, as('nottick@test.kh')).error, /^NOACCESS/, 'ដឹកជញ្ជូន not ticked');
   assert.match(e.call('boot', {}, as('off@test.kh')).error, /^NOACCESS/);
-  // move the User Manager roles over once
-  const msg = e.run('moveDeliveryUsers()');
-  assert.match(msg, /guard@test\.kh: added \(Security\)/);
-  assert.match(msg, /wh@test\.kh: Delivery Role Warehouse/);
+  // the Users screen writes the one Role column (lower case, like the other apps)
+  ok(e.call('setUser', { email: 'new@test.kh', name: 'New', role: 'Logistics' }, ADMIN));
+  ok(e.call('setUser', { email: 'logi@test.kh', role: 'Logistics' }, ADMIN));
   const book = e.ctx.SpreadsheetApp.openById('fuel').getSheetByName('Users');
   const head = book.rows[0];
-  assert.strictEqual(head[head.length - 1], 'Delivery Role');
-  const wh = book.rows.find(r => r[0] === 'wh@test.kh');
-  assert.strictEqual(wh[head.indexOf('ដឹកជញ្ជូន')], true, 'ដឹកជញ្ជូន ticked for a Delivery user');
-  const g = book.rows.find(r => r[0] === 'guard@test.kh');
-  assert.strictEqual(g[head.indexOf('Active')], 'Yes');
-  assert.strictEqual(g[head.indexOf('ចាក់សាំង')], false, 'a moved user only gets Delivery');
+  assert.ok(head.indexOf('Delivery Role') < 0, 'no Delivery Role column is added');
+  assert.strictEqual(book.rows.find(r => r[0] === 'new@test.kh')[head.indexOf('Role')], 'logistics');
+  assert.strictEqual(book.rows.find(r => r[0] === 'logi@test.kh')[head.indexOf('Role')], 'logistics');
   e.cache && Object.keys(e.cache).forEach(k => delete e.cache[k]);
-  const b = ok(e.call('boot', {}, GUARD));
-  assert.strictEqual(b.user.roleKey, 'security');
+  assert.strictEqual(key(LOGI), 'logistics');
   assert.strictEqual(JSON.stringify(e.ss.getSheetByName('User Manager').rows), um, 'User Manager untouched');
-  // the Users screen writes to the shared list
-  ok(e.call('setUser', { email: 'new@test.kh', name: 'New', role: 'Logistics' }, ADMIN));
-  const nw = book.rows.find(r => r[0] === 'new@test.kh');
-  assert.strictEqual(nw[head.indexOf('Delivery Role')], 'Logistics');
-  assert.strictEqual(JSON.stringify(e.ss.getSheetByName('User Manager').rows), um);
+});
+
+test('old Delivery Role column still works for a plain user until it is merged (30 Oct 2026)', () => {
+  const H = ['Email', 'Name', 'Role', 'Delivery Role', 'Active', 'ដឹកជញ្ជូន'];
+  const e = makeEnv(fixture(), { props: { USERS_SHEET_ID: 'fuel' }, books: { fuel: { Users: [H,
+    ['guard@test.kh', 'G', 'user', 'Security', 'Yes', true],
+    ['admin@test.kh', 'A', 'admin', '', 'Yes', true],
+    ['wh@test.kh', 'W', 'warehouse', 'Driver', 'Yes', true]] } } });
+  e.run('setup()');
+  assert.strictEqual(ok(e.call('boot', {}, GUARD)).user.roleKey, 'security');
+  assert.strictEqual(ok(e.call('boot', {}, ADMIN)).user.roleKey, 'admin');
+  assert.strictEqual(ok(e.call('boot', {}, WH)).user.roleKey, 'warehouse', 'Role wins over the old column');
 });
 
 test('one truck list: ISI trucks and drivers come from the Fuel sheet Driver & Truck tab (Kim, 17 Oct 2026)', () => {

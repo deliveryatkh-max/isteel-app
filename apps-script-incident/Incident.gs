@@ -258,7 +258,7 @@ function users_() {
   return v.slice(1).filter(x => x[e]).map(x => {
     const role = r >= 0 ? text_(x[r]) : '';
     const admin = /admin/i.test(role);
-    return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', phone: ph >= 0 ? text_(x[ph]) : '', admin: admin, reviewer: admin || /review/i.test(role),
+    return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', phone: ph >= 0 ? text_(x[ph]) : '', admin: admin, reviewer: admin || /review|supervis/i.test(role),
       ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))) };
   });
 }
