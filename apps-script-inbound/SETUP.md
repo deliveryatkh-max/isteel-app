@@ -27,7 +27,7 @@ Until step 5 is done the app runs in **DEMO** mode (sample POs and receipts kept
 3. **Run `setup()` once** (choose `setup` → Run → allow). It adds the tabs **Incoming Plan**, **GR Log**, **Receipts**
    and **IB Settings**, and the Drive folder **Inbound Photos**.
 4. **Incoming Plan.** Supervisors and admins (role reviewer or admin in Users) fill it from the app: Inbound → 📑 Incoming
-   Plan → *Upload Excel packing list* (Kim's template, sheet PKL) or *Add a PO by hand*. Uploading a PO again replaces its
+   Plan → *Upload Excel packing list* (Kim's template, sheet PKL). Uploading a PO again replaces its
    lines; lines already received stay. A PO can be deleted only while no truck was received on it. Pasting rows straight
    into the **Incoming Plan** tab still works. A PO shows in *Receive goods* while some of its Kg is not yet received.
 5. **IB Settings tab**: put the Telegram group id in `TELEGRAM_CHAT_ID` (the Fuel app's `TELEGRAM_CHAT_ID` works),
@@ -59,7 +59,7 @@ standard template. Edit it in Word, keep the `{{...}}` words, upload it again an
 made again). The row holding `{{item.material}}` repeats once per item. Placeholders: `{{id}} {{date}} {{status}} {{po}}
 {{inbound}} {{ref}} {{supplier}} {{eta}} {{dn3pl}} {{truck}} {{owner}} {{itemCount}} {{item.no}} {{item.material}}
 {{item.poQty}} {{item.arrQty}} {{item.grQty}} {{item.dmgQty}} {{item.uom}} {{totPo}} {{totArr}} {{totGr}} {{totDmg}} {{uom}}
-{{start}} {{end}} {{spent}} {{manpower}} {{productivity}} {{remark}} {{truckPhotos}} {{damagePhotos}} {{by}} {{finishedBy}}`,
+{{warehouse}} {{voice}} {{start}} {{end}} {{spent}} {{manpower}} {{productivity}} {{remark}} {{truckPhotos}} {{damagePhotos}} {{by}} {{finishedBy}}`,
 plus `{{barcode}}` (Code 128 barcode of the receipt number IB-…) and `{{inboundBarcode}}` (barcode of the Inbound No.);
 put a barcode code on a line of its own.
 Google can only print Google fonts, so the text is set in **PDF_FONT** (Kantumruy Pro; `-` keeps the template's fonts).
@@ -73,6 +73,8 @@ If the template fails, the built-in layout is used and the reason is written in 
 - **Receipts**: one row per truck (the app's own copy). Don't edit.
 - **IB Settings**: Telegram chat, app address, 3PL companies, days of receipts the app loads.
 - **Email Lists**: named email lists for the Send Email button.
+- **Warehouse List**: *Warehouse Code* and *Warehouse Description*. When it has codes, the arrival form asks for the receiving warehouse
+  (required) and the GR Log gets a Warehouse column. Empty = the Warehouse box is hidden.
 
 ## Who can do what
 

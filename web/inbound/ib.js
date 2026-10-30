@@ -16,6 +16,7 @@
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
   let CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'];
+  let WAREHOUSES = [{ code: 'A1', desc: '' }, { code: 'A2', desc: '' }, { code: 'I1', desc: '' }, { code: 'I2', desc: '' }, { code: 'I3', desc: '' }];   // Warehouse List tab
   let LISTS = [{ name: 'Warehouse', count: 3 }, { name: 'Procurement', count: 2 }, { name: 'Finance', count: 1 }];   // email lists (Email Lists tab)
 
   // ------------------------------------------------------------------ time helpers
@@ -81,7 +82,7 @@
     ['other', '❓', 'ផ្សេងៗ', 'Other'],
   ];
   const dmgName = k => { const d = DMG.find(x => x[0] === k); return d ? d[1] + ' ' + t(d[2], d[3]) : (k || ''); };
-  const MAX_DMG_PH = 6;
+  const MAX_DMG_PH = 10;
 
   // ------------------------------------------------------------------ data (demo)
   let DATA = [];
@@ -116,7 +117,7 @@
         id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length], dn3pl: 'DN-' + (26100 + i * 7),
         items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
         date: ymd(d), start, end, manpower: x[4], owner: end ? x[5] : '', carrier: x[6],
-        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
+        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, warehouse: ['A1', 'A2', 'I1'][i % 3], by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
     });
     return out;
@@ -137,6 +138,7 @@
     if (d.plates && d.plates.length) PLATES = d.plates;
     if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
     LISTS = d.lists || [];
+    WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Warehouse box is then hidden
   }
   function load() {
     if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
@@ -241,16 +243,17 @@
     view(`
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
-        <div class="stat"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></div>
-        <div class="stat"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></div>
-        <div class="stat"><small>${t('បានទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></div>
-        <div class="stat"><small>${t('រយៈពេលមធ្យម', 'Avg time')}</small><b>${avg == null ? '–' : fmt(avg)}<em>${t('នាទី', 'min')}</em></b></div>
+        <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
+        <a class="stat go" href="#/log" data-go="live"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></a>
+        <a class="stat go" href="#/log" data-go="todaydone"><small>${t('បានទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
+        <a class="stat go" href="#/log" data-go="todaydone"><small>${t('រយៈពេលមធ្យម', 'Avg time')}</small><b>${avg == null ? '–' : fmt(avg)}<em>${t('នាទី', 'min')}</em></b></a>
       </div>
       <div class="head2"><h2>⏱ ${t('កំពុងទម្លាក់ឥឡូវនេះ', 'Unloading now')}</h2></div>
       <div class="list">${live.length ? live.map(itemHTML).join('') : `<div class="empty">${t('គ្មានឡានកំពុងទម្លាក់', 'No truck unloading')}</div>`}</div>
       <div class="head2"><h2>✅ ${t('រួចរាល់ថ្ងៃនេះ', 'Done today')}</h2><a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')} ›</a></div>
       <div class="list">${done.length ? done.slice().reverse().map(itemHTML).join('') : `<div class="empty">${t('មិនទាន់មាន', 'None yet')}</div>`}</div>`);
     $('#newBtn').onclick = () => { location.hash = '#/new'; };
+    bindGo();
   }
 
   // ------------------------------------------------------------------ Log
@@ -258,7 +261,8 @@
   function renderLog() {
     paintTabs('log');
     const q = LQ.toLowerCase();
-    const F = { all: () => true, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess };
+    const F = { all: () => true, today: r => r.date === today(), todaydone: r => r.date === today() && !!r.end, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess,
+      period: r => !!r.end && r.date >= sumFrom() };
     const rows = DATA.filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
@@ -266,7 +270,7 @@
     const chip = (k, km, en) => `<button class="chip${LF === k ? ' on' : ''}" data-f="${k}">${t(km, en)}</button>`;
     view(`
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
-      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
+      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('today', 'ថ្ងៃនេះ', 'Today')}${LF === 'todaydone' ? chip('todaydone', '✅ ថ្ងៃនេះ', '✅ Today') : ''}${LF === 'period' ? chip('period', '📊 ' + sumLabel(), '📊 ' + sumLabel()) : ''}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
       <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
@@ -275,13 +279,13 @@
   }
   // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
-    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Remark'];
+    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Warehouse', 'Remark'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
       r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG.find(d => d[0] === i.dmgType)[3] : '', isLessItem(i) ? 'Yes' : '', r.uom,
       showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
-      r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.remark,
+      r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.warehouse || '', r.remark,
     ].map(q).join(','))));
     try {
       const a = document.createElement('a');
@@ -299,8 +303,13 @@
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', ph: {} }; }
+  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
+  const whName = c => { const w = WAREHOUSES.find(x => x.code === c); return c ? c + (w && w.desc ? ' · ' + w.desc : '') : ''; };
+  // voice note on the remark (Kim, 30 Oct 2026: kept for Khmer transcription later). F.voice = new recording (data URL) or the saved file id.
+  const voiceHTML = r => r.voice
+    ? `<div class="vrow"><button type="button" class="btn sm" id="vPlay">▶️ ${t('ស្តាប់សំឡេង', 'Play voice note')}</button><button type="button" class="btn sm ghost" id="vDel">🗑 ${t('លុប', 'Delete')}</button></div><audio id="vAudio" controls hidden></audio>`
+    : `<button type="button" class="btn sm" id="vRec">🎤 ${t('ថតសំឡេង', 'Record voice')}</button> <small class="il" id="vTime"></small>`;
   const grey = (lbl, v) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
   const phImg = (v, ic) => !v ? `<span class="sam">${ic}<small>${t('ថត', 'Take')}</small></span>`
     : /^data:/.test(v) ? `<img src="${v}" alt="">`
@@ -331,7 +340,7 @@
             <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
             ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
             <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
-            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" capture="environment" data-dph="${n}" hidden>📷</label>` : ''}</div>
+            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
           </div></td></tr>`;
       }
       return out;
@@ -347,13 +356,13 @@
     paintTabs('');
     if (!F || F.id !== (id || '')) F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
     const r = F, started = !!r.start, editing = !!r.id;
-    const m = r.start ? spentMin(r) : null, p = prod(r);
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
     const pend = r.po ? pendingLines(r.po, r.id) : [];
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(r.po)}</small></h2>${itemsTable(r, mode)}</section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('តែ PO មិនទាន់ទទួលគ្រប់', 'pending POs only')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
@@ -363,7 +372,7 @@
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
         ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
-      </section>
+      </section>`}
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
         <div class="row2">
@@ -374,27 +383,20 @@
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
+      ${WAREHOUSES.length ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
+        <div class="field"><label class="f">${t('ឃ្លាំងទទួលទំនិញ', 'Receiving warehouse')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div></section>` : ''}
 
       ${started ? `
-      <section class="card"><h2>👷 ${t('ឡាន និងកម្មករ', 'Truck owner and manpower')}</h2>
+      <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
         <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
           <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
         ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
-        <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
+        <div class="field"><label class="f">${t('ចំនួនបុគ្គលិកឃ្លាំងលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
           <div class="stepper" id="mpBox"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower || '–')}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
       </section>
 
-      <section class="card"><h2>⏱ ${t('ម៉ោងទម្លាក់', 'Unloading time')}</h2>
-        <div class="timebox">
-          <div class="tbox ro"><small>▶ ${t('ម៉ោងចាប់ផ្តើម', 'Start time')}</small><b>${esc(r.start)}</b></div>
-          <div class="tbox ro"><small>⏹ ${t('ម៉ោងបញ្ចប់', 'End time')}</small><b>${esc(r.end || '– – : – –')}</b></div>
-        </div>
-        <div class="calc">
-          <div class="tbox"><small>${t('រយៈពេល', 'Time spent')}</small><b>${showSpent(m)}</b></div>
-          <div class="tbox"><small>${t('ផលិតភាព', 'Productivity')}</small><b>${p == null ? '–' : fmt(p, 1)}</b><small>${p == null ? t('គណនាពេលបញ្ចប់', 'Shown at finish') : esc(prodUnit())}</small></div>
-        </div>
-      </section>
-      <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea></section>` : `
+      <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea>
+        <div class="voice" id="voiceBox">${voiceHTML(r)}</div></section>` : `
       <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ បរិមាណទទួលជាក់ស្តែង និងខូចខាត បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. Actual GR qty and damaged qty are filled at finish.')}</p>`}
 
       ${!started ? `<button class="btn ok big bigstart" id="startBtn">▶ ${t('ចាប់ផ្តើមទម្លាក់ឥឡូវ', 'Start unloading now')}</button>`
@@ -458,6 +460,7 @@
     mark($('#items'), r.po && !r.items.length);
     mark($('#truck'), !r.truck);
     mark($('#dn3pl'), !r.dn3pl);
+    mark($('#wh'), WAREHOUSES.length && !r.warehouse);
     $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
     $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
       mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
@@ -484,7 +487,14 @@
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
       groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })) }],
       onPick: v => { const d = DMG.find(x => x[1] + ' ' + t(x[2], x[3]) === v); i.dmgType = d ? d[0] : v; re(); } })));
-    $$('[data-dph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); const i = F.items[+inp.dataset.dph]; shrink(f, url => { i.dmgPh = (i.dmgPh || []).concat(url).slice(0, MAX_DMG_PH); re(); }); }; });
+    // camera or gallery; several photos at once, up to MAX_DMG_PH per item (Kim, 30 Oct 2026)
+    $$('[data-dph]').forEach(inp => { inp.onchange = () => {
+      collect(); const i = F.items[+inp.dataset.dph], room = MAX_DMG_PH - (i.dmgPh || []).length;
+      const files = Array.from(inp.files || []).slice(0, Math.max(0, room)); if (!files.length) return;
+      if ((inp.files || []).length > room) toast('⚠️ ' + t('រូបថតអតិបរមា ', 'Up to ') + MAX_DMG_PH + t(' សន្លឹក', ' photos'));
+      let left = files.length; const urls = [];
+      files.forEach((f, k) => shrink(f, url => { urls[k] = url; if (--left === 0) { i.dmgPh = (i.dmgPh || []).concat(urls.filter(Boolean)).slice(0, MAX_DMG_PH); re(); } }));
+    }; });
     $$('[data-delph]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, j] = b.dataset.delph.split(':'); F.items[+n].dmgPh.splice(+j, 1); re(); }; });
     const plate = v => String(v || '').toUpperCase().replace(/\s+/g, '');
     pk('truck', () => { const used = Array.from(new Set(DATA.map(r => r.truck).concat(PLATES))); return { title: t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck number / trailer'), value: F.truck,
@@ -493,6 +503,10 @@
     pk('carrier', () => ({ title: t('ក្រុមហ៊ុន 3PL', '3PL company'), value: F.carrier,
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
+    pk('wh', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: whName(F.warehouse),
+      groups: [{ items: WAREHOUSES.map(w => ({ value: whName(w.code), key: w.code })) }],
+      onPick: v => { const w = WAREHOUSES.find(x => whName(x.code) === v); F.warehouse = w ? w.code : v; re(); } }));
+    bindVoice(re);
     $$('[data-own]').forEach(b => { b.onclick = () => { F.owner = b.dataset.own; if (F.owner === 'ISI') F.carrier = ''; re(); }; });
     const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = +F.manpower > 1 ? +F.manpower - 1 : F.manpower; $('#mp').textContent = F.manpower || '–'; markNeed(); };
     const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; markNeed(); };
@@ -504,6 +518,7 @@
       if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
       else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
       if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
+      if (WAREHOUSES.length && !F.warehouse) miss.push(t('ឃ្លាំង', 'Warehouse'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
     };
@@ -515,7 +530,7 @@
       if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
       if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
       if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
-      if (!(+F.manpower > 0)) miss.push(t('ចំនួនកម្មករ', 'Manpower'));
+      if (!(+F.manpower > 0)) miss.push(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'));
       return miss;
     };
     const st = $('#startBtn');
@@ -535,6 +550,34 @@
     if (sv) sv.onclick = async () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('save', sv); if (rec) { toast('💾 ' + t('បានរក្សាទុក', 'Saved')); location.hash = '#/r/' + rec.id; } return; }
       store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+  }
+  let REC = null;
+  function bindVoice(re) {
+    const rec = $('#vRec'), play = $('#vPlay'), del = $('#vDel');
+    if (rec) rec.onclick = async () => {
+      if (REC) { REC.stop(); return; }
+      if (!navigator.mediaDevices || !window.MediaRecorder) return toast('⚠️ ' + t('ទូរស័ព្ទនេះថតសំឡេងមិនបាន', 'This phone cannot record here'));
+      let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { return toast('⚠️ ' + t('សូមអនុញ្ញាតមីក្រូហ្វូន', 'Allow the microphone')); }
+      const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(x => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(x)) || '';
+      const mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined), parts = [], t0 = Date.now();
+      REC = mr;
+      const tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000), el = $('#vTime'); if (el) el.textContent = '🔴 ' + Math.floor(s / 60) + ':' + pad(s % 60) + ' / 3:00'; if (s >= 180) mr.stop(); }, 500);
+      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      mr.onstop = () => { clearInterval(tick); stream.getTracks().forEach(x => x.stop()); REC = null;
+        const blob = new Blob(parts, { type: (mr.mimeType || type || 'audio/webm').split(';')[0] }), rd = new FileReader();
+        rd.onload = () => { collect(); F.voice = rd.result; re(); }; rd.readAsDataURL(blob); };
+      mr.start(1000);
+      rec.innerHTML = '⏹ ' + t('ឈប់ថត', 'Stop');
+    };
+    if (play) play.onclick = () => playVoice(F, play);
+    if (del) del.onclick = () => { collect(); F.voice = ''; re(); };
+  }
+  async function playVoice(r, b) {
+    const a = $('#vAudio');
+    if (/^data:/.test(r.voice) || r.voice === 'sample') { if (r.voice === 'sample') return toast('🧪 ' + t('សាកល្បង', 'Demo')); a.src = r.voice; a.hidden = false; a.play(); return; }
+    busy(b, true, t('កំពុងទាញ…', 'Loading…'));
+    try { const x = await api('voice', { id: r.id }); a.src = x.url; a.hidden = false; a.play(); } catch (e) { toast('⚠️ ' + oldScript(e)); }
+    finally { busy(b, false); }
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
@@ -607,13 +650,14 @@
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
         ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
+        ${r.warehouse ? kv(t('ឃ្លាំង', 'Warehouse'), esc(whName(r.warehouse)), 1) : ''}
       </div></section>
       <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
       <section class="card"><div class="kvs">
-        ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនកម្មករ', 'Manpower'), '👷 ' + esc(r.manpower))}
+        ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
         ${kv(t('រយៈពេល', 'Time spent'), (isLive(r) ? '⏱ ' : '') + showSpent(m))}${kv(t('ផលិតភាព', 'Productivity'), p == null ? '–' : fmt(p, 1) + ' <small>' + esc(prodUnit()) + '</small>')}
-        ${kv(t('សំគាល់', 'Remark'), esc(r.remark || '–'), 1)}
+        ${kv(t('សំគាល់', 'Remark'), esc(r.remark || '–') + (r.voice ? ` <button type="button" class="btn sm" id="vPlay">▶️ ${t('ស្តាប់សំឡេង', 'Play voice note')}</button><audio id="vAudio" controls hidden></audio>` : ''), 1)}
         ${kv(t('កត់ត្រាដោយ', 'Recorded by'), esc(r.by || '–'), 1)}
       </div>
       <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
@@ -623,6 +667,7 @@
         <div class="rep2"><button class="btn ok big" id="pdfBtn">📄 ${t('បង្កើតរបាយការណ៍ PDF', 'Generate Report (PDF)')}</button>
         <button class="btn big" id="mailBtn">✉️ ${t('ផ្ញើអ៊ីមែល', 'Send Email')}</button></div><div id="mailBox"></div></section>
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
+    if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
     if (!isLive(r)) {
       $('#pdfBtn').onclick = () => makePdf(r, $('#pdfBtn'));
       $('#mailBtn').onclick = () => paintMail(r);
@@ -681,6 +726,7 @@
       `- Receipt No.: ${r.id}`,
       `- Truck: ${r.truck}${r.owner === 'ISI' ? ' (ISI truck)' : r.owner === '3PL' ? ' (3PL' + (r.carrier ? ' · ' + r.carrier : '') + ')' : ''}`];
     if (r.dn3pl) l.push(`- 3PL DN No.: ${r.dn3pl}`);
+    if (r.warehouse) l.push(`- Warehouse: ${whName(r.warehouse)}`);
     l.push(`- Items: ${(r.items || []).length} ${(r.items || []).length === 1 ? 'line' : 'lines'}`,
       `- PO Qty: ${kg(tot(r, 'poQty'))}`,
       `- Arrival Qty: ${kg(tot(r, 'arrQty'))}`,
@@ -707,12 +753,12 @@
     box.innerHTML = `<div class="pbar"><b>📄 ${esc(r.id)}.pdf</b><button type="button" class="btn sm" id="pvX">✕</button></div><div class="page">
       <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><img class="plogo" src="../icons/isi-steel-logo.png" alt="ISI STEEL"></div>
       <h4>A. ${two('ព័ត៌មានទទួល', 'RECEIPT')}</h4>${kv([[two('លេខ PO', 'PO Number'), r.po, two('លេខ Inbound', 'Inbound No.'), r.inbound], ['Ref. No.', r.ref, two('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
-        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : '']])}
+        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), whName(r.warehouse), '', '']])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
         ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc((DMG.find(d => d[0] === i.dmgType) || [, , , ''])[3]) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
         <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
-      <h4>C. ${two('ពេលវេលា និងកម្មករ', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('កម្មករ', 'Manpower'), r.manpower],
+      <h4>C. ${two('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
         [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
       <h4>D. ${two('រូបថតឡាន', 'TRUCK PHOTOS')}</h4><div class="pph">${PHOTOS.map(x => `<div>${phImg(ph[x[0]], x[1])}</div>`).join('')}</div>
       ${dp.length ? `<h4>E. ${two('រូបថតខូចខាត', 'DAMAGE PHOTOS')} (${dp.length})</h4><div class="pph sm">${dp.map(x => `<div>${phImg(x, '⚠️')}</div>`).join('')}</div>` : ''}
@@ -725,10 +771,13 @@
 
   // ------------------------------------------------------------------ Summary
   let SP = '7';
+  function sumFrom() { const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (SP === '1' ? 0 : SP === '7' ? 6 : from.getDate() - 1)); return ymd(from); }
+  const sumLabel = () => (SP === '1' ? t('ថ្ងៃនេះ', 'Today') : SP === '7' ? t('៧ ថ្ងៃ', '7 days') : t('ខែនេះ', 'This month'));
+  // the number boxes open the Log with the matching filter (Kim, 30 Oct 2026)
+  function bindGo() { $$('[data-go]').forEach(a => { a.onclick = () => { LF = a.dataset.go; LQ = ''; }; }); }
   function renderSum() {
     paintTabs('sum');
-    const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (SP === '1' ? 0 : SP === '7' ? 6 : from.getDate() - 1));
-    const rows = DATA.filter(r => r.end && r.date >= ymd(from));
+    const rows = DATA.filter(r => r.end && r.date >= sumFrom());
     const tn = rows.reduce((s, r) => s + (tons(r) || 0), 0);
     const avgM = rows.length ? rows.reduce((s, r) => s + spentMin(r), 0) / rows.length : null;
     const tr = rows.filter(r => prod(r) != null);
@@ -745,12 +794,12 @@
     view(`
       <div class="filters">${chip('1', 'ថ្ងៃនេះ', 'Today')}${chip('7', '៧ ថ្ងៃ', '7 days')}${chip('m', 'ខែនេះ', 'This month')}</div>
       <div class="stats">
-        <div class="stat"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></div>
-        <div class="stat"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></div>
-        <div class="stat"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></div>
+        <a class="stat go" href="#/log" data-go="period"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></a>
+        <a class="stat go" href="#/log" data-go="period"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
+        <a class="stat go" href="#/log" data-go="period"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></a>
         <div class="stat"><small>${t('ផលិតភាពមធ្យម', 'Avg productivity')}</small><b>${avgP == null ? '–' : fmt(avgP, 1)}<em>${t('ត/នាក់/ម៉', 't/person/h')}</em></b></div>
-        <div class="stat"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></div>
-        <div class="stat"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></div>
+        <a class="stat go" href="#/log" data-go="dmg"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></a>
+        <a class="stat go" href="#/log" data-go="less"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></a>
       </div>
       <section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
         <div class="bars">${dk.map(k => `<div class="barrow"><span>${showDate(k).slice(0, 5)}</span><div class="tr"><i style="width:${days[k] / mx * 100}%"></i></div><span>${fmt(days[k], 1)} t</span></div>`).join('') || `<div class="empty">–</div>`}</div>
@@ -762,8 +811,9 @@
           ${Object.keys(by).sort((a, b) => by[b].n - by[a].n).map(k => `<tr><td>${esc(k)}</td><td class="n">${by[k].n}</td><td class="n">${fmt(by[k].t, 1)}</td><td class="n">${fmt(by[k].m / by[k].n)}</td></tr>`).join('')}
         </table>
       </section>
-      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនកម្មករ', 'Productivity = qty received ÷ hours ÷ manpower')}</p>`);
+      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p>`);
     $$('[data-p]').forEach(b => { b.onclick = () => { SP = b.dataset.p; renderSum(); }; });
+    bindGo();
   }
 
   // ------------------------------------------------------------------ start menu (Kim, 28 Oct 2026): Receive goods | Incoming Plan
@@ -777,7 +827,7 @@
           <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
           <em>${DATA.filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
         <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
-          <small>${t('ផ្ទុក Excel Packing List ឬបន្ថែម PO', 'Upload the Excel packing list or add a PO')}</small>
+          <small>${t('ផ្ទុក Excel Packing List', 'Upload the Excel packing list')}</small>
           <em>${POS.length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
       </div>`);
   }
@@ -802,7 +852,6 @@
       .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
     view(`
       <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
-      <button class="btn" id="addPo" style="width:100%;margin-bottom:14px">✍️ ${t('បន្ថែម PO ដោយដៃ', 'Add a PO by hand')}</button>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
@@ -814,7 +863,6 @@
           <div class="meta">${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</div></a>`;
       }).join('') || `<div class="empty">${t('មិនទាន់មាន PO', 'No PO yet')}</div>`}</div>`);
     $('#xfile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
-    $('#addPo').onclick = () => { location.hash = '#/plan-new'; };
     const qi = $('#pq'); qi.oninput = () => { PQ = qi.value; const p = qi.selectionStart; renderPlan(); const n = $('#pq'); n.focus(); n.setSelectionRange(p, p); };
   }
   function renderPo(po) {

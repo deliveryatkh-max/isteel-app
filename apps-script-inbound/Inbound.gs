@@ -20,7 +20,8 @@
  *   IB_FOLDER_ID       made by setup(); Drive folder "Inbound Photos"
  */
 
-const SH = { PLAN: 'Incoming Plan', LOG: 'GR Log', REC: 'Receipts', SET: 'IB Settings', MAIL: 'Email Lists' };
+const SH = { PLAN: 'Incoming Plan', LOG: 'GR Log', REC: 'Receipts', SET: 'IB Settings', MAIL: 'Email Lists', WH: 'Warehouse List' };
+const WH_COLS = ['Warehouse Code', 'Warehouse Description'];
 const MAIL_COLS = ['List', 'Emails', 'Active'];
 const MAIL_SEED = [['Warehouse', '', 'Yes'], ['Procurement', '', 'Yes'], ['Finance', '', 'Yes']];
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -28,13 +29,14 @@ const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Warehouse', 'Voice Note'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
 const STATUS = { live: 'Unloading', done: 'Done' };
 const PHOTOS = ['front', 'load', 'doc'];
-const MAX_DMG_PHOTOS = 6;
+const MAX_DMG_PHOTOS = 10;
+const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 const MAX_ITEMS = 60;
 const DMG = { dent: 'Dent', rust: 'Rust', wet: 'Wet / water', edge: 'Edge damage', scratch: 'Scratch', bent: 'Bent / out of shape',
@@ -65,6 +67,7 @@ function route_(action, p, user) {
     case 'finish': return update_(p.receipt || {}, user, true);
     case 'save': return update_(p.receipt || {}, user, false);
     case 'photos': return photos_(p.ids);
+    case 'voice': return voice_(p.id);
     case 'pdf': return pdf_(p, user);
     case 'email': return email_(p, user);
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
@@ -136,6 +139,7 @@ function setup() {
     ['DAYS_SHOWN', '90', 'How many days of receipts the app loads (receipts of POs still in Incoming Plan always load)'],
   ]);
   sheet_(SH.MAIL, MAIL_COLS, MAIL_SEED);
+  sheet_(SH.WH, WH_COLS);
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('IB_FOLDER_ID')) props.setProperty('IB_FOLDER_ID', DriveApp.createFolder('Inbound Photos').getId());
   const first = ss_().getSheets()[0];
@@ -347,8 +351,38 @@ function boot_(user) {
   const carriers = setting_('THREEPL_COMPANIES').split(',').map(s => s.trim()).filter(Boolean);
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
+    warehouses: warehouses_(),
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
+/** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */
+function warehouses_() {
+  const sh = ss_().getSheetByName(SH.WH);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().map(r => ({ code: String(r[0]).trim(), desc: String(r[1]).trim() })).filter(w => w.code);
+}
+function warehouse_(v, need) {
+  const list = warehouses_(), code = clip_(v, 40);
+  if (!list.length) return code;
+  if (!code) { if (need) fail_('BAD', 'Choose the warehouse.', 'សូមជ្រើសឃ្លាំង។'); return ''; }
+  if (!list.some(w => w.code === code)) fail_('BAD', 'Warehouse ' + code + ' is not in the Warehouse List.', 'ឃ្លាំង ' + code + ' មិនមានក្នុងបញ្ជីទេ។');
+  return code;
+}
+/** Voice note of a receipt as a data URL (only the receipt's own file). */
+function voice_(id) {
+  const rec = find_(id).rec;
+  if (!rec.voice) fail_('NOTFOUND', 'No voice note.', 'គ្មានសំឡេង។');
+  const b = DriveApp.getFileById(rec.voice).getBlob();
+  return { url: 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+}
+function saveVoice_(folder, dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(audio\/(webm|mp4|ogg|mpeg|aac|x-m4a|wav))(?:;[^,]*)?;base64,(.+)$/);
+  if (!m) return null;
+  const bytes = Utilities.base64Decode(m[3]);
+  if (bytes.length > MAX_VOICE_BYTES) fail_('BIG', 'The voice note is too long.', 'សំឡេងវែងពេក។');
+  const ext = { webm: 'webm', mp4: 'm4a', ogg: 'ogg', mpeg: 'mp3', aac: 'aac', 'x-m4a': 'm4a', wav: 'wav' }[m[2]];
+  return folder.createFile(Utilities.newBlob(bytes, m[1], 'remark-voice-' + fmt_(new Date(), 'yyMMdd-HHmm') + '.' + ext)).getId();
+}
+
 function find_(id) {
   const rows = recRows_();
   const i = rows.findIndex(r => r[0] === String(id || ''));
@@ -414,6 +448,7 @@ function start_(p, user) {
   if (!truck) fail_('BAD', 'Truck number is missing.', 'សូមបញ្ចូលផ្លាកលេខឡាន។');
   const dn = clip_(p.dn3pl, 40);
   if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
+  const wh = warehouse_(p.warehouse, true);
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
@@ -423,7 +458,7 @@ function start_(p, user) {
     const l = plan[0];
     const rec = {
       id: id, status: STATUS.live, po: l.po, inbound: l.inbound, ref: l.ref, supplier: l.supplier, eta: l.eta, dn3pl: dn, truck: truck,
-      items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
+      warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
@@ -467,9 +502,16 @@ function update_(p, user, finish) {
     const mp = num_(p.manpower);
     rec.manpower = mp > 0 ? Math.round(mp) : rec.manpower;
     rec.remark = clip_(p.remark, 500);
+    if (p.warehouse !== undefined) rec.warehouse = warehouse_(p.warehouse, false) || rec.warehouse || '';
+    if (p.voice !== undefined) {
+      if (/^data:audio\//.test(String(p.voice))) {
+        const id = saveVoice_(folder, p.voice);
+        if (id) { if (rec.voice) { try { DriveApp.getFileById(rec.voice).setTrashed(true); } catch (e) { /* gone */ } } rec.voice = id; }
+      } else if (!p.voice && rec.voice) { try { DriveApp.getFileById(rec.voice).setTrashed(true); } catch (e) { /* gone */ } rec.voice = ''; }
+    }
     if (finish) {
       if (!rec.owner) fail_('BAD', 'Choose ISI or 3PL truck.', 'សូមជ្រើសឡាន ISI ឬ 3PL។');
-      if (!(rec.manpower > 0)) fail_('BAD', 'Manpower is missing.', 'សូមបញ្ចូលចំនួនកម្មករ។');
+      if (!(rec.manpower > 0)) fail_('BAD', 'Manpower is missing.', 'សូមបញ្ចូលចំនួនបុគ្គលិកឃ្លាំង។');
       rec.end = fmt_(new Date(), 'HH:mm');
       rec.status = STATUS.done;
       rec.finishedBy = user.name;
@@ -497,10 +539,11 @@ function store_(rec, row) {
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
+  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Warehouse, Voice Note)
   const rows = rec.items.map(i => [rec.id, rec.status, rec.po, rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
@@ -693,6 +736,7 @@ function pdfValues_(r) {
     dn3pl: r.dn3pl, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '',
     itemCount: r.items.length, totPo: kg_(tot_(r, 'poQty')), totArr: kg_(tot_(r, 'arrQty')), totGr: kg_(tot_(r, 'grQty')), totDmg: kg_(tot_(r, 'dmgQty')), uom: r.uom,
     start: r.start, end: r.end, spent: sp === '' ? '' : sp + ' min', manpower: r.manpower, productivity: pr === '' ? '' : pr + ' t/person/h', remark: r.remark,
+    warehouse: r.warehouse || '', voice: r.voice ? 'Voice note saved in the receipt folder / សំឡេងរក្សាទុកក្នុង Folder' : '',
     by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '', barcode: r.id, inboundBarcode: r.inbound,
   };
 }
@@ -844,7 +888,8 @@ function makePdf_(r, folder, name) {
     kv_(body, [[two_('លេខ PO', 'PO Number'), r.po, two_('លេខ Inbound', 'Inbound No.'), r.inbound],
       ['Ref. No.', r.ref, two_('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
       ['ETA', showDate_(r.eta), two_('លេខ DN 3PL', '3PL DN No.'), r.dn3pl],
-      [two_('ឡាន', 'Truck / trailer'), r.truck, two_('ម្ចាស់ឡាន', 'Truck owner'), r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '']]);
+      [two_('ឡាន', 'Truck / trailer'), r.truck, two_('ម្ចាស់ឡាន', 'Truck owner'), r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : ''],
+      [two_('ឃ្លាំង', 'Warehouse'), r.warehouse || '', two_('សំឡេង', 'Voice note'), r.voice ? two_('មាន', 'Saved in the receipt folder') : '']]);
 
     section_(body, 'B. ' + two_('បរិមាណទំនិញ', 'ITEMS') + ' (' + r.items.length + ')');
     const rows = [['#', two_('សម្ភារៈ', 'Material'), two_('ចំនួន (PO)', 'PO Qty'), two_('ចំនួន (ដល់)', 'Arrival'), two_('ទទួល', 'GR Qty'), two_('ខូច', 'Damaged'), two_('ឯកតា', 'UoM')]];
@@ -865,10 +910,10 @@ function makePdf_(r, folder, name) {
     const last = t.getRow(rows.length - 1);
     for (let j = 0; j < 7; j++) last.getCell(j).setBackgroundColor('#f2f5f9').editAsText().setBold(true);
 
-    section_(body, 'C. ' + two_('ពេលវេលា និងកម្មករ', 'TIME AND MANPOWER'));
+    section_(body, 'C. ' + two_('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER'));
     const pr = prod_(r);
     kv_(body, [[two_('ចាប់ផ្តើម', 'Start'), r.start, two_('បញ្ចប់', 'End'), r.end],
-      [two_('រយៈពេល', 'Time spent'), spent_(r) === '' ? '' : spent_(r) + ' min', two_('កម្មករ', 'Manpower'), r.manpower],
+      [two_('រយៈពេល', 'Time spent'), spent_(r) === '' ? '' : spent_(r) + ' min', two_('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
       [two_('ផលិតភាព', 'Productivity'), pr === '' ? '' : pr + ' t/person/h', two_('សំគាល់', 'Remark'), r.remark]]);
 
     const ph = PHOTOS.map(k => (r.ph || {})[k]).filter(Boolean);
