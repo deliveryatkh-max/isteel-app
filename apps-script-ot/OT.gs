@@ -199,7 +199,7 @@ function publicConfig_() {
   }
   return {
     reasons, maxHours: s.maxHours, maxPast: s.maxPast, maxFuture: s.maxFuture, overnight: s.overnight,
-    needGps: !!s.site, radius: s.site ? s.site.radius : null, today: todayYmd_(), holidays: holidays_(),
+    needGps: !!s.site, radius: s.site ? s.site.radius : null, site: s.site ? { lat: s.site.lat, lng: s.site.lng } : null, today: todayYmd_(), holidays: holidays_(),
     needDept: Object.keys(depts_()).length > 0, deptKeys: deptKeys_(),
     timeMode: s.timeMode, serverNow: now_().getTime(), maxAutoHours: AUTO_MAX_HOURS,
     shifts: shifts_().map(x => ({ name: x.name, time: x.time, otStart: hhmm24_(x.end) })),

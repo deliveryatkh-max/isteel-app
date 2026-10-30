@@ -240,3 +240,9 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .sudone div { background: var(--soft); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .sudone small { display: block; color: var(--muted); font-size: 12.5px; }
 .sudone b { display: block; font-size: 15.5px; overflow-wrap: anywhere; }
+
+/* Site distance check on the form */
+.alert.gps { background: var(--soft); color: var(--brand); }
+.btn.gps-again { display: flex; margin-top: 8px; min-height: 40px; font-size: 14px; }
+.gpsbox { margin: 0 0 12px; }
+.gpsbox .alert { margin: 0; }
