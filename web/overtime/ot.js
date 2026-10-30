@@ -811,7 +811,7 @@
       <section class="card">
         <h2><span class="n">1</span>${t('លេខកាតសំគាល់ខ្លួនបុគ្គលិក', 'Employee ID')}</h2>
         <div class="idrow">
-          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('សុំបញ្ចូលលេខកាត៦ខ្ទង់', 'Enter your 6-digit ID'))}" value="${esc(su.id)}">
+          <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('ឧ. 123456', 'e.g. 123456'))}" value="${esc(su.id)}">
           <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
         </div>
         ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : ''}
