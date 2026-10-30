@@ -22,7 +22,7 @@ const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpeg-photo').toString('ba
 const env = makeEnv({ file: path.join(ROOT, 'apps-script-inbound/Inbound.gs'), users: USERS.map(r => r.slice()), trucks: TRUCKS,
   props: { SESSION_SECRET: 's3cret', USERS_SHEET_ID: 'USERS', GOOGLE_CLIENT_ID: 'cid', TELEGRAM_BOT_TOKEN: 'bot' } });
 env.g.setup();
-eq(env.ss.getSheets().map(s => s.getName()), ['Incoming Plan', 'GR Log', 'Receipts', 'IB Settings', 'Email Lists'], 'tabs (empty Sheet1 removed)');
+eq(env.ss.getSheets().map(s => s.getName()), ['Incoming Plan', 'GR Log', 'Receipts', 'IB Settings', 'Email Lists', 'Warehouse List'], 'tabs (empty Sheet1 removed)');
 ok(env.props.IB_FOLDER_ID, 'photo folder made');
 
 // Kim pastes the Incoming Packing List (dates and numbers as Sheets gives them)
@@ -54,7 +54,14 @@ ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign(
 ok(/not on this PO/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
 ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
 ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: '' }) }).error), '3PL DN required');
+// Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
+const whTab = env.ss.getSheetByName('Warehouse List'); whTab.rows.push(['A1', 'Main'], ['I1', '']);
+eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main' }, { code: 'I1', desc: '' }], 'warehouses in boot');
+ok(/Choose the warehouse/.test(call('sok@x.com', 'start', { receipt: ARR }).error), 'warehouse required');
+ok(/not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
+ARR.warehouse = 'A1';
 let r = must(call('sok@x.com', 'start', { receipt: ARR }));
+eq(r.warehouse, 'A1', 'warehouse saved');
 ok(/^IB-\d{6}-01$/.test(r.id), 'receipt id ' + r.id);
 eq([r.status, r.truck, r.end, r.by, r.supplier, r.inbound], ['Unloading', '3E2588', '', 'Sokha', 'Regency', 'Test IN 1800048956']);
 eq(r.items.map(i => [i.poQty, i.arrQty]), [[32520, 20000], [23550, 23550]], 'qty from plan + typed');
@@ -73,7 +80,10 @@ const FIN = { id: r.id, owner: '3PL', carrier: 'FOXS', manpower: 3, remark: 'ok'
 ok(/Manpower/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { manpower: '' }) }).error), 'manpower required');
 ok(/damage photo/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: 1, dmgQty: 1, dmgType: 'dent' }, { material: '1100000231', grQty: 1 }] }) }).error), 'damage photo required');
 ok(/Actual GR Qty/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: '' }] }) }).error), 'GR qty required');
-r = must(call('dara@x.com', 'finish', { receipt: FIN }));
+r = must(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { voice: 'data:audio/webm;codecs=opus;base64,' + Buffer.from('OggS-voice').toString('base64') }) }));
+ok(r.voice && env.files[r.voice] && /\.webm$/.test(env.files[r.voice].name), 'voice note saved');
+ok(/^data:audio\/webm;base64,/.test(must(call('dara@x.com', 'voice', { id: r.id })).url), 'voice note played back');
+ok(log().find(x => x[0] === r.id)[31] === 'A1', 'warehouse in GR Log');
 eq([r.status, r.owner, r.carrier, r.manpower, r.finishedBy], ['Done', '3PL', 'FOXS', 3, 'Dara']);
 eq(r.items.map(i => [i.grQty, i.dmgQty, i.dmgType, i.dmgPh.length]), [[19800, 2, 'rust', 1], [23550, 0, '', 0]]);
 ok(/^\d\d:\d\d$/.test(r.end), 'end time stamped');
