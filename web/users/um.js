@@ -4,7 +4,8 @@
 (function () {
   'use strict';
   const CFG = window.APP_CONFIG || {};
-  const DEMO = !CFG.API_URL;
+  // ?demo opens sample people (nothing is read from or saved to the Sheet), so the screens can be tried safely.
+  const DEMO = !CFG.API_URL || /[?&]demo\b/.test(location.search);
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const t = (km, en) => (window.LANG ? LANG.t(km, en) : km);
