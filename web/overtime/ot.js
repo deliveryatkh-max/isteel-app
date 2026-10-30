@@ -178,6 +178,7 @@
     $('#view').innerHTML = `
       <form id="form" novalidate autocomplete="off">
         ${c.needDept && state.dept ? `<div class="deptbar">🏢 <span>${t('ផ្នែក', 'Department')}: <b>${esc(state.dept.name)}</b></span><button type="button" class="link" id="rescan">${t('ស្កេនម្តងទៀត', 'Scan again')}</button></div>` : ''}
+        ${c.needGps ? `<div class="gpsbox">${gpsHtml(c)}</div>` : ''}
         <section class="card">
           <h2><span class="n">1</span>${t('បុគ្គលិក', 'Employee')}</h2>
           <label class="f" for="empId">${t('លេខកាត ឬឈ្មោះបុគ្គលិក', 'Employee ID or name')} <span class="req">*</span></label>
@@ -250,11 +251,10 @@
             </select>` : ''}
             <textarea class="in" id="otReason" maxlength="500" ${reasons.length && d.pick !== '__other' ? 'hidden' : ''} placeholder="${esc(t('សរសេរមូលហេតុ ឬការងារដែលធ្វើ', 'Type the reason or work done'))}">${esc(d.pick && d.pick !== '__other' ? '' : (d.reason || ''))}</textarea>
           </div>
-          ${c.needGps ? `<div class="hint">📍 ${t('ត្រូវការទីតាំងរបស់អ្នក ហើយអ្នកត្រូវនៅក្នុងចម្ងាយ', 'Your location is needed. You must be within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការរបស់អ្នក។', 'of your workplace.')}</div>` : ''}
         </section>
 
         ${state.sendErr ? `<div class="alert bad" role="alert" style="margin:0 0 12px">${esc(state.sendErr)}</div>` : ''}
-        <button type="submit" class="btn ok big" id="sendBtn" ${state.sending ? 'disabled' : ''}>
+        <button type="submit" class="btn ok big" id="sendBtn" ${state.sending || gpsFar(c) ? 'disabled' : ''}>
           ${state.sending ? `<span class="sp"></span> ${t('កំពុងផ្ញើ…', 'Submitting…')}` : `📨 ${t('ផ្ញើសំណើថែមម៉ោង', 'Submit OT Request')}`}
         </button>
       </form>`;
@@ -307,13 +307,15 @@
   // ---------- department QR (scanned before the form opens) ----------
   // The printed QR holds the form link with the department code (…/overtime/?d=D-XXXXXX). It can be scanned
   // here, or opened with the phone camera. The server checks the code on every submission too.
+  // The QR must be scanned every time the form is opened (Kim, 30 Oct 2026): a scan counts only for this visit.
   const DEPT_HOURS = 2;
   function deptOk() {
+    if (!state.scanned) return false;
     if (!state.dept) state.dept = getJ(K.dept, null);
     if (state.dept && Date.now() - (state.dept.at || 0) > DEPT_HOURS * 3600000) setDept(null);
     return !!state.dept;
   }
-  function setDept(d) { state.dept = d; set(K.dept, d ? JSON.stringify(d) : null); }
+  function setDept(d) { state.dept = d; state.scanned = !!d; set(K.dept, d ? JSON.stringify(d) : null); }
   // Same reading of the scan as the server: the bare ID or the whole link with ?d=.
   const deptCodeOf = raw => { const s = String(raw || '').trim(), m = s.match(/[?&]d=([A-Za-z0-9-]+)/); return (m ? m[1] : s).toUpperCase().slice(0, 30); };
   async function sha256hex(s) {
@@ -324,7 +326,7 @@
   // A signed-in person's own ID (from the home menu) is kept.
   function resetForm() {
     state.draft = {}; set(K.draft, null);
-    state.result = null; state.sendErr = ''; state.lookupErr = ''; state.emp = null;
+    state.result = null; state.sendErr = ''; state.lookupErr = ''; state.emp = null; state.gps = null;
     const me = getJ('steel_me', null); set(K.id, (me && me.id) || null);
   }
   function freshForm() {
@@ -528,12 +530,43 @@
     }
   }
 
-  function getGps() {
+  // Site check on the form (Kim, 30 Oct 2026): the phone's distance to SITE_LATLONG is shown as soon as the form
+  // opens, and Submit stays off while it is outside SITE_RADIUS_M. The server checks it again on submit.
+  function distM(a, b, c, d) {
+    const r = x => x * Math.PI / 180, R = 6371000;
+    const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const gpsFar = c => !!(c && c.needGps && c.site && state.gps && state.gps.st === 'far');
+  function checkGps() {
+    const c = cfg || {};
+    if (!c.needGps || !c.site) return;
+    state.gps = { st: 'checking' };
+    getGps(0).then(p => {
+      const m = Math.round(distM(p.lat, p.lng, c.site.lat, c.site.lng));
+      state.gps = { st: m <= c.radius ? 'ok' : 'far', m };
+    }, e => { state.gps = { st: 'err', msg: e.message }; })
+      .then(() => { if (state.tab === 'new' && !state.result) renderNew(true); });
+  }
+  function gpsHtml(c) {
+    const rule = `${t('អាចស្នើបានតែនៅក្នុងចម្ងាយ', 'OT can only be requested within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការ។', 'of the site.')}`;
+    if (!c.site) return `<div class="hint">📍 ${t('ត្រូវការទីតាំងរបស់អ្នក ហើយអ្នកត្រូវនៅក្នុងចម្ងាយ', 'Your location is needed. You must be within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការរបស់អ្នក។', 'of your workplace.')}</div>`;
+    const g = state.gps;
+    if (!g) { setTimeout(checkGps, 0); return `<div class="alert gps">📍 ${t('កំពុងពិនិត្យទីតាំងរបស់អ្នក…', 'Checking your location…')}</div>`; }
+    if (g.st === 'checking') return `<div class="alert gps">📍 ${t('កំពុងពិនិត្យទីតាំងរបស់អ្នក…', 'Checking your location…')}</div>`;
+    if (g.st === 'ok') return `<div class="alert ok">📍 ${t('អ្នកនៅក្នុងកន្លែងធ្វើការ', 'You are at the site')} (${g.m} m)</div>`;
+    const again = `<button type="button" class="btn gps-again" id="gpsAgain">🔄 ${t('ពិនិត្យម្តងទៀត', 'Check again')}</button>`;
+    if (g.st === 'far') return `<div class="alert bad" role="alert">❌ ${t('អ្នកនៅឆ្ងាយពីកន្លែងធ្វើការ ' + g.m + ' ម៉ែត្រ។', 'You are ' + g.m + ' m from the site.')} ${rule}${again}</div>`;
+    return `<div class="alert bad" role="alert">❌ ${esc(g.msg)} ${rule}${again}</div>`;
+  }
+  document.addEventListener('click', e => { if (e.target && e.target.id === 'gpsAgain') { checkGps(); renderNew(true); } });
+
+  function getGps(maxAge) {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error(t('ទូរស័ព្ទនេះមិនអាចរកទីតាំងបានទេ។', 'This phone cannot share its location.')));
       navigator.geolocation.getCurrentPosition(p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
         () => reject(new Error(t('សូមអនុញ្ញាតទីតាំង ហើយព្យាយាមម្តងទៀត។', 'Please allow location and try again.'))),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: maxAge == null ? 30000 : maxAge });
     });
   }
 
@@ -618,7 +651,7 @@
         </div>
       </section>`;
     $('#copy').onclick = () => { try { navigator.clipboard.writeText(r.reqId); toast(t('បានចម្លង', 'Copied')); } catch (e) { /* old phone */ } };
-    $('#again').onclick = () => { state.result = null; renderNew(); };
+    $('#again').onclick = () => { state.result = null; state.scanned = false; renderNew(); };
     $('#toMine').onclick = () => { state.result = null; renderMine(); };
   }
 
@@ -751,7 +784,7 @@
   }
 
   // ---------- start menu (Kim, 30 Oct 2026): Overtime | Sign up as OT approver ----------
-  function openForm() { renderNew(); if (get(K.id) && !state.emp) pick(get(K.id)); }
+  function openForm() { if (state.tab !== 'new') state.scanned = false; renderNew(); if (get(K.id) && !state.emp) pick(get(K.id)); }
   function renderMenu() {
     state.tab = 'menu'; paintTabs(); redraw = renderMenu; stopSignupPoll();
     $('#view').innerHTML = `
@@ -776,12 +809,12 @@
     const busy = !!(su.job && su.job.loading);
     $('#view').innerHTML = `${back}
       <section class="card">
-        <h2><span class="n">1</span>${t('សុំបញ្ចូលលេខកាតសំគាល់ខ្លួនបុគ្គលិកអ្នក', 'Enter your employee ID')}</h2>
+        <h2><span class="n">1</span>${t('លេខកាតសំគាល់ខ្លួនបុគ្គលិក', 'Employee ID')}</h2>
         <div class="idrow">
           <input class="in${su.err ? ' err' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('សុំបញ្ចូលលេខកាត៦ខ្ទង់', 'Enter your 6-digit ID'))}" value="${esc(su.id)}">
           <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
         </div>
-        ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : `<p class="hint">${t('បញ្ចូលលេខកាតបុគ្គលិករបស់អ្នក ហើយចុចស្វែងរក។', 'Enter your employee ID and tap Search.')}</p>`}
+        ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : ''}
       </section>`;
     const inp = $('#suId');
     const go = () => { su.id = inp.value.trim(); startSignup(su.id); };
