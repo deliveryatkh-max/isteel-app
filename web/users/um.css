@@ -31,6 +31,10 @@ small.inl { display: inline; }
 
 .filters { margin-bottom: 12px; }
 .filters .q, #lq { margin-bottom: 10px; }
+.frow { display: flex; gap: 8px; margin-bottom: 10px; }
+.frow .q { flex: 1; min-width: 0; margin-bottom: 0; }
+.dsel { flex: none; width: auto; max-width: 46%; font-size: 15px; }
+.dsel.on { border-color: var(--accent); background: var(--soft); color: var(--brand); font-weight: 600; }
 .filters .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 4px; }
 .filters .chips::-webkit-scrollbar { display: none; }
 .chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; flex: none; }
@@ -160,7 +164,8 @@ small.inl { display: inline; }
 @media (min-width: 900px) {
   main { max-width: none; padding: 22px 28px 40px; }
   .stats { grid-template-columns: repeat(3, minmax(0, 220px)); }
-  .filters .q { max-width: 420px; }
+  .frow { max-width: 680px; }
+  .dsel { max-width: 260px; }
   .filters .chips { flex-wrap: wrap; margin: 0; padding: 0; overflow: visible; }
   .reqgrid, .deptgrid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
   #view > .card:not(.done):not(.empty), #view > .prof, #view > .sec, #view > .apps2, #view > #eErr, #view > .savebar { max-width: 680px; }

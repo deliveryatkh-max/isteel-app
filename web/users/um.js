@@ -38,7 +38,7 @@
   let OT = null;       // OT line managers, loaded when an edit screen needs them
   let otBusy = null;
   const sel = new Set();   // selected people in the computer table
-  const F = { q: '', chip: 'all' };
+  const F = { q: '', chip: 'all', dept: '' };   // dept: '' = every department, '-' = no department
   const TOKEN_KEY = 'fr_id_token';
   const claims = () => { try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; } };
   const signedIn = () => { const c = claims(); return !!(c && c.exp * 1000 > Date.now() + 60000); };
@@ -101,8 +101,10 @@
   const go = h => { if (location.hash === h) screen(); else location.hash = h; };
 
   // ------------------------------------------------------------------ list
+  const inDept = u => !F.dept || (F.dept === '-' ? !u.dept : u.dept === F.dept);
+  function deptNames() { const n = D.depts.map(d => d.name); D.users.forEach(u => { if (u.dept && n.indexOf(u.dept) < 0) n.push(u.dept); }); return n.sort((a, b) => a.localeCompare(b)); }
   function chipList() {
-    const us = D.users;
+    const us = D.users.filter(inDept);
     const c = [['all', t('ទាំងអស់', 'All'), us.filter(u => !isWaiting(u)).length],
       ['admin', 'Admin', us.filter(u => u.role === 'admin').length],
       ['reviewer', t('អ្នកពិនិត្យ', 'Reviewer'), us.filter(u => u.role === 'reviewer').length],
@@ -113,6 +115,7 @@
   function filtered() {
     const q = F.q.trim().toLowerCase();
     return D.users.filter(u => {
+      if (!inDept(u)) return false;
       if (F.chip === 'all' && isWaiting(u)) return false;
       if (F.chip === 'admin' && u.role !== 'admin') return false;
       if (F.chip === 'reviewer' && u.role !== 'reviewer') return false;
@@ -134,10 +137,12 @@
         <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
         <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
       ${waiting ? `<a class="reqbar" href="#/req">📨 <b>${t('សំណើថ្មី', 'New requests')} ${waiting}</b><span>${t('មើល', 'Open')} ›</span></a>` : ''}
-      <div class="filters"><input class="in q" id="q" type="search" placeholder="🔍 ${t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…')}" value="${esc(F.q)}">
+      <div class="filters"><div class="frow"><input class="in q" id="q" type="search" placeholder="🔍 ${t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…')}" value="${esc(F.q)}">
+        <select class="in dsel${F.dept ? ' on' : ''}" id="fDeptF" aria-label="${t('ផ្នែក', 'Department')}"><option value="">🏢 ${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select></div>
         <div class="chips">${chipList().map(c => `<button type="button" class="chip${F.chip === c[0] ? ' on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''}${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div></div>
       <div id="bulk"></div><div id="res"></div>`);
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
+    $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
     $$('[data-chip]').forEach(b => b.onclick = () => { F.chip = b.dataset.chip; $$('[data-chip]').forEach(x => x.classList.toggle('on', x === b)); drawResults(); });
     drawResults();
   }
