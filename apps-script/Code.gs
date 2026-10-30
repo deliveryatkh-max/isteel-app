@@ -97,6 +97,10 @@ const ACTIONS = {
   adSave: saveAd_,
   adDelete: deleteAd_,
   adSeen: adSeen_,
+  adQuick: adQuick_,
+  adManager: adManager_,
+  adSettings: adSettingsSave_,
+  adStats: adStats_,
   umList: umList_,
   umSave: umSave_,
   umBulk: umBulk_,
@@ -123,7 +127,7 @@ const HOME_APPS = [
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
   config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel',
-  ads: 'fuel', adMedia: 'fuel', adSave: 'fuel', adDelete: 'fuel', adSeen: 'fuel',
+  // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
   dashboard: 'dashboard', dashboardSave: 'dashboard',
 };
 
@@ -152,8 +156,13 @@ function homeApps_(p, user) {
     const n = pendingCount_();
     if (n) out.badges = { fuel: n };
   }
+  // 🖼️ Gallery for everyone (switched off in the Gallery Manager's Settings) and the manager for admins (Kim, 30 Oct 2026).
+  // adsVersion lets the home menu and every app know when the ads changed.
+  out.adsVersion = adsVersion_();
+  if (adSettings_().gallery) out.apps.push('gallery');
   // 👥 User Management: admins only, with the number of access requests waiting (Kim, 28 Oct 2026).
   if (isAdmin_(user)) {
+    out.apps.push('adsmgr');
     out.apps.push('users');
     const w = umWaiting_();
     if (w) out.badges = Object.assign(out.badges || {}, { users: w });
@@ -233,7 +242,7 @@ function authenticate_(token) {
   const apps = {};
   HOME_APPS.forEach(a => { if (a.col in user) apps[a.key] = isYes_(user[a.col]); });
   return { email: email, name: user['Name'] || '', role: accessLevel_(user['Role']), job: String(user['Role'] || 'user').trim().toLowerCase(), apps: apps, session: session,
-    employeeId: String(user['Employee ID'] || '').trim() };
+    employeeId: String(user['Employee ID'] || '').trim(), dept: String(user['Department'] || '').trim() };
 }
 
 // ---------- Sessions: stay signed in ----------
@@ -2212,8 +2221,18 @@ function setup() {
 // Rows live in the "Ads" tab and the files in a "Fuel App Ads" folder next to the photo folder.
 // The Fuel Refill tab is never touched by this.
 
-const AD_HEAD = ['ID_AD', 'Type', 'File', 'File ID', 'Name', 'Red Text', 'Seconds', 'Start', 'End', 'Show', 'Thumb', 'Created At', 'Created By', 'Updated At', 'Views', 'Skips'];
+// ---------- Gallery Manager (Kim, 30 Oct 2026) ----------
+// Ads used to be managed inside the Fuel app; now admins run them from the 🖼️ Gallery Manager (web/gallery/).
+// Each ad picks the apps it shows in, who sees it (everyone, departments or roles), how often (every open, once a
+// day, once a week) and its dates. Pause = no startup ad but still in the Gallery; Hide = gone for everyone.
+// Nothing is deleted from the manager, so its views stay in the "Ad Log" tab.
+const AD_HEAD = ['ID_AD', 'Type', 'File', 'File ID', 'Name', 'Red Text', 'Seconds', 'Start', 'End', 'Show', 'Thumb', 'Created At', 'Created By', 'Updated At', 'Views', 'Skips',
+  'Apps', 'Audience', 'Frequency', 'Hidden', 'English Text'];
 const AD_MAX_BYTES = 20 * 1024 * 1024;   // about 30 seconds of phone video at 720p
+const AD_APPS = ['fuel', 'transport', 'overtime', 'inbound', 'incident', 'meeting', 'home'];
+const AD_FREQ = ['open', 'day', 'week'];
+const AD_LOG = 'Ad Log';
+const AD_LOG_COLS = ['Time', 'ID_AD', 'App', 'Email', 'Skipped'];
 
 function isAdmin_(user) { return user.role === 'admin'; }
 /** What a Role means in this app: admin, reviewer (reviewer or supervisor) or user (every job role). */
@@ -2291,6 +2310,20 @@ function adFolder_() {
 function adsVersion_() { return PropertiesService.getScriptProperties().getProperty('ADS_VER') || '0'; }
 function adsChanged_() { PropertiesService.getScriptProperties().setProperty('ADS_VER', String(Date.now())); }
 
+/** Gallery Manager settings: which apps show startup ads, the users' Gallery tile, Skip, and ads per person per day. */
+function adSettings_() {
+  const out = { apps: {}, gallery: true, skip: true, maxPerDay: 5 };
+  AD_APPS.forEach(k => { out.apps[k] = true; });
+  try {
+    const s = JSON.parse(PropertiesService.getScriptProperties().getProperty('ADS_SETTINGS') || '{}');
+    AD_APPS.forEach(k => { if (s.apps && typeof s.apps[k] === 'boolean') out.apps[k] = s.apps[k]; });
+    if (typeof s.gallery === 'boolean') out.gallery = s.gallery;
+    if (typeof s.skip === 'boolean') out.skip = s.skip;
+    if (s.maxPerDay !== undefined) out.maxPerDay = Math.max(0, Math.min(20, Math.round(Number(s.maxPerDay) || 0)));
+  } catch (e) { /* defaults */ }
+  return out;
+}
+
 function adRows_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEETS.ADS);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -2302,48 +2335,86 @@ function adRows_() {
     const g = name => at(name) < 0 ? '' : r[at(name)];
     const end = g('End') instanceof Date ? new Date(g('End').getTime()) : null;
     if (end) end.setHours(23, 59, 59, 999);   // shown until the end of the last day
+    // Ads made in the Fuel app before the Gallery Manager have no Apps: they stay Fuel ads.
+    const apps = String(g('Apps')).split(/[,\s]+/).map(x => x.trim().toLowerCase()).filter(x => AD_APPS.indexOf(x) >= 0);
+    const freq = String(g('Frequency')).trim().toLowerCase();
     return {
       row: i + 2, id: String(g('ID_AD')), type: String(g('Type')) === 'video' ? 'video' : 'image',
-      fileId: String(g('File ID')), name: String(g('Name')), text: String(g('Red Text')),
+      fileId: String(g('File ID')), name: String(g('Name')), text: String(g('Red Text')), textEn: String(g('English Text')),
       seconds: Math.min(10, Math.max(5, Number(g('Seconds')) || 7)),
       start: ms(g('Start')), end: end ? end.getTime() : null, show: String(g('Show')).trim().toLowerCase() === 'yes',
+      hidden: isYes_(g('Hidden')), apps: apps.length ? apps : ['fuel'],
+      audience: String(g('Audience')).trim() || 'all', freq: AD_FREQ.indexOf(freq) >= 0 ? freq : 'open',
       thumb: String(g('Thumb')), createdAt: ms(g('Created At')), createdBy: String(g('Created By')),
       updatedAt: ms(g('Updated At')), views: Number(g('Views')) || 0, skips: Number(g('Skips')) || 0,
     };
   }).filter(a => a.id);
 }
 
-/** Every ad, newest first. Admins also see who made it and how often it was seen and skipped. */
+/** "all", "dept:Transport|Warehouse" or "role:driver|security": true when this person is in it. */
+function adForUser_(a, user) {
+  const m = /^(dept|role):(.*)$/.exec(a.audience);
+  if (!m) return true;
+  const list = m[2].split('|').map(x => x.trim().toLowerCase()).filter(String);
+  if (m[1] === 'dept') return list.indexOf(String(user.dept || '').trim().toLowerCase()) >= 0;
+  return list.indexOf(user.job) >= 0 || list.indexOf(user.role) >= 0;
+}
+
+/**
+ * The ads this person may see, newest first, with the settings. Admins get every ad (hidden ones too) with its
+ * numbers. When the phone already has this version (p.have) only "same" comes back, so a check costs almost nothing.
+ */
 function listAds_(p, user) {
   const admin = isAdmin_(user);
+  const version = adsVersion_();
+  if (p.have && String(p.have) === version) return { version: version, same: true };
   return {
-    version: adsVersion_(),
-    ads: adRows_().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(a => {
-      const o = { id: a.id, type: a.type, key: a.fileId, text: a.text, seconds: a.seconds, start: a.start, end: a.end,
-        show: a.show, thumb: a.thumb, createdAt: a.createdAt };
-      if (admin) Object.assign(o, { name: a.name, createdBy: a.createdBy, updatedAt: a.updatedAt, views: a.views, skips: a.skips });
-      return o;
-    }),
+    version: version,
+    settings: adSettings_(),
+    ads: adRows_().filter(a => admin || (!a.hidden && adForUser_(a, user)))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(a => {
+        const o = { id: a.id, type: a.type, key: a.fileId, text: a.text, textEn: a.textEn, seconds: a.seconds, start: a.start, end: a.end,
+          show: a.show, thumb: a.thumb, createdAt: a.createdAt, apps: a.apps, freq: a.freq };
+        if (admin) Object.assign(o, { name: a.name, createdBy: a.createdBy, updatedAt: a.updatedAt, views: a.views, skips: a.skips,
+          hidden: a.hidden, audience: a.audience });
+        return o;
+      }),
   };
 }
 
 /** The image or video itself, as a data URL. Phones keep it, so each file is downloaded once. */
 function adMedia_(p, user) {
   const ad = adRows_().find(a => a.id === String(p.id || ''));
-  if (!ad || !ad.fileId) return { dataUrl: null };
+  if (!ad || !ad.fileId || (!isAdmin_(user) && (ad.hidden || !adForUser_(ad, user)))) return { dataUrl: null };
   const file = DriveApp.getFileById(ad.fileId);
   if (!inFolder_(file, adFolder_().getId())) return { dataUrl: null };
   const blob = file.getBlob();
   return { key: ad.fileId, dataUrl: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
 }
 
+function adHeadCols_(sh) {
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  AD_HEAD.forEach(h => { if (head.indexOf(h) < 0) { head.push(h); sh.getRange(1, head.length).setValue(h).setFontWeight('bold'); } });
+  return name => head.indexOf(name) + 1;
+}
+
+/** Cleans the apps and audience an admin chose. */
+function adAppsText_(list) {
+  const apps = (Array.isArray(list) ? list : String(list || '').split(',')).map(x => String(x).trim().toLowerCase()).filter(x => AD_APPS.indexOf(x) >= 0);
+  return apps.filter((x, i) => apps.indexOf(x) === i).join(',');
+}
+function adAudienceText_(v) {
+  const m = /^(dept|role):(.*)$/.exec(String(v || '').trim());
+  if (!m) return 'all';
+  const list = m[2].split('|').map(x => x.trim()).filter(String).slice(0, 50);
+  return list.length ? m[1] + ':' + list.join('|') : 'all';
+}
+
 /** Admin: adds a new ad or changes one. The file is only sent when it is new or replaced. */
 function saveAd_(p, user) {
   if (!isAdmin_(user)) throw new Error('Only admins can post ads.');
   const sh = adSheet_();
-  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
-  AD_HEAD.forEach(h => { if (head.indexOf(h) < 0) { head.push(h); sh.getRange(1, head.length).setValue(h).setFontWeight('bold'); } });
-  const col = name => head.indexOf(name) + 1;
+  const col = adHeadCols_(sh);
   const now = new Date();
   const text = String(p.text || '').trim().slice(0, 200);
   const seconds = Math.min(10, Math.max(5, Math.round(Number(p.seconds) || 7)));
@@ -2391,6 +2462,12 @@ function saveAd_(p, user) {
     sh.getRange(rowNum, col('Start')).setValue(day(p.start)).setNumberFormat('dd-MMM-yyyy');
     sh.getRange(rowNum, col('End')).setValue(day(p.end)).setNumberFormat('dd-MMM-yyyy');
     sh.getRange(rowNum, col('Show')).setValue(p.show === false ? 'No' : 'Yes');
+    // Sent by the Gallery Manager only, so an old Fuel app saving an ad leaves these as they are.
+    if (p.apps !== undefined) sh.getRange(rowNum, col('Apps')).setNumberFormat('@').setValue(adAppsText_(p.apps) || 'fuel');
+    if (p.audience !== undefined) sh.getRange(rowNum, col('Audience')).setNumberFormat('@').setValue(adAudienceText_(p.audience));
+    if (p.freq !== undefined) sh.getRange(rowNum, col('Frequency')).setValue(AD_FREQ.indexOf(p.freq) >= 0 ? p.freq : 'open');
+    if (p.hidden !== undefined) sh.getRange(rowNum, col('Hidden')).setValue(p.hidden ? 'Yes' : 'No');
+    if (p.textEn !== undefined) sh.getRange(rowNum, col('English Text')).setNumberFormat('@').setValue(String(p.textEn || '').trim().slice(0, 200));
     sh.getRange(rowNum, col('Updated At')).setValue(now);
     // A replaced file goes to the Drive bin (kept there 30 days).
     if (file && oldFileId) { try { DriveApp.getFileById(oldFileId).setTrashed(true); } catch (e) { /* already gone */ } }
@@ -2399,6 +2476,47 @@ function saveAd_(p, user) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Admin: Pause / play or Hide / unhide one or more ads in one go, without sending the whole ad again. */
+function adQuick_(p, user) {
+  needAdmin_(user);
+  const ids = (Array.isArray(p.ids) ? p.ids : [p.id]).map(String);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = adSheet_();
+    const col = adHeadCols_(sh);
+    const now = new Date();
+    adRows_().filter(a => ids.indexOf(a.id) >= 0).forEach(a => {
+      if (p.show !== undefined) sh.getRange(a.row, col('Show')).setValue(p.show ? 'Yes' : 'No');
+      if (p.hidden !== undefined) sh.getRange(a.row, col('Hidden')).setValue(p.hidden ? 'Yes' : 'No');
+      sh.getRange(a.row, col('Updated At')).setValue(now);
+    });
+    adsChanged_();
+    return listAds_({}, user);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Admin: the Gallery Manager screen: every ad, the settings, departments and roles for the "who sees it" lists. */
+function adManager_(p, user) {
+  needAdmin_(user);
+  return Object.assign(listAds_({}, user), { depts: departments_(), roles: UM_ROLES });
+}
+
+/** Admin: saves the Settings screen. */
+function adSettingsSave_(p, user) {
+  needAdmin_(user);
+  const s = adSettings_();
+  AD_APPS.forEach(k => { if (p.apps && typeof p.apps[k] === 'boolean') s.apps[k] = p.apps[k]; });
+  if (typeof p.gallery === 'boolean') s.gallery = p.gallery;
+  if (typeof p.skip === 'boolean') s.skip = p.skip;
+  if (p.maxPerDay !== undefined) s.maxPerDay = Math.max(0, Math.min(20, Math.round(Number(p.maxPerDay) || 0)));
+  PropertiesService.getScriptProperties().setProperty('ADS_SETTINGS', JSON.stringify(s));
+  adsChanged_();
+  return s;
 }
 
 /** Admin: deletes an ad. Its file goes to the Drive bin (kept there 30 days). */
@@ -2418,13 +2536,29 @@ function deleteAd_(p, user) {
   }
 }
 
-/** Counts a view, and a skip when the person tapped Skip. Never holds anyone up: a busy sheet just misses one count. */
+function adLogSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(AD_LOG);
+  if (!sh) {
+    sh = ss.insertSheet(AD_LOG);
+    sh.getRange(1, 1, 1, AD_LOG_COLS.length).setValues([AD_LOG_COLS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/**
+ * Counts a view, and a skip when the person tapped Skip: one line in the "Ad Log" tab (for the Stats screen)
+ * and the totals on the ad. Never holds anyone up: a busy sheet just misses one count.
+ */
 function adSeen_(p, user) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(3000)) return { counted: false };
   try {
     const ad = adRows_().find(a => a.id === String(p.id || ''));
     if (!ad) return { counted: false };
+    const app = AD_APPS.indexOf(String(p.app || '')) >= 0 ? String(p.app) : 'fuel';
+    adLogSheet_().appendRow([new Date(), ad.id, app, user.email, p.skipped ? 'Yes' : 'No']);
     const sh = adSheet_();
     const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim());
     sh.getRange(ad.row, head.indexOf('Views') + 1).setValue(ad.views + 1);
@@ -2433,6 +2567,34 @@ function adSeen_(p, user) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Admin: views of the last p.days days (30 by default) from the "Ad Log": by day, by ad and by app. */
+function adStats_(p, user) {
+  needAdmin_(user);
+  const days = Math.max(1, Math.min(365, Math.round(Number(p.days) || 30)));
+  const since = new Date(); since.setHours(0, 0, 0, 0); since.setDate(since.getDate() - days + 1);
+  const sh = SpreadsheetApp.getActive().getSheetByName(AD_LOG);
+  const out = { days: days, from: since.getTime(), views: 0, skips: 0, people: 0, byDay: {}, byAd: {}, byApp: {} };
+  if (!sh || sh.getLastRow() < 2) return out;
+  // The newest rows are at the bottom: read at most the last 50,000.
+  const n = Math.min(sh.getLastRow() - 1, 50000);
+  const rows = sh.getRange(sh.getLastRow() - n + 1, 1, n, AD_LOG_COLS.length).getValues();
+  const tz = Session.getScriptTimeZone(), people = {};
+  rows.forEach(r => {
+    const t = r[0] instanceof Date ? r[0] : null;
+    if (!t || t < since) return;
+    const day = Utilities.formatDate(t, tz, 'yyyy-MM-dd'), id = String(r[1]), app = String(r[2]), skip = isYes_(r[4]);
+    out.views++; if (skip) out.skips++;
+    people[String(r[3]).toLowerCase()] = 1;
+    out.byDay[day] = (out.byDay[day] || 0) + 1;
+    const a = out.byAd[id] || (out.byAd[id] = { views: 0, skips: 0, people: {} });
+    a.views++; if (skip) a.skips++; a.people[String(r[3]).toLowerCase()] = 1;
+    out.byApp[app] = (out.byApp[app] || 0) + 1;
+  });
+  out.people = Object.keys(people).length;
+  Object.keys(out.byAd).forEach(id => { out.byAd[id].people = Object.keys(out.byAd[id].people).length; });
+  return out;
 }
 
 // ---------- User Management (Kim, 28 Oct 2026) ----------
