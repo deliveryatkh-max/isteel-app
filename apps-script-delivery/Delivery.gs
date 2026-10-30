@@ -189,7 +189,7 @@ function authenticate_(token) {
     session = makeSession_(email);
   }
   const u = usersCached_().find(x => x.email === email && x.ok);
-  if (!u) fail_('NOACCESS', email + ' has no Delivery access. Ask the admin to tick ដឹកជញ្ជូន and set your Delivery Role in Users.', email + ' មិនទាន់មានសិទ្ធិ ដឹកជញ្ជូន ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ដឹកជញ្ជូន និងដាក់ Delivery Role ក្នុង Users។');
+  if (!u) fail_('NOACCESS', email + ' has no Delivery access. Ask the admin to tick ដឹកជញ្ជូន and set your Role (e.g. Logistics, Warehouse, Security, Driver) in Users.', email + ' មិនទាន់មានសិទ្ធិ ដឹកជញ្ជូន ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ដឹកជញ្ជូន និងដាក់ Role (ឧ. Logistics, Warehouse, Security, Driver) ក្នុង Users។');
   return { email: email, name: u.name, role: u.role, roleKey: roleKey(u.role), session: session };
 }
 function need_(user, level) {
@@ -208,9 +208,11 @@ const col_ = (head, name) => head.indexOf(name);
 
 /**
  * One user list for every app (Kim, 17 Oct 2026): the "Users" tab of the Fuel Refill sheet, whose id is the
- * Script Property USERS_SHEET_ID. A user may open Delivery when Active = Yes and the ដឹកជញ្ជូន box is ticked;
- * the "Delivery Role" column (Security, Logistics, Warehouse, Driver, Supervisor, Admin) sets what they can record.
- * A Fuel Refill admin with no Delivery Role is a Delivery Admin. Until USERS_SHEET_ID is set, User Manager is used.
+ * Script Property USERS_SHEET_ID. A user may open Delivery when Active = Yes and the ដឹកជញ្ជូន box is ticked.
+ * One Role column for every app (Kim, 30 Oct 2026): admin, supervisor, reviewer, logistics, warehouse, security,
+ * driver or user. It sets what they can record (reviewer counts as Supervisor; user records nothing). The old
+ * "Delivery Role" column is still read for a plain user until mergeDeliveryRoles() (Code.gs) removes it.
+ * Until USERS_SHEET_ID is set, User Manager is used.
  */
 const FUEL_USERS_TAB = 'Users', DELIVERY_ROLE_COL = 'Delivery Role', TRANSPORT_COL = 'ដឹកជញ្ជូន';
 function usersSheet_() {
@@ -226,6 +228,8 @@ function tableOf_(sh) {
   return { head: v[0].map(h => String(h).trim()), rows: v.slice(1) };
 }
 const yes_ = v => v === true || /^(yes|true|y|1)$/i.test(String(v).trim());
+const JOB_OF = { admin: 'Admin', supervisor: 'Supervisor', reviewer: 'Supervisor', logistics: 'Logistics', warehouse: 'Warehouse', security: 'Security', driver: 'Driver' };
+const jobOf_ = role => JOB_OF[String(role || '').trim().toLowerCase()] || '';
 
 /** Everyone in the user list (with or without Delivery access), for sign-in and the Users screen. */
 function users_() {
@@ -240,7 +244,7 @@ function users_() {
   const e = c('Email'), n = c('Name'), fr = c('Role'), a = c('Active'), tr = c(TRANSPORT_COL), dr = c(DELIVERY_ROLE_COL);
   return t.rows.filter(x => x[e]).map(x => {
     const fuelAdmin = /admin/i.test(text_(x[fr]));
-    const role = (dr >= 0 ? text_(x[dr]) : '') || (fuelAdmin ? 'Admin' : '');
+    const role = jobOf_(x[fr]) || (dr >= 0 ? text_(x[dr]) : '');
     return { email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: role,
       ok: (a < 0 || yes_(x[a])) && (tr < 0 || yes_(x[tr]) || fuelAdmin) && !!role };
   });
@@ -1053,77 +1057,30 @@ function setUser_(p, user) {
   });
 }
 
-/** Users screen with the shared list: sets Delivery Role (adds the column once); a new person gets Active = Yes and ដឹកជញ្ជូន ticked. */
+/** Users screen with the shared list: sets the one Role column; a new person gets Active = Yes and ដឹកជញ្ជូន ticked. */
 function setFuelUser_(sh, email, role, name, user) {
-  let t = tableOf_(sh);
-  if (t.head.indexOf(DELIVERY_ROLE_COL) < 0) {
-    sh.getRange(1, t.head.length + 1).setValue(DELIVERY_ROLE_COL).setFontWeight('bold');
-    t = tableOf_(sh);
-  }
+  const t = tableOf_(sh);
   const c = n => t.head.indexOf(n);
-  const e = c('Email'), dr = c(DELIVERY_ROLE_COL);
+  const e = c('Email'), rc = c('Role');
+  if (rc < 0) fail_('SETUP', 'The Users tab has no Role column.');
+  const value = role ? role.toLowerCase() : 'user';
   const i = t.rows.findIndex(x => String(x[e]).trim().toLowerCase() === email);
   if (i >= 0) {
-    const old = text_(t.rows[i][dr]);
-    sh.getRange(i + 2, dr + 1).setValue(role);
+    const old = text_(t.rows[i][rc]);
+    sh.getRange(i + 2, rc + 1).setValue(value);
     if (c(TRANSPORT_COL) >= 0 && role && !yes_(t.rows[i][c(TRANSPORT_COL)])) sh.getRange(i + 2, c(TRANSPORT_COL) + 1).setValue(true);
-    audit_(user.email, 'User role', '', '', email, old, role, 'Users screen');
+    audit_(user.email, 'User role', '', '', email, old, value, 'Users screen');
   } else {
     const row = new Array(t.head.length).fill('');
-    row[e] = email; row[dr] = role;
+    row[e] = email; row[rc] = value;
     if (c('Name') >= 0) row[c('Name')] = String(name || '').trim();
-    if (c('Role') >= 0) row[c('Role')] = 'user';
     if (c('Active') >= 0) row[c('Active')] = 'Yes';
     if (c(TRANSPORT_COL) >= 0) row[c(TRANSPORT_COL)] = true;
     sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
-    audit_(user.email, 'User added', '', '', email, '', role, 'Users screen');
+    audit_(user.email, 'User added', '', '', email, '', value, 'Users screen');
   }
   CacheService.getScriptCache().remove('users_v2');
   return usersList_();
-}
-
-/**
- * Run once from the editor after setting USERS_SHEET_ID (Kim, 17 Oct 2026): copies each User Manager role into
- * the Delivery Role column of the Fuel Refill Users tab. People missing there are added (Active = Yes, only
- * ដឹកជញ្ជូន ticked). User Manager itself is not changed. Everything done is listed in the log it returns.
- */
-function moveDeliveryUsers() {
-  const sh = usersSheet_();
-  if (!sh) return 'Set the Script Property USERS_SHEET_ID to the Fuel Refill sheet id first.';
-  const t = table_(SH.USERS);
-  const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE');
-  return withLock_(() => {
-    let f = tableOf_(sh);
-    if (f.head.indexOf(DELIVERY_ROLE_COL) < 0) { sh.getRange(1, f.head.length + 1).setValue(DELIVERY_ROLE_COL).setFontWeight('bold'); f = tableOf_(sh); }
-    const c = x => f.head.indexOf(x);
-    const fe = c('Email'), dr = c(DELIVERY_ROLE_COL), tr = c(TRANSPORT_COL);
-    const log = [];
-    t.rows.filter(x => x[e] && text_(x[r])).forEach(x => {
-      const email = String(x[e]).trim().toLowerCase(), role = text_(x[r]);
-      const i = f.rows.findIndex(y => String(y[fe]).trim().toLowerCase() === email);
-      if (i >= 0) {
-        if (text_(f.rows[i][dr])) { log.push(email + ': kept ' + text_(f.rows[i][dr])); return; }
-        sh.getRange(i + 2, dr + 1).setValue(role);
-        if (tr >= 0 && !yes_(f.rows[i][tr])) sh.getRange(i + 2, tr + 1).setValue(true);
-        log.push(email + ': Delivery Role ' + role);
-      } else {
-        const row = new Array(f.head.length).fill('');
-        row[fe] = email; row[dr] = role;
-        if (c('Name') >= 0) row[c('Name')] = text_(x[n]);
-        if (c('Role') >= 0) row[c('Role')] = 'user';
-        if (c('Active') >= 0) row[c('Active')] = 'Yes';
-        f.head.forEach((h, k) => { if (k !== tr && /^(ចាក់សាំង|ថែមម៉ោង|ទីតាំងថ្មី|Dashboard)$/.test(h)) row[k] = false; });
-        if (tr >= 0) row[tr] = true;
-        sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
-        f.rows.push(row);
-        log.push(email + ': added (' + role + ')');
-      }
-    });
-    CacheService.getScriptCache().remove('users_v2');
-    const msg = 'Moved ' + log.length + ' users:\n' + log.join('\n');
-    console.log(msg);
-    return msg;
-  });
 }
 
 // ---------------------------------------------------------------- Data quality report (read only: nothing is fixed automatically)
