@@ -320,14 +320,27 @@
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  async function checkDept(text) {
+  // Every QR scan starts a clean form: last request's times, reason and ID are cleared (Kim, 2026-10-30).
+  // A signed-in person's own ID (from the home menu) is kept.
+  function resetForm() {
+    state.draft = {}; set(K.draft, null);
+    state.result = null; state.sendErr = ''; state.lookupErr = ''; state.emp = null;
+    const me = getJ('steel_me', null); set(K.id, (me && me.id) || null);
+  }
+  function freshForm() {
+    resetForm();
+    if (state.tab !== 'new') return;
+    renderNew();
+    if (get(K.id)) pick(get(K.id));
+  }
+  async function checkDept(text, cleared) {
     // Instant: the code is matched against the department fingerprints saved with the settings.
     // Only a code not found there (e.g. a department added a minute ago) asks the server.
     const keys = cfg && cfg.deptKeys, code = deptCodeOf(text);
     if (keys && code && window.crypto && crypto.subtle) {
       try {
         const name = keys[await sha256hex(code)];
-        if (name) { setDept({ code, name, at: Date.now() }); state.deptErr = ''; toast('✅ ' + name); if (state.tab === 'new' && !state.result) renderNew(); return; }
+        if (name) { setDept({ code, name, at: Date.now() }); state.deptErr = ''; toast('✅ ' + name); if (!cleared) freshForm(); else if (state.tab === 'new' && !state.result) renderNew(); return; }
       } catch (e) { /* fall back to the server */ }
     }
     state.deptChecking = true; state.deptErr = ''; if (state.tab === 'new') renderNew();
@@ -335,6 +348,7 @@
       const d = await api('dept', { code: String(text || '').slice(0, 300) });
       setDept({ code: d.code, name: d.name, at: Date.now() });
       toast('✅ ' + d.name);
+      if (!cleared) { state.deptChecking = false; freshForm(); return; }
     } catch (e) {
       setDept(null);
       state.deptErr = e.code === 'BAD_QR' || e.code === '' ? t(ERR_KM.BAD_QR, 'Wrong QR code. Please scan your department QR code again.') : niceError(e);
@@ -798,8 +812,9 @@
   // Opened from the printed QR with the phone camera: check that code, then tidy the address bar.
   const urlDept = new URLSearchParams(location.search).get('d');
   if (urlDept) { try { history.replaceState(null, '', location.pathname); } catch (e) { /* old phone */ } }
+  if (urlDept) resetForm();
   renderNew();
-  if (urlDept) checkDept(urlDept);
+  if (urlDept) checkDept(urlDept, true);
   loadConfig();
   loadPeople();
   if (get(K.id) && !state.emp) pick(get(K.id));
