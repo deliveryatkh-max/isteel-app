@@ -15,7 +15,7 @@
   const LIVE = !!CFG.API_URL;
   const TOKEN_KEY = 'fr_id_token';      // the sign-in shared by every app on this site
   const REC_KEY = 'de_records', SET_KEY = 'de_settings', BOOT_KEY = 'de_boot';
-  const VENDOR = new URL('../vendor/', location.href).href;
+  const VENDOR = window.DE_VENDOR || new URL('../vendor/', location.href).href;   // the demo page sets its own
 
   // ------------------------------------------------------------------ helpers
   const pad = n => String(n).padStart(2, '0');
@@ -99,7 +99,7 @@
       ocrReady = (async () => {
         if (!window.Tesseract) await loadScript(VENDOR + 'tesseract/tesseract.min.js');
         return Tesseract.createWorker('eng', 1, {
-          workerPath: VENDOR + 'tesseract/worker.min.js', corePath: VENDOR + 'tesseract/', langPath: VENDOR + 'tesseract',
+          workerPath: window.DE_WORKER || VENDOR + 'tesseract/worker.min.js', corePath: VENDOR + 'tesseract/', langPath: VENDOR + 'tesseract',
           gzip: true, workerBlobURL: false, cacheMethod: 'write',
         });
       })();
@@ -256,7 +256,8 @@
                 : er ? ''
                 : `<div class="drop" id="drop"><div class="big">📄</div><b>${t('ចុចដើម្បីជ្រើសរូបភាព ឬ PDF', 'Click to choose an image or PDF')}</b>
                    <span>${t('ឬអូសឯកសារមកទីនេះ · ឬ Ctrl+V បិទភ្ជាប់រូបថតអេក្រង់', 'or drag files here · or Ctrl+V to paste a screenshot')}</span>
-                   <span>${t('អាចជ្រើសច្រើនក្នុងពេលតែមួយ', 'You can choose many at once')}</span></div>`}
+                   <span>${t('អាចជ្រើសច្រើនក្នុងពេលតែមួយ', 'You can choose many at once')}</span>
+                   ${window.DE_SAMPLE ? `<button type="button" class="btn sm" id="sampleBtn">🧪 ${t('សាកល្បងជាមួយប័ណ្ណគំរូ', 'Try the sample ticket')}</button>` : ''}</div>`}
               <div class="queue" id="queue"></div>
             </div>
           </section>
@@ -304,6 +305,8 @@
     const drop = $('#drop');
     if (drop) {
       drop.onclick = () => $('#fileIn').click();
+      const sb = $('#sampleBtn');
+      if (sb) sb.onclick = async e => { e.stopPropagation(); const b = await (await fetch(window.DE_SAMPLE)).blob(); addFiles([new File([b], 'sample-ticket.png', { type: 'image/png' })]); };
       drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
       drop.ondragleave = () => drop.classList.remove('over');
       drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
@@ -461,13 +464,14 @@
   const xlsxBytes = wb => XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
   function download(list, name) {
     const blob = new Blob([xlsxBytes(workbook(list))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    if (window.DE_SAVE) { window.DE_SAVE(name, blob).catch(e => toast('⚠️ ' + (e && e.message || e))); return; }   // demo page
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   }
 
   // Local file: one Excel file in the folder Kim picked (e.g. ...\00. Data Warehouse\Weight Scale Data).
   // Rows already in the file stay; a ticket number already there is replaced by the new values.
-  const canFolder = () => typeof window.showDirectoryPicker === 'function';
+  const canFolder = () => typeof window.showDirectoryPicker === 'function' && !window.DE_NOFOLDER;
   async function folder(ask) {
     let dir = await idbGet('dir').catch(() => null);
     if (dir) {
