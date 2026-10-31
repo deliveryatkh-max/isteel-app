@@ -167,4 +167,9 @@ set.rows[linkRow][1] = 'not a link';
 must(call('sok@x.com', 'pdf', { id: r.id }));
 ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE_ERROR')[1]), 'bad link: error noted, built-in layout used');
 
+// Arrival Qty: only reviewers / admins can change it after arrival
+{ const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000231', arrQty: 1000 }] }) }));
+  const it = [{ material: '1100000231', arrQty: 900, grQty: '' }];
+  eq(must(call('sok@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 1000, 'user cannot change Arrival Qty');
+  eq(must(call('kim@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 900, 'admin changes Arrival Qty'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

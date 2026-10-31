@@ -484,6 +484,12 @@ function update_(p, user, finish) {
       const dm = s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
       if (gr !== '' && !(gr >= 0)) fail_('BAD', 'Actual GR Qty must be a number.', 'បរិមាណទទួលត្រូវតែជាលេខ។');
       if (!(dm >= 0)) fail_('BAD', 'Damaged Qty must be a number.', 'បរិមាណខូចខាតត្រូវតែជាលេខ។');
+      // reviewers and admins can correct the Arrival Qty after arrival (Kim, 31 Oct 2026)
+      if ((user.admin || user.reviewer) && s.arrQty !== undefined && s.arrQty !== '') {
+        const arr = num_(s.arrQty);
+        if (!(arr > 0)) fail_('BAD', 'Arrival Qty must be more than 0 for ' + i.desc + '.', 'បរិមាណមកដល់ត្រូវធំជាង 0 សម្រាប់ ' + i.desc + '។');
+        i.arrQty = arr;
+      }
       if (finish && gr === '') fail_('BAD', 'Actual GR Qty is missing for ' + i.desc + '.', 'សូមបញ្ចូលបរិមាណទទួលសម្រាប់ ' + i.desc + '។');
       i.grQty = gr;
       i.dmgQty = gr === '' && !dm ? '' : dm;
