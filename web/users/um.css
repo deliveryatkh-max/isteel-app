@@ -174,3 +174,13 @@ small.inl { display: inline; }
   .savebar { bottom: 0; }
   .bulk { top: calc(56px + env(safe-area-inset-top)); }
 }
+
+/* Requests with an Employee Card photo / an ID that already has a Gmail (Kim, 31 Oct 2026) */
+.rqh .grow { flex: 1; min-width: 0; }
+.rp.warn { background: #fff4d6; color: #7a5200; }
+:root[data-theme="dark"] .rp.warn { background: #3a2f12; color: #f5d28a; }
+.rqphoto { display: grid; place-items: center; width: 100%; min-height: 150px; margin: 12px 0 4px; border: 0; border-radius: 12px; background: #1f2d3d; overflow: hidden; cursor: zoom-in; padding: 0; color: #fff; }
+.rqphoto img { display: block; width: 100%; max-height: 260px; object-fit: contain; }
+.rq label.f { margin-top: 10px; }
+.rq .hint .bad, .link.bad { color: var(--bad, #b3261e); }
+.link.bad { display: block; margin: 0 0 10px; }

@@ -517,14 +517,12 @@
     if (cached) {
       // Open straight away with the saved lists; refresh them quietly.
       state.config = cached;
-      splash.start();
       enterApp();
       api('config').then(c => {
         if (!state.config) return;
         state.config = c;
         local.set('config', c);
         showRole();
-        syncAds();
       }).catch(e => {
         if (e.code === 'NOACCESS') { local.clear(); state.config = null; start(); }
       });
@@ -544,16 +542,15 @@
       return;
     }
     local.set('config', state.config);
-    splash.start();
     enterApp();
-    syncAds();
   }
 
   // Asks the admin to add this Google account: the server adds it to the Users sheet as not active yet and tells the Telegram group.
   function requestAccess() {
     AccessRequest.open({
       call: (action, payload) => api(action, payload),
-      onDone: status => {
+      onDone: (status, o) => {
+        if (o && o.enter) { start(); return; }
         $('#reqBox').innerHTML = status === 'active'
           ? `<div class="alert ok">${L('គណនីរបស់អ្នកបានអនុញ្ញាតហើយ។ ចុច ព្យាយាមម្តងទៀត។', 'Your account is already allowed. Tap Try again.')}</div>`
           : `<div class="alert ok">✅ ${L('សំណើបានផ្ញើទៅអ្នកគ្រប់គ្រង។ សូមរង់ចាំការអនុញ្ញាត រួចចុច ព្យាយាមម្តងទៀត។', 'Request sent to the admin. Once they allow you, tap Try again.')}</div>`;
@@ -566,10 +563,6 @@
     // No name or Sign out in the bar (Kim, 2026-10-11): signing out is done from the home menu.
     $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
-    // Gallery for everyone and the ads menu for admins, once the server has them (Code.gs of 25 Oct 2026).
-    const adsOn = state.config.adsVersion !== undefined;
-    $('#galleryTab').hidden = !adsOn;
-    $('#adsTab').hidden = !(adsOn && state.config.isAdmin);
     $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').length > 4);
     reviewBadge();
   }
@@ -608,7 +601,6 @@
   const TITLES = {
     new: ['បញ្ចូលថ្មី', 'New'], mine: ['របស់ខ្ញុំ', 'My entries'], review: ['អ្នកត្រួតពិនិត្យ', 'Reviewer'],
     detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
-    gallery: ['វិចិត្រសាល', 'Gallery'], ads: ['ផ្សព្វផ្សាយ', 'Ads'], adEdit: ['ផ្សព្វផ្សាយ', 'Ads'],
   };
 
   function go(screen, replace) {
@@ -657,7 +649,7 @@
     if (screen.s !== 'edit' && state.editing) leaveEdit();
     const tab = screen.s === 'detail' ? 'review'
       : screen.s === 'edit' ? (screen.from || 'mine')
-      : screen.s === 'success' ? 'new' : screen.s === 'adEdit' ? 'ads' : screen.s;
+      : screen.s === 'success' ? 'new' : screen.s;
     state.tab = tab;
     $$('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     $('#navBack').disabled = nav.i <= 0;
@@ -671,9 +663,6 @@
     else if (screen.s === 'detail') openDetail(screen.id);
     else if (screen.s === 'edit') openEdit(screen);
     else if (screen.s === 'success') renderSuccess(screen.ref);
-    else if (screen.s === 'gallery') renderGallery();
-    else if (screen.s === 'ads') renderAds();
-    else if (screen.s === 'adEdit') renderAdEdit(screen);
   }
 
   function show(tab) {
@@ -1940,386 +1929,8 @@
     else resetForm();
   }
 
-  // ---------------- Startup ads and Gallery (Kim, 25 Oct 2026) ----------------
-  // Each time the app opens, the newest ad that is switched on shows full screen for its 5–10 seconds, with Skip.
-  // The list is kept on the phone and only fetched again when the server says it changed (config.adsVersion);
-  // images and videos are downloaded once in the background and kept in IndexedDB, so the app never waits for them.
-
-  const ads = { list: null, version: null, syncing: null };
-  const adList = () => ads.list || (ads.list = (local.get('ads') || {}).ads || null);
-  const adActive = (a, now) => a.show && (!a.start || now >= a.start) && (!a.end || now <= a.end);
-  // Every ad that is switched on and in its dates takes turns at random (Kim, 25 Oct 2026).
-  const liveAds = () => (adList() || []).filter(a => adActive(a, Date.now()));
-  const AD_LAST = 'fr_ad_last';
-  const adsOn = () => !!state.config && state.config.adsVersion !== undefined;
-  const dayStr = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
-  const dayShow = ms => { if (!ms) return ''; const d = new Date(ms); return `${pad2(d.getDate())}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
-
-  /** Ad files on this phone, by their Drive file id. */
-  const adStore = {
-    db: null,
-    open() {
-      if (this.db) return this.db;
-      return (this.db = new Promise(resolve => {
-        if (!window.indexedDB) return resolve(null);
-        try {
-          const rq = indexedDB.open('fr_ads', 1);
-          rq.onupgradeneeded = () => rq.result.createObjectStore('media', { keyPath: 'key' });
-          rq.onsuccess = () => resolve(rq.result);
-          rq.onerror = () => resolve(null);
-        } catch (e) { resolve(null); }
-      }));
-    },
-    async get(key) {
-      const db = await this.open();
-      if (!db || !key) return null;
-      return new Promise(resolve => {
-        try {
-          const rq = db.transaction('media').objectStore('media').get(key);
-          rq.onsuccess = () => resolve(rq.result ? rq.result.blob : null);
-          rq.onerror = () => resolve(null);
-        } catch (e) { resolve(null); }
-      });
-    },
-    async put(key, blob) {
-      const db = await this.open();
-      if (!db) return;
-      return new Promise(resolve => {
-        try {
-          const tx = db.transaction('media', 'readwrite');
-          tx.objectStore('media').put({ key, blob, at: Date.now() });
-          tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
-        } catch (e) { resolve(); }
-      });
-    },
-    /** Removes files of ads that were deleted or replaced. */
-    async keepOnly(keys) {
-      const db = await this.open();
-      if (!db) return;
-      try {
-        const st = db.transaction('media', 'readwrite').objectStore('media');
-        const rq = st.getAllKeys();
-        rq.onsuccess = () => (rq.result || []).forEach(k => { if (!keys.includes(k)) st.delete(k); });
-      } catch (e) { /* ignore */ }
-    },
-  };
-  const dataUrlToBlob = dataUrl => fetch(dataUrl).then(r => r.blob());
-
-  /** The ad's file: from the phone, or downloaded once and kept. */
-  async function adBlob(ad, download) {
-    let blob = await adStore.get(ad.key);
-    if (blob || !download) return blob;
-    const res = await (DEMO ? demoApi('adMedia', { id: ad.id }) : callServer('adMedia', { id: ad.id }));
-    if (!res || !res.dataUrl) return null;
-    blob = await dataUrlToBlob(res.dataUrl);
-    await adStore.put(res.key || ad.key, blob);
-    return blob;
-  }
-
-  /** Fetches the list when it changed, then downloads the file of the ad that will show next time. */
-  function syncAds(force) {
-    if (!adsOn()) return Promise.resolve();
-    if (ads.syncing) return ads.syncing;
-    const saved = local.get('ads');
-    const fresh = saved && saved.version === state.config.adsVersion && !force;
-    ads.syncing = (async () => {
-      if (!fresh) {
-        const res = await (DEMO ? demoApi('ads', {}) : callServer('ads', {}));
-        ads.list = res.ads || [];
-        local.set('ads', { version: res.version, ads: ads.list });
-        adStore.keepOnly(ads.list.map(a => a.key));
-        const c = current();
-        if (c && (c.s === 'gallery' || c.s === 'ads')) paint(c);
-      }
-      // One at a time, so a phone on 4G is never busy with several big videos at once.
-      for (const a of liveAds()) await adBlob(a, true).catch(() => {});
-    })().catch(() => { /* offline: try again next time */ }).finally(() => { ads.syncing = null; });
-    return ads.syncing;
-  }
-
-  // ---- The startup screen ----
-  const splash = {
-    shown: false,
-    async start() {
-      if (this.shown) return;
-      this.shown = true;
-      if (!adsOn()) return;
-      // Only ads already on the phone can show; one still downloading joins from a later open.
-      const ready = [];
-      for (const a of liveAds()) { const blob = await adStore.get(a.key); if (blob) ready.push({ a, blob }); }
-      if (!ready.length) return;
-      const last = storeGet(AD_LAST);
-      const pool = ready.length > 1 ? ready.filter(r => r.a.id !== last) : ready;   // never the same one twice in a row
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      storeSet(AD_LAST, pick.a.id);
-      this.show(pick.a, pick.blob);
-    },
-    show(ad, blob) {
-      const url = URL.createObjectURL(blob), secs = ad.seconds || 7;
-      const video = ad.type === 'video';
-      const el = document.createElement('div');
-      el.className = 'ad-splash';
-      el.setAttribute('role', 'dialog');
-      el.setAttribute('aria-label', L('ផ្សព្វផ្សាយ', 'Announcement'));
-      el.innerHTML = `
-        <div class="ad-top"><div class="ad-tag"><img src="../icons/isi-white.png" alt="">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
-          <button type="button" class="ad-skip">${L('រំលង', 'Skip')} <span class="ad-ring" style="--p:0"><b>${secs}</b></span></button></div>
-        <div class="ad-media">${video
-          ? `<video src="${url}" autoplay muted playsinline></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`
-          : `<img src="${url}" alt="">`}</div>
-        ${ad.text ? `<div class="ad-text">${esc(ad.text)}</div>` : ''}
-        <div class="ad-sub">${L(`ចូលទៅកម្មវិធីក្នុង <b>${secs}</b> វិនាទី · ចុច រំលង ដើម្បីចូលភ្លាម`, `Opening the app in <b>${secs}</b> s · tap Skip to go now`)}</div>
-        <div class="ad-bar"><i style="${video ? 'animation:none' : `animation-duration:${secs}s`}"></i></div>`;
-      document.body.appendChild(el);
-      document.body.classList.add('ad-open');
-      let left = secs, done = false, tick = null;
-      const ring = $('.ad-ring', el), num = $('.ad-ring b', el), sub = $('.ad-sub b', el);
-      const show = (n, part) => { num.textContent = n; if (sub) sub.textContent = n; ring.style.setProperty('--p', part); };
-      // Images: the admin's 5–10 seconds. Videos play to the end, with no limit, unless Skip is tapped (Kim, 25 Oct 2026).
-      const timer = () => {
-        if (tick) return;
-        tick = setInterval(() => {
-          left--;
-          if (left <= 0) return close(false);
-          show(left, (secs - left) / secs);
-        }, 1000);
-      };
-      if (video) {
-        const v = $('video', el), bar = $('.ad-bar i', el);
-        v.ontimeupdate = () => {
-          if (!v.duration || !isFinite(v.duration)) return;
-          show(Math.max(1, Math.ceil(v.duration - v.currentTime)), v.currentTime / v.duration);
-          bar.style.width = (v.currentTime / v.duration * 100) + '%';
-        };
-        v.onended = () => close(false);
-        // A video the phone can't play falls back to the seconds, so the app never gets stuck.
-        v.onerror = () => { bar.style.animation = ''; bar.style.animationDuration = secs + 's'; timer(); };
-        const p = v.play && v.play();
-        if (p && p.catch) p.catch(() => v.onerror());
-      } else timer();
-      const close = skipped => {
-        if (done) return;
-        done = true;
-        clearInterval(tick);
-        const v = $('video', el); if (v) v.pause();
-        el.classList.add('out');
-        document.body.classList.remove('ad-open');
-        setTimeout(() => { el.remove(); URL.revokeObjectURL(url); }, 250);
-        // Counted for the admin list; never waits and never shows an error.
-        (DEMO ? demoApi('adSeen', { id: ad.id, skipped }) : callServer('adSeen', { id: ad.id, skipped })).catch(() => {});
-      };
-      $('.ad-skip', el).onclick = () => close(true);
-      $('.ad-skip', el).focus();
-      const mute = $('.ad-mute', el);
-      if (mute) mute.onclick = () => { const v = $('video', el); v.muted = !v.muted; mute.textContent = v.muted ? '🔇' : '🔊'; };
-    },
-  };
-
-  // ---- Gallery: every ad, newest first, for everyone ----
-  function adThumb(a) {
-    return `<div class="ad-tn" style="${a.thumb ? `background-image:url('${a.thumb}')` : ''}">${a.thumb ? '' : (a.type === 'video' ? '🎬' : '🖼️')}${a.type === 'video' ? '<span class="ad-play">▶</span>' : ''}</div>`;
-  }
-
-  function renderGallery() {
-    const me = current();
-    const draw = () => {
-      if (current() !== me) return;
-      const list = adList();
-      const now = Date.now();
-      $('#view').innerHTML = `<h2>🖼️ ${L('វិចិត្រសាល', 'Gallery')}</h2>` + (!list ? '<div class="spinner"></div>'
-        : list.length ? `<div class="ad-gal">${list.map(a => `
-          <button type="button" class="ad-gi" data-ad="${esc(a.id)}">${adThumb(a)}
-            ${adActive(a, now) ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
-            <span class="ad-gtx">${a.text ? `<b>${esc(a.text)}</b>` : ''}<small>${dayShow(a.createdAt)}</small></span></button>`).join('')}</div>`
-        : `<div class="empty"><div class="big">🖼️</div>${L('មិនទាន់មានរូបភាព ឬ វីដេអូ', 'No images or videos yet')}</div>`);
-      $$('[data-ad]').forEach(b => b.onclick = () => { const a = adList().find(x => x.id === b.dataset.ad); if (a) viewAd(a); });
-    };
-    draw();
-    syncAds(true).then(draw);
-  }
-
-  /** Full screen view of one ad from the Gallery (downloads it the first time). */
-  async function viewAd(a) {
-    const lb = document.createElement('div');
-    lb.className = 'ad-view';
-    lb.innerHTML = `<button type="button" class="ad-close" aria-label="${L('បិទ', 'Close')}">✕</button>
-      <div class="ad-media"><div class="spinner"></div></div>${a.text ? `<div class="ad-text">${esc(a.text)}</div>` : ''}<div class="ad-sub">${dayShow(a.createdAt)}</div>`;
-    document.body.appendChild(lb);
-    let url = '';
-    const close = () => { lb.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); };
-    const onKey = e => { if (e.key === 'Escape') close(); };
-    document.addEventListener('keydown', onKey);
-    $('.ad-close', lb).onclick = close;
-    try {
-      const blob = await adBlob(a, true);
-      if (!lb.isConnected) return;
-      if (!blob) { $('.ad-media', lb).innerHTML = `<div class="ad-sub">${L('មិនអាចបង្ហាញបាន', 'Not available')}</div>`; return; }
-      url = URL.createObjectURL(blob);
-      $('.ad-media', lb).innerHTML = a.type === 'video' ? `<video src="${url}" controls autoplay playsinline></video>` : `<img src="${url}" alt="">`;
-    } catch (e) { if (lb.isConnected) $('.ad-media', lb).innerHTML = `<div class="ad-sub">${esc(e.message)}</div>`; }
-  }
-
-  // ---- Admin menu: post, switch on / off, edit, delete ----
-  function renderAds() {
-    const me = current();
-    if (!(state.config && state.config.isAdmin)) { $('#view').innerHTML = `<div class="empty"><div class="big">🔒</div>${L('សម្រាប់តែ Admin', 'Admins only')}</div>`; return; }
-    const draw = () => {
-      if (current() !== me) return;
-      const list = adList(), now = Date.now();
-      const row = a => `
-        <div class="ad-li">${adThumb(a)}
-          <div class="ad-li-t">${a.text ? `<b>${esc(a.text)}</b>` : `<b class="muted">${esc(a.name || a.id)}</b>`}
-            <small>${a.type === 'video' ? L('វីដេអូ · ចាក់ដល់ចប់', 'Video · plays to the end') : `${L('រូបភាព', 'Image')} · ${a.seconds} ${L('វិ', 's')}`}${a.start || a.end ? ` · ${dayShow(a.start) || '…'} → ${dayShow(a.end) || '…'}` : ''}</small>
-            <small>👁 ${a.views || 0} · ${L('រំលង', 'skipped')} ${a.views ? Math.round((a.skips || 0) / a.views * 100) : 0}%</small>
-            <div class="ad-acts"><button type="button" class="btn small" data-edit="${esc(a.id)}">✏️ ${L('កែ', 'Edit')}</button><button type="button" class="btn small ghost" data-del="${esc(a.id)}">🗑 ${L('លុប', 'Delete')}</button></div></div>
-          <button type="button" class="ad-sw ${a.show ? 'on' : ''}" data-sw="${esc(a.id)}" role="switch" aria-checked="${a.show}" aria-label="${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}"></button>
-        </div>`;
-      const live = (list || []).filter(a => adActive(a, now));
-      const rest = (list || []).filter(a => !live.includes(a));
-      $('#view').innerHTML = `
-        <h2>📣 ${L('ផ្សព្វផ្សាយ', 'Ads')} <small style="display:inline">· ${L('សម្រាប់តែ Admin', 'Admins only')}</small></h2>
-        <button type="button" class="btn primary" id="adNew">➕ ${L('បង្ហោះថ្មី', 'Post new')}</button>
-        ${!list ? '<div class="spinner"></div>' : `
-        <div class="card" style="margin-top:14px"><div class="sec-h" style="margin:0 0 4px">${L('កំពុងបង្ហាញ', 'Showing now')} <small>(${live.length})</small></div>
-          ${live.length ? live.map(row).join('') : `<div class="hint">${L('គ្មាន · បើក មួយខាងក្រោម', 'None · switch one on below')}</div>`}
-          ${live.length > 1 ? `<div class="hint">🔀 ${L('បង្ហាញម្តងមួយ ដោយចៃដន្យ រាល់ពេលបើកកម្មវិធី', 'One of these shows at random each time the app opens')}</div>` : ''}</div>
-        ${rest.length ? `<div class="card"><div class="sec-h" style="margin:0 0 4px">${L('ផ្សេងៗ', 'Others')} <small>(${rest.length})</small></div>${rest.map(row).join('')}</div>` : ''}`}`;
-      $('#adNew').onclick = () => go({ s: 'adEdit' });
-      $$('[data-edit]').forEach(b => b.onclick = () => go({ s: 'adEdit', id: b.dataset.edit }));
-      $$('[data-sw]').forEach(b => b.onclick = async () => {
-        const a = adList().find(x => x.id === b.dataset.sw);
-        if (!a) return;
-        b.disabled = true;
-        try {
-          await api('adSave', { id: a.id, text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: !a.show });
-          toast(!a.show ? '📣 ' + L('បានបើក', 'Switched on') : L('បានបិទ', 'Switched off'));
-          await refreshAdsNow();
-        } catch (e) { toast(e.message); b.disabled = false; }
-      });
-      $$('[data-del]').forEach(b => b.onclick = async () => {
-        if (!confirm(L('លុបផ្សព្វផ្សាយនេះ? វានឹងបាត់ពី វិចិត្រសាល ដែរ។', 'Delete this ad? It also leaves the Gallery.'))) return;
-        try { await api('adDelete', { id: b.dataset.del }); toast('🗑 ' + L('បានលុប', 'Deleted')); await refreshAdsNow(); }
-        catch (e) { toast(e.message); }
-      });
-    };
-    draw();
-    syncAds(true).then(draw);
-  }
-
-  /** After an admin change: the new list right away, so the screen and the next startup are up to date. */
-  async function refreshAdsNow() {
-    state.config.adsVersion = 'x' + Date.now();   // the next config brings the real one
-    await syncAds(true);
-    const c = current();
-    if (c && c.s === 'ads') renderAds();
-  }
-
-  function renderAdEdit(screen) {
-    if (!(state.config && state.config.isAdmin)) return renderAds();
-    const a = screen.id ? (adList() || []).find(x => x.id === screen.id) : null;
-    if (screen.id && !a) { go({ s: 'ads' }, true); return; }
-    const f = screen.f || (screen.f = a
-      ? { text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: a.show, file: null, preview: a.thumb, type: a.type, name: '' }
-      : { text: '', seconds: 7, start: dayStr(Date.now()), end: '', show: true, file: null, preview: '', type: '', name: '' });
-    $('#view').innerHTML = `
-      <h2>📣 ${a ? L('កែផ្សព្វផ្សាយ', 'Edit ad') : L('បង្ហោះថ្មី', 'Post new')}</h2>
-      <div class="card">
-        <div class="field"><div class="label"><span>${L('រូបភាព ឬ វីដេអូ', 'Image or video')} <span class="req">*</span></span><small>JPG · PNG · MP4 ≤ 20 MB</small></div>
-          <label class="ad-drop"><input type="file" accept="image/*,video/*" hidden>
-            <span class="ad-pv" style="${f.preview ? `background-image:url('${f.preview}')` : ''}">${f.preview ? (f.type === 'video' ? '<span class="ad-play">▶</span>' : '') : '📷'}</span>
-            <span style="flex:1;min-width:0"><b>${esc(f.name || (a ? L('ឯកសារបច្ចុប្បន្ន', 'Current file') : L('ជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Choose an image or a video')))}</b>
-              <small>${f.preview ? L('ចុចដើម្បីប្តូរ', 'Tap to change') : L('ពីទូរស័ព្ទ ឬ កុំព្យូទ័រ', 'From the phone or computer')}</small></span>
-            <span class="ps-add" aria-hidden="true">${f.preview ? '↻' : '+'}</span></label>
-          <div id="adFileErr"></div></div>
-        <div class="field"><div class="label"><span>${L('អក្សរក្រហមខាងក្រោម', 'Big red text below')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div>
-          <textarea id="adText" maxlength="200" placeholder="${L('ឧ. សូមពន្លត់ម៉ាស៊ីន មុនពេលចាក់សាំង!', 'e.g. Turn off the engine before refuelling!')}">${esc(f.text)}</textarea>
-          <div class="ad-redprev" id="adPrev">${esc(f.text)}</div></div>
-        <div class="field"><div class="label"><span>${L('បង្ហាញរយៈពេល (វិនាទី)', 'Show for (seconds)')}</span></div>
-          ${f.type === 'video' ? `<div class="hint">▶ ${L('វីដេអូ ចាក់រហូតដល់ចប់ (ឬ ចុច រំលង)', 'A video plays to the end (or until Skip)')}</div>`
-            : `<div class="ad-secs">${[5, 6, 7, 8, 9, 10].map(n => `<button type="button" class="${n === f.seconds ? 'on' : ''}" data-sec="${n}">${n}</button>`).join('')}</div>`}</div>
-        <div class="field"><div class="row">
-          <div><div class="label"><span>${L('ចាប់ពី', 'From')}</span></div><input type="date" class="ad-date" id="adStart" value="${f.start}"></div>
-          <div><div class="label"><span>${L('ដល់', 'Until')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div><input type="date" class="ad-date" id="adEnd" value="${f.end}"></div></div></div>
-        <label class="field ad-swrow"><span><b>${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}</b><small>${L('បិទ = ទុកតែក្នុង វិចិត្រសាល', 'Off = only in the Gallery')}</small></span>
-          <input type="checkbox" id="adShow" ${f.show ? 'checked' : ''}><span class="ad-sw ${f.show ? 'on' : ''}" aria-hidden="true"></span></label>
-      </div>
-      <div id="adErr"></div>
-      <button type="button" class="btn primary" id="adSave">📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}</button>
-      <p class="center"><button type="button" class="btn" id="adCancel">${L('បោះបង់', 'Cancel')}</button></p>`;
-
-    $('#adText').oninput = e => { f.text = e.target.value; $('#adPrev').textContent = f.text; };
-    $$('[data-sec]').forEach(b => b.onclick = () => { f.seconds = +b.dataset.sec; $$('[data-sec]').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#adStart').onchange = e => { f.start = e.target.value; };
-    $('#adEnd').onchange = e => { f.end = e.target.value; };
-    $('#adShow').onchange = e => { f.show = e.target.checked; $('.ad-swrow .ad-sw').classList.toggle('on', f.show); };
-    $('#adCancel').onclick = back;
-    $('.ad-drop input').onchange = async e => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const err = msg => { $('#adFileErr').innerHTML = `<div class="alert bad">${msg}</div>`; };
-      $('#adFileErr').innerHTML = `<div class="hint"><span class="spin-sm"></span> ${L('កំពុងរៀបចំ…', 'Preparing…')}</div>`;
-      try {
-        if (/^video\//.test(file.type)) {
-          if (file.size > 20 * 1024 * 1024) return err(L('វីដេអូធំពេក (លើស 20 MB)។ សូមកាត់ឲ្យខ្លី។', 'The video is too big (over 20 MB). Please make it shorter.'));
-          const { thumb } = await videoInfo(file);
-          Object.assign(f, { file, type: 'video', preview: thumb, name: file.name });
-        } else if (/^image\//.test(file.type)) {
-          const thumb = await resizeImage(file, 320, 0.6);
-          Object.assign(f, { file, type: 'image', preview: thumb, name: file.name });
-        } else return err(L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video'));
-        renderAdEdit(screen);
-      } catch (x) { err(esc(x.message || L('មិនអាចអានឯកសារ', 'Could not read the file'))); }
-    };
-    $('#adSave').onclick = async () => {
-      if (!a && !f.file) { $('#adErr').innerHTML = `<div class="alert bad">${L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video')}</div>`; return; }
-      if (f.start && f.end && f.end < f.start) { $('#adErr').innerHTML = `<div class="alert bad">${L('ថ្ងៃ "ដល់" មុនថ្ងៃ "ចាប់ពី"', '"Until" is before "From"')}</div>`; return; }
-      const btn = $('#adSave');
-      btn.disabled = true; btn.innerHTML = `<span class="spinner sm" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> ${L('កំពុងបង្ហោះ…', 'Uploading…')}`;
-      try {
-        const payload = { id: a ? a.id : '', text: f.text.trim(), seconds: f.seconds, start: f.start, end: f.end, show: f.show };
-        let blob = null;
-        if (f.file) {
-          // Images are made smaller first (like the refill photos); videos go as they are.
-          payload.media = f.type === 'image' ? await resizeImage(f.file, 1600, 0.82) : await blobToDataUrl(f.file);
-          payload.thumb = f.preview; payload.name = f.name;
-          blob = f.type === 'image' ? await dataUrlToBlob(payload.media) : f.file;
-        }
-        const res = await api('adSave', payload);
-        state.config.adsVersion = 'x' + Date.now();
-        await syncAds(true);
-        // The admin's own phone keeps the file it just sent, so it doesn't download it again.
-        const saved = (adList() || []).find(x => x.id === res.id);
-        if (blob && saved) await adStore.put(saved.key, blob);
-        toast('📣 ' + L('បានបោះផ្សាយ', 'Posted'));
-        go({ s: 'ads' }, true);
-      } catch (e) {
-        if (!btn.isConnected) return;
-        $('#adErr').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
-        btn.disabled = false; btn.innerHTML = `📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}`;
-      }
-    };
-  }
-
-  /** Length of a video and a small picture of it (from about 1 second in). */
-  function videoInfo(file) {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file), v = document.createElement('video');
-      v.muted = true; v.playsInline = true; v.preload = 'auto';
-      const fail = () => { URL.revokeObjectURL(url); reject(new Error(L('មិនអាចអានវីដេអូនេះ', 'Could not read this video'))); };
-      v.onerror = fail;
-      v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
-      v.onseeked = () => {
-        const k = 320 / Math.max(v.videoWidth, v.videoHeight, 1), c = document.createElement('canvas');
-        c.width = Math.round(v.videoWidth * k) || 320; c.height = Math.round(v.videoHeight * k) || 180;
-        let thumb = '';
-        try { c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); thumb = c.toDataURL('image/jpeg', 0.6); } catch (e) { /* no picture */ }
-        const duration = v.duration;
-        URL.revokeObjectURL(url);
-        resolve({ duration, thumb });
-      };
-      v.src = url;
-    });
-  }
+  // Startup ads and the Gallery moved out of this app (Kim, 30 Oct 2026): ../ads.js shows the startup ad in every
+  // app, and admins manage ads in the 🖼️ Gallery Manager (../gallery/).
 
   // ---------------- Light / dark switch ----------------
 
@@ -2345,7 +1956,6 @@
     ['#brandName', 'ចាក់សាំង', 'Fuel Refill'], ['#navBack span', 'ថយក្រោយ', 'Back'], ['#navFwd span', 'ទៅមុខ', 'Forward'],
     ['.home-tab .lb', 'ទំព័រដើម', 'Home'], ['[data-tab="new"] .lb', 'បញ្ចូលថ្មី', 'New'],
     ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'],
-    ['[data-tab="gallery"] .lb', 'វិចិត្រសាល', 'Gallery'], ['[data-tab="ads"] .lb', 'ផ្សព្វផ្សាយ', 'Ads'],
     ['#demoBanner', 'DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុកទេ', 'DEMO · Nothing is saved'],
   ];
   function paintStatic() {

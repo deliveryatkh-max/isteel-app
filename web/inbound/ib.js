@@ -82,6 +82,12 @@
     ['other', '❓', 'ផ្សេងៗ', 'Other'],
   ];
   const dmgName = k => { const d = DMG.find(x => x[0] === k); return d ? d[1] + ' ' + t(d[2], d[3]) : (k || ''); };
+  // unit of the damaged qty (Kim, 31 Oct 2026: "pcs, t, bundle, m, etc.")
+  const DMG_UOM = ['Kg', 'PCS', 't', 'Bundle', 'm', 'Coil', 'Roll', 'Sheet', 'Box'];
+  const dmgUoms = () => { const s = {}; DATA.forEach(r => (r.items || []).forEach(i => { if (i.dmgUom && !DMG_UOM.includes(i.dmgUom)) s[i.dmgUom] = 1; })); return DMG_UOM.concat(Object.keys(s).sort()); };
+  const dmgEn = k => { const d = DMG.find(x => x[0] === k); return d ? d[3] : (k || ''); };
+  // damage types typed in by users (Kim, 31 Oct 2026: "allow user to add new type of damage")
+  const dmgCustom = () => { const s = {}; DATA.forEach(r => (r.items || []).forEach(i => { if (i.dmgType && !DMG.some(d => d[0] === i.dmgType)) s[i.dmgType] = 1; })); return Object.keys(s).sort(); };
   const MAX_DMG_PH = 10;
 
   // ------------------------------------------------------------------ data (demo)
@@ -115,7 +121,7 @@
       const p0 = PLAN[x[3][0][0]];
       out.push(Object.assign(header(p0), {
         id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length], dn3pl: 'DN-' + (26100 + i * 7),
-        items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
+        items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgUom: it[3] ? 'Kg' : '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
         date: ymd(d), start, end, manpower: x[4], owner: end ? x[5] : '', carrier: x[6],
         remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, warehouse: ['A1', 'A2', 'I1'][i % 3], by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
@@ -124,7 +130,7 @@
   }
   // the greyed fields copied from the plan
   function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
-  function item(p) { return { material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgPh: [] }; }
+  function item(p) { return { material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
   const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
@@ -287,11 +293,11 @@
   }
   // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
-    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Warehouse', 'Remark'];
+    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage UoM', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Warehouse', 'Remark'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
-      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG.find(d => d[0] === i.dmgType)[3] : '', isLessItem(i) ? 'Yes' : '', r.uom,
+      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, +i.dmgQty > 0 ? i.dmgUom || r.uom : '', dmgEn(i.dmgType), isLessItem(i) ? 'Yes' : '', r.uom,
       showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
       r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.warehouse || '', r.remark,
     ].map(q).join(','))));
@@ -330,7 +336,7 @@
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
-    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="${k === 'grQty' ? esc(i.arrQty) : k === 'dmgQty' ? '0' : ''}">`
+    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0">`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const rows = r.items.map((i, n) => {
       const less = isLessItem(i), dm = +i.dmgQty > 0;
@@ -347,6 +353,8 @@
           <div class="dmgbox">
             <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
             ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
+            <label class="f mt">📏 ${t('ឯកតាខូចខាត', 'Damage UoM')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
+            ${mode === 'fin' ? pickBtn('du' + n, i.dmgUom || '') : `<b>${esc(fmt(i.dmgQty) + ' ' + (i.dmgUom || r.uom))}</b>`}
             <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
             <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
           </div></td></tr>`;
@@ -362,7 +370,11 @@
   }
   function renderForm(id) {
     paintTabs('');
-    if (!F || F.id !== (id || '')) F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+    if (!F || F.id !== (id || '')) {
+      F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+      // Finish unloading: Actual GR Qty starts with the Arrival Qty (Kim, 31 Oct 2026)
+      if (id && isLive(F)) F.items.forEach(i => { if (i.grQty === '' || i.grQty == null) i.grQty = i.arrQty; });
+    }
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
@@ -422,7 +434,7 @@
     const b = blank(); const l = PLAN.find(x => x.po === po);
     F = Object.assign(b, l ? header(l) : {}, keep);
     const pend = pendingLines(po, F.id);
-    if (pend.length === 1) F.items = [Object.assign(item(pend[0]), { arrQty: left(pend[0], F.id) })];
+    if (pend.length === 1) F.items = [item(pend[0])];
   }
   // photos are shrunk on the phone (long side 1280 px, JPEG) so saving stays fast on 4G
   function shrink(file, done) {
@@ -472,7 +484,7 @@
     $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
     $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
       mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
-    r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
+    r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($('#du' + n), !i.dmgUom); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
     mark($('.seg[data-seg="own"]'), fin && !r.owner);
     mark($('#mpBox'), fin && !(+r.manpower > 0));
   }
@@ -489,12 +501,17 @@
     const it = $('#items');
     if (it) it.onclick = () => { collect(); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(i => i.material),
       items: pendingLines(F.po, F.id).map(x => ({ value: x.material, label: x.desc, sub: x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })),
-      onDone: mats => { const had = {}; F.items.forEach(i => { had[i.material] = i; }); F.items = mats.map(mt => had[mt] || Object.assign(item(lineOf(F.po, mt)), { arrQty: left(lineOf(F.po, mt), F.id) })); re(); } }); };
+      onDone: mats => { const had = {}; F.items.forEach(i => { had[i.material] = i; }); F.items = mats.map(mt => had[mt] || item(lineOf(F.po, mt))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
     $$('[data-it]').forEach(el => { el.onchange = re; });
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
-      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })) }],
+      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })).concat(dmgCustom().map(x => ({ value: x }))) }],
+      addNew: { label: t('បន្ថែមប្រភេទខូចខាតថ្មី', 'Add new damage type'), clean: v => String(v || '').trim().slice(0, 40) },
       onPick: v => { const d = DMG.find(x => x[1] + ' ' + t(x[2], x[3]) === v); i.dmgType = d ? d[0] : v; re(); } })));
+    F.items.forEach((i, n) => pk('du' + n, () => ({ title: t('ឯកតាខូចខាត', 'Damage UoM'), value: i.dmgUom || '',
+      groups: [{ items: dmgUoms().map(x => ({ value: x })) }],
+      addNew: { label: t('បន្ថែមឯកតាថ្មី', 'Add new unit'), clean: v => String(v || '').trim().slice(0, 15) },
+      onPick: v => { i.dmgUom = v; re(); } })));
     // camera or gallery; several photos at once, up to MAX_DMG_PH per item (Kim, 30 Oct 2026)
     $$('[data-dph]').forEach(inp => { inp.onchange = () => {
       collect(); const i = F.items[+inp.dataset.dph], room = MAX_DMG_PH - (i.dmgPh || []).length;
@@ -536,6 +553,7 @@
       F.items.forEach(i => { if (i.dmgQty === '' || i.dmgQty == null) i.dmgQty = 0; });
       const dm = F.items.filter(i => +i.dmgQty > 0);
       if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
+      if (dm.some(i => !i.dmgUom)) miss.push(t('ឯកតាខូចខាត', 'Damage UoM'));
       if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
       if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
       if (!(+F.manpower > 0)) miss.push(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'));
@@ -745,7 +763,7 @@
     if (r.remark) l.push(`- Remark: ${r.remark}`);
     if (dmgItems.length) {
       l.push('', 'Damaged items:');
-      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${kg(i.dmgQty)}${i.dmgType ? ' (' + (DMG.find(d => d[0] === i.dmgType) || [, , , i.dmgType])[3] + ')' : ''}`));
+      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${fmt(i.dmgQty)} ${i.dmgUom || r.uom}${i.dmgType ? ' (' + dmgEn(i.dmgType) + ')' : ''}`));
     }
     l.push('', `The full Goods Receipt Report (PDF), including photos, is attached for your reference.`,
       dmgItems.length || lessItems.length ? 'Kindly review the damaged / short-received quantities and advise on the next steps.' : 'All goods were received in good condition.',
@@ -764,7 +782,7 @@
         ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), whName(r.warehouse), '', '']])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
-        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc((DMG.find(d => d[0] === i.dmgType) || [, , , ''])[3]) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
+        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
         <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
       <h4>C. ${two('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
         [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
