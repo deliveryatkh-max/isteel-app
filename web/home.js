@@ -13,6 +13,7 @@
     { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
+    { key: 'dataentry', kh: 'បញ្ចូលទិន្នន័យ', en: 'Data Entry', url: 'dataentry/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
     // Everyone (switched off in the Gallery Manager's Settings): every ad, to watch again (Kim, 30 Oct 2026).
     { key: 'gallery', kh: 'វិចិត្រសាល', en: 'Gallery', url: 'gallery/' },
