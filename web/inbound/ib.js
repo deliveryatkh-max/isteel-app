@@ -82,6 +82,9 @@
     ['other', '❓', 'ផ្សេងៗ', 'Other'],
   ];
   const dmgName = k => { const d = DMG.find(x => x[0] === k); return d ? d[1] + ' ' + t(d[2], d[3]) : (k || ''); };
+  const dmgEn = k => { const d = DMG.find(x => x[0] === k); return d ? d[3] : (k || ''); };
+  // damage types typed in by users (Kim, 31 Oct 2026: "allow user to add new type of damage")
+  const dmgCustom = () => { const s = {}; DATA.forEach(r => (r.items || []).forEach(i => { if (i.dmgType && !DMG.some(d => d[0] === i.dmgType)) s[i.dmgType] = 1; })); return Object.keys(s).sort(); };
   const MAX_DMG_PH = 10;
 
   // ------------------------------------------------------------------ data (demo)
@@ -291,7 +294,7 @@
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
-      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG.find(d => d[0] === i.dmgType)[3] : '', isLessItem(i) ? 'Yes' : '', r.uom,
+      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, dmgEn(i.dmgType), isLessItem(i) ? 'Yes' : '', r.uom,
       showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
       r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.warehouse || '', r.remark,
     ].map(q).join(','))));
@@ -330,7 +333,7 @@
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
-    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="${k === 'grQty' ? esc(i.arrQty) : k === 'dmgQty' ? '0' : ''}">`
+    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="${k === 'grQty' || k === 'dmgQty' ? '0' : ''}">`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const rows = r.items.map((i, n) => {
       const less = isLessItem(i), dm = +i.dmgQty > 0;
@@ -493,7 +496,8 @@
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
     $$('[data-it]').forEach(el => { el.onchange = re; });
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
-      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })) }],
+      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })).concat(dmgCustom().map(x => ({ value: x }))) }],
+      addNew: { label: t('បន្ថែមប្រភេទខូចខាតថ្មី', 'Add new damage type'), clean: v => String(v || '').trim().slice(0, 40) },
       onPick: v => { const d = DMG.find(x => x[1] + ' ' + t(x[2], x[3]) === v); i.dmgType = d ? d[0] : v; re(); } })));
     // camera or gallery; several photos at once, up to MAX_DMG_PH per item (Kim, 30 Oct 2026)
     $$('[data-dph]').forEach(inp => { inp.onchange = () => {
@@ -745,7 +749,7 @@
     if (r.remark) l.push(`- Remark: ${r.remark}`);
     if (dmgItems.length) {
       l.push('', 'Damaged items:');
-      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${kg(i.dmgQty)}${i.dmgType ? ' (' + (DMG.find(d => d[0] === i.dmgType) || [, , , i.dmgType])[3] + ')' : ''}`));
+      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${kg(i.dmgQty)}${i.dmgType ? ' (' + dmgEn(i.dmgType) + ')' : ''}`));
     }
     l.push('', `The full Goods Receipt Report (PDF), including photos, is attached for your reference.`,
       dmgItems.length || lessItems.length ? 'Kindly review the damaged / short-received quantities and advise on the next steps.' : 'All goods were received in good condition.',
@@ -764,7 +768,7 @@
         ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), whName(r.warehouse), '', '']])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
-        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc((DMG.find(d => d[0] === i.dmgType) || [, , , ''])[3]) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
+        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
         <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
       <h4>C. ${two('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
         [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
