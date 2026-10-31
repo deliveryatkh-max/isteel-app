@@ -47,7 +47,18 @@
   }
 
   // ------------------------------------------------------------------ stored data
-  const FIELDS = ['vehicle', 'ticket', 'gross', 'tare', 'net', 'date', 'inTime', 'outTime'];
+  const FIELDS = ['vehicle', 'company', 'ticket', 'gross', 'tare', 'net', 'date', 'inTime', 'outTime'];
+  const OPTIONAL = ['company'];
+  // Company: looked up from the Vehicle No in the Fuel Refill sheet "Driver & Truck" (column G plate → column E company), Kim 31 Oct 2026.
+  // The exact plate wins (3B5956 → 3PL #1); otherwise the plate without dashes or spaces (3B-5956 = 3B5956).
+  const trucks = () => (BOOT && BOOT.trucks) || window.DE_TRUCKS || [];
+  function companyOf(plate) {
+    const p = String(plate || '').toUpperCase().trim(); if (!p) return '';
+    const T = trucks(); const loose = s => String(s).toUpperCase().replace(/[\s\-.]/g, '');
+    const hit = T.find(x => String(x[0]).toUpperCase().trim() === p) || T.find(x => loose(x[0]) === loose(p));
+    return hit ? hit[1] : '';
+  }
+  const companies = () => Array.from(new Set(trucks().map(x => x[1]).filter(Boolean))).sort();
   let RECS = []; try { RECS = JSON.parse(get(REC_KEY) || '[]'); } catch (e) { RECS = []; }
   let SET = { fileName: 'Weight_Scale_Data.xlsx', emailTo: '', folderName: '' };
   try { Object.assign(SET, JSON.parse(get(SET_KEY) || '{}')); } catch (e) { /* defaults */ }
@@ -183,7 +194,7 @@
     const x = s.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, s.width, s.height);
     return s.toDataURL('image/jpeg', 0.8);
   }
-  const blank = () => ({ vehicle: '', ticket: '', gross: '', tare: '', net: '', date: '', inTime: '', outTime: '' });
+  const blank = () => ({ vehicle: '', company: '', ticket: '', gross: '', tare: '', net: '', date: '', inTime: '', outTime: '' });
 
   // Read the waiting tickets one after another (the one on screen first).
   let reading = false;
@@ -205,7 +216,7 @@
       const img = forOcr(q.canvas);
       const r = await TicketOCR.read(w, img, img.width, img.height, (p, step) => progress(q, p, stepName(step)));
       const f = r.fields;
-      q.f = { vehicle: f.vehicle || '', ticket: f.ticket || '', gross: f.gross == null ? '' : f.gross, tare: f.tare == null ? '' : f.tare, net: f.net == null ? '' : f.net,
+      q.f = { vehicle: f.vehicle || '', company: companyOf(f.vehicle), ticket: f.ticket || '', gross: f.gross == null ? '' : f.gross, tare: f.tare == null ? '' : f.tare, net: f.net == null ? '' : f.net,
         date: f.date || '', inTime: f.inTime || '', outTime: f.outTime || '' };
       q.checks = r.checks; q.raw = r.raw; q.state = 'done';
       progress(q, 1, r.anchors >= 2 ? '✅ ' + t('អានរួច។ សូមពិនិត្យលេខក្នុងជំហាន ២។', 'Read. Please check the values in step 2.')
@@ -277,6 +288,7 @@
           <section class="card"><h2 class="ch"><span class="l"><span class="n">2</span>✏️ ${t('ពិនិត្យ និងកែទិន្នន័យ', 'Review & Edit Data')}</span>${EDIT ? `<small>✎ ${t('កំពុងកែកំណត់ត្រា', 'Editing a saved record')}</small>` : ''}</h2>
             <div class="cb"><div class="fgrid" id="form">
               ${fld('vehicle', t('លេខឡាន', 'Vehicle No'), 'text', 'plate')}
+              ${fld('company', t('ក្រុមហ៊ុន', 'Company'), 'text', '', '', true)}
               ${fld('ticket', t('លេខប័ណ្ណ', 'Ticket No.'), 'text', '', 'numeric')}
               ${fld('gross', t('ទម្ងន់សរុប (គ.ក)', 'Gross (kg)'), 'text', '', 'numeric')}
               ${fld('tare', t('ទម្ងន់យាន្ត (គ.ក)', 'Tare (kg)'), 'text', '', 'numeric')}
@@ -302,9 +314,9 @@
     paintQueue(); paintForm();
     if (q) progress(q, q.p || 0, q.msg || '');
   }
-  const FEMO = { vehicle: '🚚', ticket: '🎫', gross: '⚖️', tare: '🛻', net: '📦', date: '📅', inTime: '🟢', outTime: '🔴' };
-  function fld(k, label, type, cls, mode) {
-    return `<div><label for="f_${k}">${FEMO[k] || ''} ${label} <span class="req">*</span></label><input class="in ${cls || ''}" id="f_${k}" data-k="${k}" type="${type}" ${type === 'datetime-local' ? 'step="1"' : ''} ${mode ? `inputmode="${mode}"` : ''} autocomplete="off"></div>`;
+  const FEMO = { company: '🏢', vehicle: '🚚', ticket: '🎫', gross: '⚖️', tare: '🛻', net: '📦', date: '📅', inTime: '🟢', outTime: '🔴' };
+  function fld(k, label, type, cls, mode, list) {
+    return `<div><label for="f_${k}">${FEMO[k] || ''} ${label} ${OPTIONAL.indexOf(k) < 0 ? '<span class="req">*</span>' : ''}</label><input class="in ${cls || ''}" id="f_${k}" data-k="${k}" type="${type}" ${type === 'datetime-local' ? 'step="1"' : ''} ${mode ? `inputmode="${mode}"` : ''} ${list ? `list="dl_${k}"` : ''} autocomplete="off">${list ? `<datalist id="dl_${k}">${companies().map(c => `<option value="${esc(c)}">`).join('')}</datalist><div class="hint" id="h_${k}"></div>` : ''}</div>`;
   }
   function wireEntry() {
     const drop = $('#drop');
@@ -322,6 +334,9 @@
     $('#extractBtn').onclick = () => { const q = cur(); if (!q) return; q.state = 'wait'; EDIT = null; readAll(); };
     $$('#form .in[data-k]').forEach(el => { el.oninput = () => { grab(); paintChecks(); }; });
     $('#f_vehicle').onblur = e => { e.target.value = e.target.value.toUpperCase().trim(); grab(); };
+    // Company follows the Vehicle No unless someone typed a different company by hand.
+    $('#f_vehicle').addEventListener('input', () => { const c = $('#f_company'); const auto = companyOf($('#f_vehicle').value); if (!c.value || c.dataset.auto === c.value) { c.value = auto; c.dataset.auto = auto; grab(); } paintCompanyHint(); });
+    $('#f_company').addEventListener('input', paintCompanyHint);
     ['gross', 'tare', 'net', 'ticket'].forEach(k => { $('#f_' + k).onblur = e => { const n = toNum(e.target.value); e.target.value = n == null ? '' : (k === 'ticket' ? String(n) : kg(n)); grab(); paintChecks(); }; });
     $('#aSave').onclick = () => act('table', $('#aSave'));
     wireTable();
@@ -352,7 +367,14 @@
     if (!EDIT && q && q.state === 'done' && q.raw) {   // boxes the reader could not read itself are marked yellow
       FIELDS.forEach(k => { const raw = q.raw[k] || ''; if (!raw && $('#f_' + k)) $('#f_' + k).classList.add('unsure'); });
     }
+    $('#f_company').dataset.auto = companyOf(f.vehicle);
+    paintCompanyHint();
     paintChecks();
+  }
+  function paintCompanyHint() {
+    const h = $('#h_company'); if (!h) return;
+    const v = $('#f_vehicle').value.trim(), auto = companyOf(v), c = $('#f_company').value.trim();
+    h.textContent = !v ? '' : auto ? (c === auto ? '✓ ' + t('ពីតារាង Driver & Truck', 'From the Driver & Truck list') : '') : '⚠️ ' + t('រកមិនឃើញក្នុង Driver & Truck · វាយបញ្ចូលដោយដៃ', 'Not in the Driver & Truck list · type it');
   }
   function grab() {
     const f = formTarget(); if (!f || !$('#form')) return;
@@ -368,7 +390,7 @@
   }
   function paintChecks() {
     const f = formTarget();
-    FIELDS.forEach(k => { const el = $('#f_' + k); if (el) el.classList.toggle('need', !!f && !el.value.trim()); });
+    FIELDS.forEach(k => { const el = $('#f_' + k); if (el) el.classList.toggle('need', !!f && OPTIONAL.indexOf(k) < 0 && !el.value.trim()); });
     const box = $('#checks'); if (!box) return;
     if (!f) { box.innerHTML = ''; $('#f_total').value = ''; return; }
     const m = minutes(f);
@@ -388,7 +410,7 @@
   }
 
   // ------------------------------------------------------------------ Save / send
-  function missing(f) { return FIELDS.filter(k => f[k] === '' || f[k] == null); }
+  function missing(f) { return FIELDS.filter(k => OPTIONAL.indexOf(k) < 0 && (f[k] === '' || f[k] == null)); }
   // Puts the ticket on screen into the table (new or replacing the same ticket number). Returns the record.
   function toTable() {
     grab();
@@ -434,7 +456,7 @@
   }
 
   async function toSheet(list) {
-    const rows = list.map(r => ({ id: r.id, ticket: r.ticket, vehicle: r.vehicle, date: r.date, gross: r.gross, tare: r.tare, net: r.net, inTime: r.inTime, outTime: r.outTime, mins: minutes(r), file: r.file || '', by: r.by || me(), img: r.img || '' }));
+    const rows = list.map(r => ({ id: r.id, ticket: r.ticket, vehicle: r.vehicle, company: r.company || '', date: r.date, gross: r.gross, tare: r.tare, net: r.net, inTime: r.inTime, outTime: r.outTime, mins: minutes(r), file: r.file || '', by: r.by || me(), img: r.img || '' }));
     const out = [];
     for (let i = 0; i < rows.length; i += 10) out.push(await api('save', { rows: rows.slice(i, i + 10) }));   // 10 at a time keeps each call small
     list.forEach(r => { r.sheet = true; r.sentAt = Date.now(); });
@@ -443,21 +465,21 @@
   }
 
   // ---------- Excel ----------
-  const XCOLS = ['Ticket No', 'Vehicle No', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time', 'Total Time (min)', 'Total Time', 'Source File', 'Entered By', 'Entered At'];
+  const XCOLS = ['Ticket No', 'Vehicle No', 'Company', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time', 'Total Time (min)', 'Total Time', 'Source File', 'Entered By', 'Entered At'];
   const hhmm = m => (m == null ? '' : Math.floor(m / 60) + ':' + pad(m % 60));
   function xRow(r) {
     const m = minutes(r);
-    return [r.ticket, r.vehicle, toDate(r.date), toNum(r.gross), toNum(r.tare), toNum(r.net), toDate(r.inTime), toDate(r.outTime), m, hhmm(m), r.file || '', r.by || '', new Date(r.updatedAt || r.savedAt || Date.now())];
+    return [r.ticket, r.vehicle, r.company || '', toDate(r.date), toNum(r.gross), toNum(r.tare), toNum(r.net), toDate(r.inTime), toDate(r.outTime), m, hhmm(m), r.file || '', r.by || '', new Date(r.updatedAt || r.savedAt || Date.now())];
   }
   function sheetOf(rows) {
     const ws = XLSX.utils.aoa_to_sheet([XCOLS].concat(rows), { cellDates: true });
     const range = XLSX.utils.decode_range(ws['!ref']);
     for (let R = 1; R <= range.e.r; R++) {
-      const fm = { 2: 'dd-mmm-yyyy', 3: '#,##0', 4: '#,##0', 5: '#,##0', 6: 'dd-mmm-yyyy hh:mm:ss', 7: 'dd-mmm-yyyy hh:mm:ss', 12: 'dd-mmm-yyyy hh:mm' };
+      const fm = { 3: 'dd-mmm-yyyy', 4: '#,##0', 5: '#,##0', 6: '#,##0', 7: 'dd-mmm-yyyy hh:mm:ss', 8: 'dd-mmm-yyyy hh:mm:ss', 13: 'dd-mmm-yyyy hh:mm' };
       Object.keys(fm).forEach(C => { const c = ws[XLSX.utils.encode_cell({ r: R, c: +C })]; if (c && c.v !== '' && c.v != null) c.z = fm[C]; });
       const tk = ws[XLSX.utils.encode_cell({ r: R, c: 0 })]; if (tk) { tk.t = 's'; tk.v = String(tk.v); }
     }
-    ws['!cols'] = [12, 12, 14, 11, 11, 11, 20, 20, 10, 10, 26, 22, 18].map(w => ({ wch: w }));
+    ws['!cols'] = [12, 12, 16, 14, 11, 11, 11, 20, 20, 10, 10, 26, 22, 18].map(w => ({ wch: w }));
     ws['!autofilter'] = { ref: ws['!ref'] };
     return ws;
   }
@@ -515,7 +537,7 @@
     const keep = new Set(list.map(r => String(r.ticket)));
     rows = rows.filter(r => !keep.has(String(r[0])));
     rows = rows.concat(list.map(xRow));
-    rows.sort((a, b) => (a[6] instanceof Date && b[6] instanceof Date ? a[6] - b[6] : 0));
+    rows.sort((a, b) => (a[7] instanceof Date && b[7] instanceof Date ? a[7] - b[7] : 0));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, sheetOf(rows), 'Weighing Tickets');
     let w;
     try { w = await fh.createWritable(); } catch (e) { throw new Error(t('ឯកសារ Excel កំពុងបើក។ សូមបិទវាក្នុង Excel ហើយព្យាយាមម្តងទៀត។', 'The Excel file is open. Close it in Excel and try again.')); }
@@ -578,11 +600,11 @@
   function tableCard(list, title, total) {
     return `<div class="tcard"><div class="thead"><b>🗂️ ${title}</b>${screen === renderEntry && total ? `<a class="seeall" href="#/report">${t('មើលទាំងអស់', 'See all')} →</a>` : ''}<span class="cnt">${total} ${t('កំណត់ត្រា', total === 1 ? 'Record' : 'Records')}</span></div>
       <div class="tscroll">${list.length ? `<table class="rec"><thead><tr>
-        <th>${t('លេខឡាន', 'Vehicle No')}</th><th>${t('លេខប័ណ្ណ', 'Ticket No')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th>
+        <th>${t('លេខឡាន', 'Vehicle No')}</th><th>${t('ក្រុមហ៊ុន', 'Company')}</th><th>${t('លេខប័ណ្ណ', 'Ticket No')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th>
         <th>${t('កាលបរិច្ឆេទ', 'Document Date')}</th><th>${t('ម៉ោងចូល', 'In Time')}</th><th>${t('ម៉ោងចេញ', 'Out Time')}</th><th>${t('រយៈពេល', 'Total Time')}</th>
         <th title="${t('តារាង · Google Sheet · ឯកសារ · អ៊ីមែល', 'Table · Google Sheet · Local file · Email')}">${t('ស្ថានភាព', 'Sent')}</th><th></th></tr></thead><tbody>
         ${list.map(r => { const m = minutes(r); return `<tr class="${r.id === EDIT ? 'cur' : ''}">
-          <td><b>${esc(r.vehicle)}</b></td><td>${esc(r.ticket)}</td><td class="r">${kg(r.gross)} kg</td><td class="r">${kg(r.tare)} kg</td><td class="r net">${kg(r.net)} kg</td>
+          <td><b>${esc(r.vehicle)}</b></td><td>${esc(r.company || '')}</td><td>${esc(r.ticket)}</td><td class="r">${kg(r.gross)} kg</td><td class="r">${kg(r.tare)} kg</td><td class="r net">${kg(r.net)} kg</td>
           <td>${showDate(r.date)}</td><td>${showTime(r.inTime)}</td><td>${showTime(r.outTime)}</td><td class="${m > 120 ? 'long' : ''}">${showMin(m)}</td>
           <td class="st"><span title="Google Sheet" class="${r.sheet ? '' : 'off'}">📤</span><span title="${t('ឯកសារ Excel', 'Local file')}" class="${r.local ? '' : 'off'}">💾</span><span title="Email" class="${r.mailed ? '' : 'off'}">✉️</span></td>
           <td>${canEdit() ? `<button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button>` : ''}</td></tr>`; }).join('')}
@@ -614,7 +636,7 @@
     screen = renderReport;
     if (!RF.p) period('month');
     const ql = RF.q.toLowerCase();
-    REPORT_ROWS = sorted().filter(r => (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
+    REPORT_ROWS = sorted().filter(r => (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.company || '') + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
     const L = REPORT_ROWS, ms = L.map(minutes).filter(m => m != null);
     const net = L.reduce((s, r) => s + (toNum(r.net) || 0), 0);
     const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
@@ -628,12 +650,12 @@
     const byD = [0, 0, 0, 0, 0, 0, 0]; L.forEach(r => { const d = toDate(r.date); if (d) byD[d.getDay()]++; });
     const topD = byD.indexOf(Math.max.apply(null, byD));
     // Trucks with the most tickets
-    const per = {}; L.forEach(r => { const p = per[r.vehicle] || (per[r.vehicle] = { n: 0, net: 0, min: [] }); p.n++; p.net += toNum(r.net) || 0; const m = minutes(r); if (m != null) p.min.push(m); });
+    const per = {}; L.forEach(r => { const p = per[r.vehicle] || (per[r.vehicle] = { n: 0, net: 0, min: [], co: r.company || '' }); p.n++; p.net += toNum(r.net) || 0; const m = minutes(r); if (m != null) p.min.push(m); });
     const top = Object.keys(per).map(v => Object.assign({ v }, per[v])).sort((a, b) => b.n - a.n || b.net - a.net).slice(0, 6);
     const chip = (k, km, en, e) => `<button type="button" class="pill ${RF.p === k ? 'on' : ''}" data-p="${k}">${e} ${t(km, en)}</button>`;
     $('#view').innerHTML = `
       <div class="rhead"><small>${t('របាយការណ៍ប័ណ្ណថ្លឹង', 'Weighing ticket report')}</small><h1>📊 ${t('របាយការណ៍', 'Report')}</h1></div>
-      <div class="searchbox"><span>🔍</span><input id="rQ" value="${esc(RF.q)}" placeholder="${t('ស្វែងរកលេខឡាន ឬលេខប័ណ្ណ…', 'Search vehicle or ticket…')}"></div>
+      <div class="searchbox"><span>🔍</span><input id="rQ" value="${esc(RF.q)}" placeholder="${t('ស្វែងរកលេខឡាន លេខប័ណ្ណ ឬក្រុមហ៊ុន…', 'Search vehicle, ticket or company…')}"></div>
       <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}</div>
       <div class="fbar" ${RF.p === 'custom' ? '' : 'hidden'}>
         <div><label for="rFrom">${t('ពីថ្ងៃ', 'From')}</label><input class="in" type="date" id="rFrom" value="${RF.from}"></div>
@@ -652,7 +674,7 @@
           <p class="note">${L.length ? `${t('ម៉ោងមមាញឹកបំផុត', 'Busiest hour')} <b>${hourName(peak)}</b> · ${t('ថ្ងៃមមាញឹកបំផុត', 'busiest day')} <b>${t(DAYS[topD][0], DAYS[topD][1])}</b>` : t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>
         </section>
         <section class="rcard"><h3>🏆 ${t('ឡានដែលថ្លឹងច្រើនជាងគេ', 'Top trucks')}</h3>
-          ${top.length ? top.map(p => `<div class="act"><span class="sq">🚚</span><div><b>${esc(p.v)}</b><small>${p.n} ${t('ប័ណ្ណ', p.n === 1 ? 'ticket' : 'tickets')} · ${t('មធ្យម', 'avg')} ${p.min.length ? Math.round(p.min.reduce((a, b) => a + b, 0) / p.min.length) : '–'} ${t('នាទី', 'min')}</small></div><strong>${(p.net / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })} t</strong></div>`).join('') : `<p class="note">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>`}
+          ${top.length ? top.map(p => `<div class="act"><span class="sq">🚚</span><div><b>${esc(p.v)}</b><small>${p.co ? '🏢 ' + esc(p.co) + ' · ' : ''}${p.n} ${t('ប័ណ្ណ', p.n === 1 ? 'ticket' : 'tickets')} · ${t('មធ្យម', 'avg')} ${p.min.length ? Math.round(p.min.reduce((a, b) => a + b, 0) / p.min.length) : '–'} ${t('នាទី', 'min')}</small></div><strong>${(p.net / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })} t</strong></div>`).join('') : `<p class="note">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>`}
         </section>
       </div>
       <div class="pills acts2">

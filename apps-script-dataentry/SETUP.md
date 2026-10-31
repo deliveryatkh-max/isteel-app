@@ -48,7 +48,7 @@ Excel, close it first. Other browsers download the Excel file instead.
 
 ## Sheet tabs
 
-- **Weighing Tickets**: Ticket No, Vehicle No, Document Date, Gross, Tare, Net, In / Out Date/Time, Total Time (min and h:mm),
+- **Weighing Tickets**: Ticket No, Vehicle No, Company (looked up from the Fuel sheet "Driver & Truck": plate in column G, company in column E; an exact plate match wins, else the plate without dashes), Document Date, Gross, Tare, Net, In / Out Date/Time, Total Time (min and h:mm),
   Check (OK, or the Gross − Tare difference), Source File, Picture (Drive link), Entered By, Entered At, Updated.
 - **DE Settings**: `EMAIL_TO` default email list, `EMAIL_SUBJECT`.
 

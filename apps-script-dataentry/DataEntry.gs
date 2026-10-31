@@ -16,7 +16,7 @@
  */
 
 const SH = { TK: 'Weighing Tickets', SET: 'DE Settings' };
-const TK_COLS = ['Ticket No', 'Vehicle No', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time',
+const TK_COLS = ['Ticket No', 'Vehicle No', 'Company', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time',
   'Total Time (min)', 'Total Time', 'Check', 'Source File', 'Picture', 'Entered By', 'Entered At', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'បញ្ចូលទិន្នន័យ';     // tick box column in the Fuel Refill Users tab (added by the Fuel script)
@@ -92,11 +92,11 @@ function setting_(k) {
 function setup() {
   const tk = sheet_(SH.TK, TK_COLS);
   // Ticket and plate stay as typed (3E-2588 must not become a number); weights are numbers; times are real dates.
-  tk.getRange(2, 1, tk.getMaxRows() - 1, 2).setNumberFormat('@');
-  tk.getRange(2, 3, tk.getMaxRows() - 1, 1).setNumberFormat('dd-mmm-yyyy');
-  tk.getRange(2, 4, tk.getMaxRows() - 1, 3).setNumberFormat('#,##0');
-  tk.getRange(2, 7, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm:ss');
-  tk.getRange(2, 15, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm');
+  tk.getRange(2, 1, tk.getMaxRows() - 1, 3).setNumberFormat('@');
+  tk.getRange(2, 4, tk.getMaxRows() - 1, 1).setNumberFormat('dd-mmm-yyyy');
+  tk.getRange(2, 5, tk.getMaxRows() - 1, 3).setNumberFormat('#,##0');
+  tk.getRange(2, 8, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm:ss');
+  tk.getRange(2, 16, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm');
   sheet_(SH.SET, SET_COLS, [
     ['EMAIL_TO', '', 'Default "Send to" for Send Excel to Email (comma separated). People can change it in the app.'],
     ['EMAIL_SUBJECT', 'Weighing tickets', 'Start of the email subject'],
@@ -201,7 +201,20 @@ function usersCached_() {
 
 // ---------------------------------------------------------------- actions
 function boot_(user) {
-  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO') };
+  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO'), trucks: trucks_() };
+}
+
+/** Plate → company from the Fuel Refill sheet, tab "Driver & Truck": column G (ផ្លាកលេខឡាន) and column E (ក្រុមហ៊ុន). */
+function trucks_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('de_trucks');
+  if (hit) return JSON.parse(hit);
+  const sh = SpreadsheetApp.openById(prop_('USERS_SHEET_ID')).getSheetByName('Driver & Truck');
+  if (!sh || sh.getLastRow() < 2) return [];
+  const v = sh.getRange(2, 5, sh.getLastRow() - 1, 3).getDisplayValues();   // E:G
+  const out = v.filter(r => String(r[2]).trim()).map(r => [String(r[2]).trim(), String(r[0]).trim()]);
+  try { cache.put('de_trucks', JSON.stringify(out), 300); } catch (e) { /* too big */ }
+  return out;
 }
 
 const date_ = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)(?:[ T](\d\d):(\d\d)(?::(\d\d))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : ''; };
@@ -228,15 +241,16 @@ function save_(rows, user) {
     // Changing a ticket already in the sheet: Role Reviewer or Admin only (Kim, 31 Oct 2026).
     if (row && !(user.admin || user.reviewer)) fail_('DENIED', 'Ticket ' + ticket + ' is already in the sheet. Only a Reviewer or Admin can change it.',
       'ប័ណ្ណ ' + ticket + ' មានក្នុង Sheet រួចហើយ។ មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន។');
-    let pic = row ? sh.getRange(row, 13).getDisplayValue() : '';
+    let pic = row ? sh.getRange(row, 14).getDisplayValue() : '';
     if (p.img) pic = savePicture_(p.img, ticket, vehicle) || pic;
-    const enteredAt = row ? sh.getRange(row, 15).getValue() : new Date();
-    const vals = [ticket, vehicle, date_(p.date), g, t, n, din, dout, mins, hhmm_(mins), check, clip_(p.file, 120), pic,
-      row ? sh.getRange(row, 14).getDisplayValue() || user.name : (clip_(p.by, 80) || user.name), enteredAt || new Date(), new Date()];
+    const enteredAt = row ? sh.getRange(row, 16).getValue() : new Date();
+    const company = clip_(p.company, 80);
+    const vals = [ticket, vehicle, company, date_(p.date), g, t, n, din, dout, mins, hhmm_(mins), check, clip_(p.file, 120), pic,
+      row ? sh.getRange(row, 15).getDisplayValue() || user.name : (clip_(p.by, 80) || user.name), enteredAt || new Date(), new Date()];
     if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]);
     else { sh.appendRow(vals); nos.push(ticket); }
     const r = row || sh.getLastRow();
-    sh.getRange(r, 1, 1, 2).setNumberFormat('@').setValues([[ticket, vehicle]]);   // plates stay text
+    sh.getRange(r, 1, 1, 3).setNumberFormat('@').setValues([[ticket, vehicle, company]]);   // plates stay text
     out.push({ id: p.id, ticket: ticket, row: r, replaced: !!row });
   });
   return { saved: out };
