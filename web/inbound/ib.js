@@ -370,7 +370,11 @@
   }
   function renderForm(id) {
     paintTabs('');
-    if (!F || F.id !== (id || '')) F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+    if (!F || F.id !== (id || '')) {
+      F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+      // Finish unloading: Actual GR Qty starts with the Arrival Qty (Kim, 31 Oct 2026)
+      if (id && isLive(F)) F.items.forEach(i => { if (i.grQty === '' || i.grQty == null) i.grQty = i.arrQty; });
+    }
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
