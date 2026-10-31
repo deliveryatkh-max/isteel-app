@@ -201,7 +201,7 @@ function usersCached_() {
 
 // ---------------------------------------------------------------- actions
 function boot_(user) {
-  return { user: { name: user.name, email: user.email, admin: user.admin }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO') };
+  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO') };
 }
 
 const date_ = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)(?:[ T](\d\d):(\d\d)(?::(\d\d))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : ''; };
@@ -225,6 +225,9 @@ function save_(rows, user) {
     const check = g !== '' && t !== '' && n !== '' ? (g - t === n ? 'OK' : 'Gross - Tare = ' + (g - t) + ', Net ' + n) : '';
     const idx = nos.indexOf(ticket);
     const row = idx >= 0 ? idx + 2 : null;
+    // Changing a ticket already in the sheet: Role Reviewer or Admin only (Kim, 31 Oct 2026).
+    if (row && !(user.admin || user.reviewer)) fail_('DENIED', 'Ticket ' + ticket + ' is already in the sheet. Only a Reviewer or Admin can change it.',
+      'ប័ណ្ណ ' + ticket + ' មានក្នុង Sheet រួចហើយ។ មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន។');
     let pic = row ? sh.getRange(row, 13).getDisplayValue() : '';
     if (p.img) pic = savePicture_(p.img, ticket, vehicle) || pic;
     const enteredAt = row ? sh.getRange(row, 15).getValue() : new Date();

@@ -231,7 +231,11 @@
   // ------------------------------------------------------------------ screens
   let screen = () => {};
   // Settings are for admins only (Kim, 31 Oct 2026): Role = admin in Users. Without the Google Sheet link (demo) everyone is admin.
-  const isAdmin = () => !LIVE || !!(BOOT && BOOT.user && BOOT.user.admin);
+  // Without the Google Sheet link (demo) the banner lets you try each role.
+  const demoRole = () => get('de_demo_role') || 'admin';
+  const isAdmin = () => (!LIVE ? demoRole() === 'admin' : !!(BOOT && BOOT.user && BOOT.user.admin));
+  // Edit and Delete of saved tickets: Role Reviewer or Admin only (Kim, 31 Oct 2026).
+  const canEdit = () => (!LIVE ? demoRole() !== 'user' : !!(BOOT && BOOT.user && (BOOT.user.admin || BOOT.user.reviewer)));
   function paintTabs() { const s = $('nav.tabs .tab[data-r="settings"]'); if (s) s.hidden = !isAdmin(); $('nav.tabs').style.gridTemplateColumns = 'repeat(' + $$('nav.tabs .tab:not([hidden])').length + ', 1fr)'; }
   function route() {
     if (BLOCKED) return;
@@ -379,7 +383,7 @@
     else if (m != null && m > 12 * 60) out.push(`<div class="chk warn">⚠️ ${t('ឡាននៅក្នុងរោងចក្រលើស ១២ ម៉ោង', 'Truck was inside more than 12 hours')}</div>`);
     if (f.date && f.inTime && f.inTime.slice(0, 10) !== f.date) out.push(`<div class="chk warn">⚠️ ${t('ថ្ងៃម៉ោងចូល ខុសពីកាលបរិច្ឆេទឯកសារ', 'In date is not the document date')}</div>`);
     const dup = f.ticket && byTicket(f.ticket, EDIT || (cur() && cur().rec));
-    if (dup) out.push(`<div class="chk warn">⚠️ ${t('លេខប័ណ្ណនេះមានក្នុងតារាងរួចហើយ', 'This ticket number is already in the table')} (${esc(dup.vehicle)} · ${showDate(dup.date)}). ${t('រក្សាទុកនឹងជំនួសវា', 'Saving replaces it')}.</div>`);
+    if (dup) out.push(`<div class="chk warn">⚠️ ${t('លេខប័ណ្ណនេះមានក្នុងតារាងរួចហើយ', 'This ticket number is already in the table')} (${esc(dup.vehicle)} · ${showDate(dup.date)}). ${canEdit() ? t('រក្សាទុកនឹងជំនួសវា', 'Saving replaces it') : t('មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន', 'Only a Reviewer or Admin can change it')}.</div>`);
     box.innerHTML = out.join('');
   }
 
@@ -392,6 +396,9 @@
     if (!f) { toast('⚠️ ' + t('សូមផ្ទុកប័ណ្ណថ្លឹងជាមុន', 'Please upload a ticket first')); return null; }
     const miss = missing(f);
     if (miss.length) { paintChecks(); toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); const el = $('#f_' + miss[0]); if (el) el.focus(); return null; }
+    const dup = f.ticket && byTicket(f.ticket, EDIT || (cur() && cur().rec));
+    if (dup && !canEdit()) { toast('⚠️ ' + t('លេខប័ណ្ណនេះមានរួចហើយ។ មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន។', 'This ticket number is already saved. Only a Reviewer or Admin can change it.'), 5000); return null; }
+    if (EDIT && !canEdit()) { EDIT = null; return null; }
     if (EDIT) { const r = RECS.find(x => x.id === EDIT); r.mins = minutes(r); r.sheet = false; r.local = false; r.updatedAt = Date.now(); dropDup(r); saveRecs(); return r; }
     const q = cur();
     let r = q.rec && RECS.find(x => x.id === q.rec);
@@ -578,10 +585,11 @@
           <td><b>${esc(r.vehicle)}</b></td><td>${esc(r.ticket)}</td><td class="r">${kg(r.gross)} kg</td><td class="r">${kg(r.tare)} kg</td><td class="r net">${kg(r.net)} kg</td>
           <td>${showDate(r.date)}</td><td>${showTime(r.inTime)}</td><td>${showTime(r.outTime)}</td><td class="${m > 120 ? 'long' : ''}">${showMin(m)}</td>
           <td class="st"><span title="Google Sheet" class="${r.sheet ? '' : 'off'}">📤</span><span title="${t('ឯកសារ Excel', 'Local file')}" class="${r.local ? '' : 'off'}">💾</span><span title="Email" class="${r.mailed ? '' : 'off'}">✉️</span></td>
-          <td><button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button></td></tr>`; }).join('')}
+          <td>${canEdit() ? `<button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button>` : ''}</td></tr>`; }).join('')}
         </tbody></table>` : `<div class="empty">${t('មិនទាន់មានកំណត់ត្រា', 'No records yet')}</div>`}</div></div>`;
   }
   function wireTable() {
+    if (!canEdit()) return;
     $$('[data-edit]').forEach(b => { b.onclick = () => { grab(); EDIT = b.dataset.edit; if (location.hash !== '#/entry') location.hash = '#/entry'; else renderEntry(); window.scrollTo({ top: 0, behavior: 'smooth' }); }; });
     $$('[data-del]').forEach(b => { b.onclick = () => {
       const r = RECS.find(x => x.id === b.dataset.del); if (!r) return;
@@ -716,7 +724,11 @@
   function paintBanner() {
     const d = $('#demo');
     d.hidden = LIVE;
-    if (!LIVE) d.textContent = t('⚙️ Google Sheet និងអ៊ីមែល មិនទាន់ភ្ជាប់។ ការអាន តារាង និងឯកសារ Excel ប្រើបានហើយ។', '⚙️ Google Sheet and email are not connected yet. Reading, the table and the local Excel file already work.');
+    if (!LIVE) {
+      d.innerHTML = esc(t('⚙️ Google Sheet និងអ៊ីមែល មិនទាន់ភ្ជាប់។', '⚙️ Google Sheet and email are not connected yet.')) +
+        ` · ${t('សាកល្បងជា', 'Try as')} <select id="demoRole">${[['admin', 'Admin'], ['reviewer', 'Reviewer'], ['user', 'User']].map(r => `<option value="${r[0]}" ${demoRole() === r[0] ? 'selected' : ''}>${r[1]}</option>`).join('')}</select>`;
+      $('#demoRole').onchange = e => { set('de_demo_role', e.target.value); EDIT = null; paintTabs(); route(); toast('👤 ' + e.target.selectedOptions[0].text); };
+    }
   }
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   const paintTheme = () => { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; };
