@@ -1,0 +1,700 @@
+// Agent Data Entry (Kim, 31 Oct 2026): weighing ticket image or PDF → the 8 yellow fields → Excel.
+// 1 Upload  2 Review & Edit  3 Save Data to Table / Send to Google Sheet / Save to Local File / Send Excel to Email.
+// Reading is done on this computer by Tesseract (free, no AI service, nothing leaves the browser until you send it).
+// The table lives in this browser (localStorage). The local Excel file is written into a folder Kim picks once
+// (Chrome / Edge on a computer). Google Sheet and email go through the Apps Script in apps-script-dataentry/.
+(function () {
+  'use strict';
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const t = (km, en) => (window.LANG ? LANG.t(km, en) : km);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const set = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { toast('⚠️ ' + t('ទំហំផ្ទុកពេញ', 'Browser storage is full')); } };
+  const CFG = window.DE_CONFIG || {};
+  const LIVE = !!CFG.API_URL;
+  const TOKEN_KEY = 'fr_id_token';      // the sign-in shared by every app on this site
+  const REC_KEY = 'de_records', SET_KEY = 'de_settings', BOOT_KEY = 'de_boot';
+  const VENDOR = new URL('../vendor/', location.href).href;
+
+  // ------------------------------------------------------------------ helpers
+  const pad = n => String(n).padStart(2, '0');
+  const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const today = () => ymd(new Date());
+  const showDate = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? m[3] + '-' + MON[+m[2] - 1] + '-' + m[1] : ''; };
+  const showTime = s => { const m = String(s || '').match(/(\d\d):(\d\d)/); if (!m) return ''; const h = +m[1]; return pad(h % 12 || 12) + ':' + m[2] + (h < 12 ? ' AM' : ' PM'); };
+  const toDate = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)(?:[ T](\d\d):(\d\d)(?::(\d\d))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null; };
+  const minutes = r => { const a = toDate(r.inTime), b = toDate(r.outTime); return a && b && b >= a ? Math.round((b - a) / 60000) : null; };
+  const showMin = m => m == null ? '' : m >= 60 ? Math.floor(m / 60) + ' ' + t('ម៉ោង', 'H') + ' ' + pad(m % 60) + ' ' + t('នាទី', 'MIN') : m + ' ' + t('នាទី', 'MIN');
+  const kg = n => n == null || n === '' || isNaN(n) ? '' : Number(n).toLocaleString('en-US');
+  const toNum = v => { const s = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); return s === '' ? null : Number(s); };
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const decodeJwt = tk => { try { return JSON.parse(decodeURIComponent(escape(atob(tk.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; } };
+  const claims = () => decodeJwt(get(TOKEN_KEY) || '');
+  const signedIn = () => { const c = claims(); return !!(c && c.exp * 1000 > Date.now()); };
+  const me = () => { const c = claims(); return (BOOT && BOOT.user && BOOT.user.name) || (c && c.email) || ''; };
+
+  let toastTimer = 0;
+  function toast(msg, ms) {
+    const el = $('#toast'); el.textContent = msg; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, ms || 2800);
+  }
+  function busy(btn, on) {
+    if (!btn) return;
+    if (on) { btn.dataset.html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="sp"></span>' + btn.innerHTML; }
+    else { btn.disabled = false; if (btn.dataset.html) btn.innerHTML = btn.dataset.html; }
+  }
+
+  // ------------------------------------------------------------------ stored data
+  const FIELDS = ['vehicle', 'ticket', 'gross', 'tare', 'net', 'date', 'inTime', 'outTime'];
+  let RECS = []; try { RECS = JSON.parse(get(REC_KEY) || '[]'); } catch (e) { RECS = []; }
+  let SET = { fileName: 'Weight_Scale_Data.xlsx', emailTo: '', folderName: '' };
+  try { Object.assign(SET, JSON.parse(get(SET_KEY) || '{}')); } catch (e) { /* defaults */ }
+  let BOOT = null; try { BOOT = JSON.parse(get(BOOT_KEY) || 'null'); } catch (e) { BOOT = null; }
+  const saveRecs = () => set(REC_KEY, JSON.stringify(RECS));
+  const saveSet = () => set(SET_KEY, JSON.stringify(SET));
+  const byTicket = (no, skip) => RECS.find(r => r.ticket && r.ticket === no && r.id !== skip);
+  const sorted = () => RECS.slice().sort((a, b) => String(b.inTime || b.date).localeCompare(String(a.inTime || a.date)) || b.savedAt - a.savedAt);
+
+  // The local folder (File System Access API) is kept in IndexedDB so it is picked only once.
+  const idb = () => new Promise((res, rej) => { const q = indexedDB.open('de_db', 1); q.onupgradeneeded = () => q.result.createObjectStore('h'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  const idbGet = async k => { const db = await idb(); return new Promise(res => { const q = db.transaction('h').objectStore('h').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); };
+  const idbPut = async (k, v) => { const db = await idb(); return new Promise(res => { const tx = db.transaction('h', 'readwrite'); tx.objectStore('h').put(v, k); tx.oncomplete = res; tx.onerror = res; }); };
+
+  // ------------------------------------------------------------------ API (Apps Script)
+  async function api(action, payload) {
+    let data;
+    try {
+      const res = await fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token: get(TOKEN_KEY), payload: payload || {} }) });
+      data = await res.json();
+    } catch (e) { throw Object.assign(new Error(t('មិនអាចភ្ជាប់អ៊ីនធឺណិត។ សូមព្យាយាមម្តងទៀត។', 'No connection. Please try again.')), { code: 'NET' }); }
+    if (!data.ok) {
+      const raw = String(data.error || '');
+      const code = (raw.match(/^([A-Z_]+):/) || [])[1] || '';
+      const parts = raw.replace(/^[A-Z_]+:\s*/, '').split(' || ');
+      throw Object.assign(new Error(parts.length > 1 ? t(parts[1], parts[0]) : parts[0]), { code });
+    }
+    if (data.session) set(TOKEN_KEY, data.session);
+    return data.data;
+  }
+  async function boot() {
+    if (!LIVE || !signedIn()) return;
+    try { BOOT = await api('boot'); set(BOOT_KEY, JSON.stringify(BOOT)); if (!SET.emailTo && BOOT.emailTo) { SET.emailTo = BOOT.emailTo; saveSet(); } paintBanner(); }
+    catch (e) { if (e.code === 'AUTH' || e.code === 'NOACCESS') { BOOT = null; set(BOOT_KEY, null); blocked(e); } }
+  }
+  function blocked(e) {
+    $('#view').innerHTML = `<div class="card done"><div class="emoji">🔒</div><h2>${e.code === 'NOACCESS' ? t('មិនទាន់មានសិទ្ធិ', 'No access yet') : t('សូមចូលគណនីនៅទំព័រដើម', 'Please sign in on the home menu')}</h2>
+      <p>${esc(e.message || '')}</p><a class="btn ok" href="../">${t('ទៅទំព័រដើម', 'Go to the home menu')}</a></div>`;
+    BLOCKED = true;
+  }
+  let BLOCKED = false;
+  const needServer = () => { if (LIVE) return true; toast('⚙️ ' + t('Google Sheet មិនទាន់ភ្ជាប់។ មើល ការកំណត់។', 'Google Sheet is not connected yet. See Settings.'), 4000); return false; };
+
+  // ------------------------------------------------------------------ OCR engine (loaded on first use, then cached by the browser)
+  let ocrReady = null;
+  function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load ' + src)); document.head.appendChild(s); }); }
+  function engine() {
+    if (!ocrReady) {
+      ocrReady = (async () => {
+        if (!window.Tesseract) await loadScript(VENDOR + 'tesseract/tesseract.min.js');
+        return Tesseract.createWorker('eng', 1, {
+          workerPath: VENDOR + 'tesseract/worker.min.js', corePath: VENDOR + 'tesseract/', langPath: VENDOR + 'tesseract',
+          gzip: true, workerBlobURL: false, cacheMethod: 'write',
+        });
+      })();
+      ocrReady.catch(() => { ocrReady = null; });
+    }
+    return ocrReady;
+  }
+  let pdfReady = null;
+  function pdfjs() {
+    if (!pdfReady) pdfReady = loadScript(VENDOR + 'pdfjs/pdf.min.js').then(() => { pdfjsLib.GlobalWorkerOptions.workerSrc = VENDOR + 'pdfjs/pdf.worker.min.js'; return pdfjsLib; });
+    pdfReady.catch(() => { pdfReady = null; });
+    return pdfReady;
+  }
+
+  // Black and white copy for reading: the yellow marker and grey paper turn white, ink stays black.
+  function forOcr(src) {
+    const W0 = src.width, H0 = src.height;
+    let k = 1;
+    if (W0 < 1500) k = Math.min(4, 1600 / W0); else if (W0 > 2600) k = 2400 / W0;
+    const c = document.createElement('canvas'); c.width = Math.round(W0 * k); c.height = Math.round(H0 * k);
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingQuality = 'high'; x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
+    const img = x.getImageData(0, 0, c.width, c.height), d = img.data;
+    const hist = new Array(256).fill(0);
+    for (let i = 0; i < d.length; i += 4) { const g = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]); d[i] = g; hist[g]++; }
+    // Otsu threshold, kept between 110 and 185 so a few dark marks do not wash out the text.
+    const total = c.width * c.height; let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sB = 0, wB = 0, best = 0, th = 150;
+    for (let i = 0; i < 256; i++) { wB += hist[i]; if (!wB) continue; const wF = total - wB; if (!wF) break; sB += i * hist[i]; const mB = sB / wB, mF = (sum - sB) / wF; const v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; th = i; } }
+    th = Math.max(110, Math.min(185, th));
+    for (let i = 0; i < d.length; i += 4) { const v = d[i] > th ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; }
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // ------------------------------------------------------------------ upload queue
+  // One item per image or PDF page: { id, name, url (preview), canvas, state: wait|reading|done|err|saved, f (fields), checks, raw, rec (saved record id) }
+  let Q = [], CUR = -1, EDIT = null;   // EDIT = id of a saved record opened from the table
+  const cur = () => (CUR >= 0 ? Q[CUR] : null);
+
+  async function addFiles(files) {
+    files = Array.from(files || []).filter(f => /^image\//.test(f.type) || /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
+    if (!files.length) { toast('⚠️ ' + t('សូមជ្រើសរូបភាព ឬ PDF', 'Please choose an image or a PDF')); return; }
+    engine();   // start loading the reader now
+    const first = Q.length;
+    for (const f of files) {
+      try {
+        if (/pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)) {
+          const lib = await pdfjs();
+          const doc = await lib.getDocument({ data: await f.arrayBuffer() }).promise;
+          for (let p = 1; p <= Math.min(doc.numPages, 50); p++) {
+            const page = await doc.getPage(p);
+            const v1 = page.getViewport({ scale: 1 });
+            const vp = page.getViewport({ scale: Math.min(4, 2200 / v1.width) });
+            const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+            const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+            await page.render({ canvasContext: x, viewport: vp }).promise;
+            Q.push(item(f.name + (doc.numPages > 1 ? ' · p' + p : ''), c));
+          }
+        } else {
+          const bmp = await loadImage(f);
+          const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+          c.getContext('2d').drawImage(bmp, 0, 0);
+          Q.push(item(f.name, c));
+        }
+      } catch (e) { console.error(e); toast('⚠️ ' + t('មិនអាចបើក ', 'Could not open ') + f.name); }
+    }
+    if (Q.length > first) { CUR = first; EDIT = null; renderEntry(); readAll(); }
+  }
+  function loadImage(f) {
+    return new Promise((res, rej) => { const u = URL.createObjectURL(f); const i = new Image(); i.onload = () => { res(i); }; i.onerror = () => rej(new Error('image')); i.src = u; });
+  }
+  function item(name, canvas) {
+    return { id: uid(), name, canvas, url: preview(canvas), state: 'wait', f: blank(), checks: {}, raw: null, rec: null };
+  }
+  // Smaller JPEG for the screen, the table and Drive (max 1400 px wide).
+  function preview(c) {
+    const k = Math.min(1, 1400 / c.width);
+    if (k === 1) return c.toDataURL('image/jpeg', 0.8);
+    const s = document.createElement('canvas'); s.width = Math.round(c.width * k); s.height = Math.round(c.height * k);
+    const x = s.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, s.width, s.height);
+    return s.toDataURL('image/jpeg', 0.8);
+  }
+  const blank = () => ({ vehicle: '', ticket: '', gross: '', tare: '', net: '', date: '', inTime: '', outTime: '' });
+
+  // Read the waiting tickets one after another (the one on screen first).
+  let reading = false;
+  async function readAll() {
+    if (reading) return; reading = true;
+    try {
+      for (;;) {
+        const c = cur();
+        const next = c && c.state === 'wait' ? c : Q.find(q => q.state === 'wait');
+        if (!next) break;
+        await readOne(next);
+      }
+    } finally { reading = false; }
+  }
+  async function readOne(q) {
+    q.state = 'reading'; paintQueue(); progress(q, 0.02, t('កំពុងរៀបចំកម្មវិធីអាន…', 'Getting the reader ready…'));
+    try {
+      const w = await engine();
+      const img = forOcr(q.canvas);
+      const r = await TicketOCR.read(w, img, img.width, img.height, (p, step) => progress(q, p, stepName(step)));
+      const f = r.fields;
+      q.f = { vehicle: f.vehicle || '', ticket: f.ticket || '', gross: f.gross == null ? '' : f.gross, tare: f.tare == null ? '' : f.tare, net: f.net == null ? '' : f.net,
+        date: f.date || '', inTime: f.inTime || '', outTime: f.outTime || '' };
+      q.checks = r.checks; q.raw = r.raw; q.state = 'done';
+      progress(q, 1, r.anchors >= 2 ? '✅ ' + t('អានរួច។ សូមពិនិត្យលេខក្នុងជំហាន ២។', 'Read. Please check the values in step 2.')
+        : '⚠️ ' + t('រកមិនឃើញទម្រង់ប័ណ្ណថ្លឹង។ សូមពិនិត្យ ឬវាយបញ្ចូលដោយដៃ។', 'This does not look like the usual weighing ticket. Please check or type the values.'));
+    } catch (e) {
+      console.error(e); q.state = 'err';
+      progress(q, 0, '⚠️ ' + t('អានមិនបាន។ សូមវាយបញ្ចូលដោយដៃ។', 'Could not read it. Please type the values.') + ' (' + (e.message || e) + ')');
+    }
+    paintQueue();
+    if (q === cur() && !EDIT) paintForm();
+  }
+  const stepName = s => ({ page: t('កំពុងអានទំព័រ…', 'Reading the page…'), date: t('កាលបរិច្ឆេទ', 'Date'), vehicle: t('លេខឡាន', 'Vehicle no'), ticket: t('លេខប័ណ្ណ', 'Ticket no'),
+    gross: 'Gross', tare: 'Tare', net: 'Net', inTime: t('ម៉ោងចូល', 'In time'), outTime: t('ម៉ោងចេញ', 'Out time'), done: '' }[s] || s);
+  function progress(q, p, msg) {
+    q.p = p; q.msg = msg;
+    if (q !== cur()) return;
+    const bar = $('#pbar'), m = $('#pmsg');
+    if (bar) bar.style.width = Math.round(p * 100) + '%';
+    if (m) m.textContent = msg || '';
+    const b = $('#extractBtn'); if (b) b.disabled = q.state === 'reading';
+  }
+
+  // ------------------------------------------------------------------ screens
+  let screen = () => {};
+  function route() {
+    if (BLOCKED) return;
+    const h = location.hash.replace(/^#\/?/, '') || 'entry';
+    $$('nav.tabs .tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === h));
+    if (h === 'report') return renderReport();
+    if (h === 'settings') return renderSettings();
+    return renderEntry();
+  }
+
+  // ---------- Data Entry ----------
+  function renderEntry() {
+    screen = renderEntry;
+    const q = cur();
+    const er = EDIT && RECS.find(x => x.id === EDIT);
+    const pic = er ? er.img : q && q.url;
+    $('#view').innerHTML = `
+      <div class="de-grid">
+        <div class="de-col">
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">1</span>${t('ផ្ទុកប័ណ្ណថ្លឹង', 'Upload Ticket')}</span>
+            ${Q.length > 1 ? `<small>${CUR + 1} / ${Q.length}</small>` : ''}</h2>
+            <div class="cb">
+              ${er && !pic ? `<div class="empty">🖼️ ${t('រូបភាពមិនបានរក្សាទុកក្នុងកុំព្យូទ័រនេះ', 'The picture is not kept on this computer')} (${esc(er.file || '')})</div>` : ''}
+              ${pic ? `<div class="prev"><img id="prevImg" src="${pic}" alt="">${er ? '' : `<button type="button" class="x" id="clearBtn" title="${t('ដកចេញ', 'Remove')}">✕</button>`}<span class="pg">${esc(er ? er.file || er.ticket : q.name)}</span></div>`
+                : er ? ''
+                : `<div class="drop" id="drop"><div class="big">📄</div><b>${t('ចុចដើម្បីជ្រើសរូបភាព ឬ PDF', 'Click to choose an image or PDF')}</b>
+                   <span>${t('ឬអូសឯកសារមកទីនេះ · ឬ Ctrl+V បិទភ្ជាប់រូបថតអេក្រង់', 'or drag files here · or Ctrl+V to paste a screenshot')}</span>
+                   <span>${t('អាចជ្រើសច្រើនក្នុងពេលតែមួយ', 'You can choose many at once')}</span></div>`}
+              <div class="queue" id="queue"></div>
+            </div>
+          </section>
+          <section class="card"><div class="cb">
+            <button type="button" class="btn extract" id="extractBtn" ${q ? '' : 'disabled'}>🔍 ${t('ទាញទិន្នន័យ', 'Extract Data')}</button>
+            <div class="progress"><i id="pbar"></i></div><div class="pmsg" id="pmsg"></div>
+          </div></section>
+        </div>
+        <div class="de-col">
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">2</span>${t('ពិនិត្យ និងកែទិន្នន័យ', 'Review & Edit Data')}</span>${EDIT ? `<small>✎ ${t('កំពុងកែកំណត់ត្រា', 'Editing a saved record')}</small>` : ''}</h2>
+            <div class="cb"><div class="fgrid" id="form">
+              ${fld('vehicle', t('លេខឡាន', 'Vehicle No'), 'text', 'plate')}
+              ${fld('ticket', t('លេខប័ណ្ណ', 'Ticket No.'), 'text', '', 'numeric')}
+              ${fld('gross', t('ទម្ងន់សរុប (គ.ក)', 'Gross (kg)'), 'text', '', 'numeric')}
+              ${fld('tare', t('ទម្ងន់យាន្ត (គ.ក)', 'Tare (kg)'), 'text', '', 'numeric')}
+              ${fld('net', t('ទម្ងន់សុទ្ធ (គ.ក)', 'Net (kg)'), 'text', '', 'numeric')}
+              ${fld('date', t('កាលបរិច្ឆេទឯកសារ', 'Document Date'), 'date')}
+              ${fld('inTime', t('ម៉ោងចូល', 'In Date/Time'), 'datetime-local')}
+              ${fld('outTime', t('ម៉ោងចេញ', 'Out Date/Time'), 'datetime-local')}
+              <div><label>${t('រយៈពេលសរុប', 'Total Time')}</label><input class="in auto" id="f_total" readonly tabindex="-1"></div>
+            </div><div class="checks" id="checks"></div></div>
+          </section>
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">3</span>${t('រក្សាទុក និងបញ្ជូន', 'Export & Save Actions')}</span></h2>
+            <div class="cb">
+              <div class="acts">
+                <button type="button" class="btn b-save" id="aSave">＋ ${t('រក្សាទុកក្នុងតារាង', 'Save Data to Table')}</button>
+                <button type="button" class="btn b-sheet" id="aSheet">📤 ${t('ផ្ញើទៅ Google Sheet', 'Send to Google Sheet')}</button>
+                <button type="button" class="btn b-file" id="aFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
+                <button type="button" class="btn b-mail" id="aMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
+              </div>
+              <div id="panel"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      ${tableCard(sorted().slice(0, 30), t('កំណត់ត្រាក្នុងកុំព្យូទ័រនេះ', 'Local Data Records'), RECS.length)}`;
+    wireEntry();
+    paintQueue(); paintForm();
+    if (q) progress(q, q.p || 0, q.msg || '');
+  }
+  function fld(k, label, type, cls, mode) {
+    return `<div><label for="f_${k}">${label} <span class="req">*</span></label><input class="in ${cls || ''}" id="f_${k}" data-k="${k}" type="${type}" ${type === 'datetime-local' ? 'step="1"' : ''} ${mode ? `inputmode="${mode}"` : ''} autocomplete="off"></div>`;
+  }
+  function wireEntry() {
+    const drop = $('#drop');
+    if (drop) {
+      drop.onclick = () => $('#fileIn').click();
+      drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+      drop.ondragleave = () => drop.classList.remove('over');
+      drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+    }
+    const clear = $('#clearBtn');
+    if (clear) clear.onclick = () => { Q.splice(CUR, 1); CUR = Math.min(CUR, Q.length - 1); EDIT = null; renderEntry(); };
+    const pi = $('#prevImg'); if (pi) pi.onclick = () => zoom(pi.src);
+    $('#extractBtn').onclick = () => { const q = cur(); if (!q) return; q.state = 'wait'; EDIT = null; readAll(); };
+    $$('#form .in[data-k]').forEach(el => { el.oninput = () => { grab(); paintChecks(); }; });
+    $('#f_vehicle').onblur = e => { e.target.value = e.target.value.toUpperCase().trim(); grab(); };
+    ['gross', 'tare', 'net', 'ticket'].forEach(k => { $('#f_' + k).onblur = e => { const n = toNum(e.target.value); e.target.value = n == null ? '' : (k === 'ticket' ? String(n) : kg(n)); grab(); paintChecks(); }; });
+    $('#aSave').onclick = () => act('table', $('#aSave'));
+    $('#aSheet').onclick = () => act('sheet', $('#aSheet'));
+    $('#aFile').onclick = () => act('file', $('#aFile'));
+    $('#aMail').onclick = () => mailPanel();
+    wireTable();
+  }
+  function paintQueue() {
+    const el = $('#queue'); if (!el) return;
+    if (!Q.length) { el.innerHTML = ''; return; }
+    el.innerHTML = Q.map((q, i) => {
+      const st = q.state === 'saved' ? ['saved', '✓'] : q.state === 'done' ? ['done', '•'] : q.state === 'err' ? ['err', '!'] : q.state === 'reading' ? ['', '…'] : ['', ''];
+      return `<button type="button" data-q="${i}" class="${i === CUR ? 'on' : ''}" style="background-image:url('${q.url}')" title="${esc(q.name)}">${st[1] ? `<em class="qs ${st[0]}">${st[1]}</em>` : ''}</button>`;
+    }).join('') + `<button type="button" class="add" id="addMore" title="${t('បន្ថែម', 'Add more')}">＋</button>`;
+    $$('[data-q]', el).forEach(b => { b.onclick = () => { grab(); CUR = +b.dataset.q; EDIT = null; renderEntry(); }; });
+    $('#addMore').onclick = () => $('#fileIn').click();
+  }
+  // Values on screen <-> the current ticket (or the saved record being edited).
+  function formTarget() { if (EDIT) { const r = RECS.find(x => x.id === EDIT); return r || null; } const q = cur(); return q ? q.f : null; }
+  function paintForm() {
+    const f = formTarget() || blank();
+    FIELDS.forEach(k => {
+      const el = $('#f_' + k); if (!el) return;
+      let v = f[k] == null ? '' : f[k];
+      if (k === 'inTime' || k === 'outTime') v = String(v).replace(' ', 'T');
+      if (['gross', 'tare', 'net'].indexOf(k) >= 0 && v !== '') v = kg(v);
+      el.value = v;
+      el.classList.remove('unsure');
+    });
+    const q = cur();
+    if (!EDIT && q && q.state === 'done' && q.raw) {   // boxes the reader could not read itself are marked yellow
+      FIELDS.forEach(k => { const raw = q.raw[k] || ''; if (!raw && $('#f_' + k)) $('#f_' + k).classList.add('unsure'); });
+    }
+    paintChecks();
+  }
+  function grab() {
+    const f = formTarget(); if (!f || !$('#form')) return;
+    FIELDS.forEach(k => {
+      const el = $('#f_' + k); if (!el) return;
+      let v = el.value.trim();
+      if (k === 'vehicle') v = v.toUpperCase();
+      if (['gross', 'tare', 'net'].indexOf(k) >= 0) v = toNum(v) == null ? '' : toNum(v);
+      if (k === 'ticket') v = v.replace(/[^0-9A-Za-z\-]/g, '');
+      if ((k === 'inTime' || k === 'outTime') && v) { v = v.replace('T', ' '); if (v.length === 16) v += ':00'; }
+      f[k] = v;
+    });
+  }
+  function paintChecks() {
+    const f = formTarget();
+    FIELDS.forEach(k => { const el = $('#f_' + k); if (el) el.classList.toggle('need', !!f && !el.value.trim()); });
+    const box = $('#checks'); if (!box) return;
+    if (!f) { box.innerHTML = ''; $('#f_total').value = ''; return; }
+    const m = minutes(f);
+    $('#f_total').value = showMin(m);
+    const out = [];
+    const g = toNum(f.gross), ta = toNum(f.tare), n = toNum(f.net);
+    if (g != null && ta != null && n != null) {
+      out.push(g - ta === n ? `<div class="chk ok">✓ Gross − Tare = Net (${kg(g)} − ${kg(ta)} = ${kg(n)})</div>`
+        : `<div class="chk bad">⚠️ Gross − Tare = ${kg(g - ta)}, ${t('តែ Net គឺ', 'but Net is')} ${kg(n)}. ${t('សូមពិនិត្យលេខ', 'Please check the numbers')}.</div>`);
+    }
+    if (f.inTime && f.outTime && m == null) out.push(`<div class="chk bad">⚠️ ${t('ម៉ោងចេញមុនម៉ោងចូល', 'Out time is before In time')}</div>`);
+    else if (m != null && m > 12 * 60) out.push(`<div class="chk warn">⚠️ ${t('ឡាននៅក្នុងរោងចក្រលើស ១២ ម៉ោង', 'Truck was inside more than 12 hours')}</div>`);
+    if (f.date && f.inTime && f.inTime.slice(0, 10) !== f.date) out.push(`<div class="chk warn">⚠️ ${t('ថ្ងៃម៉ោងចូល ខុសពីកាលបរិច្ឆេទឯកសារ', 'In date is not the document date')}</div>`);
+    const dup = f.ticket && byTicket(f.ticket, EDIT || (cur() && cur().rec));
+    if (dup) out.push(`<div class="chk warn">⚠️ ${t('លេខប័ណ្ណនេះមានក្នុងតារាងរួចហើយ', 'This ticket number is already in the table')} (${esc(dup.vehicle)} · ${showDate(dup.date)}). ${t('រក្សាទុកនឹងជំនួសវា', 'Saving replaces it')}.</div>`);
+    box.innerHTML = out.join('');
+  }
+
+  // ------------------------------------------------------------------ Save / send
+  function missing(f) { return FIELDS.filter(k => f[k] === '' || f[k] == null); }
+  // Puts the ticket on screen into the table (new or replacing the same ticket number). Returns the record.
+  function toTable() {
+    grab();
+    const f = formTarget();
+    if (!f) { toast('⚠️ ' + t('សូមផ្ទុកប័ណ្ណថ្លឹងជាមុន', 'Please upload a ticket first')); return null; }
+    const miss = missing(f);
+    if (miss.length) { paintChecks(); toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); const el = $('#f_' + miss[0]); if (el) el.focus(); return null; }
+    if (EDIT) { const r = RECS.find(x => x.id === EDIT); r.mins = minutes(r); r.sheet = false; r.local = false; r.updatedAt = Date.now(); dropDup(r); saveRecs(); return r; }
+    const q = cur();
+    let r = q.rec && RECS.find(x => x.id === q.rec);
+    if (!r) { r = { id: uid(), savedAt: Date.now(), by: me(), file: q.name }; RECS.push(r); q.rec = r.id; }
+    Object.assign(r, f, { mins: minutes(f), sheet: false, local: false, updatedAt: Date.now(), img: q.url });
+    dropDup(r); stripImages();
+    q.state = 'saved';
+    try { saveRecs(); } catch (e) { /* toast in set() */ }
+    return r;
+  }
+  function dropDup(r) { RECS = RECS.filter(x => x.id === r.id || x.ticket !== r.ticket); }
+  // The ticket image is kept only until it is in the Google Sheet (it goes to Drive), so the browser does not fill up.
+  function stripImages() {
+    RECS.forEach(r => { if (r.sheet && r.img) delete r.img; });
+    const withImg = RECS.filter(r => r.img).sort((a, b) => b.updatedAt - a.updatedAt);
+    withImg.slice(15).forEach(r => { delete r.img; });
+  }
+
+  async function act(kind, btn) {
+    const r = toTable(); if (!r) return;
+    if (kind === 'table') { stripImages(); saveRecs(); toast('✅ ' + t('បានរក្សាទុកក្នុងតារាង', 'Saved to the table') + ' · ' + r.ticket); return next(); }
+    if (kind === 'sheet') { if (!needServer()) { renderEntry(); return; } busy(btn, true); try { await toSheet([r]); toast('✅ ' + t('បានផ្ញើទៅ Google Sheet', 'Sent to the Google Sheet') + ' · ' + r.ticket); next(); } catch (e) { toast('⚠️ ' + e.message, 5000); renderEntry(); } return; }
+    if (kind === 'file') { busy(btn, true); try { const n = await toLocalFile([r]); if (n) { toast('✅ ' + t('បានរក្សាទុកក្នុង ', 'Saved in ') + n, 4000); next(); } else renderEntry(); } catch (e) { console.error(e); toast('⚠️ ' + e.message, 6000); renderEntry(); } return; }
+  }
+  // After saving: the next ticket that is not saved yet, or an empty form.
+  function next() {
+    EDIT = null;
+    const i = Q.findIndex((q, j) => j > CUR && q.state !== 'saved');
+    const k = i >= 0 ? i : Q.findIndex(q => q.state !== 'saved');
+    if (k >= 0) CUR = k; else { Q = []; CUR = -1; }
+    renderEntry();
+    readAll();
+  }
+
+  async function toSheet(list) {
+    const rows = list.map(r => ({ id: r.id, ticket: r.ticket, vehicle: r.vehicle, date: r.date, gross: r.gross, tare: r.tare, net: r.net, inTime: r.inTime, outTime: r.outTime, mins: minutes(r), file: r.file || '', by: r.by || me(), img: r.img || '' }));
+    const out = [];
+    for (let i = 0; i < rows.length; i += 10) out.push(await api('save', { rows: rows.slice(i, i + 10) }));   // 10 at a time keeps each call small
+    list.forEach(r => { r.sheet = true; r.sentAt = Date.now(); });
+    stripImages(); saveRecs();
+    return out;
+  }
+
+  // ---------- Excel ----------
+  const XCOLS = ['Ticket No', 'Vehicle No', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time', 'Total Time (min)', 'Total Time', 'Source File', 'Entered By', 'Entered At'];
+  const hhmm = m => (m == null ? '' : Math.floor(m / 60) + ':' + pad(m % 60));
+  function xRow(r) {
+    const m = minutes(r);
+    return [r.ticket, r.vehicle, toDate(r.date), toNum(r.gross), toNum(r.tare), toNum(r.net), toDate(r.inTime), toDate(r.outTime), m, hhmm(m), r.file || '', r.by || '', new Date(r.updatedAt || r.savedAt || Date.now())];
+  }
+  function sheetOf(rows) {
+    const ws = XLSX.utils.aoa_to_sheet([XCOLS].concat(rows), { cellDates: true });
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = 1; R <= range.e.r; R++) {
+      const fm = { 2: 'dd-mmm-yyyy', 3: '#,##0', 4: '#,##0', 5: '#,##0', 6: 'dd-mmm-yyyy hh:mm:ss', 7: 'dd-mmm-yyyy hh:mm:ss', 12: 'dd-mmm-yyyy hh:mm' };
+      Object.keys(fm).forEach(C => { const c = ws[XLSX.utils.encode_cell({ r: R, c: +C })]; if (c && c.v !== '' && c.v != null) c.z = fm[C]; });
+      const tk = ws[XLSX.utils.encode_cell({ r: R, c: 0 })]; if (tk) { tk.t = 's'; tk.v = String(tk.v); }
+    }
+    ws['!cols'] = [12, 12, 14, 11, 11, 11, 20, 20, 10, 10, 26, 22, 18].map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: ws['!ref'] };
+    return ws;
+  }
+  function workbook(list) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheetOf(list.map(xRow)), 'Weighing Tickets');
+    return wb;
+  }
+  const xlsxBytes = wb => XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+  function download(list, name) {
+    const blob = new Blob([xlsxBytes(workbook(list))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  }
+
+  // Local file: one Excel file in the folder Kim picked (e.g. ...\00. Data Warehouse\Weight Scale Data).
+  // Rows already in the file stay; a ticket number already there is replaced by the new values.
+  const canFolder = () => typeof window.showDirectoryPicker === 'function';
+  async function folder(ask) {
+    let dir = await idbGet('dir').catch(() => null);
+    if (dir) {
+      let p = await dir.queryPermission({ mode: 'readwrite' });
+      if (p !== 'granted' && ask) p = await dir.requestPermission({ mode: 'readwrite' });
+      if (p === 'granted') return dir;
+      if (!ask) return null;
+    }
+    if (!ask) return null;
+    dir = await window.showDirectoryPicker({ id: 'weight-scale', mode: 'readwrite' });
+    await idbPut('dir', dir); SET.folderName = dir.name; saveSet();
+    return dir;
+  }
+  async function toLocalFile(list) {
+    const name = (SET.fileName || 'Weight_Scale_Data.xlsx').replace(/[\\/:*?"<>|]/g, '').replace(/(\.xlsx)?$/i, '.xlsx');
+    if (!canFolder()) {   // phone, Safari, Firefox: download instead
+      download(list, name);
+      list.forEach(r => { r.local = true; }); saveRecs();
+      toast('⬇️ ' + t('កម្មវិធីរុករកនេះមិនអាចសរសេរក្នុង folder បានទេ៖ បានទាញយកជំនួស', 'This browser cannot write to a folder: downloaded instead'), 5000);
+      return name;
+    }
+    let dir;
+    try { dir = await folder(true); } catch (e) { if (e.name === 'AbortError') return null; throw e; }
+    if (!dir) return null;
+    const fh = await dir.getFileHandle(name, { create: true });
+    let rows = [];
+    const file = await fh.getFile();
+    if (file.size) {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const ws = wb.Sheets['Weighing Tickets'] || wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      const head = (aoa[0] || []).map(String);
+      const ix = XCOLS.map(c => head.indexOf(c));
+      rows = aoa.slice(1).filter(r => r.some(v => v !== '')).map(r => ix.map(i => (i >= 0 ? r[i] : '')));
+    }
+    const keep = new Set(list.map(r => String(r.ticket)));
+    rows = rows.filter(r => !keep.has(String(r[0])));
+    rows = rows.concat(list.map(xRow));
+    rows.sort((a, b) => (a[6] instanceof Date && b[6] instanceof Date ? a[6] - b[6] : 0));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, sheetOf(rows), 'Weighing Tickets');
+    let w;
+    try { w = await fh.createWritable(); } catch (e) { throw new Error(t('ឯកសារ Excel កំពុងបើក។ សូមបិទវាក្នុង Excel ហើយព្យាយាមម្តងទៀត។', 'The Excel file is open. Close it in Excel and try again.')); }
+    await w.write(new Blob([xlsxBytes(wb)])); await w.close();
+    list.forEach(r => { r.local = true; }); saveRecs();
+    return dir.name + '\\' + name;
+  }
+
+  // ---------- Email ----------
+  function mailPanel(fromReport) {
+    const box = $('#panel'); if (!box) return;
+    if (box.innerHTML) { box.innerHTML = ''; return; }
+    const q = cur();
+    box.innerHTML = `<div class="panel">
+      <label class="f" for="mTo">${t('ផ្ញើទៅ (អ៊ីមែល បំបែកដោយក្បៀស)', 'Send to (emails, comma separated)')} <span class="req">*</span></label>
+      <input class="in" id="mTo" type="text" inputmode="email" value="${esc(SET.emailTo || '')}" placeholder="name@isi-group.com">
+      <div class="row">
+        <select class="in" id="mWhich" style="width:auto">
+          ${!fromReport && (q || EDIT) ? `<option value="this">${t('ប័ណ្ណនេះ', 'This ticket')}</option>` : ''}
+          ${fromReport ? `<option value="shown">${t('ដែលបង្ហាញក្នុងរបាយការណ៍', 'Shown in the report')}</option>` : ''}
+          <option value="today">${t('ថ្ងៃនេះ', 'Today')} (${RECS.filter(r => r.date === today()).length})</option>
+          <option value="new">${t('មិនទាន់ផ្ញើ', 'Not emailed yet')} (${RECS.filter(r => !r.mailed).length})</option>
+          <option value="all">${t('ទាំងអស់', 'All records')} (${RECS.length})</option>
+        </select>
+        <button type="button" class="btn ok sm" id="mSend">✉️ ${t('ផ្ញើ', 'Send')}</button>
+        <button type="button" class="btn sm" id="mDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
+      </div></div>`;
+    const pick = () => {
+      const w = $('#mWhich').value;
+      if (w === 'this') { const r = toTable(); return r ? [r] : null; }
+      if (w === 'shown') return REPORT_ROWS;
+      if (w === 'today') return RECS.filter(r => r.date === today());
+      if (w === 'new') return RECS.filter(r => !r.mailed);
+      return RECS.slice();
+    };
+    $('#mDl').onclick = () => { const l = pick(); if (!l || !l.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); download(l, 'Weighing_Tickets_' + today() + '.xlsx'); };
+    $('#mSend').onclick = async () => {
+      const to = $('#mTo').value.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      $('#mTo').classList.toggle('need', !to.length);
+      if (!to.length) return toast('⚠️ ' + t('សូមវាយអ៊ីមែល', 'Please type an email'));
+      if (to.some(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) return toast('⚠️ ' + t('អ៊ីមែលមិនត្រឹមត្រូវ', 'An email address is not valid'));
+      const l = pick(); if (!l) return; if (!l.length) return toast(t('គ្មានកំណត់ត្រា', 'No records'));
+      if (!needServer()) return;
+      const btn = $('#mSend'); busy(btn, true);
+      try {
+        const bytes = xlsxBytes(workbook(l));
+        let bin = ''; const u8 = new Uint8Array(bytes); for (let i = 0; i < u8.length; i += 8192) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
+        const sum = l.reduce((s, r) => s + (toNum(r.net) || 0), 0);
+        await api('email', { to, fileName: 'Weighing_Tickets_' + today() + '.xlsx', xlsx: btoa(bin), count: l.length, net: sum,
+          first: l.map(r => r.date).sort()[0], last: l.map(r => r.date).sort().slice(-1)[0] });
+        l.forEach(r => { r.mailed = true; }); saveRecs();
+        SET.emailTo = to.join(', '); saveSet();
+        toast('✅ ' + t('បានផ្ញើអ៊ីមែល ', 'Email sent: ') + l.length + t(' ប័ណ្ណ', ' tickets'), 4000);
+        $('#panel').innerHTML = '';
+      } catch (e) { toast('⚠️ ' + e.message, 5000); } finally { busy(btn, false); }
+    };
+  }
+
+  // ---------- Records table ----------
+  function tableCard(list, title, total) {
+    return `<div class="tcard"><div class="thead"><b>🗂️ ${title}</b><span class="cnt">${total} ${t('កំណត់ត្រា', total === 1 ? 'Record' : 'Records')}</span></div>
+      <div class="tscroll">${list.length ? `<table class="rec"><thead><tr>
+        <th>${t('លេខឡាន', 'Vehicle No')}</th><th>${t('លេខប័ណ្ណ', 'Ticket No')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th>
+        <th>${t('កាលបរិច្ឆេទ', 'Document Date')}</th><th>${t('ម៉ោងចូល', 'In Time')}</th><th>${t('ម៉ោងចេញ', 'Out Time')}</th><th>${t('រយៈពេល', 'Total Time')}</th>
+        <th title="${t('តារាង · Google Sheet · ឯកសារ · អ៊ីមែល', 'Table · Google Sheet · Local file · Email')}">${t('ស្ថានភាព', 'Sent')}</th><th></th></tr></thead><tbody>
+        ${list.map(r => { const m = minutes(r); return `<tr class="${r.id === EDIT ? 'cur' : ''}">
+          <td><b>${esc(r.vehicle)}</b></td><td>${esc(r.ticket)}</td><td class="r">${kg(r.gross)} kg</td><td class="r">${kg(r.tare)} kg</td><td class="r net">${kg(r.net)} kg</td>
+          <td>${showDate(r.date)}</td><td>${showTime(r.inTime)}</td><td>${showTime(r.outTime)}</td><td class="${m > 120 ? 'long' : ''}">${showMin(m)}</td>
+          <td class="st"><span title="Google Sheet" class="${r.sheet ? '' : 'off'}">📤</span><span title="${t('ឯកសារ Excel', 'Local file')}" class="${r.local ? '' : 'off'}">💾</span><span title="Email" class="${r.mailed ? '' : 'off'}">✉️</span></td>
+          <td><button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button></td></tr>`; }).join('')}
+        </tbody></table>` : `<div class="empty">${t('មិនទាន់មានកំណត់ត្រា', 'No records yet')}</div>`}</div></div>`;
+  }
+  function wireTable() {
+    $$('[data-edit]').forEach(b => { b.onclick = () => { grab(); EDIT = b.dataset.edit; if (location.hash !== '#/entry') location.hash = '#/entry'; else renderEntry(); window.scrollTo({ top: 0, behavior: 'smooth' }); }; });
+    $$('[data-del]').forEach(b => { b.onclick = () => {
+      const r = RECS.find(x => x.id === b.dataset.del); if (!r) return;
+      if (!confirm(t('លុបប័ណ្ណ ', 'Delete ticket ') + r.ticket + ' (' + r.vehicle + ')?' + (r.sheet ? t('\nវានៅតែមានក្នុង Google Sheet។', '\nIt stays in the Google Sheet.') : ''))) return;
+      RECS = RECS.filter(x => x.id !== r.id); if (EDIT === r.id) EDIT = null; saveRecs(); screen();
+    }; });
+  }
+
+  // ---------- Report ----------
+  let REPORT_ROWS = [];
+  const RF = { from: '', to: '', q: '' };
+  function renderReport() {
+    screen = renderReport;
+    if (!RF.from) { const d = new Date(); d.setDate(1); RF.from = ymd(d); RF.to = today(); }
+    const ql = RF.q.toLowerCase();
+    REPORT_ROWS = sorted().filter(r => (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
+    const L = REPORT_ROWS, ms = L.map(minutes).filter(m => m != null);
+    const net = L.reduce((s, r) => s + (toNum(r.net) || 0), 0);
+    const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
+    const trucks = new Set(L.map(r => r.vehicle)).size;
+    const notSheet = RECS.filter(r => !r.sheet).length;
+    $('#view').innerHTML = `
+      <div class="fbar">
+        <div><label for="rFrom">${t('ពីថ្ងៃ', 'From')}</label><input class="in" type="date" id="rFrom" value="${RF.from}"></div>
+        <div><label for="rTo">${t('ដល់ថ្ងៃ', 'To')}</label><input class="in" type="date" id="rTo" value="${RF.to}"></div>
+        <div class="grow"><label for="rQ">${t('ស្វែងរក (លេខឡាន លេខប័ណ្ណ)', 'Search (vehicle, ticket)')}</label><input class="in" id="rQ" value="${esc(RF.q)}" placeholder="3B5956"></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><small>${t('ប័ណ្ណថ្លឹង', 'Tickets')}</small><b>${L.length}</b></div>
+        <div class="stat"><small>${t('ឡាន', 'Trucks')}</small><b>${trucks}</b></div>
+        <div class="stat"><small>${t('ទម្ងន់សុទ្ធសរុប', 'Total net')}</small><b>${(net / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}<em>t</em></b></div>
+        <div class="stat"><small>${t('រយៈពេលមធ្យមក្នុងរោងចក្រ', 'Avg time inside')}</small><b>${avg == null ? '–' : avg}<em>${t('នាទី', 'min')}</em></b></div>
+        <div class="stat"><small>${t('យូរជាងគេ', 'Longest')}</small><b>${ms.length ? Math.max.apply(null, ms) : '–'}<em>${t('នាទី', 'min')}</em></b></div>
+      </div>
+      <div class="btnrow">
+        <button type="button" class="btn sm" id="rDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
+        <button type="button" class="btn sm" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
+        <button type="button" class="btn sm" id="rSheet">📤 ${t('ផ្ញើដែលនៅសល់ទៅ Google Sheet', 'Send unsent to Google Sheet')} (${notSheet})</button>
+        <button type="button" class="btn sm" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
+      </div>
+      <div id="panel"></div>
+      ${tableCard(L, t('ប័ណ្ណថ្លឹង', 'Weighing tickets'), L.length)}`;
+    const re = () => { RF.from = $('#rFrom').value; RF.to = $('#rTo').value; RF.q = $('#rQ').value.trim(); const pos = $('#rQ').selectionStart; const focus = document.activeElement && document.activeElement.id; renderReport(); if (focus) { const el = $('#' + focus); el.focus(); if (focus === 'rQ') el.setSelectionRange(pos, pos); } };
+    $('#rFrom').onchange = re; $('#rTo').onchange = re; $('#rQ').oninput = re;
+    $('#rDl').onclick = () => L.length ? download(L, 'Weighing_Tickets_' + (RF.from || '') + '_' + (RF.to || '') + '.xlsx') : toast(t('គ្មានកំណត់ត្រា', 'No records'));
+    $('#rFile').onclick = async () => { if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); const b = $('#rFile'); busy(b, true); try { const n = await toLocalFile(L); if (n) toast('✅ ' + L.length + t(' ប័ណ្ណ → ', ' tickets → ') + n, 4000); } catch (e) { toast('⚠️ ' + e.message, 6000); } busy(b, false); renderReport(); };
+    $('#rSheet').onclick = async () => { const l = RECS.filter(r => !r.sheet); if (!l.length) return toast(t('ទាំងអស់បានផ្ញើរួច', 'All are in the Google Sheet already')); if (!needServer()) return; const b = $('#rSheet'); busy(b, true); try { await toSheet(l); toast('✅ ' + l.length + t(' ប័ណ្ណបានផ្ញើ', ' tickets sent')); } catch (e) { toast('⚠️ ' + e.message, 5000); } renderReport(); };
+    $('#rMail').onclick = () => mailPanel(true);
+    wireTable();
+  }
+
+  // ---------- Settings ----------
+  async function renderSettings() {
+    screen = renderSettings;
+    const has = !!(await idbGet('dir').catch(() => null));
+    $('#view').innerHTML = `<div class="card set">
+      <h2>💾 ${t('ឯកសារ Excel ក្នុងកុំព្យូទ័រ', 'Local Excel file')}</h2>
+      <div class="field"><label class="f">${t('Folder', 'Folder')}</label>
+        <div class="cur">${has ? `<code>📁 ${esc(SET.folderName || '')}</code>` : `<span class="req">${t('មិនទាន់ជ្រើស', 'Not chosen yet')}</span>`}
+        <button type="button" class="btn sm" id="sDir" ${canFolder() ? '' : 'disabled'}>📁 ${has ? t('ប្តូរ', 'Change') : t('ជ្រើស Folder', 'Choose folder')}</button></div>
+        <div class="hint">${canFolder() ? t('ជ្រើស folder ម្តង (ឧ. OneDrive …\\00. Data Warehouse\\Weight Scale Data)។ កម្មវិធីចងចាំវា។', 'Choose it once (e.g. OneDrive …\\00. Data Warehouse\\Weight Scale Data). The app remembers it.')
+          : t('កម្មវិធីរុករកនេះមិនអាចសរសេរក្នុង folder បានទេ។ ប្រើ Chrome ឬ Edge លើកុំព្យូទ័រ។ ឥឡូវនេះ Excel នឹងទាញយក។', 'This browser cannot write to a folder. Use Chrome or Edge on a computer. For now the Excel file downloads instead.')}</div></div>
+      <div class="field"><label class="f" for="sName">${t('ឈ្មោះឯកសារ', 'File name')}</label><input class="in" id="sName" value="${esc(SET.fileName)}">
+        <div class="hint">${t('ប័ណ្ណថ្មីត្រូវបានបន្ថែមក្នុងឯកសារនេះ (sheet "Weighing Tickets")។ លេខប័ណ្ណដដែលនឹងជំនួសជួរចាស់។', 'New tickets are added to this file (sheet "Weighing Tickets"). The same ticket number replaces its old row.')}</div></div>
+    </div>
+    <div class="card set">
+      <h2>✉️ ${t('អ៊ីមែល', 'Email')}</h2>
+      <div class="field"><label class="f" for="sMail">${t('ផ្ញើទៅ (ដើម)', 'Default "Send to"')}</label><input class="in" id="sMail" value="${esc(SET.emailTo)}" placeholder="name@isi-group.com, ..."></div>
+    </div>
+    <div class="card set">
+      <h2>📤 Google Sheet</h2>
+      <div class="cur">${LIVE ? (BOOT && BOOT.sheetUrl ? `✅ ${t('បានភ្ជាប់', 'Connected')} · <a href="${esc(BOOT.sheetUrl)}" target="_blank" rel="noopener">${t('បើក Sheet', 'Open the Sheet')}</a>` : '✅ ' + t('បានភ្ជាប់', 'Connected'))
+        : `<span class="req">${t('មិនទាន់ភ្ជាប់', 'Not connected yet')}</span> · ${t('ធ្វើតាម SETUP.md (apps-script-dataentry) ហើយផ្ញើ URL /exec មក Claude', 'Follow SETUP.md (apps-script-dataentry) and send the /exec URL to Claude')}`}</div>
+    </div>
+    <div class="card set">
+      <h2>🗂️ ${t('កំណត់ត្រាក្នុងកុំព្យូទ័រនេះ', 'Records on this computer')}</h2>
+      <p class="hint">${RECS.length} ${t('កំណត់ត្រា', 'records')} · ${RECS.filter(r => !r.sheet).length} ${t('មិនទាន់នៅ Google Sheet', 'not in the Google Sheet')}</p>
+      <button type="button" class="btn danger sm" id="sClear">🗑️ ${t('លុបកំណត់ត្រាដែលបានផ្ញើទៅ Sheet រួច', 'Clear records already in the Google Sheet')}</button>
+    </div>`;
+    $('#sName').onchange = e => { SET.fileName = e.target.value.trim() || 'Weight_Scale_Data.xlsx'; saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
+    $('#sMail').onchange = e => { SET.emailTo = e.target.value.trim(); saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
+    $('#sDir').onclick = async () => { try { const d = await window.showDirectoryPicker({ id: 'weight-scale', mode: 'readwrite' }); await idbPut('dir', d); SET.folderName = d.name; saveSet(); toast('✅ ' + d.name); renderSettings(); } catch (e) { if (e.name !== 'AbortError') toast('⚠️ ' + e.message); } };
+    $('#sClear').onclick = () => { const n = RECS.filter(r => r.sheet).length; if (!n) return toast(t('គ្មាន', 'Nothing to clear')); if (!confirm(t('លុប ', 'Clear ') + n + t(' កំណត់ត្រា?', ' records?'))) return; RECS = RECS.filter(r => !r.sheet); saveRecs(); renderSettings(); };
+  }
+
+  // ------------------------------------------------------------------ zoom, paste, start
+  function zoom(src) {
+    const z = document.createElement('div'); z.className = 'zoom'; z.innerHTML = `<img src="${src}" alt="">`;
+    z.onclick = () => z.remove(); document.body.appendChild(z);
+  }
+  $('#fileIn').onchange = e => { const f = e.target.files; addFiles(f); e.target.value = ''; if (location.hash.indexOf('entry') < 0 && location.hash) location.hash = '#/entry'; };
+  document.addEventListener('paste', e => {
+    const files = Array.from((e.clipboardData && e.clipboardData.files) || []);
+    if (files.length && screen === renderEntry) { e.preventDefault(); addFiles(files); }
+  });
+  document.addEventListener('dragover', e => { if (screen === renderEntry) e.preventDefault(); });
+  document.addEventListener('drop', e => { if (screen === renderEntry && !e.target.closest('#drop')) { e.preventDefault(); addFiles(e.dataTransfer.files); } });
+
+  function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
+  function paintBanner() {
+    const d = $('#demo');
+    d.hidden = LIVE;
+    if (!LIVE) d.textContent = t('⚙️ Google Sheet និងអ៊ីមែល មិនទាន់ភ្ជាប់។ ការអាន តារាង និងឯកសារ Excel ប្រើបានហើយ។', '⚙️ Google Sheet and email are not connected yet. Reading, the table and the local Excel file already work.');
+  }
+  const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+  const paintTheme = () => { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; };
+  $('#themeBtn').onclick = () => { const now = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); const nx = now === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', nx); set('fr_theme', nx); paintTheme(); };
+  paintTheme();
+  if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintBanner(); grab(); route(); }); }
+  window.ISTEEL_REFRESH = () => { grab(); route(); boot(); };
+  window.addEventListener('hashchange', () => { grab(); route(); });
+  paintStatic(); paintBanner();
+  if (LIVE && !signedIn()) blocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
+  else { route(); boot(); }
+  // Load the reader quietly after the page is up, so the first ticket reads faster.
+  setTimeout(() => { if (!BLOCKED) engine().catch(() => {}); }, 2500);
+  window.DE_DEBUG = { Q: () => Q, RECS: () => RECS };
+})();

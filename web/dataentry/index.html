@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e41">
+  <title>បញ្ចូលទិន្នន័យ · Agent Data Entry</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@800&text=STEEL&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="../icons/favicon.png">
+  <link rel="apple-touch-icon" href="../icons/app-180.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="stylesheet" href="../overtime/ot.css">
+  <link rel="stylesheet" href="de.css?v=20261031a">
+  <link rel="stylesheet" href="../sidenav.css?v=20261028a">
+  <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+  <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
+  <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
+  <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <div class="isi-logo"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30"><span class="word">STEEL</span></div>
+      <span class="sep" aria-hidden="true"></span>
+      <div><b data-km="បញ្ចូលទិន្នន័យ" data-en="Agent Data Entry">បញ្ចូលទិន្នន័យ</b><small data-km="ប័ណ្ណថ្លឹង → Excel" data-en="Weighing ticket → Excel">ប័ណ្ណថ្លឹង → Excel</small></div>
+    </div>
+    <div class="bar-right">
+      <button type="button" class="icon-btn lang-btn" id="langBtn"></button>
+      <button type="button" class="icon-btn" id="themeBtn" aria-label="Light / Dark" title="Light / Dark">🌙</button>
+    </div>
+  </header>
+  <div id="demo" class="demo" hidden></div>
+
+  <main id="view"></main>
+
+  <nav class="tabs">
+    <a href="../" class="tab"><img src="../icons/home.svg" alt="" width="24" height="24"><b data-km="ទំព័រដើម" data-en="Home">ទំព័រដើម</b></a>
+    <a href="#/entry" class="tab" data-r="entry"><span aria-hidden="true">📥</span><b data-km="បញ្ចូលទិន្នន័យ" data-en="Data Entry">បញ្ចូលទិន្នន័យ</b></a>
+    <a href="#/report" class="tab" data-r="report"><span aria-hidden="true">📊</span><b data-km="របាយការណ៍" data-en="Report">របាយការណ៍</b></a>
+    <a href="#/settings" class="tab" data-r="settings"><span aria-hidden="true">⚙️</span><b data-km="ការកំណត់" data-en="Settings">ការកំណត់</b></a>
+  </nav>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <input type="file" id="fileIn" accept="image/*,application/pdf,.pdf" multiple hidden>
+
+  <script src="config.js?v=20261031a"></script>
+  <script src="../lang.js"></script>
+  <script src="../vendor/xlsx.mini.min.js"></script>
+  <script src="ticket-ocr.js?v=20261031a"></script>
+  <script src="de.js?v=20261031a"></script>
+</body>
+</html>
