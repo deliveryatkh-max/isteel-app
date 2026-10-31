@@ -8,7 +8,7 @@ const FONTS = 'steel-fonts-v1';
 const SHELL = [
   './', 'home.css', 'home.js', 'live.js', 'sidenav.css', 'lang.js', 'request.js', 'config.js', 'manifest.webmanifest',
   'icons/isi-logo.png', 'icons/isi-white.png', 'icons/banner-pattern.png', 'icons/favicon.png', 'icons/app-192.png', 'icons/flag-kh.svg', 'icons/flag-gb.svg',
-  'icons/meeting.svg', 'icons/incident.svg', 'icons/inbound.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg', 'icons/users.svg',
+  'icons/meeting.svg', 'icons/incident.svg', 'icons/inbound.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg', 'icons/users.svg', 'icons/gallery.svg', 'icons/adsmgr.svg', 'ads.js', 'ads.css',
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'minutes/', 'minutes/mm.js', 'minutes/mm.css', 'minutes/config.js',
   'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js', 'incident/texts.js',
@@ -16,6 +16,7 @@ const SHELL = [
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
   'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'users/', 'users/um.js', 'users/um.css',
+  'gallery/', 'gallery/ga.js', 'gallery/ga.css',
   'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css', 'dashboard/glass.css',
   'dashboard/vendor/react.production.min.js', 'dashboard/vendor/react-dom.production.min.js',
   'dashboard/vendor/prop-types.min.js', 'dashboard/vendor/Recharts.js',

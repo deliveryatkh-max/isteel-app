@@ -8,6 +8,7 @@
   'use strict';
   const me = document.currentScript;
   const APP = (me && me.dataset.app) || '';
+  const BASE = me && me.src ? me.src.replace(/ads\.js[^/]*$/, '') : '../';   // the site's root, from this file's own address
   const API = (window.APP_CONFIG || {}).API_URL || '';
   const TOKEN_KEY = 'fr_id_token';
   const NAMES = { fuel: ['ចាក់សាំង', 'Fuel Refill'], transport: ['ដឹកជញ្ជូន', 'Delivery'], overtime: ['ថែមម៉ោង', 'Overtime'],
@@ -170,7 +171,7 @@
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', L('ផ្សព្វផ្សាយ', 'Announcement'));
     el.innerHTML = `
-      <div class="ad-top"><div class="ad-tag"><img src="${opts.icon || '../icons/isi-white.png'}" alt="">ISI STEEL${name[0] ? ' · ' + L(name[0], name[1]) : ''}</div>
+      <div class="ad-top"><div class="ad-tag"><img src="${BASE}icons/isi-white.png" alt="">ISI STEEL${name[0] ? ' · ' + L(name[0], name[1]) : ''}</div>
         <span class="ad-skip${skip ? '' : ' no'}" role="${skip ? 'button' : 'timer'}" tabindex="${skip ? 0 : -1}">${skip ? L('រំលង', 'Skip') + ' ' : ''}<span class="ad-ring" style="--p:0"><b>${secs}</b></span></span></div>
       <div class="ad-media">${video
         ? `<video src="${url}" autoplay muted playsinline></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`

@@ -286,7 +286,7 @@
         <div class="field gtop"><label class="f" for="fText">${t('អក្សរក្រហម', 'Red text')} <small class="muted">${t('ស្រេចចិត្ត', 'Optional')}</small></label>
           <input class="in" id="fText" maxlength="200" placeholder="${t('ឧ. ពាក់មួកសុវត្ថិភាព គ្រប់ពេល', 'e.g. Wear your helmet at all times')}" value="${esc(f.text)}"></div>
         <div class="field"><label class="f" for="fTextEn">English <small class="muted">${t('ស្រេចចិត្ត', 'Optional')}</small></label>
-          <input class="in" id="fTextEn" maxlength="200" placeholder="${t('បង្ហាញពេលជ្រើស 🇬🇧', 'Shown when 🇬🇧 is chosen')}" value="${esc(f.textEn)}"></div>
+          <input class="in" id="fTextEn" maxlength="200" placeholder="${t('បង្ហាញពេលជ្រើសភាសាអង់គ្លេស', 'Shown when English is chosen')}" value="${esc(f.textEn)}"></div>
       </div>
 
       <div class="sec">📱 ${t('បង្ហាញក្នុងកម្មវិធី', 'Show in these apps')}<button type="button" class="link" id="allApps">${f.apps.length === APPS.length ? t('ដកទាំងអស់', 'Clear all') : t('ជ្រើសទាំងអស់', 'Select all')}</button></div>
@@ -322,7 +322,7 @@
       </div>
       ${a ? `<div class="gmore">
         ${st !== 'hidden' ? `<button type="button" class="btn" id="pause">${a.show ? '⏸ ' + t('ផ្អាក', 'Pause') : '▶️ ' + t('ផ្សាយវិញ', 'Make live')}</button>` : ''}
-        <button type="button" class="btn${st === 'hidden' ? ' ok' : ''}" id="hide">${st === 'hidden' ? '👁 ' + t('បង្ហាញវិញ', 'Unhide') : '🙈 ' + t('លាក់ពីអ្នកទាំងអស់', 'Hide from everyone')}</button>
+        <button type="button" class="btn${st === 'hidden' ? ' ok' : ''}" id="hide">${st === 'hidden' ? '👁 ' + t('បង្ហាញវិញ', 'Unhide') : '🙈 ' + t('លាក់', 'Hide')}</button>
         <p class="hint">${t('បង្ហោះដោយ', 'Posted by')} ${esc(a.createdBy || '–')} · ${dayShow(a.createdAt)}</p></div>` : ''}`;
     if (split() && a) {
       view(`<div class="gsplit"><div class="gleft">${listHtml(a.id)}</div><aside class="gpanel">${form}</aside></div>`);
@@ -433,7 +433,7 @@
         <div><b>${num(d.people)}</b><small>${t('អ្នកប្រើ', 'People')}</small></div>
       </div>
       <div class="sec">👁 ${t('មើលតាមថ្ងៃ', 'Views by day')}</div>
-      <div class="card"><div class="gbars${days > 30 ? ' thin' : ''}">${bars.map(b => `<span title="${esc(dayShow(b.ms))}: ${b.n}"><i style="height:${Math.round(b.n / maxBar * 100)}%"></i></span>`).join('')}</div>
+      <div class="card gwide"><div class="gbars${days > 30 ? ' thin' : ''}">${bars.map(b => `<span title="${esc(dayShow(b.ms))}: ${b.n}"><i style="height:${Math.round(b.n / maxBar * 100)}%"></i></span>`).join('')}</div>
         <div class="gbarx"><small>${dayShow(bars[0].ms)}</small><small>${t('ថ្ងៃនេះ', 'Today')}</small></div></div>
       <div class="gcols">
         <div><div class="sec">🖼️ ${t('តាមការផ្សាយ', 'By ad')}</div>
