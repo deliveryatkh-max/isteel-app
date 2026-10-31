@@ -39,7 +39,7 @@ Excel, close it first. Other browsers download the Excel file instead.
    - `SESSION_SECRET`: copy it from the **Fuel app's** Apps Script properties (one sign-in for every app). Never paste it in a chat.
    - `USERS_SHEET_ID`: the id of the Fuel Refill Google Sheet (`1lbQ7Ybq6o61tldUhf3ITxweqK3SotCOtr-kA7oa0VqU`).
 3. **Run `setup()` once**, then **run `authorize()` once** (choose it → Run → allow; this is what asks for email permission).
-   Setup adds the tabs **Weighing Tickets** and **DE Settings** and the Drive folder **Weighing Ticket Images**.
+   Setup adds the tabs **Weighing Tickets**, **DE Settings**, **Price List**, **GL Code**, **Cost Center** and **Debit Notes**, and the Drive folder **Weighing Ticket Images**.
 4. **Deploy**: Deploy → New deployment → *Web app* → Execute as **Me** → Who has access **Anyone** → Deploy.
    Send the URL ending in `/exec` to Claude in the Data Entry Agent thread (Claude puts it in `web/dataentry/config.js`).
 5. **Home menu tile**: paste the new `apps-script/Code.gs` into the **Fuel** Apps Script and deploy a new version
@@ -51,5 +51,12 @@ Excel, close it first. Other browsers download the Excel file instead.
 - **Weighing Tickets**: Ticket No, Vehicle No, Company (looked up from the Fuel sheet "Driver & Truck": plate in column G, company in column E; an exact plate match wins, else the plate without dashes), Document Date, Gross, Tare, Net, In / Out Date/Time, Total Time (min and h:mm),
   Check (OK, or the Gross − Tare difference), Source File, Picture (Drive link), Entered By, Entered At, Updated.
 - **DE Settings**: `EMAIL_TO` default email list, `EMAIL_SUBJECT`.
+- **Price List**: 3PL Company, Destination, Charge Per (Charge per t / Charge per trip), Price, UoM. The Debit Note takes its prices from here.
+- **GL Code** and **Cost Center**: Code, Description. They fill the GL and Cost Center dropdowns on the Debit Note.
+- **Debit Notes**: one row per Debit Note downloaded. The No runs in sequence per destination and month
+  (`KPC-MT-10-26-01`, `-02` …); the next number is the last one here + 1.
+
+Saved tickets go to the Google Sheet by themselves (right after Save, and again every minute while unsent ones wait).
+The 🔄 button in the header reloads the lists from the sheet.
 
 Gmail sends up to 100 emails a day from a free account.

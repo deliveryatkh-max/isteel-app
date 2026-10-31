@@ -91,7 +91,7 @@
   }
   async function boot() {
     if (!LIVE || !signedIn()) return;
-    try { BOOT = await api('boot'); set(BOOT_KEY, JSON.stringify(BOOT)); paintTabs(); if (!isAdmin() && /settings/.test(location.hash)) location.hash = '#/entry'; if (!SET.emailTo && BOOT.emailTo) { SET.emailTo = BOOT.emailTo; saveSet(); } paintBanner(); }
+    try { BOOT = await api('boot'); set(BOOT_KEY, JSON.stringify(BOOT)); paintTabs(); if (!isAdmin() && /settings/.test(location.hash)) location.hash = '#/entry'; if (!SET.emailTo && BOOT.emailTo) { SET.emailTo = BOOT.emailTo; saveSet(); } paintBanner(); syncSheet(); }
     catch (e) { if (e.code === 'AUTH' || e.code === 'NOACCESS') { BOOT = null; set(BOOT_KEY, null); blocked(e); } }
   }
   function blocked(e) {
@@ -304,7 +304,7 @@
               <div class="acts">
                 <button type="button" class="btn b-save" id="aSave">＋ ${t('រក្សាទុកក្នុងតារាង', 'Save Data to Table')}</button>
               </div>
-              <div class="hint">${t('ផ្ញើទៅ Google Sheet, ឯកសារ Excel ឬអ៊ីមែល នៅទំព័រ របាយការណ៍', 'Google Sheet, Excel file and email are on the Report page')}</div>
+              <div class="hint">${t('រក្សាទុកហើយ វាទៅ Google Sheet ដោយខ្លួនឯង។ ឯកសារ Excel និងអ៊ីមែល នៅទំព័រ របាយការណ៍', 'Saved tickets go to the Google Sheet by themselves. Excel file and email are on the Report page')}</div>
             </div>
           </section>
         </div>
@@ -441,7 +441,7 @@
 
   async function act(kind, btn) {
     const r = toTable(); if (!r) return;
-    if (kind === 'table') { stripImages(); saveRecs(); toast('✅ ' + t('បានរក្សាទុកក្នុងតារាង', 'Saved to the table') + ' · ' + r.ticket); return next(); }
+    if (kind === 'table') { stripImages(); saveRecs(); toast('✅ ' + t('បានរក្សាទុកក្នុងតារាង', 'Saved to the table') + ' · ' + r.ticket); next(); syncSheet(); return; }
     if (kind === 'sheet') { if (!needServer()) { renderEntry(); return; } busy(btn, true); try { await toSheet([r]); toast('✅ ' + t('បានផ្ញើទៅ Google Sheet', 'Sent to the Google Sheet') + ' · ' + r.ticket); next(); } catch (e) { toast('⚠️ ' + e.message, 5000); renderEntry(); } return; }
     if (kind === 'file') { busy(btn, true); try { const n = await toLocalFile([r]); if (n) { toast('✅ ' + t('បានរក្សាទុកក្នុង ', 'Saved in ') + n, 4000); next(); } else renderEntry(); } catch (e) { console.error(e); toast('⚠️ ' + e.message, 6000); renderEntry(); } return; }
   }
@@ -454,6 +454,19 @@
     renderEntry();
     readAll();
   }
+
+  // Saved tickets go to the Google Sheet by themselves in the background (Kim, 31 Oct 2026: no Send button).
+  let SYNCING = false;
+  async function syncSheet() {
+    if (!LIVE || !signedIn() || SYNCING || !navigator.onLine) return;
+    const l = RECS.filter(r => !r.sheet); if (!l.length) return;
+    SYNCING = true;
+    try { await toSheet(l); if (/report/.test(location.hash)) renderReport(); }
+    catch (e) { if (e.code && e.code !== 'NET') toast('⚠️ Google Sheet: ' + e.message, 5000); }
+    finally { SYNCING = false; }
+  }
+  window.addEventListener('online', () => syncSheet());
+  setInterval(() => syncSheet(), 60000);
 
   async function toSheet(list) {
     const rows = list.map(r => ({ id: r.id, ticket: r.ticket, vehicle: r.vehicle, company: r.company || '', date: r.date, gross: r.gross, tare: r.tare, net: r.net, inTime: r.inTime, outTime: r.outTime, mins: minutes(r), file: r.file || '', by: r.by || me(), img: r.img || '' }));
@@ -641,7 +654,6 @@
     const net = L.reduce((s, r) => s + (toNum(r.net) || 0), 0);
     const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
     const trucks = new Set(L.map(r => r.vehicle)).size;
-    const notSheet = RECS.filter(r => !r.sheet).length;
     // Trucks arriving per hour (like a "crowd rate"), 6 AM to 8 PM, and the busiest weekday.
     const hrs = []; for (let h = 6; h <= 20; h++) hrs.push(h);
     const byH = {}; L.forEach(r => { const d = toDate(r.inTime); if (d) byH[d.getHours()] = (byH[d.getHours()] || 0) + 1; });
@@ -686,7 +698,6 @@
       <div class="pills acts2">
         <button type="button" class="pill" id="rDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
         <button type="button" class="pill" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
-        <button type="button" class="pill" id="rSheet">📤 ${t('ផ្ញើទៅ Google Sheet', 'Send to Google Sheet')} (${notSheet})</button>
         <button type="button" class="pill" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
         <button type="button" class="pill dnbtn" id="rDn" title="${t('ជ្រើសក្រុមហ៊ុនមួយជាមុន', 'Pick one company first')}">🧾 ${t('បង្កើត Debit Note', 'Debit Note')}</button>
       </div>
@@ -700,7 +711,6 @@
     $('#rFrom').onchange = re; $('#rTo').onchange = re; $('#rQ').oninput = re;
     $('#rDl').onclick = () => L.length ? download(L, 'Weighing_Tickets_' + (RF.from || 'all') + '_' + (RF.to || '') + '.xlsx') : toast(t('គ្មានកំណត់ត្រា', 'No records'));
     $('#rFile').onclick = async () => { if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); const b = $('#rFile'); busy(b, true); try { const n = await toLocalFile(L); if (n) toast('✅ ' + L.length + t(' ប័ណ្ណ → ', ' tickets → ') + n, 4000); } catch (e) { toast('⚠️ ' + e.message, 6000); } busy(b, false); renderReport(); };
-    $('#rSheet').onclick = async () => { const l = RECS.filter(r => !r.sheet); if (!l.length) return toast(t('ទាំងអស់បានផ្ញើរួច', 'All are in the Google Sheet already')); if (!needServer()) return; const b = $('#rSheet'); busy(b, true); try { await toSheet(l); toast('✅ ' + l.length + t(' ប័ណ្ណបានផ្ញើ', ' tickets sent')); } catch (e) { toast('⚠️ ' + e.message, 5000); } renderReport(); };
     $('#rMail').onclick = () => mailPanel(true);
     $('#rDn').onclick = () => {
       if (!RF.co || RF.co === '-') { toast('🏢 ' + t('សូមជ្រើសក្រុមហ៊ុនមួយជាមុន (ប្រអប់ All companies)', 'Pick one company first (the All companies box)'), 4000); $('#rCo').focus(); return; }
@@ -716,6 +726,17 @@
   // The header boxes (customer, tel, GL, cost center, agent, vendor ID) are remembered per company on this computer.
   let DN_OPEN = false;
   const prices = () => (BOOT && BOOT.prices) || window.DE_PRICES || [];
+  // GL Code and Cost Center lists come from the sheet tabs "GL Code" and "Cost Center": [code, description].
+  const glList = () => (BOOT && BOOT.gl) || window.DE_GL || [];
+  const ccList = () => (BOOT && BOOT.cc) || window.DE_CC || [];
+  const pick = (id, list, val) => list.length
+    ? `<select class="in" id="${id}"><option value="">—</option>${list.map(r => `<option value="${esc(r[0])}" ${String(r[0]) === String(val) ? 'selected' : ''}>${esc(r[0])}${r[1] ? ' · ' + esc(r[1]) : ''}</option>`).join('')}${val && !list.some(r => String(r[0]) === String(val)) ? `<option selected>${esc(val)}</option>` : ''}</select>`
+    : `<input class="in" id="${id}" value="${esc(val || '')}">`;
+  // Debit Note No runs in sequence: <DES>-MT-<MM>-<YY>-01, -02 … per destination and month.
+  // The last number used is kept in the sheet tab "Debit Notes" (shared) and on this computer.
+  const dnSeqs = () => { try { return JSON.parse(get('de_dn_seq') || '{}'); } catch (e) { return {}; } };
+  const lastSeq = pre => Math.max(+(dnSeqs()[pre] || 0), +((BOOT && BOOT.dnSeq && BOOT.dnSeq[pre]) || 0));
+  const useSeq = (pre, n) => { const m = dnSeqs(); if (n > (+m[pre] || 0)) { m[pre] = n; set('de_dn_seq', JSON.stringify(m)); } if (BOOT) { BOOT.dnSeq = BOOT.dnSeq || {}; if (n > (+BOOT.dnSeq[pre] || 0)) BOOT.dnSeq[pre] = n; } };
   const perTrip = r => /trip|truck/i.test(String(r[2]) + ' ' + String(r[4]));
   const money = n => (n == null || isNaN(n) ? '' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const shortDate = s => { const d = toDate(s); return d ? pad(d.getDate()) + '-' + MON[d.getMonth()].charAt(0) + MON[d.getMonth()].slice(1).toLowerCase() + '-' + String(d.getFullYear()).slice(2) : ''; };
@@ -730,7 +751,9 @@
     const rates = () => P.filter(r => r[1] === H.dest);
     if (H.rate == null || !rates()[H.rate]) H.rate = 0;
     const now = new Date();
-    const dnNo = () => (String(H.dest || 'DN').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'DN') + '-MT-' + pad(now.getMonth() + 1) + '-' + String(now.getFullYear()).slice(2) + '-01';
+    const dnPre = () => { const d = toDate(H.date) || now; return (String(H.dest || 'DN').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'DN') + '-MT-' + pad(d.getMonth() + 1) + '-' + String(d.getFullYear()).slice(2); };
+    const dnNo = () => dnPre() + '-' + pad(lastSeq(dnPre()) + 1);
+    H.agent = co;   // Transportation Agent = the 3PL company
     const items = L.slice().sort((a, b) => String(a.inTime || a.date).localeCompare(String(b.inTime || b.date)));
     const OV = {};   // per-trip price or remark typed in the table
     const box = $('#panel');
@@ -753,14 +776,14 @@
         <div class="dngrid">
           <div><label>📍 ${t('ដឹកទៅ', 'Goods Delivery to')}</label><input class="in" id="dn_dest" list="dl_dest" value="${esc(H.dest)}"><datalist id="dl_dest">${dests.map(d => `<option value="${esc(d)}">`).join('')}</datalist></div>
           <div><label>💲 ${t('តម្លៃពី Price List', 'Price from the Price List')}</label><select class="in" id="dn_rate">${rates().map((r, i) => `<option value="${i}" ${i === H.rate ? 'selected' : ''}>${esc(r[2])} · $${money(r[3])} / ${esc(r[4])}</option>`).join('') || `<option>${t('គ្មាន', 'None')}</option>`}</select></div>
-          <div><label>🔢 No</label><input class="in" id="dn_no" value="${esc(H.no || dnNo())}"></div>
+          <div><label>🔢 No</label><input class="in" id="dn_no" value="${esc(H.no || dnNo())}" title="${t('លេខរត់បន្តបន្ទាប់', 'Next number in sequence')}"></div>
           <div><label>📅 Date</label><input class="in" type="date" id="dn_date" value="${esc(H.date || today())}"></div>
           <div><label>👤 Customer</label><input class="in" id="dn_customer" value="${esc(H.customer || '')}"></div>
           <div><label>📞 Tel</label><input class="in" id="dn_tel" value="${esc(H.tel || '')}"></div>
-          <div><label>🧑‍✈️ Transportation Agent</label><input class="in" id="dn_agent" value="${esc(H.agent || '')}"></div>
+          <div><label>🧑‍✈️ Transportation Agent</label><input class="in" id="dn_agent" value="${esc(co)}" readonly></div>
           <div><label>🆔 Vendor ID</label><input class="in" id="dn_vendorId" value="${esc(H.vendorId || '')}"></div>
-          <div><label>📒 GL</label><input class="in" id="dn_gl" value="${esc(H.gl || '65009030')}"></div>
-          <div><label>🏷️ Cost Center</label><input class="in" id="dn_costCenter" value="${esc(H.costCenter || '')}"></div>
+          <div><label>📒 GL</label>${pick('dn_gl', glList(), H.gl == null ? '65009030' : H.gl)}</div>
+          <div><label>🏷️ Cost Center</label>${pick('dn_costCenter', ccList(), H.costCenter || '')}</div>
         </div>
         <div class="tscroll"><table class="rec dnt"><thead><tr><th>ល.រ</th><th>Date</th><th>Truck No.</th><th class="r">Q'ty (Mt)</th><th class="r">USD/MT</th><th class="r">USD/Truck</th><th class="r">Total Amount</th><th>${t('ផ្សេងៗ', 'Remark')}</th></tr></thead><tbody>
           ${rows.map(x => `<tr><td>${x.i + 1}</td><td>${shortDate(x.r.date)}</td><td>${esc(x.r.vehicle)}</td><td class="r">${x.q.toFixed(3)}</td>
@@ -772,9 +795,10 @@
         <div class="pills" style="margin:12px 0 0"><button type="button" class="pill on" id="dnWord">📄 ${t('ទាញយក Word', 'Download Word (.docx)')}</button>
           <span class="hint">${t('ពុម្ព Word កែបាននៅ ការកំណត់ (Admin)', 'The Word template can be changed in Settings (admin)')}</span></div>
       </div>`;
-      const keep = () => { ['dest', 'no', 'date', 'customer', 'tel', 'agent', 'vendorId', 'gl', 'costCenter'].forEach(k => { H[k] = $('#dn_' + k).value.trim(); }); set(key, JSON.stringify(Object.assign({}, H, { no: '', date: '' }))); };
+      const keep = () => { ['dest', 'no', 'date', 'customer', 'tel', 'agent', 'vendorId', 'gl', 'costCenter'].forEach(k => { H[k] = $('#dn_' + k).value.trim(); }); H.agent = co; set(key, JSON.stringify(Object.assign({}, H, { no: '', date: '' }))); };
       $('#dnX').onclick = () => { DN_OPEN = false; box.innerHTML = ''; };
       $('#dn_dest').onchange = () => { keep(); H.rate = 0; H.no = ''; setTimeout(draw, 0); };
+      $('#dn_date').onchange = () => { const auto = !H.no || H.no === dnNo(); keep(); if (auto) H.no = ''; setTimeout(draw, 0); };
       $('#dn_rate').onchange = e => { keep(); H.rate = +e.target.value || 0; Object.keys(OV).forEach(k => { delete OV[k].price; }); setTimeout(draw, 0); };
       $$('.dn .dngrid .in').forEach(el => { if (el.id !== 'dn_dest' && el.id !== 'dn_rate') el.onchange = keep; });
       // redraw after the event, so a box losing focus while the table is rebuilt does not draw twice
@@ -787,6 +811,13 @@
           if (!window.JSZip) await loadScript(VENDOR + 'jszip.min.js');
           const tpl = await dnTemplate();
           const d = toDate(H.date) || new Date();
+          // Take the next number in the sequence (the sheet gives it, so two people never get the same No).
+          const auto = !H.no || H.no === dnNo();
+          if (LIVE && signedIn()) {
+            const res = await api('dnlog', { prefix: dnPre(), no: auto ? '' : H.no, company: co, dest: H.dest, date: H.date, period: (RF.from || '') + (RF.to && RF.to !== RF.from ? ' – ' + RF.to : ''), trips: rows.length, qty: +tq.toFixed(3), amount: Math.round(ta * 100) / 100 });
+            H.no = res.no; if (res.seq) useSeq(dnPre(), res.seq);
+          } else if (auto) H.no = dnNo();
+          const sm = String(H.no).match(/^(.*)-(\d+)$/); if (sm) useSeq(sm[1], +sm[2]);
           const blob = await DebitNote.fill(tpl, {
             header: { customer: H.customer, tel: H.tel, deliveryTo: H.dest, gl: H.gl, costCenter: H.costCenter, agent: H.agent, no: H.no || dnNo(), vendorId: H.vendorId,
               date: pad(d.getDate()) + '-' + MON[d.getMonth()].charAt(0) + MON[d.getMonth()].slice(1).toLowerCase() + '-' + String(d.getFullYear()).slice(2),
@@ -800,6 +831,7 @@
           if (window.DE_SAVE) await window.DE_SAVE(name, blob);
           else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
           toast('✅ ' + name, 4000);
+          H.no = ''; setTimeout(draw, 0);   // ready for the next Debit Note number
         } catch (e) { console.error(e); toast('⚠️ ' + (e && e.message || e), 6000); } finally { busy(btn, false); }
       };
     }
@@ -896,6 +928,12 @@
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintBanner(); grab(); route(); }); }
   window.ISTEEL_REFRESH = () => { grab(); route(); boot(); };
   window.addEventListener('hashchange', () => { grab(); route(); });
+  // 🔄 Refresh: reload users, trucks, prices and lists from the sheet, send what is waiting, and redraw the page.
+  $('#refreshBtn').onclick = async () => {
+    const b = $('#refreshBtn'); if (b.disabled) return; b.disabled = true; b.classList.add('spin');
+    try { grab(); if (LIVE && signedIn()) { await boot(); await syncSheet(); } try { RECS = JSON.parse(get(REC_KEY) || '[]'); } catch (e) { /* keep */ } route(); toast('🔄 ' + t('បានធ្វើឱ្យទាន់សម័យ', 'Refreshed')); }
+    finally { b.disabled = false; b.classList.remove('spin'); }
+  };
   paintStatic(); paintBanner(); paintTabs();
   if (LIVE && !signedIn()) blocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { route(); boot(); }

@@ -15,7 +15,10 @@
  *   DE_FOLDER_ID       made by setup(); Drive folder "Weighing Ticket Images"
  */
 
-const SH = { TK: 'Weighing Tickets', SET: 'DE Settings', PRICE: 'Price List' };
+const SH = { TK: 'Weighing Tickets', SET: 'DE Settings', PRICE: 'Price List', GL: 'GL Code', CC: 'Cost Center', DN: 'Debit Notes' };
+const GL_COLS = ['GL Code', 'Description'];
+const CC_COLS = ['Cost Center', 'Description'];
+const DN_COLS = ['Debit Note No', '3PL Company', 'Destination', 'Date', 'Period', 'Trips', 'Qty (t)', 'Amount (USD)', 'Created By', 'Created At'];
 const PRICE_COLS = ['3PL Company', 'Destination', 'Charge Per', 'Price', 'UoM'];
 const TK_COLS = ['Ticket No', 'Vehicle No', 'Company', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time',
   'Total Time (min)', 'Total Time', 'Check', 'Source File', 'Picture', 'Entered By', 'Entered At', 'Updated'];
@@ -47,6 +50,7 @@ function route_(action, p, user) {
     case 'boot': return boot_(user);
     case 'save': return withLock_(() => save_(p.rows, user));
     case 'email': return email_(p, user);
+    case 'dnlog': return withLock_(() => dnlog_(p, user));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -100,6 +104,10 @@ function setup() {
   tk.getRange(2, 16, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm');
   // Trip prices for the Debit Note (Kim's sheet "Price List", 31 Oct 2026). Charge Per: "Charge per t" or "Charge per trip".
   sheet_(SH.PRICE, PRICE_COLS, [['3PL #1', 'KPC Branch', 'Charge per t', 8, 't'], ['3PL #1', 'KPC Branch', 'Charge per trip', 250, 'trip']]);
+  // Dropdowns for the Debit Note (Kim adds the real lists): GL Code and Cost Center. "Debit Notes" logs each No used.
+  sheet_(SH.GL, GL_COLS, [['65009030', '']]).getRange('A2:A').setNumberFormat('@');
+  sheet_(SH.CC, CC_COLS).getRange('A2:A').setNumberFormat('@');
+  sheet_(SH.DN, DN_COLS).getRange('A2:A').setNumberFormat('@');
   sheet_(SH.SET, SET_COLS, [
     ['EMAIL_TO', '', 'Default "Send to" for Send Excel to Email (comma separated). People can change it in the app.'],
     ['EMAIL_SUBJECT', 'Weighing tickets', 'Start of the email subject'],
@@ -204,7 +212,39 @@ function usersCached_() {
 
 // ---------------------------------------------------------------- actions
 function boot_(user) {
-  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO'), trucks: trucks_(), prices: prices_() };
+  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO'), trucks: trucks_(), prices: prices_(), gl: list_(SH.GL, GL_COLS), cc: list_(SH.CC, CC_COLS), dnSeq: dnSeq_() };
+}
+
+/** [code, description] rows of the GL Code or Cost Center tab. */
+function list_(name, cols) {
+  const sh = sheet_(name, cols);
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().filter(r => String(r[0]).trim()).map(r => [String(r[0]).trim(), String(r[1]).trim()]);
+}
+
+/** Last sequence used per Debit Note prefix, e.g. { 'KPC-MT-10-26': 3 }. */
+function dnSeq_() {
+  const sh = sheet_(SH.DN, DN_COLS);
+  const out = {};
+  if (sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues().forEach(r => {
+    const m = String(r[0]).trim().match(/^(.*)-(\d+)$/);
+    if (m && +m[2] > (out[m[1]] || 0)) out[m[1]] = +m[2];
+  });
+  return out;
+}
+
+/** Gives the next Debit Note No for the prefix (or keeps a No the user typed) and logs it in the "Debit Notes" tab. */
+function dnlog_(p, user) {
+  const prefix = clip_(p.prefix, 40);
+  let no = clip_(p.no, 60), seq = 0;
+  if (!no) {
+    if (!prefix) fail_('BAD', 'No Debit Note prefix.');
+    seq = (dnSeq_()[prefix] || 0) + 1;
+    no = prefix + '-' + ('0' + seq).slice(-2);
+  }
+  sheet_(SH.DN, DN_COLS).appendRow([no, clip_(p.company), clip_(p.dest), date_(p.date), clip_(p.period), num_(p.trips), num_(p.qty), num_(p.amount), user.name, new Date()]);
+  return { no, seq };
 }
 
 /** Price List rows: [company, destination, charge per, price, UoM]. */

@@ -187,3 +187,6 @@ table.dnt .in.pr { width: 90px; text-align: right; }
 table.dnt .in.rm { min-width: 140px; }
 table.dnt tr.tot td { background: var(--pastel); }
 .pill.dnbtn { border-color: var(--accent); color: var(--accent); }
+/* 🔄 Refresh button turns while loading */
+#refreshBtn.spin { animation: de-spin 0.9s linear infinite; }
+@keyframes de-spin { to { transform: rotate(360deg); } }
