@@ -173,3 +173,5 @@ table.rec tbody tr:hover td { background: var(--pastel); }
 .acts2 .pill { min-height: 44px; }
 .set.card h2 { font-size: 19px; font-weight: 800; }
 .demo select { font: inherit; font-weight: 700; border: 1.5px solid currentColor; border-radius: 8px; background: transparent; color: inherit; padding: 1px 6px; margin-left: 4px; }
+.showcharts { margin-bottom: 14px; }
+.pill.cosel { appearance: auto; padding-right: 8px; max-width: 240px; } .pill.cosel.on option { color: var(--ink); background: var(--card); }

@@ -622,7 +622,7 @@
 
   // ---------- Report ----------
   let REPORT_ROWS = [];
-  const RF = { from: '', to: '', q: '', p: '' };
+  const RF = { from: '', to: '', q: '', p: '', co: '' };
   const DAYS = [['អាទិត្យ', 'Sunday'], ['ច័ន្ទ', 'Monday'], ['អង្គារ', 'Tuesday'], ['ពុធ', 'Wednesday'], ['ព្រហស្បតិ៍', 'Thursday'], ['សុក្រ', 'Friday'], ['សៅរ៍', 'Saturday']];
   const hourName = h => pad(h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
   function period(k) {
@@ -636,7 +636,7 @@
     screen = renderReport;
     if (!RF.p) period('month');
     const ql = RF.q.toLowerCase();
-    REPORT_ROWS = sorted().filter(r => (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.company || '') + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
+    REPORT_ROWS = sorted().filter(r => (!RF.co || (RF.co === '-' ? !r.company : r.company === RF.co)) && (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.company || '') + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
     const L = REPORT_ROWS, ms = L.map(minutes).filter(m => m != null);
     const net = L.reduce((s, r) => s + (toNum(r.net) || 0), 0);
     const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
@@ -656,7 +656,12 @@
     $('#view').innerHTML = `
       <div class="rhead"><small>${t('របាយការណ៍ប័ណ្ណថ្លឹង', 'Weighing ticket report')}</small><h1>📊 ${t('របាយការណ៍', 'Report')}</h1></div>
       <div class="searchbox"><span>🔍</span><input id="rQ" value="${esc(RF.q)}" placeholder="${t('ស្វែងរកលេខឡាន លេខប័ណ្ណ ឬក្រុមហ៊ុន…', 'Search vehicle, ticket or company…')}"></div>
-      <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}</div>
+      <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}
+        <select class="pill cosel ${RF.co ? 'on' : ''}" id="rCo" aria-label="${t('ក្រុមហ៊ុន', 'Company')}">
+          <option value="">🏢 ${t('គ្រប់ក្រុមហ៊ុន', 'All companies')}</option>
+          ${Array.from(new Set(RECS.map(r => r.company).filter(Boolean).concat(companies()))).sort().map(c => `<option value="${esc(c)}" ${RF.co === c ? 'selected' : ''}>🏢 ${esc(c)}</option>`).join('')}
+          <option value="-" ${RF.co === '-' ? 'selected' : ''}>❔ ${t('គ្មានក្រុមហ៊ុន', 'No company')}</option>
+        </select></div>
       <div class="fbar" ${RF.p === 'custom' ? '' : 'hidden'}>
         <div><label for="rFrom">${t('ពីថ្ងៃ', 'From')}</label><input class="in" type="date" id="rFrom" value="${RF.from}"></div>
         <div><label for="rTo">${t('ដល់ថ្ងៃ', 'To')}</label><input class="in" type="date" id="rTo" value="${RF.to}"></div>
@@ -668,7 +673,8 @@
         <div class="stat"><i>⏱️</i><small>${t('មធ្យមក្នុងរោងចក្រ', 'Avg time inside')}</small><b>${avg == null ? '–' : avg}<em>${t('នាទី', 'min')}</em></b></div>
         <div class="stat"><i>🐢</i><small>${t('យូរជាងគេ', 'Longest')}</small><b>${ms.length ? Math.max.apply(null, ms) : '–'}<em>${t('នាទី', 'min')}</em></b></div>
       </div>
-      <div class="rgrid">
+      <button type="button" class="pill showcharts" id="rCharts">${get('de_charts') === '1' ? '🙈 ' + t('លាក់ក្រាហ្វ', 'Hide charts') : '📈 ' + t('បង្ហាញក្រាហ្វ (ម៉ោង · ឡានច្រើនជាងគេ)', 'Show charts (by hour · top trucks)')}</button>
+      <div class="rgrid" ${get('de_charts') === '1' ? '' : 'hidden'}>
         <section class="rcard"><h3>🕒 ${t('ឡានចូលតាមម៉ោង', 'Trucks in by hour')}</h3>
           <div class="crowd">${hrs.map(h => { const n = byH[h] || 0; return `<div class="col ${n && h === peak ? 'peak' : ''}" title="${hourName(h)}: ${n}"><span class="v">${n || ''}</span><i style="height:${Math.max(8, Math.round(n / maxH * 100))}%"></i><small>${h % 12 || 12}${h < 12 ? 'a' : 'p'}</small></div>`; }).join('')}</div>
           <p class="note">${L.length ? `${t('ម៉ោងមមាញឹកបំផុត', 'Busiest hour')} <b>${hourName(peak)}</b> · ${t('ថ្ងៃមមាញឹកបំផុត', 'busiest day')} <b>${t(DAYS[topD][0], DAYS[topD][1])}</b>` : t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>
@@ -685,6 +691,9 @@
       </div>
       <div id="panel"></div>
       ${tableCard(L, t('ប័ណ្ណថ្លឹង', 'Weighing tickets'), L.length)}`;
+    // The two charts stay hidden until someone clicks Show (Kim, 31 Oct 2026); the choice is remembered.
+    $('#rCo').onchange = e => { RF.co = e.target.value; renderReport(); };
+    $('#rCharts').onclick = () => { set('de_charts', get('de_charts') === '1' ? '0' : '1'); renderReport(); };
     $$('[data-p]').forEach(b => { b.onclick = () => { if (b.dataset.p === 'custom') { RF.p = 'custom'; if (!RF.from) period('month'), RF.p = 'custom'; } else period(b.dataset.p); renderReport(); }; });
     const re = () => { RF.from = $('#rFrom').value; RF.to = $('#rTo').value; RF.q = $('#rQ').value.trim(); const pos = $('#rQ').selectionStart; const focus = document.activeElement && document.activeElement.id; renderReport(); if (focus) { const el = $('#' + focus); el.focus(); if (focus === 'rQ') el.setSelectionRange(pos, pos); } };
     $('#rFrom').onchange = re; $('#rTo').onchange = re; $('#rQ').oninput = re;
