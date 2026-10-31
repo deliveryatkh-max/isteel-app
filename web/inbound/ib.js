@@ -337,7 +337,7 @@
       let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c1">${cell(i, n, 'poQty', false)}</td>
-        <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr')}</td>
+        <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
         <td class="n c4">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
         <td class="u c5"><span class="qro">${esc(r.uom)}</span></td></tr>`;
