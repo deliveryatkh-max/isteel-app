@@ -284,11 +284,8 @@
             <div class="cb">
               <div class="acts">
                 <button type="button" class="btn b-save" id="aSave">＋ ${t('រក្សាទុកក្នុងតារាង', 'Save Data to Table')}</button>
-                <button type="button" class="btn b-sheet" id="aSheet">📤 ${t('ផ្ញើទៅ Google Sheet', 'Send to Google Sheet')}</button>
-                <button type="button" class="btn b-file" id="aFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
-                <button type="button" class="btn b-mail" id="aMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
               </div>
-              <div id="panel"></div>
+              <div class="hint">${t('ផ្ញើទៅ Google Sheet, ឯកសារ Excel ឬអ៊ីមែល នៅទំព័រ របាយការណ៍', 'Google Sheet, Excel file and email are on the Report page')}</div>
             </div>
           </section>
         </div>
@@ -319,9 +316,6 @@
     $('#f_vehicle').onblur = e => { e.target.value = e.target.value.toUpperCase().trim(); grab(); };
     ['gross', 'tare', 'net', 'ticket'].forEach(k => { $('#f_' + k).onblur = e => { const n = toNum(e.target.value); e.target.value = n == null ? '' : (k === 'ticket' ? String(n) : kg(n)); grab(); paintChecks(); }; });
     $('#aSave').onclick = () => act('table', $('#aSave'));
-    $('#aSheet').onclick = () => act('sheet', $('#aSheet'));
-    $('#aFile').onclick = () => act('file', $('#aFile'));
-    $('#aMail').onclick = () => mailPanel();
     wireTable();
   }
   function paintQueue() {

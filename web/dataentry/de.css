@@ -54,8 +54,8 @@ main { max-width: 1180px; }
 .chk.warn { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 
 /* 3 Actions */
-.acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-@media (min-width: 1200px) { .acts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.acts { display: grid; gap: 10px; }
+.acts + .hint { margin-top: 8px; }
 .acts .btn { min-height: 48px; padding: 6px 10px; font-size: 14.5px; color: #fff; border: 0; line-height: 1.25; }
 .acts .b-save { background: #1e9e4a; }
 .acts .b-sheet { background: #1f6fe0; }
