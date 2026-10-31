@@ -688,6 +688,7 @@
         <button type="button" class="pill" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
         <button type="button" class="pill" id="rSheet">📤 ${t('ផ្ញើទៅ Google Sheet', 'Send to Google Sheet')} (${notSheet})</button>
         <button type="button" class="pill" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
+        <button type="button" class="pill dnbtn" id="rDn" title="${t('ជ្រើសក្រុមហ៊ុនមួយជាមុន', 'Pick one company first')}">🧾 ${t('បង្កើត Debit Note', 'Debit Note')}</button>
       </div>
       <div id="panel"></div>
       ${tableCard(L, t('ប័ណ្ណថ្លឹង', 'Weighing tickets'), L.length)}`;
@@ -701,7 +702,116 @@
     $('#rFile').onclick = async () => { if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); const b = $('#rFile'); busy(b, true); try { const n = await toLocalFile(L); if (n) toast('✅ ' + L.length + t(' ប័ណ្ណ → ', ' tickets → ') + n, 4000); } catch (e) { toast('⚠️ ' + e.message, 6000); } busy(b, false); renderReport(); };
     $('#rSheet').onclick = async () => { const l = RECS.filter(r => !r.sheet); if (!l.length) return toast(t('ទាំងអស់បានផ្ញើរួច', 'All are in the Google Sheet already')); if (!needServer()) return; const b = $('#rSheet'); busy(b, true); try { await toSheet(l); toast('✅ ' + l.length + t(' ប័ណ្ណបានផ្ញើ', ' tickets sent')); } catch (e) { toast('⚠️ ' + e.message, 5000); } renderReport(); };
     $('#rMail').onclick = () => mailPanel(true);
+    $('#rDn').onclick = () => {
+      if (!RF.co || RF.co === '-') { toast('🏢 ' + t('សូមជ្រើសក្រុមហ៊ុនមួយជាមុន (ប្រអប់ All companies)', 'Pick one company first (the All companies box)'), 4000); $('#rCo').focus(); return; }
+      if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records'));
+      dnPanel(L);
+    };
+    if (DN_OPEN && RF.co && RF.co !== '-' && L.length) dnPanel(L); else DN_OPEN = false;
     wireTable();
+  }
+
+  // ---------- Debit Note (Kim, 31 Oct 2026) ----------
+  // Prices come from the "Price List" tab: 3PL Company | Destination | Charge Per (per t / per trip) | Price | UoM.
+  // The header boxes (customer, tel, GL, cost center, agent, vendor ID) are remembered per company on this computer.
+  let DN_OPEN = false;
+  const prices = () => (BOOT && BOOT.prices) || window.DE_PRICES || [];
+  const perTrip = r => /trip|truck/i.test(String(r[2]) + ' ' + String(r[4]));
+  const money = n => (n == null || isNaN(n) ? '' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const shortDate = s => { const d = toDate(s); return d ? pad(d.getDate()) + '-' + MON[d.getMonth()].charAt(0) + MON[d.getMonth()].slice(1).toLowerCase() + '-' + String(d.getFullYear()).slice(2) : ''; };
+  function dnPanel(L) {
+    DN_OPEN = true;
+    const co = RF.co;
+    const key = 'de_dn_' + co;
+    let H = {}; try { H = JSON.parse(get(key) || '{}'); } catch (e) { H = {}; }
+    const P = prices().filter(r => String(r[0]).trim().toLowerCase() === co.toLowerCase());
+    const dests = Array.from(new Set(P.map(r => r[1]).filter(Boolean)));
+    if (!H.dest || dests.indexOf(H.dest) < 0) H.dest = dests[0] || H.dest || '';
+    const rates = () => P.filter(r => r[1] === H.dest);
+    if (H.rate == null || !rates()[H.rate]) H.rate = 0;
+    const now = new Date();
+    const dnNo = () => (String(H.dest || 'DN').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'DN') + '-MT-' + pad(now.getMonth() + 1) + '-' + String(now.getFullYear()).slice(2) + '-01';
+    const items = L.slice().sort((a, b) => String(a.inTime || a.date).localeCompare(String(b.inTime || b.date)));
+    const OV = {};   // per-trip price or remark typed in the table
+    const box = $('#panel');
+    function draw() {
+      const R0 = rates()[H.rate];
+      const trip = R0 ? perTrip(R0) : false;
+      const base = R0 ? Number(R0[3]) : null;
+      let tq = 0, ta = 0;
+      const rows = items.map((r, i) => {
+        const q = (toNum(r.net) || 0) / 1000;
+        const o = OV[r.id] || {};
+        const pr = o.price != null && o.price !== '' ? Number(o.price) : base;
+        const amt = pr == null ? null : Math.round((trip ? pr : q * pr) * 100) / 100;
+        tq += q; ta += amt || 0;
+        return { r, i, q, pr, amt, remark: o.remark || '' };
+      });
+      box.innerHTML = `<div class="panel dn">
+        <div class="dnhead"><h3>🧾 Debit Note · ${esc(co)}</h3><button type="button" class="pill" id="dnX">✕</button></div>
+        ${P.length ? '' : `<div class="chk warn">⚠️ ${t('រកមិនឃើញតម្លៃសម្រាប់', 'No price found for')} ${esc(co)} ${t('ក្នុង Price List', 'in the Price List')}. ${t('វាយតម្លៃក្នុងតារាងខាងក្រោម', 'Type the prices in the table below')}.</div>`}
+        <div class="dngrid">
+          <div><label>📍 ${t('ដឹកទៅ', 'Goods Delivery to')}</label><input class="in" id="dn_dest" list="dl_dest" value="${esc(H.dest)}"><datalist id="dl_dest">${dests.map(d => `<option value="${esc(d)}">`).join('')}</datalist></div>
+          <div><label>💲 ${t('តម្លៃពី Price List', 'Price from the Price List')}</label><select class="in" id="dn_rate">${rates().map((r, i) => `<option value="${i}" ${i === H.rate ? 'selected' : ''}>${esc(r[2])} · $${money(r[3])} / ${esc(r[4])}</option>`).join('') || `<option>${t('គ្មាន', 'None')}</option>`}</select></div>
+          <div><label>🔢 No</label><input class="in" id="dn_no" value="${esc(H.no || dnNo())}"></div>
+          <div><label>📅 Date</label><input class="in" type="date" id="dn_date" value="${esc(H.date || today())}"></div>
+          <div><label>👤 Customer</label><input class="in" id="dn_customer" value="${esc(H.customer || '')}"></div>
+          <div><label>📞 Tel</label><input class="in" id="dn_tel" value="${esc(H.tel || '')}"></div>
+          <div><label>🧑‍✈️ Transportation Agent</label><input class="in" id="dn_agent" value="${esc(H.agent || '')}"></div>
+          <div><label>🆔 Vendor ID</label><input class="in" id="dn_vendorId" value="${esc(H.vendorId || '')}"></div>
+          <div><label>📒 GL</label><input class="in" id="dn_gl" value="${esc(H.gl || '65009030')}"></div>
+          <div><label>🏷️ Cost Center</label><input class="in" id="dn_costCenter" value="${esc(H.costCenter || '')}"></div>
+        </div>
+        <div class="tscroll"><table class="rec dnt"><thead><tr><th>ល.រ</th><th>Date</th><th>Truck No.</th><th class="r">Q'ty (Mt)</th><th class="r">USD/MT</th><th class="r">USD/Truck</th><th class="r">Total Amount</th><th>${t('ផ្សេងៗ', 'Remark')}</th></tr></thead><tbody>
+          ${rows.map(x => `<tr><td>${x.i + 1}</td><td>${shortDate(x.r.date)}</td><td>${esc(x.r.vehicle)}</td><td class="r">${x.q.toFixed(3)}</td>
+            <td class="r">${trip ? '' : `<input class="in pr" data-pr="${x.r.id}" value="${x.pr == null ? '' : x.pr}" inputmode="decimal">`}</td>
+            <td class="r">${trip ? `<input class="in pr" data-pr="${x.r.id}" value="${x.pr == null ? '' : x.pr}" inputmode="decimal">` : ''}</td>
+            <td class="r"><b>${x.amt == null ? '' : '$ ' + money(x.amt)}</b></td><td><input class="in rm" data-rm="${x.r.id}" value="${esc(x.remark)}"></td></tr>`).join('')}
+          <tr class="tot"><td colspan="3"><b>Total:</b></td><td class="r"><b>${tq.toFixed(3)}</b></td><td></td><td></td><td class="r"><b>$ ${money(ta)}</b></td><td></td></tr>
+        </tbody></table></div>
+        <div class="pills" style="margin:12px 0 0"><button type="button" class="pill on" id="dnWord">📄 ${t('ទាញយក Word', 'Download Word (.docx)')}</button>
+          <span class="hint">${t('ពុម្ព Word កែបាននៅ ការកំណត់ (Admin)', 'The Word template can be changed in Settings (admin)')}</span></div>
+      </div>`;
+      const keep = () => { ['dest', 'no', 'date', 'customer', 'tel', 'agent', 'vendorId', 'gl', 'costCenter'].forEach(k => { H[k] = $('#dn_' + k).value.trim(); }); set(key, JSON.stringify(Object.assign({}, H, { no: '', date: '' }))); };
+      $('#dnX').onclick = () => { DN_OPEN = false; box.innerHTML = ''; };
+      $('#dn_dest').onchange = () => { keep(); H.rate = 0; H.no = ''; setTimeout(draw, 0); };
+      $('#dn_rate').onchange = e => { keep(); H.rate = +e.target.value || 0; Object.keys(OV).forEach(k => { delete OV[k].price; }); setTimeout(draw, 0); };
+      $$('.dn .dngrid .in').forEach(el => { if (el.id !== 'dn_dest' && el.id !== 'dn_rate') el.onchange = keep; });
+      // redraw after the event, so a box losing focus while the table is rebuilt does not draw twice
+      $$('[data-pr]').forEach(el => { el.onchange = () => { keep(); (OV[el.dataset.pr] = OV[el.dataset.pr] || {}).price = el.value.trim() === '' ? null : toNum(el.value); setTimeout(draw, 0); }; });
+      $$('[data-rm]').forEach(el => { el.oninput = () => { (OV[el.dataset.rm] = OV[el.dataset.rm] || {}).remark = el.value; }; });
+      $('#dnWord').onclick = async () => {
+        keep();
+        const btn = $('#dnWord'); busy(btn, true);
+        try {
+          if (!window.JSZip) await loadScript(VENDOR + 'jszip.min.js');
+          const tpl = await dnTemplate();
+          const d = toDate(H.date) || new Date();
+          const blob = await DebitNote.fill(tpl, {
+            header: { customer: H.customer, tel: H.tel, deliveryTo: H.dest, gl: H.gl, costCenter: H.costCenter, agent: H.agent, no: H.no || dnNo(), vendorId: H.vendorId,
+              date: pad(d.getDate()) + '-' + MON[d.getMonth()].charAt(0) + MON[d.getMonth()].slice(1).toLowerCase() + '-' + String(d.getFullYear()).slice(2),
+              company: co, period: (RF.from ? showDate(RF.from) : '') + (RF.to && RF.to !== RF.from ? ' – ' + showDate(RF.to) : ''),
+              totalQty: tq.toFixed(3), totalAmount: '$ ' + money(ta), preparedBy: me() },
+            items: rows.map(x => ({ no: x.i + 1, date: shortDate(x.r.date), truck: x.r.vehicle, qty: x.q.toFixed(3),
+              priceT: trip || x.pr == null ? '' : '$ ' + money(x.pr), priceTrip: trip && x.pr != null ? '$ ' + money(x.pr) : '',
+              amount: x.amt == null ? '' : '$ ' + money(x.amt), remark: x.remark })),
+          });
+          const name = 'Debit_Note_' + String(H.no || dnNo()).replace(/[^\w\-]/g, '_') + '.docx';
+          if (window.DE_SAVE) await window.DE_SAVE(name, blob);
+          else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+          toast('✅ ' + name, 4000);
+        } catch (e) { console.error(e); toast('⚠️ ' + (e && e.message || e), 6000); } finally { busy(btn, false); }
+      };
+    }
+    draw();
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // Template: the one an admin uploaded in Settings (kept on this computer), else the standard one.
+  async function dnTemplate() {
+    const own = await idbGet('dnTpl').catch(() => null);
+    if (own && own.bytes) return own.bytes;
+    if (window.DE_DN_TPL) return (await fetch(window.DE_DN_TPL)).arrayBuffer();
+    const r = await fetch('dn-template.docx'); if (!r.ok) throw new Error('Template missing'); return r.arrayBuffer();
   }
 
   // ---------- Settings ----------
@@ -717,6 +827,19 @@
           : t('កម្មវិធីរុករកនេះមិនអាចសរសេរក្នុង folder បានទេ។ ប្រើ Chrome ឬ Edge លើកុំព្យូទ័រ។ ឥឡូវនេះ Excel នឹងទាញយក។', 'This browser cannot write to a folder. Use Chrome or Edge on a computer. For now the Excel file downloads instead.')}</div></div>
       <div class="field"><label class="f" for="sName">${t('ឈ្មោះឯកសារ', 'File name')}</label><input class="in" id="sName" value="${esc(SET.fileName)}">
         <div class="hint">${t('ប័ណ្ណថ្មីត្រូវបានបន្ថែមក្នុងឯកសារនេះ (sheet "Weighing Tickets")។ លេខប័ណ្ណដដែលនឹងជំនួសជួរចាស់។', 'New tickets are added to this file (sheet "Weighing Tickets"). The same ticket number replaces its old row.')}</div></div>
+    </div>
+    <div class="card set">
+      <h2>🧾 Debit Note</h2>
+      <div class="field"><label class="f">📄 ${t('ពុម្ព Word', 'Word template')}</label>
+        <div class="cur"><code id="tplName">${t('ពុម្ពស្តង់ដារ', 'Standard template')}</code>
+          <button type="button" class="btn sm" id="tplGet">⬇️ ${t('ទាញយក', 'Download')}</button>
+          <button type="button" class="btn sm" id="tplUp">⬆️ ${t('ផ្ទុកពុម្ពថ្មី', 'Upload new')}</button>
+          <button type="button" class="btn sm" id="tplReset" hidden>↩️ ${t('ប្រើពុម្ពស្តង់ដារ', 'Use standard')}</button>
+          <input type="file" id="tplFile" accept=".docx" hidden></div>
+        <div class="hint">${t('កែក្នុង Word ហើយទុកពាក្យ {{...}}។ ជួរដែលមាន {{item.no}} ធ្វើម្តងទៀតសម្រាប់ជើងដឹកនីមួយៗ។', 'Edit it in Word and keep the {{...}} words. The row with {{item.no}} repeats once per trip.')}</div></div>
+      <div class="field"><label class="f">💲 Price List</label>
+        ${prices().length ? `<div class="tscroll"><table class="rec"><thead><tr><th>3PL Company</th><th>Destination</th><th>Charge Per</th><th class="r">Price</th><th>UoM</th></tr></thead><tbody>${prices().map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td class="r">${money(r[3])}</td><td>${esc(r[4])}</td></tr>`).join('')}</tbody></table></div>` : `<p class="hint">${t('មិនទាន់មានតម្លៃ', 'No prices yet')}</p>`}
+        <div class="hint">${LIVE ? t('កែតម្លៃក្នុង Google Sheet ផ្ទាំង Price List', 'Edit the prices in the Google Sheet, tab Price List') : t('សាកល្បង៖ តម្លៃពីឯកសារ Excel របស់អ្នក', 'Demo: prices from your Excel file')}</div></div>
     </div>
     <div class="card set">
       <h2>✉️ ${t('អ៊ីមែល', 'Email')}</h2>
@@ -735,6 +858,11 @@
     $('#sName').onchange = e => { SET.fileName = e.target.value.trim() || 'Weight_Scale_Data.xlsx'; saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
     $('#sMail').onchange = e => { SET.emailTo = e.target.value.trim(); saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
     $('#sDir').onclick = async () => { try { const d = await window.showDirectoryPicker({ id: 'weight-scale', mode: 'readwrite' }); await idbPut('dir', d); SET.folderName = d.name; saveSet(); toast('✅ ' + d.name); renderSettings(); } catch (e) { if (e.name !== 'AbortError') toast('⚠️ ' + e.message); } };
+    idbGet('dnTpl').then(o => { if (o && o.name) { $('#tplName').textContent = '📄 ' + o.name; $('#tplReset').hidden = false; } }).catch(() => {});
+    $('#tplGet').onclick = async () => { try { const b = new Blob([await dnTemplate()]); const n = 'Debit_Note_Template.docx'; if (window.DE_SAVE) await window.DE_SAVE(n, b); else { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; a.click(); } } catch (e) { toast('⚠️ ' + e.message); } };
+    $('#tplUp').onclick = () => $('#tplFile').click();
+    $('#tplFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; await idbPut('dnTpl', { name: f.name, bytes: await f.arrayBuffer() }); toast('✅ ' + f.name); renderSettings(); };
+    $('#tplReset').onclick = async () => { await idbPut('dnTpl', null); toast('↩️ ' + t('ពុម្ពស្តង់ដារ', 'Standard template')); renderSettings(); };
     $('#sClear').onclick = () => { const n = RECS.filter(r => r.sheet).length; if (!n) return toast(t('គ្មាន', 'Nothing to clear')); if (!confirm(t('លុប ', 'Clear ') + n + t(' កំណត់ត្រា?', ' records?'))) return; RECS = RECS.filter(r => !r.sheet); saveRecs(); renderSettings(); };
   }
 

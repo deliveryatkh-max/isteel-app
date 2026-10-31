@@ -5,3 +5,4 @@ SheetJS xlsx 0.18.5 mini (reads the Incoming Packing List Excel in the Inbound a
 tesseract.js 5.1 + tesseract.js-core 5.1 (reads text on weighing tickets, runs in the browser) - Apache-2.0 - https://github.com/naptha/tesseract.js
 tessdata eng 4.0.0_best_int (English text model for Tesseract) - Apache-2.0 - https://github.com/tesseract-ocr/tessdata_best
 pdf.js 3.11.174 (opens PDF tickets) - Apache-2.0 - https://github.com/mozilla/pdf.js
+JSZip 3.10.1 (fills the Debit Note Word template) - MIT or GPLv3 (used under MIT) - https://github.com/Stuk/jszip

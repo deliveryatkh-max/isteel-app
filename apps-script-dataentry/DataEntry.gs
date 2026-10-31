@@ -15,7 +15,8 @@
  *   DE_FOLDER_ID       made by setup(); Drive folder "Weighing Ticket Images"
  */
 
-const SH = { TK: 'Weighing Tickets', SET: 'DE Settings' };
+const SH = { TK: 'Weighing Tickets', SET: 'DE Settings', PRICE: 'Price List' };
+const PRICE_COLS = ['3PL Company', 'Destination', 'Charge Per', 'Price', 'UoM'];
 const TK_COLS = ['Ticket No', 'Vehicle No', 'Company', 'Document Date', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'In Date/Time', 'Out Date/Time',
   'Total Time (min)', 'Total Time', 'Check', 'Source File', 'Picture', 'Entered By', 'Entered At', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
@@ -97,6 +98,8 @@ function setup() {
   tk.getRange(2, 5, tk.getMaxRows() - 1, 3).setNumberFormat('#,##0');
   tk.getRange(2, 8, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm:ss');
   tk.getRange(2, 16, tk.getMaxRows() - 1, 2).setNumberFormat('dd-mmm-yyyy hh:mm');
+  // Trip prices for the Debit Note (Kim's sheet "Price List", 31 Oct 2026). Charge Per: "Charge per t" or "Charge per trip".
+  sheet_(SH.PRICE, PRICE_COLS, [['3PL #1', 'KPC Branch', 'Charge per t', 8, 't'], ['3PL #1', 'KPC Branch', 'Charge per trip', 250, 'trip']]);
   sheet_(SH.SET, SET_COLS, [
     ['EMAIL_TO', '', 'Default "Send to" for Send Excel to Email (comma separated). People can change it in the app.'],
     ['EMAIL_SUBJECT', 'Weighing tickets', 'Start of the email subject'],
@@ -201,7 +204,16 @@ function usersCached_() {
 
 // ---------------------------------------------------------------- actions
 function boot_(user) {
-  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO'), trucks: trucks_() };
+  return { user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer }, sheetUrl: ss_().getUrl(), emailTo: setting_('EMAIL_TO'), trucks: trucks_(), prices: prices_() };
+}
+
+/** Price List rows: [company, destination, charge per, price, UoM]. */
+function prices_() {
+  const sh = sheet_(SH.PRICE, PRICE_COLS);
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
+    .filter(r => String(r[0]).trim() && r[3] !== '' && isFinite(Number(r[3])))
+    .map(r => [String(r[0]).trim(), String(r[1]).trim(), String(r[2]).trim(), Number(r[3]), String(r[4]).trim()]);
 }
 
 /** Plate → company from the Fuel Refill sheet, tab "Driver & Truck": column G (ផ្លាកលេខឡាន) and column E (ក្រុមហ៊ុន). */
