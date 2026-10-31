@@ -64,6 +64,7 @@ function doPost(e) {
     // Signed in with Google but not (yet) in the Users sheet: these two only need the sign-in.
     if (req.action === 'requestAccess') return json_({ ok: true, data: requestAccess_(req.token, req.payload || {}) });
     if (req.action === 'requestForm') return json_({ ok: true, data: requestForm_(req.token) });
+    if (req.action === 'findEmployee') return json_({ ok: true, data: findEmployee_(req.token, req.payload || {}) });
     if (!action) throw new Error('Unknown action: ' + req.action);
     if (req.action === 'home') ensureAppColumns_();
     const user = authenticate_(req.token);
@@ -107,6 +108,7 @@ const ACTIONS = {
   umDept: umDeptSave_,
   umOt: umOt_,
   umOtSave: umOtSave_,
+  umPhoto: umPhoto_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -147,6 +149,7 @@ function homeApps_(p, user) {
   ensureRecapTrigger_();
   ensurePhotoCheckTrigger_();
   ensureTelegramSettings_();
+  ensureUserSync_();
   const out = {
     user: { name: user.name, role: user.role, employeeId: user.employeeId || '' },
     apps: HOME_APPS.map(a => a.key).filter(k => canUse_(user, k)),
@@ -236,8 +239,11 @@ function authenticate_(token) {
     }
     session = makeSession_(email);
   }
-  const user = readTable_(SHEETS.USERS).find(u =>
+  const find = () => readTable_(SHEETS.USERS).find(u =>
     String(u['Email']).trim().toLowerCase() === email && isYes_(u['Active']));
+  let user = find();
+  // Not in the copy: Kim may have just typed this Gmail into Employee & Approver.
+  if (!user && syncOnMiss_()) user = find();
   if (!user) throw new Error('NOACCESS: ' + email + ' is not allowed to use this app. Ask the admin to add you to the Users sheet.');
   const apps = {};
   HOME_APPS.forEach(a => { if (a.col in user) apps[a.key] = isYes_(user[a.col]); });
@@ -308,14 +314,26 @@ function verifyToken_(token) {
   return info;
 }
 
-// ---------- Request to Admin ----------
-// A person signed in with Google but not allowed yet fills in a short form (full name, employee ID,
-// department from the "Department" sheet). The answers go into the Users sheet with Active = No, the
-// usual apps already ticked, and a note goes to the Telegram alerts group. The admin switches Active to Yes.
+// ---------- One user list: "Employee & Approver" (Kim, 31 Oct 2026) ----------
+// Every person is one row of the "Employee & Approver" tab in SSK_OT_DATA (the OT app's sheet). Kim types columns
+// A–G (Employee ID, Full Name, Khmer Name, Shift, Direct Manager, Department, Function); the access columns to the
+// right (Email, Role, Active, one tick box per app, TEAM, Off Note, Off At, …) are kept by this script and 👥 Users.
+// One Email cell may hold several Gmails (comma or new line). The Fuel "Users" tab is an automatic copy (one row
+// per Gmail) that every app already reads, rebuilt after each change here, when that tab is edited and every 10 min.
+//
+// A new Gmail types their Employee ID on the request screen and sees their details with the names partly hidden.
+// ID found and no Gmail on it yet → access at once (apps from the Department sheet, by Department + Function).
+// ID already has a Gmail, or no ID (Employee Card photo instead) → waits for an admin in 👥 Users › Requests.
 
 const DEPT_SHEET = 'Department';
-const REQ_COLS = ['Employee ID', 'Department'];
 const EMP_ID_MIN = 100000, EMP_ID_MAX = 190000;   // Kim, 10 Oct 2026
+const MASTER_ACCESS = ['Email', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
+  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID']);
+const COPY_HEAD = ['Email', 'Name', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
+  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At']);
+const USERS_BACKUP = 'Users (old, 31 Oct)';
+const CARD_FOLDER_NAME = 'Employee Card Photos';
+const DEPT_SEP = ' · ';
 
 /** Who is signed in (Google token or this app's session), without needing a Users row. */
 function identity_(token) {
@@ -323,11 +341,201 @@ function identity_(token) {
   return own ? { email: own.email, name: '' } : verifyToken_(token);
 }
 
+const idText_ = v => String(v == null ? '' : v).replace(/[០-៩]/g, d => String('០១២៣៤៥៦៧៨៩'.indexOf(d))).replace(/\s+/g, '').replace(/\.0+$/, '');
+const emailsOf_ = v => String(v || '').toLowerCase().split(/[\s,;]+/).map(s => s.trim()).filter(s => /^[^@]+@[^@]+\.[^@]+$/.test(s));
+const deptKey_ = (dept, fn) => [String(dept || '').trim(), String(fn || '').trim()].filter(Boolean).join(DEPT_SEP);
+function splitDeptKey_(key) {
+  const p = String(key || '').split(/\s*·\s*/);
+  return { dept: (p[0] || '').trim(), fn: p.slice(1).join(' · ').trim() };
+}
+
 /**
- * The "Department" sheet (Kim, 10 Oct 2026): one row per department. The column whose header contains
- * "Department" or ផ្នែក (else column A) feeds the request form's drop-down; Active = No hides a department.
- * One tick box column per app (same titles as in Users) says which apps a new person from that department
- * gets: the request copies that row's ticks into their Users row. The columns are added automatically.
+ * A name with most letters hidden, for the request screen (Kim, 31 Oct 2026): "THEY SEYHA" → "TH** SE***",
+ * "ថី សីហា" → "ថី សី*". Khmer letters are counted with their vowel signs and subscripts.
+ */
+function mask_(s) {
+  return String(s || '').trim().split(/\s+/).filter(Boolean).map(w => {
+    const parts = w.match(/[ក-ឳ](?:្[ក-ឳ]|[឴-៑៓៝​-‍])*|[\s\S]/g) || [];
+    const keep = /[ក-៿]/.test(w) || parts.length <= 3 ? 1 : 2;
+    return parts.slice(0, keep).join('') + '*'.repeat(Math.min(Math.max(parts.length - keep, 0), 6));
+  }).join(' ');
+}
+
+// ---- the master tab ----
+let masterCache_ = null;   // read once per request
+
+function masterBook_() { return SpreadsheetApp.openById(getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT); }
+
+/** The "Employee & Approver" tab; columns named in need are added at the end when missing. */
+function master_(need) {
+  const missing = (need || []).filter(h => !masterCache_ || masterCache_.header.indexOf(h) < 0);
+  if (masterCache_ && !missing.length) return masterCache_;
+  const sh = masterBook_().getSheetByName(OT_EMP_TAB);
+  if (!sh) throw new Error('"' + OT_EMP_TAB + '" tab not found in SSK_OT_DATA.');
+  const header = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
+  const add = (need || []).filter(h => header.indexOf(h) < 0);
+  if (add.length) {
+    if (sh.getMaxColumns() < header.length + add.length) sh.insertColumnsAfter(sh.getMaxColumns(), header.length + add.length - sh.getMaxColumns());
+    sh.getRange(1, header.length + 1, 1, add.length).setValues([add]).setFontWeight('bold');
+    add.forEach(h => header.push(h));
+  }
+  const n = sh.getLastRow() - 1;
+  const values = n > 0 ? sh.getRange(2, 1, n, header.length).getValues() : [];
+  const keys = header.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const find = list => { for (let i = 0; i < list.length; i++) { const k = keys.indexOf(list[i]); if (k >= 0) return k; } return -1; };
+  const c = {
+    id: find(['employeeid', 'idno', 'id']),
+    full: find(['fullname', 'englishname', 'employeename']),
+    kh: find(['khmername']),
+    mgr: keys.findIndex(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0),
+    dept: find(['department']),
+    fn: find(['function']),
+  };
+  if (c.id < 0) throw new Error('"' + OT_EMP_TAB + '" needs an Employee ID column.');
+  return (masterCache_ = { sh, header, values, c, col: h => header.indexOf(h) });
+}
+
+/** One row as an object. */
+function mRow_(m, r, i) {
+  const g = h => { const k = m.col(h); return k >= 0 ? r[k] : ''; };
+  const at = h => { const v = g(h); return v instanceof Date ? v.getTime() : (v ? new Date(v).getTime() || 0 : 0); };
+  const s = k => (k >= 0 ? String(r[k] == null ? '' : r[k]).trim() : '');
+  const apps = {};
+  HOME_APPS.forEach(a => { apps[a.key] = g(a.col) === true || isYes_(g(a.col)); });
+  return {
+    i: i, id: idText_(r[m.c.id]), full: s(m.c.full), kh: s(m.c.kh), mgr: s(m.c.mgr), dept: s(m.c.dept), fn: s(m.c.fn),
+    emails: emailsOf_(g('Email')), role: String(g('Role') || '').trim(), active: g('Active') === true || isYes_(g('Active')),
+    apps: apps, team: String(g('TEAM') || '').trim(), offNote: String(g('Off Note') || '').trim(), offAt: at('Off At'),
+    appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
+    claimed: idText_(g('Claimed ID')),
+  };
+}
+const displayName_ = e => e.appName || e.kh || e.full;
+const rowsOf_ = m => m.values.map((r, i) => mRow_(m, r, i));
+const rowByEmail_ = (m, email) => m.values.findIndex(r => m.col('Email') >= 0 && emailsOf_(r[m.col('Email')]).indexOf(email) >= 0);
+const rowById_ = (m, id) => (id ? m.values.findIndex(r => idText_(r[m.c.id]) === id) : -1);
+
+/** Writes one cell and keeps the copy in memory in step. Tick box columns get a tick box. */
+function mPut_(m, i, h, v) {
+  const k = typeof h === 'number' ? h : m.col(h);
+  if (k < 0) return;
+  const cell = m.sh.getRange(i + 2, k + 1);
+  if (typeof v === 'boolean') cell.insertCheckboxes();
+  else if (h === 'Email' || k === m.c.id || h === 'Claimed ID') cell.setNumberFormat('@');
+  cell.setValue(v);
+  m.values[i][k] = v;
+}
+function mEmails_(m, i, list) { mPut_(m, i, 'Email', list.join(', ')); }
+
+/** A row for someone not (yet) linked to an employee: an empty row is reused, else one is added at the end. */
+function mNewRow_(m) {
+  let i = m.values.findIndex(r => r.every(v => v === '' || v === false || v === null));
+  if (i < 0) {
+    i = m.values.length;
+    m.values.push(m.header.map(() => ''));
+    if (i + 2 > m.sh.getMaxRows()) m.sh.insertRowsAfter(m.sh.getMaxRows(), 20);
+  }
+  return i;
+}
+function mDeleteRow_(m, i) { m.sh.deleteRow(i + 2); m.values.splice(i, 1); }
+
+/** Takes a Gmail off a row; a row with no Employee ID and no Gmail left is removed. */
+function mDropEmail_(m, i, email) {
+  const e = mRow_(m, m.values[i], i);
+  const left = e.emails.filter(x => x !== email);
+  if (!left.length && !e.id) { mDeleteRow_(m, i); return true; }
+  mEmails_(m, i, left);
+  return false;
+}
+function mSetApps_(m, i, apps) { HOME_APPS.forEach(a => { if (apps[a.key] !== undefined) mPut_(m, i, a.col, !!apps[a.key]); }); }
+
+// ---- the Fuel "Users" tab: an automatic copy ----
+/**
+ * Rebuilds the Users tab from the master (one row per Gmail). Skipped when nothing changed, and never written
+ * when the master has no active admin (so a half-filled master can't lock everyone out).
+ */
+function syncUsers_(force) {
+  const m = master_();
+  if (m.col('Email') < 0) return 'Employee & Approver has no Email column yet.';
+  const rows = [], seen = {};
+  let admins = 0;
+  rowsOf_(m).forEach(e => e.emails.forEach(email => {
+    if (seen[email]) return;
+    seen[email] = 1;
+    if (e.active && /admin/i.test(e.role)) admins++;
+    rows.push([email, displayName_(e), e.role || 'user', e.active ? 'Yes' : 'No'].concat(HOME_APPS.map(a => !!e.apps[a.key]),
+      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '']));
+  }));
+  if (!admins) return 'Skipped: no active admin in Employee & Approver.';
+  const props = PropertiesService.getScriptProperties();
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows)));
+  if (!force && props.getProperty('USERS_SYNC_HASH') === hash) return 'No change.';
+  const ss = SpreadsheetApp.getActive();
+  const sh = ss.getSheetByName(SHEETS.USERS);
+  if (!ss.getSheetByName(USERS_BACKUP)) sh.copyTo(ss).setName(USERS_BACKUP);   // the old list, once
+  const w = COPY_HEAD.length, all = [COPY_HEAD].concat(rows);
+  if (sh.getMaxColumns() < w) sh.insertColumnsAfter(sh.getMaxColumns(), w - sh.getMaxColumns());
+  if (sh.getMaxRows() < all.length + 1) sh.insertRowsAfter(sh.getMaxRows(), all.length + 1 - sh.getMaxRows());
+  sh.clearContents();
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations();
+  if (rows.length) {
+    sh.getRange(2, 5, rows.length, HOME_APPS.length).insertCheckboxes();
+    sh.getRange(2, COPY_HEAD.indexOf('Employee ID') + 1, rows.length, 1).setNumberFormat('@');
+  }
+  sh.getRange(1, 1, all.length, w).setValues(all);
+  sh.getRange(1, 1, 1, w).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  props.setProperty('USERS_SYNC_HASH', hash);
+  delete tableCache_[SHEETS.USERS];
+  CacheService.getScriptCache().removeAll(['emp_idx', 'users_v2']);
+  return rows.length + ' Gmails copied to Users.';
+}
+
+/** Run from the editor, or by the triggers below: copies Employee & Approver into the Users tab. */
+function syncUsersNow() {
+  const cache = CacheService.getScriptCache();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) { cache.put('usync_again', '1', 900); return 'Busy: will run again shortly.'; }
+  let out;
+  try {
+    masterCache_ = null;
+    cache.remove('usync_again');
+    out = syncUsers_(false);
+  } finally {
+    lock.releaseLock();
+  }
+  console.log(out);
+  return out;
+}
+
+/** Every 10 minutes, and whenever someone edits SSK_OT_DATA. Made once from the home menu (or run setupUserSync). */
+function ensureUserSync_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
+  if (props.getProperty('USYNC_TRIGGERS') === id) return;
+  try { setupUserSync(); } catch (e) { console.log('User sync triggers: ' + e); }
+}
+function setupUserSync() {
+  const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'syncUsersNow').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncUsersNow').timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger('syncUsersNow').forSpreadsheet(id).onEdit().create();
+  PropertiesService.getScriptProperties().setProperty('USYNC_TRIGGERS', id);
+  return syncUsersNow();
+}
+
+/** A Gmail not in the Users copy: the master may have it already (Kim just typed it). At most every 20 s. */
+function syncOnMiss_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('usync_miss')) return false;
+  cache.put('usync_miss', '1', 20);
+  try { return /copied/.test(syncUsersNow()); } catch (e) { return false; }
+}
+
+// ---- the Department sheet: Department + Function → apps ----
+/**
+ * The "Department" sheet (Kim re-arranged it 31 Oct 2026): one row per Department + Function, one tick box column
+ * per app (same titles as in Users). A new person gets the ticks of their Department + Function row. Active = No hides a row.
  */
 let deptCache_ = null;   // read once per request
 
@@ -337,151 +545,254 @@ function deptTable_() {
   let sheet = ss.getSheetByName(DEPT_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(DEPT_SHEET);
-    sheet.getRange(1, 1, 1, 2).setValues([['Department', 'Active']]).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, 2).setValues([['Department', 'Function']]).setFontWeight('bold');
   }
-  let header = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
+  const header = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
   const missing = HOME_APPS.filter(a => header.indexOf(a.col) < 0);
   if (missing.length) {
     const rows = Math.max(sheet.getLastRow() - 1, 0);
     missing.forEach(a => {
       const c = sheet.getLastColumn() + 1;
       sheet.getRange(1, c).setValue(a.col).setFontWeight('bold');
-      // Starting ticks: the usual apps for everyone, Dashboard off. Change them per department.
       if (rows) sheet.getRange(2, c, rows, 1).insertCheckboxes().setValues(new Array(rows).fill([DEFAULT_APPS.indexOf(a.key) >= 0]));
       header.push(a.col);
     });
   }
   const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
   const lower = header.map(h => h.toLowerCase());
-  const name = Math.max(0, lower.findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
+  const dc = Math.max(0, lower.findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
+  const fc = lower.findIndex(h => h.indexOf('function') >= 0 || h.indexOf('មុខងារ') >= 0);
   const active = lower.indexOf('active');
-  const seen = {};
-  const list = [];
-  values.forEach(r => {
-    const d = String(r[name] || '').trim();
-    if (!d || seen[d]) return;
+  const seen = {}, list = [];
+  values.forEach((r, i) => {
+    const dept = String(r[dc] || '').trim(), fn = fc >= 0 ? String(r[fc] || '').trim() : '';
+    const name = deptKey_(dept, fn);
+    if (!name || seen[name]) return;
     const apps = {};
     HOME_APPS.forEach(a => { const c = header.indexOf(a.col); apps[a.key] = r[c] === true || isYes_(r[c]); });
-    seen[d] = { name: d, active: active < 0 || !isNo_(r[active]), apps: apps };
-    list.push(seen[d]);
+    seen[name] = { name, dept, fn, row: i + 2, active: active < 0 || !isNo_(r[active]), apps };
+    list.push(seen[name]);
   });
   return (deptCache_ = list);
 }
 
-/** Department names for the drop-down. */
+/** The Department sheet row for this Department + Function (the Function alone is enough when it is unique). */
+function deptFind_(dept, fn) {
+  const t = deptTable_(), D = String(dept || '').trim().toLowerCase(), F = String(fn || '').trim().toLowerCase();
+  if (F) return t.find(d => d.fn.toLowerCase() === F && d.dept.toLowerCase() === D) || t.find(d => d.fn.toLowerCase() === F) || null;
+  return D ? t.find(d => d.dept.toLowerCase() === D && !d.fn) || null : null;
+}
+
+/** "Department · Function" choices for the drop-downs. */
 function departments_() {
   return deptTable_().filter(d => d.active).map(d => d.name);
 }
 
-/** The apps a new person from this department gets; the usual apps when the department isn't listed. */
-function deptApps_(dept) {
-  const row = deptTable_().find(d => d.name === dept);
-  if (row) return row.apps;
+/** The apps a new person gets: their Department + Function row, else the usual apps. */
+function deptApps_(dept, fn) {
+  const row = deptFind_(dept, fn);
+  if (row) return Object.assign({}, row.apps);
   const apps = {};
   HOME_APPS.forEach(a => { apps[a.key] = DEFAULT_APPS.indexOf(a.key) >= 0; });
   return apps;
 }
 
-/** What the request form needs: the departments and anything this person already sent. */
+// ---- the request screen ----
+/** What the request screen needs: this Gmail's state and the Department · Function choices. */
 function requestForm_(token) {
   const info = identity_(token);
-  const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.USERS);
-  const values = sheet.getDataRange().getValues();
-  const header = values[0].map(h => String(h).trim());
-  const col = h => header.indexOf(h);
-  const row = values.slice(1).find(r => String(r[col('Email')]).trim().toLowerCase() === info.email);
-  const get = (r, h) => (r && col(h) >= 0 ? String(r[col(h)] || '').trim() : '');
+  const row = readTable_(SHEETS.USERS).find(u => String(u['Email'] || '').trim().toLowerCase() === info.email);
   return {
+    v: 2,
     email: info.email,
-    status: row && isYes_(row[col('Active')]) ? 'active' : row ? 'requested' : 'new',
-    fullName: get(row, 'Name') || String(info.name || '').trim(),
-    employeeId: get(row, 'Employee ID'),
-    department: get(row, 'Department'),
-    departments: departments_(),
+    status: row && isYes_(row['Active']) ? 'active' : row && !row['Off At'] ? 'requested' : 'new',
+    functions: departments_(),
+    fnApps: deptTable_().filter(d => d.active).reduce((o, d) => { o[d.name] = HOME_APPS.filter(a => d.apps[a.key]).map(a => a.key); return o; }, {}),
+    idMin: EMP_ID_MIN, idMax: EMP_ID_MAX,
   };
 }
 
+/** A small copy of the employee list for the ID search (5 minutes; cleared whenever the list changes). */
+function empIndex_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('emp_idx');
+  if (hit) return JSON.parse(hit);
+  const out = {};
+  rowsOf_(master_()).forEach(e => { if (e.id) out[e.id] = [e.full, e.kh, e.mgr, e.dept, e.fn, e.emails.join(','), e.active ? 1 : 0, e.offAt ? 1 : 0]; });
+  try { cache.put('emp_idx', JSON.stringify(out), 300); } catch (e) { /* too big for the cache: read each time */ }
+  return out;
+}
+
+/** The ID search on the request screen: names come back partly hidden. At most 20 searches per 10 minutes per Gmail. */
+function findEmployee_(token, p) {
+  const info = identity_(token);
+  const cache = CacheService.getScriptCache();
+  const key = 'fe_' + info.email;
+  const n = Number(cache.get(key) || 0);
+  if (n >= 20) throw new Error('Too many searches. Please wait 10 minutes. / ស្វែងរកច្រើនដងពេក។ សូមរង់ចាំ ១០ នាទី។');
+  cache.put(key, String(n + 1), 600);
+  const id = idText_(p && p.id);
+  if (!/^\d{4,8}$/.test(id)) return { found: false, id };
+  const r = empIndex_()[id];
+  if (!r) return { found: false, id };
+  const emails = String(r[5] || '').split(',').filter(Boolean);
+  const row = deptFind_(r[3], r[4]);
+  return {
+    found: true, id,
+    name: mask_(r[0]), kh: mask_(r[1]), manager: mask_(r[2]),
+    dept: row ? row.dept : r[3], fn: row ? row.fn : r[4], fnOk: !!row,
+    apps: row ? HOME_APPS.filter(a => row.apps[a.key]).map(a => a.key) : [],
+    mine: emails.indexOf(info.email) >= 0, linked: emails.some(x => x !== info.email),
+  };
+}
+
+let cardFolderCache_ = null;
+function cardFolder_() {
+  if (cardFolderCache_) return cardFolderCache_;
+  const id = getSetting_('CARD_FOLDER_ID');
+  if (id) { try { return (cardFolderCache_ = DriveApp.getFolderById(id)); } catch (e) { /* recreate below */ } }
+  const parents = photoFolder_().getParents();
+  const folder = (parents.hasNext() ? parents.next() : DriveApp.getRootFolder()).createFolder(CARD_FOLDER_NAME);
+  setSetting_('CARD_FOLDER_ID', folder.getId());
+  return (cardFolderCache_ = folder);
+}
+
+/**
+ * Sends the request. p.mode: 'id' (employeeId, and fn when their Function is not in the Department sheet) or
+ * 'card' (fullName, fn, photo). The older form (fullName, employeeId, department) still works.
+ */
 function requestAccess_(token, p) {
   const info = identity_(token);
   const email = info.email;
-  // The form sends fullName, employeeId and department; older app versions send nothing.
-  const form = p && p.fullName !== undefined;
-  const name = String((form ? p.fullName : info.name) || '').replace(/\s+/g, ' ').trim().slice(0, 100);
-  // Employee ID is a number (Khmer digits accepted); kept as text so leading zeros stay.
-  const empId = form ? String(p.employeeId || '').replace(/[០-៩]/g, d => String('០១២៣៤៥៦៧៨៩'.indexOf(d))).replace(/\s+/g, '').slice(0, 20) : '';
-  const dept = form ? String(p.department || '').trim().slice(0, 100) : '';
-  if (form) {
+  p = p || {};
+  const mode = p.mode || (p.fullName !== undefined ? 'old' : 'id');
+  const id = idText_(p.employeeId);
+  const pick = String(p.fn || p.department || '').trim().slice(0, 150);
+  const name = String(p.fullName || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  let blob = null;
+  if (mode === 'card') {
     if (!name) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
-    if (!empId) throw new Error('Employee ID is required. / សូមបញ្ចូលលេខសម្គាល់បុគ្គលិក។');
-    if (!/^\d+$/.test(empId) || +empId < EMP_ID_MIN || +empId > EMP_ID_MAX) {
-      throw new Error('Employee ID must be a number from ' + EMP_ID_MIN + ' to ' + EMP_ID_MAX + '. / លេខសម្គាល់បុគ្គលិក ត្រូវជាលេខពី ' + EMP_ID_MIN + ' ដល់ ' + EMP_ID_MAX + '។');
-    }
-    if (!dept) throw new Error('Department is required. / សូមជ្រើសរើសផ្នែក។');
-    const list = departments_();
-    if (list.length && list.indexOf(dept) < 0) throw new Error('Choose a department from the list. / សូមជ្រើសរើសផ្នែកពីបញ្ជី។');
+    if (!pick) throw new Error('Choose your Department · Function. / សូមជ្រើសរើសផ្នែក · មុខងារ។');
+    const mm = /^data:(image\/(jpeg|png));base64,(.+)$/.exec(String(p.photo || ''));
+    if (!mm) throw new Error('Take a photo of your Employee Card. / សូមថតរូបកាតបុគ្គលិក។');
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+    blob = Utilities.newBlob(Utilities.base64Decode(mm[3]), mm[1], 'card ' + email + ' ' + stamp + (mm[2] === 'png' ? '.png' : '.jpg'));
+    if (blob.getBytes().length > 4e6) throw new Error('The photo is too big. / រូបធំពេក។');
+  } else if (!id) {
+    throw new Error('Employee ID is required. / សូមបញ្ចូលលេខសម្គាល់បុគ្គលិក។');
   }
-  const apps = deptApps_(dept);
+  if (pick && departments_().indexOf(pick) < 0 && mode !== 'old') throw new Error('Choose from the list. / សូមជ្រើសរើសពីបញ្ជី។');
+  const photoUrl = blob ? 'https://drive.google.com/file/d/' + cardFolder_().createFile(blob).getId() + '/view' : '';
+
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  let added = false, changed = false;
+  lock.waitLock(25000);
+  let out, note;
   try {
-    const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.USERS);
-    let header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
-    if (form) REQ_COLS.filter(h => header.indexOf(h) < 0).forEach(h => {
-      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(h).setFontWeight('bold');
-      header.push(h);
-    });
-    const col = h => header.indexOf(h);
-    const values = sheet.getDataRange().getValues();
-    const i = values.findIndex((r, k) => k > 0 && String(r[col('Email')]).trim().toLowerCase() === email);
-    if (i > 0 && isYes_(values[i][col('Active')])) return { status: 'active' };
-    let r;
-    if (i < 0) {
-      sheet.appendRow(header.map(h => ({ Email: email, Name: name, Role: 'user', Active: 'No' })[h] || ''));
-      r = sheet.getLastRow();
-      // App tick boxes on the new row: the default apps ticked, so the admin only switches Active to Yes.
-      HOME_APPS.forEach(a => { const c = col(a.col); if (c >= 0) sheet.getRange(r, c + 1).insertCheckboxes().setValue(apps[a.key]); });
-      added = true;
+    const m = master_(MASTER_ACCESS);
+    // Already allowed on some row: nothing to do.
+    const rows = rowsOf_(m).filter(e => e.emails.indexOf(email) >= 0);
+    if (rows.some(e => e.active)) return { status: 'active' };
+    // An earlier unanswered request from this Gmail is replaced by this one (rows deleted from the bottom up).
+    rows.filter(e => !(id && e.id === id)).sort((a, b) => b.i - a.i).forEach(e => mDropEmail_(m, e.i, email));
+    const now = new Date();
+    const at = mode === 'card' ? -1 : rowById_(m, id);
+    if (at < 0 && mode === 'id') throw new Error('Employee ID ' + id + ' is not in the list. / រកមិនឃើញលេខ ' + id + ' ក្នុងបញ្ជីបុគ្គលិក។');
+    if (at < 0) {
+      // Card photo, or the old form with an ID that isn't listed: waits for an admin.
+      const k = splitDeptKey_(pick);
+      const i = mNewRow_(m);
+      if (m.c.full >= 0) mPut_(m, i, m.c.full, name || String(info.name || '').trim());
+      if (m.c.dept >= 0) mPut_(m, i, m.c.dept, k.dept);
+      if (m.c.fn >= 0) mPut_(m, i, m.c.fn, k.fn);
+      mEmails_(m, i, [email]);
+      mPut_(m, i, 'Role', 'user');
+      mPut_(m, i, 'Active', 'No');
+      mSetApps_(m, i, deptApps_(k.dept, k.fn));
+      if (photoUrl) mPut_(m, i, 'Card Photo', photoUrl);
+      if (id) mPut_(m, i, 'Claimed ID', id);
+      mPut_(m, i, 'Requested At', now);
+      out = { status: 'requested', kind: 'card' };
+      note = { kind: photoUrl ? 'card' : 'claim', name: name, id: id, dept: pick, apps: deptApps_(k.dept, k.fn) };
     } else {
-      r = i + 1;
-      if (form && name) sheet.getRange(r, col('Name') + 1).setValue(name);
-    }
-    if (form) {
-      const old = i > 0 ? [String(values[i][col('Employee ID')] || ''), String(values[i][col('Department')] || '')] : ['', ''];
-      changed = added || old[0] !== empId || old[1] !== dept;
-      // Kept as text so IDs like 00123 keep their zeros.
-      sheet.getRange(r, col('Employee ID') + 1).setNumberFormat('@').setValue(empId);
-      sheet.getRange(r, col('Department') + 1).setValue(dept);
-      // Still waiting for the admin and the department changed: the app ticks follow the new department.
-      if (i > 0 && old[1] !== dept) {
-        HOME_APPS.forEach(a => { const c = col(a.col); if (c >= 0) sheet.getRange(r, c + 1).insertCheckboxes().setValue(apps[a.key]); });
+      let e = mRow_(m, m.values[at], at);
+      // Their Function isn't in the Department sheet yet: the one they picked is written on their row.
+      if (!deptFind_(e.dept, e.fn) && !pick && mode === 'id' && departments_().length) {
+        throw new Error('Choose your Department · Function. / សូមជ្រើសរើសផ្នែក · មុខងារ។');
+      }
+      if (!deptFind_(e.dept, e.fn) && pick) {
+        const k = splitDeptKey_(pick);
+        if (m.c.dept >= 0 && !e.dept) mPut_(m, at, m.c.dept, k.dept);
+        if (m.c.fn >= 0) mPut_(m, at, m.c.fn, k.fn);
+        e = mRow_(m, m.values[at], at);
+      }
+      const apps = deptApps_(e.dept, e.fn);
+      const others = e.emails.filter(x => x !== email);
+      if (others.length) {
+        // The ID already has a Gmail: a separate row waits for an admin ("add as 2nd Gmail" or reject).
+        const i = mNewRow_(m);
+        if (m.c.full >= 0) mPut_(m, i, m.c.full, e.full);
+        if (m.c.kh >= 0) mPut_(m, i, m.c.kh, e.kh);
+        if (m.c.dept >= 0) mPut_(m, i, m.c.dept, e.dept);
+        if (m.c.fn >= 0) mPut_(m, i, m.c.fn, e.fn);
+        mEmails_(m, i, [email]);
+        mPut_(m, i, 'Role', e.role || 'user');
+        mPut_(m, i, 'Active', 'No');
+        mSetApps_(m, i, e.apps);
+        mPut_(m, i, 'Claimed ID', id);
+        mPut_(m, i, 'Requested At', now);
+        out = { status: 'requested', kind: 'linked' };
+        note = { kind: 'claim', name: e.full, id: id, dept: deptKey_(e.dept, e.fn), apps: e.apps, others: others };
+      } else if (e.offAt) {
+        // Switched off by an admin before: an admin decides again.
+        mEmails_(m, at, [email]);
+        mPut_(m, at, 'Active', 'No');
+        mPut_(m, at, 'Off At', '');
+        mPut_(m, at, 'Requested At', now);
+        out = { status: 'requested', kind: 'off' };
+        note = { kind: 'off', name: e.full, id: id, dept: deptKey_(e.dept, e.fn), apps: e.apps, offNote: e.offNote };
+      } else {
+        // Found and free: access at once with the apps of their Department + Function.
+        mEmails_(m, at, [email]);
+        if (!e.role) mPut_(m, at, 'Role', 'user');
+        mPut_(m, at, 'Active', 'Yes');
+        mSetApps_(m, at, apps);
+        mPut_(m, at, 'Off Note', '');
+        mPut_(m, at, 'Requested At', now);
+        out = { status: 'active', kind: 'auto', apps: HOME_APPS.filter(a => apps[a.key]).map(a => a.key) };
+        note = { kind: 'auto', name: e.full, id: id, dept: deptKey_(e.dept, e.fn), apps: apps };
       }
     }
+    SpreadsheetApp.flush();
+    syncUsers_(true);
   } finally {
     lock.releaseLock();
-    delete tableCache_[SHEETS.USERS];
   }
-  // One Telegram note per account every 6 hours (or when the details change), so repeated taps don't flood the group.
-  const cache = CacheService.getScriptCache();
-  // Sent to the alerts group (⚠️ ISI App Alert, Kim 10 Oct 2026); the new-refill group only while no alerts group is connected.
-  const reqChat = getSetting_('TELEGRAM_ALERT_CHAT_ID') || getSetting_('TELEGRAM_CHAT_ID');
-  if (telegramToken_() && reqChat && (added || changed || !cache.get('req_' + email))) {
-    cache.put('req_' + email, '1', 21600);
-    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    try {
-      telegram_('sendMessage', { chat_id: reqChat, parse_mode: 'HTML', text: [
-        '🔑 <b>ស្នើសុំប្រើកម្មវិធី / Access request</b>',
-        '👤 ' + esc(name || '-'),
-        empId ? '🪪 ' + esc(empId) : null,
-        dept ? '🏢 ' + esc(dept) : null,
-        dept ? '📱 ' + HOME_APPS.filter(a => apps[a.key]).map(a => a.col).join(', ') : null,
-        '📧 ' + esc(email),
-        '',
-        'អនុញ្ញាតនៅ 👥 អ្នកប្រើប្រាស់ / Approve in 👥 Users: https://isteel-app.pages.dev/users/#/req',
-      ].filter(x => x !== null).join('\n') });
-    } catch (e) { /* the request is saved in the sheet even if Telegram fails */ }
-  }
-  return { status: 'requested' };
+  try { umLog_('Request', email, note.name, [{ auto: 'Joined with Employee ID ' + note.id, claim: 'Request: ID ' + (note.id || '–') + ' already has a Gmail', card: 'Request with card photo', off: 'Request (was switched off)' }[note.kind]]); } catch (e) { /* log only */ }
+  requestNote_(email, note, blob);
+  return out;
+}
+
+/** One Telegram note per request to the alerts group (with the card photo when there is one). */
+function requestNote_(email, n, blob) {
+  const chat = getSetting_('TELEGRAM_ALERT_CHAT_ID') || getSetting_('TELEGRAM_CHAT_ID');
+  if (!telegramToken_() || !chat) return;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const head = {
+    auto: '✅ <b>ចូលប្រើដោយលេខ ID / Joined with Employee ID</b>',
+    claim: '🔑 <b>សំណើ៖ ID មាន Gmail រួចហើយ / Request: ID already has a Gmail</b>',
+    card: '📷 <b>សំណើដោយកាតបុគ្គលិក / Request with Employee Card</b>',
+    off: '🔑 <b>សំណើ (ធ្លាប់បិទ) / Request (was switched off)</b>',
+  }[n.kind];
+  const lines = [head, '👤 ' + esc(n.name || '-'), n.id ? '🪪 ' + esc(n.id) : null, n.dept ? '🏢 ' + esc(n.dept) : null,
+    '📱 ' + HOME_APPS.filter(a => n.apps && n.apps[a.key]).map(a => a.col).join(', '), '📧 ' + esc(email),
+    n.others && n.others.length ? '📧 ' + esc(n.others.join(', ')) + ' (មានរួច / already)' : null,
+    n.offNote ? '📝 ' + esc(n.offNote) : null, '',
+    n.kind === 'auto' ? 'មើល / See 👥 Users: https://isteel-app.pages.dev/users/' : 'អនុញ្ញាតនៅ / Approve in 👥 Users: https://isteel-app.pages.dev/users/#/req'];
+  const text = lines.filter(x => x !== null).join('\n');
+  try {
+    if (blob) telegram_('sendPhoto', { chat_id: chat, photo: blob, caption: text.slice(0, 1000), parse_mode: 'HTML' });
+    else telegram_('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: text });
+  } catch (e) { /* the request is saved even if Telegram fails */ }
 }
 
 function isReviewer_(user) {
@@ -2250,7 +2561,7 @@ function mergeDeliveryRoles() {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const ctx = umSheet_();
+    const ctx = usersTab_();
     const dc = ctx.col(DELIVERY_ROLE_HEAD), rc = ctx.col('Role');
     if (dc < 0) return 'There is no Delivery Role column: nothing to do.';
     if (rc < 0) throw new Error('The Users tab has no Role column.');
@@ -2620,8 +2931,8 @@ function needAdmin_(user) {
   if (!isAdmin_(user)) throw new Error('NOACCESS: Admins only. / សម្រាប់តែ Admin ប៉ុណ្ណោះ។');
 }
 
-/** The Users tab with its header; any of the named columns that are missing are added at the end. */
-function umSheet_(need) {
+/** The Users tab itself (only mergeDeliveryRoles still writes it; everything else goes to Employee & Approver). */
+function usersTab_(need) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.USERS);
   let header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
   (need || []).filter(h => header.indexOf(h) < 0).forEach(h => {
@@ -2632,35 +2943,33 @@ function umSheet_(need) {
   return { sheet, header, values, col: h => header.indexOf(h) };
 }
 
-function umUser_(ctx, r) {
-  const g = h => (ctx.col(h) >= 0 ? r[ctx.col(h)] : '');
-  const apps = {};
-  HOME_APPS.forEach(a => { if (ctx.col(a.col) >= 0) apps[a.key] = g(a.col) === true || isYes_(g(a.col)); });
-  const off = g('Off At');
-  const role = String(g('Role') || 'user').trim().toLowerCase();
+/** One Gmail as the 👥 screen shows it (a person with two Gmails is two lines that share one row). */
+function umUserOf_(e, email) {
+  const role = String(e.role || 'user').trim().toLowerCase();
   return {
-    email: String(g('Email') || '').trim().toLowerCase(),
-    name: String(g('Name') || '').trim(),
-    role: UM_ROLES.indexOf(role) >= 0 ? role : 'user',
-    active: g('Active') === true || isYes_(g('Active')),
-    empId: String(g('Employee ID') || '').trim(),
-    dept: String(g('Department') || '').trim(),
-    apps: apps,
-    offAt: off instanceof Date ? off.getTime() : (off ? new Date(off).getTime() || 0 : 0),
-    offNote: String(g('Off Note') || '').trim(),
+    email: email, name: displayName_(e) || email, fullName: e.full, kh: e.kh,
+    role: UM_ROLES.indexOf(role) >= 0 ? role : 'user', active: e.active, empId: e.id,
+    dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
+    photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
   };
 }
+const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
 
 /** Everything the screen needs in one call. */
 function umList_(p, user) {
   needAdmin_(user);
-  const ctx = umSheet_();
+  const m = master_();
+  const rows = rowsOf_(m);
+  const users = [];
+  rows.forEach(e => Array.prototype.push.apply(users, umUsersOfRow_(e)));
   return {
     me: user.email,
-    users: ctx.values.map(r => umUser_(ctx, r)).filter(u => u.email),
+    users: users,
+    emps: rows.filter(e => e.id).map(e => ({ id: e.id, name: e.full, kh: e.kh, dept: deptKey_(e.dept, e.fn), emails: e.emails, active: e.active })),
     apps: HOME_APPS.map(a => ({ key: a.key, col: a.col })),
     depts: deptTable_(),
     log: umLogRead_(60),
+    v: 2,
   };
 }
 
@@ -2673,7 +2982,7 @@ function umCheck_(p, isNew) {
   const out = {};
   if (isNew) {
     const email = String(p.email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email. / សូមបញ្ចូលអ៊ីមែលឲ្យត្រឹមត្រូវ។');
+    if (!/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(email)) throw new Error('Enter a valid email. / សូមបញ្ចូលអ៊ីមែលឲ្យត្រឹមត្រូវ។');
     out.email = email;
   }
   if (p.name !== undefined) {
@@ -2681,12 +2990,10 @@ function umCheck_(p, isNew) {
     if (!out.name) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
   }
   if (p.empId !== undefined) {
-    out.empId = String(p.empId || '').replace(/[០-៩]/g, d => String('០១២៣៤៥៦៧៨៩'.indexOf(d))).replace(/\s+/g, '');
-    if (out.empId && (!/^\d+$/.test(out.empId) || +out.empId < EMP_ID_MIN || +out.empId > EMP_ID_MAX)) {
-      throw new Error('Employee ID must be a number from ' + EMP_ID_MIN + ' to ' + EMP_ID_MAX + '. / លេខសម្គាល់បុគ្គលិក ត្រូវជាលេខពី ' + EMP_ID_MIN + ' ដល់ ' + EMP_ID_MAX + '។');
-    }
+    out.empId = idText_(p.empId);
+    if (out.empId && !/^\d+$/.test(out.empId)) throw new Error('Employee ID must be a number. / លេខសម្គាល់បុគ្គលិក ត្រូវជាលេខ។');
   }
-  if (p.dept !== undefined) out.dept = String(p.dept || '').trim().slice(0, 100);
+  if (p.dept !== undefined) out.dept = String(p.dept || '').trim().slice(0, 150);
   if (p.role !== undefined) {
     out.role = String(p.role || '').toLowerCase();
     if (UM_ROLES.indexOf(out.role) < 0) throw new Error('Unknown role.');
@@ -2697,59 +3004,106 @@ function umCheck_(p, isNew) {
     out.apps = {};
     HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
   }
+  if (p.removeEmail) out.removeEmail = true;
   return out;
 }
 
-/** Writes one person's changes into the open Users tab; returns the log lines. Only cells that change are written. */
-function umWrite_(ctx, email, v, by, isNew) {
-  let i = ctx.values.findIndex(r => String(r[ctx.col('Email')] || '').trim().toLowerCase() === email);
+/**
+ * Writes one person's changes into Employee & Approver; returns { e, log }. Only cells that change are written.
+ * A new Employee ID moves this Gmail onto that employee's row (a request row with no ID left is then removed);
+ * an ID that isn't listed yet is written on a row that has none ("add as a new employee").
+ */
+function umWrite_(m, email, v, by, isNew) {
+  let i = rowByEmail_(m, email);
   if (isNew && i >= 0) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។');
-  if (!isNew && i < 0) throw new Error(email + ' is not in the Users tab.');
+  if (!isNew && i < 0) throw new Error(email + ' is not in Employee & Approver.');
   // Never lock yourself out.
-  if (email === by && ((v.role && v.role !== 'admin') || v.active === false)) {
+  if (email === by && ((v.role && v.role !== 'admin') || v.active === false || v.removeEmail)) {
     throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។');
   }
   const log = [];
-  const sample = ctx.values.length ? ctx.values[0][ctx.col('Active')] : '';
-  const yesNo = (cur, on) => (typeof cur === 'boolean' || (isNew && typeof sample === 'boolean') ? on : (on ? 'Yes' : 'No'));
-  if (i < 0) {
-    const row = ctx.header.map(() => '');
-    row[ctx.col('Email')] = email;
-    ctx.sheet.appendRow(row);
-    ctx.values.push(row);
-    i = ctx.values.length - 1;
-    log.push('Added');
+  if (v.removeEmail) {
+    const e = mRow_(m, m.values[i], i);
+    if (e.emails.length < 2 && e.id) throw new Error('This is their only Gmail: switch them off instead. / នេះជា Gmail តែមួយ៖ សូមបិទជំនួសវិញ។');
+    mDropEmail_(m, i, email);
+    return { e: null, gone: true, log: ['Gmail removed'] };
   }
-  const r = i + 2, cur = ctx.values[i];
-  const before = umUser_(ctx, cur);
-  const set = (h, val, fmtText) => {
-    const c = ctx.col(h);
-    const cell = ctx.sheet.getRange(r, c + 1);
-    if (fmtText) cell.setNumberFormat('@');
-    cell.setValue(val);
-    cur[c] = val;
-  };
-  if (v.name !== undefined && v.name !== before.name) { set('Name', v.name); if (!isNew) log.push('Name: ' + before.name + ' → ' + v.name); }
-  if (v.empId !== undefined && v.empId !== before.empId) { set('Employee ID', v.empId, true); log.push('Employee ID: ' + (before.empId || '–') + ' → ' + (v.empId || '–')); }
-  if (v.dept !== undefined && v.dept !== before.dept) { set('Department', v.dept); log.push('Department: ' + (before.dept || '–') + ' → ' + (v.dept || '–')); }
-  if (v.role !== undefined && (v.role !== before.role || isNew)) { set('Role', v.role); log.push('Role: ' + (isNew ? '' : before.role + ' → ') + v.role); }
+  if (isNew) {
+    const j = rowById_(m, v.empId);
+    if (j >= 0) {
+      i = j;
+      delete v.name;   // their name comes from Employee & Approver
+      const e = mRow_(m, m.values[j], j);
+      mEmails_(m, j, e.emails.concat(email));
+      log.push(e.emails.length ? 'Added as another Gmail of ' + v.empId : 'Added to Employee ID ' + v.empId);
+    } else {
+      i = mNewRow_(m);
+      if (v.empId) mPut_(m, i, m.c.id, v.empId);
+      if (m.c.full >= 0) mPut_(m, i, m.c.full, v.name || '');
+      mEmails_(m, i, [email]);
+      log.push('Added');
+    }
+    delete v.empId;
+  }
+  let before = mRow_(m, m.values[i], i);
+  if (v.empId !== undefined && v.empId !== before.id) {
+    const j = rowById_(m, v.empId);
+    if (!v.empId) throw new Error('To unlink a Gmail, switch it off or remove it. / ដើម្បីដក Gmail សូមបិទ ឬដកចេញ។');
+    if (j >= 0) {
+      // Move this Gmail to that employee. A row with no access yet takes this row's role, apps and TEAM.
+      const t = mRow_(m, m.values[j], j);
+      mEmails_(m, j, t.emails.concat(email));
+      if (!t.emails.length) {
+        mPut_(m, j, 'Role', before.role || 'user');
+        mPut_(m, j, 'Active', before.active ? 'Yes' : 'No');
+        mSetApps_(m, j, before.apps);
+        if (before.team) mPut_(m, j, 'TEAM', before.team);
+        if (!before.active) { mPut_(m, j, 'Off At', ''); mPut_(m, j, 'Requested At', before.reqAt ? new Date(before.reqAt) : new Date()); }
+      }
+      if (before.photo && !t.photo) mPut_(m, j, 'Card Photo', before.photo);
+      const gone = mDropEmail_(m, i, email);
+      i = j > i && gone ? j - 1 : j;
+      log.push((t.emails.length ? 'Added as another Gmail of ' : 'Linked to Employee ID ') + v.empId);
+      if (m.col('Claimed ID') >= 0 && mRow_(m, m.values[i], i).claimed) mPut_(m, i, 'Claimed ID', '');
+      before = mRow_(m, m.values[i], i);
+    } else {
+      if (before.id) throw new Error('Employee ID ' + v.empId + ' is not in Employee & Approver. Add the employee there first. / រកមិនឃើញលេខ ' + v.empId + ' ក្នុង Employee & Approver។');
+      mPut_(m, i, m.c.id, v.empId);
+      if (before.claimed) mPut_(m, i, 'Claimed ID', '');
+      log.push('Employee ID: – → ' + v.empId + ' (new employee)');
+      before = mRow_(m, m.values[i], i);
+    }
+  }
+  const cur = before;
+  if (v.name !== undefined && v.name !== displayName_(cur)) {
+    // The name the apps show: written to App Name (Kim's Full Name / Khmer Name stay as typed); a row without an ID keeps it as Full Name too.
+    mPut_(m, i, 'App Name', v.name === cur.kh || v.name === cur.full ? '' : v.name);
+    if (!cur.id && m.c.full >= 0 && !cur.full) mPut_(m, i, m.c.full, v.name);
+    if (!isNew) log.push('Name: ' + displayName_(cur) + ' → ' + v.name);
+  }
+  if (v.dept !== undefined && v.dept !== deptKey_(cur.dept, cur.fn)) {
+    const k = splitDeptKey_(v.dept);
+    if (m.c.dept >= 0) mPut_(m, i, m.c.dept, k.dept);
+    if (m.c.fn >= 0) mPut_(m, i, m.c.fn, k.fn);
+    log.push('Department: ' + (deptKey_(cur.dept, cur.fn) || '–') + ' → ' + (v.dept || '–'));
+  }
+  const role = String(cur.role || 'user').toLowerCase();
+  if (v.role !== undefined && (v.role !== role || isNew)) { mPut_(m, i, 'Role', v.role); log.push('Role: ' + (isNew ? '' : role + ' → ') + v.role); }
   if (v.apps) HOME_APPS.forEach(a => {
     const on = v.apps[a.key];
-    if (on === undefined || (!isNew && before.apps[a.key] === on) || ctx.col(a.col) < 0) return;
-    const c = ctx.col(a.col);
-    ctx.sheet.getRange(r, c + 1).insertCheckboxes().setValue(on);
-    cur[c] = on;
+    if (on === undefined || (!isNew && cur.apps[a.key] === on)) return;
+    mPut_(m, i, a.col, on);
     log.push(a.col + (on ? ' ✓' : ' ✗'));
   });
   // Rejecting a request: Active is already No, so the change is stamping Off At (it leaves the Requests list).
-  if (v.active !== undefined && (v.active !== before.active || isNew || (!v.active && !before.offAt))) {
-    set('Active', yesNo(cur[ctx.col('Active')], v.active));
-    if (v.active) { set('Off At', ''); set('Off Note', ''); log.push(isNew ? 'Active' : before.offAt ? 'Switched on' : 'Approved'); }
-    else if (!isNew) { set('Off At', new Date()); set('Off Note', v.offNote || ''); const what = before.offAt || before.active ? 'Switched off' : 'Request rejected'; log.push(what + (v.offNote && v.offNote !== what ? ' (' + v.offNote + ')' : '')); }
-  } else if (v.offNote !== undefined && !before.active && v.offNote !== before.offNote) {
-    set('Off Note', v.offNote);
+  if (v.active !== undefined && (v.active !== cur.active || isNew || (!v.active && !cur.offAt))) {
+    mPut_(m, i, 'Active', v.active ? 'Yes' : 'No');
+    if (v.active) { mPut_(m, i, 'Off At', ''); mPut_(m, i, 'Off Note', ''); if (m.col('Claimed ID') >= 0 && cur.claimed) mPut_(m, i, 'Claimed ID', ''); log.push(isNew ? 'Active' : cur.offAt ? 'Switched on' : 'Approved'); }
+    else if (!isNew) { mPut_(m, i, 'Off At', new Date()); mPut_(m, i, 'Off Note', v.offNote || ''); const what = cur.offAt || cur.active ? 'Switched off' : 'Request rejected'; log.push(what + (v.offNote && v.offNote !== what ? ' (' + v.offNote + ')' : '')); }
+  } else if (v.offNote !== undefined && !cur.active && v.offNote !== cur.offNote) {
+    mPut_(m, i, 'Off Note', v.offNote);
   }
-  return { user: umUser_(ctx, cur), log };
+  return { e: mRow_(m, m.values[i], i), log };
 }
 
 function umLog_(by, email, name, lines) {
@@ -2776,36 +3130,39 @@ function umLogRead_(n) {
   }));
 }
 
-function umNeedCols_(v) {
-  const need = ['Active', 'Off At', 'Off Note'];
-  if (v.empId !== undefined) need.push('Employee ID');
-  if (v.dept !== undefined) need.push('Department');
-  return need;
+/** Writes, then copies the master into the Users tab, all under one lock. */
+function umRun_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const m = master_(MASTER_ACCESS);
+    const out = fn(m);
+    SpreadsheetApp.flush();
+    syncUsers_(true);
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-/** Add or change one person. */
+/** Add or change one person (one Gmail and the row it is on). */
 function umSave_(p, user) {
   needAdmin_(user);
   const isNew = !!p.isNew;
   const v = umCheck_(p, isNew);
   const email = isNew ? v.email : String(p.email || '').trim().toLowerCase();
   if (isNew) {
-    if (v.name === undefined) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
+    if (v.name === undefined && !v.empId) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
     if (v.role === undefined) v.role = 'user';
     if (v.active === undefined) v.active = true;
   }
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  let out;
-  try {
-    const ctx = umSheet_(umNeedCols_(v));
-    out = umWrite_(ctx, email, v, user.email, isNew);
-    out.log = umLog_(user.name || user.email, email, out.user.name, out.log);
-  } finally {
-    lock.releaseLock();
-    delete tableCache_[SHEETS.USERS];
-  }
-  return out;
+  return umRun_(m => {
+    const o = umWrite_(m, email, v, user.email, isNew);
+    const name = o.e ? displayName_(o.e) : email;
+    const out = { user: o.e ? umUserOf_(o.e, email) : null, users: o.e ? umUsersOfRow_(o.e) : [], gone: o.gone ? [email] : [] };
+    out.log = umLog_(user.name || user.email, email, name, o.log);
+    return out;
+  });
 }
 
 /** The same change for many people at once (from the computer table). */
@@ -2814,54 +3171,65 @@ function umBulk_(p, user) {
   const emails = (p.emails || []).map(e => String(e).trim().toLowerCase()).filter(Boolean).slice(0, 300);
   if (!emails.length) throw new Error('Nobody selected.');
   const v = umCheck_(p.patch || {}, false);
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
-  const users = [], log = [];
-  try {
-    const ctx = umSheet_(umNeedCols_(v));
+  delete v.empId; delete v.removeEmail;
+  return umRun_(m => {
+    const users = [], log = [];
     emails.forEach(email => {
       if (email === user.email && ((v.role && v.role !== 'admin') || v.active === false)) return;   // never yourself
-      const o = umWrite_(ctx, email, v, user.email, false);
-      users.push(o.user);
-      Array.prototype.push.apply(log, umLog_(user.name || user.email, email, o.user.name, o.log));
+      const o = umWrite_(m, email, JSON.parse(JSON.stringify(v)), user.email, false);
+      Array.prototype.push.apply(users, umUsersOfRow_(o.e));
+      Array.prototype.push.apply(log, umLog_(user.name || user.email, email, displayName_(o.e), o.log));
     });
-  } finally {
-    lock.releaseLock();
-    delete tableCache_[SHEETS.USERS];
-  }
-  return { users, log };
+    return { users, log };
+  });
 }
 
-/** A department's default apps (what a new request from that department gets), or a new department. */
+/** The card photo sent with a request, for the Requests screen (admins). */
+function umPhoto_(p, user) {
+  needAdmin_(user);
+  const m = master_();
+  const i = rowByEmail_(m, String(p.email || '').trim().toLowerCase());
+  const url = i >= 0 ? mRow_(m, m.values[i], i).photo : '';
+  const id = fileIdFromUrl_(url);
+  if (!id) return { dataUrl: null };
+  const blob = DriveApp.getFileById(id).getBlob();
+  return { dataUrl: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()), url: url };
+}
+
+/** A Department · Function row's apps (what a new request from there gets), or a new row. */
 function umDeptSave_(p, user) {
   needAdmin_(user);
-  const name = String(p.name || '').trim().slice(0, 100);
+  const name = String(p.name || '').trim().slice(0, 150);
   if (!name) throw new Error('Department name is required. / សូមបញ្ចូលឈ្មោះផ្នែក។');
+  const key = splitDeptKey_(name);
   deptTable_();   // makes sure the sheet and its app columns exist
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   const lines = [];
   try {
     const sheet = SpreadsheetApp.getActive().getSheetByName(DEPT_SHEET);
-    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
-    const lower = header.map(h => h.toLowerCase());
-    const nameCol = Math.max(0, lower.findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
-    let activeCol = lower.indexOf('active');
-    if (activeCol < 0 && p.active !== undefined) { activeCol = header.length; sheet.getRange(1, activeCol + 1).setValue('Active').setFontWeight('bold'); }
+    let header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const lower = () => header.map(h => h.toLowerCase());
+    const dc = Math.max(0, lower().findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
+    let fc = lower().findIndex(h => h.indexOf('function') >= 0 || h.indexOf('មុខងារ') >= 0);
+    if (fc < 0 && key.fn) { fc = header.length; header.push('Function'); sheet.getRange(1, fc + 1).setValue('Function').setFontWeight('bold'); }
+    let activeCol = lower().indexOf('active');
+    if (activeCol < 0 && p.active !== undefined) { activeCol = header.length; header.push('Active'); sheet.getRange(1, activeCol + 1).setValue('Active').setFontWeight('bold'); }
     const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, header.length).getValues();
-    let i = values.findIndex(r => String(r[nameCol] || '').trim() === name);
+    let i = values.findIndex(r => deptKey_(r[dc], fc >= 0 ? r[fc] : '') === deptKey_(key.dept, key.fn));
     if (p.isNew && i >= 0) throw new Error(name + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។');
     if (i < 0) {
       if (!p.isNew) throw new Error(name + ' is not in the Department tab.');
       const row = header.map(() => '');
-      row[nameCol] = name;
+      row[dc] = key.dept;
+      if (fc >= 0) row[fc] = key.fn;
       sheet.appendRow(row);
       i = values.length;
       values.push(row);
       lines.push('New department');
-      // A new department starts with the usual apps unless the screen sent its own ticks.
+      // A new row starts with the usual apps unless the screen sent its own ticks.
       if (!p.apps) { p.apps = {}; HOME_APPS.forEach(a => { p.apps[a.key] = DEFAULT_APPS.indexOf(a.key) >= 0; }); }
-      if (p.active === undefined) p.active = true;
+      if (p.active === undefined && activeCol >= 0) p.active = true;
     }
     const r = i + 2;
     if (p.active !== undefined && activeCol >= 0) {
@@ -2894,10 +3262,11 @@ function otEmpSheet_() {
   const col = test => keys.findIndex(test);
   const c = {
     id: col(k => k === 'idno' || k === 'employeeid' || k === 'id'),
-    en: col(k => k === 'name' || k === 'englishname' || k === 'employeename'),
+    en: [col(k => k === 'fullname'), col(k => k === 'englishname' || k === 'employeename'), col(k => k === 'name')].find(i => i >= 0),
     mgr: col(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0),
     tg: col(k => k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0),
   };
+  if (c.en === undefined) c.en = -1;
   if (c.id < 0 || c.mgr < 0) throw new Error('"' + OT_EMP_TAB + '" needs ID No. and Direct Manager (Approver) columns.');
   return { sh, values, c };
 }

@@ -54,7 +54,14 @@
   const bootKey = () => 'um_boot_' + ((claims() || {}).email || 'demo');
   const save = () => { if (!DEMO && D) set(bootKey(), JSON.stringify(D)); };
   const byEmail = e => D.users.find(u => u.email === e);
-  function merge(users) { (users || []).forEach(u => { const i = D.users.findIndex(x => x.email === u.email); if (i >= 0) D.users[i] = u; else D.users.push(u); }); }
+  function merge(users, gone) {
+    (users || []).forEach(u => { if (!u) return; const i = D.users.findIndex(x => x.email === u.email); if (i >= 0) D.users[i] = u; else D.users.push(u); });
+    (gone || []).forEach(e => { D.users = D.users.filter(x => x.email !== e); });
+  }
+  // A person with two Gmails is two lines on one row: a save sends back every line of that row.
+  const mergeSave = r => merge(r.users && r.users.length ? r.users : [r.user], r.gone);
+  const empOf = id => (D.emps || []).find(e => e.id === String(id || '').trim());
+  let photos = {};   // card photos already loaded (email → data URL)
   function addLog(log) { if (log && log.length) D.log = log.concat(D.log).slice(0, 100); }
 
   // The server's messages are "English / ខ្មែរ": show the half for the chosen language.
@@ -196,7 +203,7 @@
     const on = !u.apps[key];
     const old = JSON.parse(JSON.stringify(u));
     u.apps[key] = on; drawResults();
-    try { const r = await api('umSave', { email, apps: { [key]: on } }); merge([r.user]); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
+    try { const r = await api('umSave', { email, apps: { [key]: on } }); mergeSave(r); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
     catch (e) { merge([old]); toast(e.message); }
     drawResults();
   }
@@ -206,7 +213,7 @@
     if (!on && !confirm(t(`បិទ ${u.name || u.email}? គាត់នឹងចូលកម្មវិធីណាមួយមិនបាន (ប្រវត្តិនៅដដែល)។`, `Switch off ${u.name || u.email}? They can't open any app (their history stays).`))) { drawResults(); return; }
     const old = JSON.parse(JSON.stringify(u));
     u.active = on; if (!on) u.offAt = Date.now(); drawResults();
-    try { const r = await api('umSave', { email, active: on }); merge([r.user]); addLog(r.log); save(); toast(on ? t('បានបើក', 'Switched on') : t('បានបិទ', 'Switched off')); }
+    try { const r = await api('umSave', { email, active: on }); mergeSave(r); addLog(r.log); save(); toast(on ? t('បានបើក', 'Switched on') : t('បានបិទ', 'Switched off')); }
     catch (e) { merge([old]); toast(e.message); }
     if (/^#\/?$|^$/.test(location.hash)) drawResults(); else screen();
   }
@@ -265,13 +272,16 @@
     view(`<a class="back" href="${isWaiting(E.orig) && !isNew ? '#/req' : '#/'}">‹ ${t('ថយក្រោយ', 'Back')}</a>
       <div class="prof">${avatar(Object.assign({}, f, { email: f.email || f.name || '?' }), 'big')}<div>
         <h1>${esc(f.name || (isNew ? t('អ្នកប្រើថ្មី', 'New user') : f.email))}</h1>
-        ${isNew ? '' : `<small>${esc(f.email)}</small>`}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>
+        ${isNew ? '' : `<small>${esc(f.email)}${(E.orig.others || []).length ? ' · ' + t('Gmail ផ្សេង', 'also') + ' ' + esc(E.orig.others.join(', ')) : ''}</small>`}
+        ${!isNew && (E.orig.fullName || E.orig.kh) ? `<small>${esc([E.orig.fullName, E.orig.kh].filter(Boolean).join(' · '))}${E.orig.manager ? ' · ' + t('ប្រធាន', 'Manager') + ' ' + esc(E.orig.manager) : ''}</small>` : ''}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>
       <div class="card">
         ${isNew ? `<div class="field"><label class="f" for="fEmail">${t('អ៊ីមែល Google', 'Google email')} <span class="req">*</span></label>
           <input class="in${need(f.email)}" id="fEmail" type="email" inputmode="email" autocomplete="off" placeholder="name@gmail.com" value="${esc(f.email)}"></div>` : ''}
         <div class="row2"><div class="field"><label class="f" for="fName">${t('ឈ្មោះពេញ', 'Full name')} <span class="req">*</span></label>
             <input class="in${need(f.name)}" id="fName" value="${esc(f.name)}"></div>
-          <div class="field"><label class="f" for="fId">Employee ID</label><input class="in" id="fId" inputmode="numeric" placeholder="100000–190000" value="${esc(f.empId)}"></div></div>
+          <div class="field"><label class="f" for="fId">Employee ID</label><input class="in" id="fId" inputmode="numeric" list="empList" placeholder="100000–190000" value="${esc(f.empId)}">
+            ${D.emps && f.empId !== E.orig.empId && f.empId ? `<div class="hint">${empOf(f.empId) ? '→ ' + esc(empOf(f.empId).name) : '➕ ' + t('លេខថ្មី', 'New number')}</div>` : ''}</div></div>
+        ${D.emps ? `<datalist id="empList">${D.emps.map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.kh ? ' · ' + esc(e.kh) : ''}</option>`).join('')}</datalist>` : ''}
         <div class="field"><label class="f" for="fDept">${t('ផ្នែក', 'Department')}</label>
           <select class="in" id="fDept"><option value="">–</option>${deptOpts.map(d => `<option ${d === f.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
           ${!isNew && deptApps ? `<button type="button" class="link" id="useDept">${t('ប្រើកម្មវិធីតាមផ្នែកនេះ', 'Use this department\'s apps')}</button>` : ''}</div>
@@ -283,12 +293,19 @@
       </div>
       <div class="sec">${t('កម្មវិធីដែលអាចប្រើ', 'Apps')}${f.role === 'admin' ? ` <small class="inl">· ${t('Admin ប្រើបានទាំងអស់', 'Admins can open all')}</small>` : ''}</div>
       <div class="card apps2">${D.apps.map(a => `<div class="aline">${appIcon(a.key, 30)}<div class="at"><b>${esc(appName(a))}</b>${appExtra(a.key)}</div>${sw(f.apps[a.key], `data-app="${a.key}"`, appName(a))}</div>`).join('')}</div>
+      ${!isNew && (E.orig.others || []).length && !me ? `<button type="button" class="link bad" id="fDrop">✕ ${t('ដក Gmail នេះចេញ', 'Remove this Gmail')} (${esc(f.email)})</button>` : ''}
       <div id="eErr"></div>
       <div class="savebar"><button type="button" class="btn ok big" id="fSave">💾 ${isNew ? t('បន្ថែម', 'Add') : t('រក្សាទុក', 'Save')}</button></div>`);
     const bind = (id, k, cb) => { const el = $(id); if (el) el.oninput = el.onchange = e => { f[k] = e.target.value; if (cb) cb(); }; };
     bind('#fEmail', 'email', () => $('#fEmail').classList.toggle('need', E.tried && !f.email.trim()));
     bind('#fName', 'name', () => $('#fName').classList.toggle('need', E.tried && !f.name.trim()));
     bind('#fId', 'empId');
+    if ($('#fId') && D.emps) $('#fId').onchange = e => { f.empId = e.target.value.trim(); renderEdit(email); };
+    if ($('#fDrop')) $('#fDrop').onclick = async () => {
+      if (!confirm(t(`ដក ${f.email} ចេញ?`, `Remove ${f.email}?`))) return;
+      try { const r = await api('umSave', { email: f.email, removeEmail: true }); mergeSave(r); addLog(r.log); save(); toast('✓ ' + f.email); E = null; go('#/'); }
+      catch (e) { toast(e.message); }
+    };
     bind('#fNote', 'offNote');
     $('#fDept').onchange = e => {
       f.dept = e.target.value;
@@ -344,7 +361,7 @@
     btn.disabled = true; btn.innerHTML = `<span class="sp"></span> ${t('កំពុងរក្សាទុក…', 'Saving…')}`;
     try {
       let u = o;
-      if (Object.keys(p).length > 1) { const r = await api('umSave', p); merge([r.user]); addLog(r.log); u = r.user; }
+      if (Object.keys(p).length > 1) { const r = await api('umSave', p); mergeSave(r); addLog(r.log); u = r.user || o; if (p.empId !== undefined && D.v) refresh(true).catch(() => {}); }
       if (otChange) {
         const r = await api('umOtSave', { empId: f.empId, manager: E.ot.manager, tg: E.ot.tg, email: u.email });
         addLog(r.log); OT.byId[String(f.empId).trim()] = Object.assign({}, OT.byId[String(f.empId).trim()], { manager: r.manager, tg: r.tg });
@@ -364,31 +381,66 @@
   // ------------------------------------------------------------------ requests
   function renderReq() {
     paintTabs('req');
-    const list = D.users.filter(isWaiting);
-    view(`<div class="um-head"><h1>📨 ${t('សំណើចូលប្រើ', 'Access requests')}</h1></div>
-      <p class="hint top">${t('មកពីប៊ូតុង “ស្នើសុំទៅអ្នកគ្រប់គ្រង” · កម្មវិធីតាមផ្នែករបស់គាត់ បានធីករួច', 'From the “Request to Admin” button · the apps for their department are already ticked')}</p>
-      ${list.length ? `<div class="reqgrid">${list.map(u => `<div class="card rq">
-        <div class="rqh">${avatar(Object.assign({}, u, { active: true }))}<div><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></div></div>
-        <div class="kv"><span>Employee ID</span><b>${esc(u.empId || '–')}</b><span>${t('ផ្នែក', 'Dept')}</span><b>${esc(u.dept || '–')}</b></div>
+    const list = D.users.filter(isWaiting).sort((a, b) => (b.reqAt || 0) - (a.reqAt || 0));
+    const badge = u => u.claimed ? `<span class="rp warn">⚠️ ${t('ID មាន Gmail រួច', 'ID has a Gmail')}</span>` : !u.empId ? `<span class="rp wait">📷 ${t('គ្មាន ID', 'No ID')}</span>` : '';
+    const one = u => {
+      const owner = u.claimed ? empOf(u.claimed) : null;
+      const link = !u.empId && !u.claimed;
+      return `<div class="card rq">
+        <div class="rqh">${avatar(Object.assign({}, u, { active: true }))}<div class="grow"><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></div>${badge(u)}</div>
+        ${u.photo ? `<button type="button" class="rqphoto" data-photo="${esc(u.email)}">${photos[u.email] ? `<img src="${photos[u.email]}" alt="">` : `<span class="sp"></span>`}</button>` : ''}
+        ${link ? `<label class="f" for="lk_${esc(u.email)}">${t('ភ្ជាប់ទៅបុគ្គលិក', 'Link to employee')}</label>
+          <input class="in" id="lk_${esc(u.email)}" data-link="${esc(u.email)}" list="empList" inputmode="numeric" placeholder="🔍 ${t('វាយលេខ ID ឬឈ្មោះ…', 'Type the ID or name…')}">
+          <div class="hint" data-linkname="${esc(u.email)}">${t('ទុកទទេ = អនុញ្ញាតដោយគ្មាន ID', 'Leave empty = allow without an ID')}</div>` : ''}
+        <div class="kv">
+          ${u.claimed ? `<span>Employee ID</span><b>${esc(u.claimed)}${owner ? ' · ' + esc(owner.name) : ''}</b><span>${t('Gmail ចាស់', 'Old Gmail')}</span><b>${esc(owner ? owner.emails.join(', ') : '–')}</b>` : u.empId ? `<span>Employee ID</span><b>${esc(u.empId)}</b>` : ''}
+          <span>${t('មុខងារ', 'Function')}</span><b>${esc(u.dept || '–')}</b>
+          ${u.reqAt ? `<span>${t('ពេលផ្ញើ', 'Sent')}</span><b>${when(u.reqAt)}</b>` : ''}
+          ${u.offNote ? `<span>${t('ចំណាំ', 'Note')}</span><b>${esc(u.offNote)}</b>` : ''}</div>
         <div class="apps">${D.apps.map(a => `<span class="ai${u.apps[a.key] ? '' : ' no'}" title="${esc(appName(a))}">${appIcon(a.key, 24)}</span>`).join('')}</div>
-        <div class="rqb"><button type="button" class="btn ok" data-ok="${esc(u.email)}">✅ ${t('អនុញ្ញាត', 'Approve')}</button>
+        <div class="rqb"><button type="button" class="btn ok" data-ok="${esc(u.email)}">${u.claimed ? '➕ ' + t('បន្ថែម Gmail ទី 2', 'Add as 2nd Gmail') : '✅ ' + t('អនុញ្ញាត', 'Approve')}</button>
           <a class="btn" href="#/u/${encodeURIComponent(u.email)}">✏️ ${t('កែ', 'Edit')}</a>
-          <button type="button" class="btn bad" data-no="${esc(u.email)}">✕ ${t('បដិសេធ', 'Reject')}</button></div></div>`).join('')}</div>`
+          <button type="button" class="btn bad" data-no="${esc(u.email)}">✕ ${t('បដិសេធ', 'Reject')}</button></div></div>`;
+    };
+    view(`<div class="um-head"><h1>📨 ${t('សំណើចូលប្រើ', 'Access requests')}</h1></div>
+      <p class="hint top">${t('អ្នកដែលមានលេខ ID ត្រឹមត្រូវ ចូលប្រើបានភ្លាម។ នៅទីនេះ៖ ផ្ញើដោយកាតបុគ្គលិក ឬ ID ដែលមាន Gmail រួច', 'People with a free Employee ID get in at once. Here: requests with a card photo, or an ID that already has a Gmail')}</p>
+      ${list.length ? `<div class="reqgrid">${list.map(one).join('')}</div>`
         : `<div class="card empty">✅ ${t('គ្មានសំណើរង់ចាំ', 'No requests waiting')}</div>`}
+      <datalist id="empList">${(D.emps || []).map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.kh ? ' · ' + esc(e.kh) : ''}${e.emails.length ? ' · 📧' : ''}</option>`).join('')}</datalist>
       <div class="sec">🕘 ${t('ការផ្លាស់ប្តូរចុងក្រោយ', 'Recent changes')} <a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')}</a></div>
       ${logHTML(D.log.slice(0, 6))}`);
-    $$('[data-ok]').forEach(b => b.onclick = () => answer(b, b.dataset.ok, true));
+    $$('[data-link]').forEach(inp => inp.oninput = () => {
+      const v = inp.value.trim(), id = (v.match(/\d{4,}/) || [''])[0];
+      const e = empOf(id) || (!id && v ? (D.emps || []).find(x => (x.name + ' ' + x.kh).toLowerCase().indexOf(v.toLowerCase()) >= 0) : null);
+      const hint = $(`[data-linkname="${CSS.escape(inp.dataset.link)}"]`);
+      inp.dataset.id = e ? e.id : id;
+      hint.innerHTML = e ? `✓ <b>${esc(e.name)}</b>${e.kh ? ' · ' + esc(e.kh) : ''} · ${esc(e.dept || '–')}${e.emails.length ? ` · <span class="bad">⚠️ ${t('មាន Gmail រួច', 'already has')} ${esc(e.emails.join(', '))}</span>` : ''}`
+        : id ? `➕ ${t('លេខថ្មី · នឹងបន្ថែមជាបុគ្គលិកថ្មី', 'New number · adds a new employee')}` : t('ទុកទទេ = អនុញ្ញាតដោយគ្មាន ID', 'Leave empty = allow without an ID');
+    });
+    $$('[data-ok]').forEach(b => b.onclick = () => {
+      const u = byEmail(b.dataset.ok), inp = $(`[data-link="${CSS.escape(u.email)}"]`);
+      const id = u.claimed || (inp && inp.dataset.id) || '';
+      answer(b, u.email, true, id);
+    });
     $$('[data-no]').forEach(b => b.onclick = () => {
       const u = byEmail(b.dataset.no);
       if (confirm(t(`បដិសេធ ${u.name || u.email}?`, `Reject ${u.name || u.email}?`))) answer(b, b.dataset.no, false);
     });
+    $$('[data-photo]').forEach(b => {
+      const email = b.dataset.photo;
+      b.onclick = () => { if (photos[email]) window.open(photos[email], '_blank'); };
+      if (!photos[email]) api('umPhoto', { email }).then(r => { if (r && r.dataUrl) { photos[email] = r.dataUrl; b.innerHTML = `<img src="${r.dataUrl}" alt="">`; } else b.innerHTML = '📷 –'; }).catch(() => { b.innerHTML = '📷 –'; });
+    });
   }
-  async function answer(btn, email, ok) {
+  async function answer(btn, email, ok, id) {
     btn.disabled = true; btn.innerHTML = '<span class="sp"></span>';
     try {
-      const r = await api('umSave', ok ? { email, active: true } : { email, active: false, offNote: 'Request rejected' });
-      merge([r.user]); addLog(r.log); save();
-      toast(ok ? '✅ ' + t('បានអនុញ្ញាត', 'Approved') + ' · ' + (r.user.name || email) : t('បានបដិសេធ', 'Rejected'));
+      const p = ok ? { email, active: true } : { email, active: false, offNote: 'Request rejected' };
+      if (ok && id) p.empId = id;
+      const r = await api('umSave', p);
+      mergeSave(r); addLog(r.log); save();
+      toast(ok ? '✅ ' + t('បានអនុញ្ញាត', 'Approved') + ' · ' + ((r.user && r.user.name) || email) : t('បានបដិសេធ', 'Rejected'));
+      if (id) refresh(true).catch(() => {});
     } catch (e) { toast(e.message); }
     renderReq();
   }
@@ -403,7 +455,7 @@
         <div class="dapps">${D.apps.map(a => `<button type="button" class="dapp${d.apps[a.key] ? ' on' : ''}" data-dapp="${esc(d.name)}" data-app="${a.key}" aria-pressed="${!!d.apps[a.key]}">${appIcon(a.key, 26)}<small>${esc(appName(a))}</small></button>`).join('')}</div></div>`).join('')}</div>`
         : `<div class="card empty">${t('មិនទាន់មានផ្នែក', 'No departments yet')}</div>`}`);
     $('#dNew').onclick = async () => {
-      const name = (prompt(t('ឈ្មោះផ្នែកថ្មី', 'New department name')) || '').trim();
+      const name = (prompt(t('ផ្នែក · មុខងារ ថ្មី (ឧ. Supply Chain · QA)', 'New Department · Function (e.g. Supply Chain · QA)')) || '').trim().replace(/\s*[·|/]\s*/, ' · ');
       if (name) deptSave({ name, isNew: true });
     };
     $$('[data-dapp]').forEach(b => b.onclick = () => {
@@ -489,6 +541,7 @@
             if (email === S.me && (patch.role && patch.role !== 'admin' || patch.active === false)) { if (action === 'umSave') throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។'); return; }
             ['name', 'empId', 'dept', 'role'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
             if (patch.apps) Object.assign(u.apps, patch.apps);
+            if (patch.active) u.claimed = '';
             if (patch.active !== undefined && (patch.active !== u.active || (!patch.active && !u.offAt))) { u.active = patch.active; u.offAt = patch.active ? 0 : Date.now(); u.offNote = patch.active ? '' : (patch.offNote || ''); }
             out.push(clone(u));
             logs.push(...log(email, u.name, p.isNew ? 'Added' : Object.keys(patch).filter(k => k !== 'email').join(', ') + ' changed'));
@@ -502,6 +555,7 @@
           if (p.active !== undefined) d.active = p.active;
           return resolve({ depts: clone(S.depts), log: log('', 'Department: ' + p.name, 'changed') });
         }
+        if (action === 'umPhoto') return resolve({ dataUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" rx="14" fill="#f4f6f9"/><rect x="18" y="30" width="90" height="120" rx="8" fill="#b9c3cf"/><text x="128" y="60" font-family="sans-serif" font-weight="700" font-size="20" fill="#011e41">ISI STEEL</text><text x="128" y="95" font-family="sans-serif" font-size="13" fill="#546274">NAME: SOK DARA</text><text x="128" y="120" font-family="sans-serif" font-size="13" fill="#546274">ID: 108765</text></svg>') });
         if (action === 'umOt') return resolve({ ok: true, byId: { 125771: { manager: 'Sok Dara', tg: '@sokdara' }, 130452: { manager: 'Kim Sopheakdey', tg: '@pheakdey' } }, managers: [{ name: 'Kim Sopheakdey', tg: '@pheakdey' }, { name: 'Sok Dara', tg: '@sokdara' }] });
         if (action === 'umOtSave') return resolve({ manager: p.manager, tg: p.tg, log: log(p.email, '', 'OT approver → ' + p.manager) });
         reject(new Error('Unknown action'));
@@ -524,7 +578,13 @@
         { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), offAt: now - 2 * day, offNote: 'Left the company' },
         { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), offAt: 0, offNote: '' },
         { email: 'sovann.ly@gmail.com', name: 'Ly Sovann', role: 'user', active: false, empId: '158004', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
+        { email: 'sokdara77@gmail.com', name: 'សុខ ដារ៉ា', role: 'user', active: false, empId: '', dept: 'Supply Chain · Warehouse GVM', apps: A('10101110'), offAt: 0, offNote: '', photo: true, reqAt: now - 40 * 60e3 },
+        { email: 'sokom.c@gmail.com', name: 'CHEA SOKOM', role: 'user', active: false, empId: '', claimed: '100752', dept: 'Supply Chain · Central Warehouse', apps: A('10101110'), offAt: 0, offNote: '', reqAt: now - 90 * 60e3 },
       ],
+      emps: [{ id: '100752', name: 'CHEA SOKOM', kh: 'ជា សុគុម', dept: 'Supply Chain · Central Warehouse', emails: ['chea.sokom@gmail.com'] },
+        { id: '104836', name: 'THEY SEYHA', kh: 'ថី សីហា', dept: 'Supply Chain · Transport & Fleet', emails: [] },
+        { id: '108765', name: 'SOK DARA', kh: 'សុខ ដារ៉ា', dept: 'Supply Chain · Warehouse GVM', emails: [] }],
+      v: 2,
       log: [
         { time: now - 3 * 3600e3, by: 'Demo Admin', email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', change: 'ទទួលទំនិញ ✓' },
         { time: now - day, by: 'Demo Admin', email: 'sophal.keo@gmail.com', name: 'Keo Sophal', change: 'Switched off (Left the company)' },

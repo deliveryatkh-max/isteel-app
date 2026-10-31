@@ -549,7 +549,8 @@
   function requestAccess() {
     AccessRequest.open({
       call: (action, payload) => api(action, payload),
-      onDone: status => {
+      onDone: (status, o) => {
+        if (o && o.enter) { start(); return; }
         $('#reqBox').innerHTML = status === 'active'
           ? `<div class="alert ok">${L('គណនីរបស់អ្នកបានអនុញ្ញាតហើយ។ ចុច ព្យាយាមម្តងទៀត។', 'Your account is already allowed. Tap Try again.')}</div>`
           : `<div class="alert ok">✅ ${L('សំណើបានផ្ញើទៅអ្នកគ្រប់គ្រង។ សូមរង់ចាំការអនុញ្ញាត រួចចុច ព្យាយាមម្តងទៀត។', 'Request sent to the admin. Once they allow you, tap Try again.')}</div>`;

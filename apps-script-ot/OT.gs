@@ -283,13 +283,15 @@ function readEmployees_() {
   const col = test => keys.findIndex(test);
   const c = {
     id: col(k => k === 'idno' || k === 'employeeid' || k === 'id'),
-    en: col(k => k === 'name' || k === 'englishname' || k === 'employeename'),
+    // "Full Name" first (Kim renamed it, 31 Oct 2026); the old "Name" header still works.
+    en: [col(k => k === 'fullname'), col(k => k === 'englishname' || k === 'employeename'), col(k => k === 'name')].find(i => i >= 0),
     kh: col(k => k === 'khmername'),
     mgr: col(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0),
     tg: col(k => k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0),
     shift: col(k => k === 'shift' || k === 'shiftname'),
     shiftTime: col(k => k.indexOf('workingtime') >= 0 || k === 'shifttime' || k === 'shifthours'),
   };
+  if (c.en === undefined) c.en = -1;
   if (c.id < 0 || c.en < 0 || c.mgr < 0) fail_('SETUP', '"' + OT.EMP + '" needs ID No., Name and Direct Manager (Approver) columns.');
   const byId = {};
   for (let r = 1; r < values.length; r++) {
