@@ -80,7 +80,7 @@
   }
   async function boot() {
     if (!LIVE || !signedIn()) return;
-    try { BOOT = await api('boot'); set(BOOT_KEY, JSON.stringify(BOOT)); if (!SET.emailTo && BOOT.emailTo) { SET.emailTo = BOOT.emailTo; saveSet(); } paintBanner(); }
+    try { BOOT = await api('boot'); set(BOOT_KEY, JSON.stringify(BOOT)); paintTabs(); if (!isAdmin() && /settings/.test(location.hash)) location.hash = '#/entry'; if (!SET.emailTo && BOOT.emailTo) { SET.emailTo = BOOT.emailTo; saveSet(); } paintBanner(); }
     catch (e) { if (e.code === 'AUTH' || e.code === 'NOACCESS') { BOOT = null; set(BOOT_KEY, null); blocked(e); } }
   }
   function blocked(e) {
@@ -230,12 +230,15 @@
 
   // ------------------------------------------------------------------ screens
   let screen = () => {};
+  // Settings are for admins only (Kim, 31 Oct 2026): Role = admin in Users. Without the Google Sheet link (demo) everyone is admin.
+  const isAdmin = () => !LIVE || !!(BOOT && BOOT.user && BOOT.user.admin);
+  function paintTabs() { const s = $('nav.tabs .tab[data-r="settings"]'); if (s) s.hidden = !isAdmin(); $('nav.tabs').style.gridTemplateColumns = 'repeat(' + $$('nav.tabs .tab:not([hidden])').length + ', 1fr)'; }
   function route() {
     if (BLOCKED) return;
     const h = location.hash.replace(/^#\/?/, '') || 'entry';
     $$('nav.tabs .tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === h));
     if (h === 'report') return renderReport();
-    if (h === 'settings') return renderSettings();
+    if (h === 'settings') return isAdmin() ? renderSettings() : (location.hash = '#/entry');
     return renderEntry();
   }
 
@@ -248,13 +251,13 @@
     $('#view').innerHTML = `
       <div class="de-grid">
         <div class="de-col">
-          <section class="card"><h2 class="ch"><span class="l"><span class="n">1</span>${t('ផ្ទុកប័ណ្ណថ្លឹង', 'Upload Ticket')}</span>
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">1</span>📄 ${t('ផ្ទុកប័ណ្ណថ្លឹង', 'Upload Ticket')}</span>
             ${Q.length > 1 ? `<small>${CUR + 1} / ${Q.length}</small>` : ''}</h2>
             <div class="cb">
               ${er && !pic ? `<div class="empty">🖼️ ${t('រូបភាពមិនបានរក្សាទុកក្នុងកុំព្យូទ័រនេះ', 'The picture is not kept on this computer')} (${esc(er.file || '')})</div>` : ''}
               ${pic ? `<div class="prev"><img id="prevImg" src="${pic}" alt="">${er ? '' : `<button type="button" class="x" id="clearBtn" title="${t('ដកចេញ', 'Remove')}">✕</button>`}<span class="pg">${esc(er ? er.file || er.ticket : q.name)}</span></div>`
                 : er ? ''
-                : `<div class="drop" id="drop"><div class="big">📄</div><b>${t('ចុចដើម្បីជ្រើសរូបភាព ឬ PDF', 'Click to choose an image or PDF')}</b>
+                : `<div class="drop" id="drop"><div class="big">📸</div><b>${t('ចុចដើម្បីជ្រើសរូបភាព ឬ PDF', 'Click to choose an image or PDF')}</b>
                    <span>${t('ឬអូសឯកសារមកទីនេះ · ឬ Ctrl+V បិទភ្ជាប់រូបថតអេក្រង់', 'or drag files here · or Ctrl+V to paste a screenshot')}</span>
                    <span>${t('អាចជ្រើសច្រើនក្នុងពេលតែមួយ', 'You can choose many at once')}</span>
                    ${window.DE_SAMPLE ? `<button type="button" class="btn sm" id="sampleBtn">🧪 ${t('សាកល្បងជាមួយប័ណ្ណគំរូ', 'Try the sample ticket')}</button>` : ''}</div>`}
@@ -262,12 +265,12 @@
             </div>
           </section>
           <section class="card"><div class="cb">
-            <button type="button" class="btn extract" id="extractBtn" ${q ? '' : 'disabled'}>🔍 ${t('ទាញទិន្នន័យ', 'Extract Data')}</button>
+            <button type="button" class="btn extract" id="extractBtn" ${q ? '' : 'disabled'}>🤖 ${t('ទាញទិន្នន័យ', 'Extract Data')}</button>
             <div class="progress"><i id="pbar"></i></div><div class="pmsg" id="pmsg"></div>
           </div></section>
         </div>
         <div class="de-col">
-          <section class="card"><h2 class="ch"><span class="l"><span class="n">2</span>${t('ពិនិត្យ និងកែទិន្នន័យ', 'Review & Edit Data')}</span>${EDIT ? `<small>✎ ${t('កំពុងកែកំណត់ត្រា', 'Editing a saved record')}</small>` : ''}</h2>
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">2</span>✏️ ${t('ពិនិត្យ និងកែទិន្នន័យ', 'Review & Edit Data')}</span>${EDIT ? `<small>✎ ${t('កំពុងកែកំណត់ត្រា', 'Editing a saved record')}</small>` : ''}</h2>
             <div class="cb"><div class="fgrid" id="form">
               ${fld('vehicle', t('លេខឡាន', 'Vehicle No'), 'text', 'plate')}
               ${fld('ticket', t('លេខប័ណ្ណ', 'Ticket No.'), 'text', '', 'numeric')}
@@ -277,10 +280,10 @@
               ${fld('date', t('កាលបរិច្ឆេទឯកសារ', 'Document Date'), 'date')}
               ${fld('inTime', t('ម៉ោងចូល', 'In Date/Time'), 'datetime-local')}
               ${fld('outTime', t('ម៉ោងចេញ', 'Out Date/Time'), 'datetime-local')}
-              <div><label>${t('រយៈពេលសរុប', 'Total Time')}</label><input class="in auto" id="f_total" readonly tabindex="-1"></div>
+              <div><label>⏱️ ${t('រយៈពេលសរុប', 'Total Time')}</label><input class="in auto" id="f_total" readonly tabindex="-1"></div>
             </div><div class="checks" id="checks"></div></div>
           </section>
-          <section class="card"><h2 class="ch"><span class="l"><span class="n">3</span>${t('រក្សាទុក និងបញ្ជូន', 'Export & Save Actions')}</span></h2>
+          <section class="card"><h2 class="ch"><span class="l"><span class="n">3</span>💾 ${t('រក្សាទុក', 'Save')}</span></h2>
             <div class="cb">
               <div class="acts">
                 <button type="button" class="btn b-save" id="aSave">＋ ${t('រក្សាទុកក្នុងតារាង', 'Save Data to Table')}</button>
@@ -295,8 +298,9 @@
     paintQueue(); paintForm();
     if (q) progress(q, q.p || 0, q.msg || '');
   }
+  const FEMO = { vehicle: '🚚', ticket: '🎫', gross: '⚖️', tare: '🛻', net: '📦', date: '📅', inTime: '🟢', outTime: '🔴' };
   function fld(k, label, type, cls, mode) {
-    return `<div><label for="f_${k}">${label} <span class="req">*</span></label><input class="in ${cls || ''}" id="f_${k}" data-k="${k}" type="${type}" ${type === 'datetime-local' ? 'step="1"' : ''} ${mode ? `inputmode="${mode}"` : ''} autocomplete="off"></div>`;
+    return `<div><label for="f_${k}">${FEMO[k] || ''} ${label} <span class="req">*</span></label><input class="in ${cls || ''}" id="f_${k}" data-k="${k}" type="${type}" ${type === 'datetime-local' ? 'step="1"' : ''} ${mode ? `inputmode="${mode}"` : ''} autocomplete="off"></div>`;
   }
   function wireEntry() {
     const drop = $('#drop');
@@ -565,7 +569,7 @@
 
   // ---------- Records table ----------
   function tableCard(list, title, total) {
-    return `<div class="tcard"><div class="thead"><b>🗂️ ${title}</b><span class="cnt">${total} ${t('កំណត់ត្រា', total === 1 ? 'Record' : 'Records')}</span></div>
+    return `<div class="tcard"><div class="thead"><b>🗂️ ${title}</b>${screen === renderEntry && total ? `<a class="seeall" href="#/report">${t('មើលទាំងអស់', 'See all')} →</a>` : ''}<span class="cnt">${total} ${t('កំណត់ត្រា', total === 1 ? 'Record' : 'Records')}</span></div>
       <div class="tscroll">${list.length ? `<table class="rec"><thead><tr>
         <th>${t('លេខឡាន', 'Vehicle No')}</th><th>${t('លេខប័ណ្ណ', 'Ticket No')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th>
         <th>${t('កាលបរិច្ឆេទ', 'Document Date')}</th><th>${t('ម៉ោងចូល', 'In Time')}</th><th>${t('ម៉ោងចេញ', 'Out Time')}</th><th>${t('រយៈពេល', 'Total Time')}</th>
@@ -588,10 +592,19 @@
 
   // ---------- Report ----------
   let REPORT_ROWS = [];
-  const RF = { from: '', to: '', q: '' };
+  const RF = { from: '', to: '', q: '', p: '' };
+  const DAYS = [['អាទិត្យ', 'Sunday'], ['ច័ន្ទ', 'Monday'], ['អង្គារ', 'Tuesday'], ['ពុធ', 'Wednesday'], ['ព្រហស្បតិ៍', 'Thursday'], ['សុក្រ', 'Friday'], ['សៅរ៍', 'Saturday']];
+  const hourName = h => pad(h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
+  function period(k) {
+    const d = new Date(); RF.p = k;
+    if (k === 'today') { RF.from = RF.to = today(); }
+    else if (k === 'week') { const s0 = new Date(d); s0.setDate(d.getDate() - ((d.getDay() + 6) % 7)); RF.from = ymd(s0); RF.to = today(); }
+    else if (k === 'month') { const s0 = new Date(d.getFullYear(), d.getMonth(), 1); RF.from = ymd(s0); RF.to = today(); }
+    else { RF.from = ''; RF.to = ''; }
+  }
   function renderReport() {
     screen = renderReport;
-    if (!RF.from) { const d = new Date(); d.setDate(1); RF.from = ymd(d); RF.to = today(); }
+    if (!RF.p) period('month');
     const ql = RF.q.toLowerCase();
     REPORT_ROWS = sorted().filter(r => (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
     const L = REPORT_ROWS, ms = L.map(minutes).filter(m => m != null);
@@ -599,30 +612,53 @@
     const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
     const trucks = new Set(L.map(r => r.vehicle)).size;
     const notSheet = RECS.filter(r => !r.sheet).length;
+    // Trucks arriving per hour (like a "crowd rate"), 6 AM to 8 PM, and the busiest weekday.
+    const hrs = []; for (let h = 6; h <= 20; h++) hrs.push(h);
+    const byH = {}; L.forEach(r => { const d = toDate(r.inTime); if (d) byH[d.getHours()] = (byH[d.getHours()] || 0) + 1; });
+    const maxH = Math.max.apply(null, [1].concat(hrs.map(h => byH[h] || 0)));
+    const peak = hrs.reduce((p, h) => ((byH[h] || 0) > (byH[p] || 0) ? h : p), hrs[0]);
+    const byD = [0, 0, 0, 0, 0, 0, 0]; L.forEach(r => { const d = toDate(r.date); if (d) byD[d.getDay()]++; });
+    const topD = byD.indexOf(Math.max.apply(null, byD));
+    // Trucks with the most tickets
+    const per = {}; L.forEach(r => { const p = per[r.vehicle] || (per[r.vehicle] = { n: 0, net: 0, min: [] }); p.n++; p.net += toNum(r.net) || 0; const m = minutes(r); if (m != null) p.min.push(m); });
+    const top = Object.keys(per).map(v => Object.assign({ v }, per[v])).sort((a, b) => b.n - a.n || b.net - a.net).slice(0, 6);
+    const chip = (k, km, en, e) => `<button type="button" class="pill ${RF.p === k ? 'on' : ''}" data-p="${k}">${e} ${t(km, en)}</button>`;
     $('#view').innerHTML = `
-      <div class="fbar">
+      <div class="rhead"><small>${t('របាយការណ៍ប័ណ្ណថ្លឹង', 'Weighing ticket report')}</small><h1>📊 ${t('របាយការណ៍', 'Report')}</h1></div>
+      <div class="searchbox"><span>🔍</span><input id="rQ" value="${esc(RF.q)}" placeholder="${t('ស្វែងរកលេខឡាន ឬលេខប័ណ្ណ…', 'Search vehicle or ticket…')}"></div>
+      <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}</div>
+      <div class="fbar" ${RF.p === 'custom' ? '' : 'hidden'}>
         <div><label for="rFrom">${t('ពីថ្ងៃ', 'From')}</label><input class="in" type="date" id="rFrom" value="${RF.from}"></div>
         <div><label for="rTo">${t('ដល់ថ្ងៃ', 'To')}</label><input class="in" type="date" id="rTo" value="${RF.to}"></div>
-        <div class="grow"><label for="rQ">${t('ស្វែងរក (លេខឡាន លេខប័ណ្ណ)', 'Search (vehicle, ticket)')}</label><input class="in" id="rQ" value="${esc(RF.q)}" placeholder="3B5956"></div>
       </div>
       <div class="stats">
-        <div class="stat"><small>${t('ប័ណ្ណថ្លឹង', 'Tickets')}</small><b>${L.length}</b></div>
-        <div class="stat"><small>${t('ឡាន', 'Trucks')}</small><b>${trucks}</b></div>
-        <div class="stat"><small>${t('ទម្ងន់សុទ្ធសរុប', 'Total net')}</small><b>${(net / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}<em>t</em></b></div>
-        <div class="stat"><small>${t('រយៈពេលមធ្យមក្នុងរោងចក្រ', 'Avg time inside')}</small><b>${avg == null ? '–' : avg}<em>${t('នាទី', 'min')}</em></b></div>
-        <div class="stat"><small>${t('យូរជាងគេ', 'Longest')}</small><b>${ms.length ? Math.max.apply(null, ms) : '–'}<em>${t('នាទី', 'min')}</em></b></div>
+        <div class="stat"><i>🎫</i><small>${t('ប័ណ្ណថ្លឹង', 'Tickets')}</small><b>${L.length}</b></div>
+        <div class="stat"><i>🚚</i><small>${t('ឡាន', 'Trucks')}</small><b>${trucks}</b></div>
+        <div class="stat"><i>📦</i><small>${t('ទម្ងន់សុទ្ធសរុប', 'Total net')}</small><b>${(net / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}<em>t</em></b></div>
+        <div class="stat"><i>⏱️</i><small>${t('មធ្យមក្នុងរោងចក្រ', 'Avg time inside')}</small><b>${avg == null ? '–' : avg}<em>${t('នាទី', 'min')}</em></b></div>
+        <div class="stat"><i>🐢</i><small>${t('យូរជាងគេ', 'Longest')}</small><b>${ms.length ? Math.max.apply(null, ms) : '–'}<em>${t('នាទី', 'min')}</em></b></div>
       </div>
-      <div class="btnrow">
-        <button type="button" class="btn sm" id="rDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
-        <button type="button" class="btn sm" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
-        <button type="button" class="btn sm" id="rSheet">📤 ${t('ផ្ញើដែលនៅសល់ទៅ Google Sheet', 'Send unsent to Google Sheet')} (${notSheet})</button>
-        <button type="button" class="btn sm" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
+      <div class="rgrid">
+        <section class="rcard"><h3>🕒 ${t('ឡានចូលតាមម៉ោង', 'Trucks in by hour')}</h3>
+          <div class="crowd">${hrs.map(h => { const n = byH[h] || 0; return `<div class="col ${n && h === peak ? 'peak' : ''}" title="${hourName(h)}: ${n}"><span class="v">${n || ''}</span><i style="height:${Math.max(8, Math.round(n / maxH * 100))}%"></i><small>${h % 12 || 12}${h < 12 ? 'a' : 'p'}</small></div>`; }).join('')}</div>
+          <p class="note">${L.length ? `${t('ម៉ោងមមាញឹកបំផុត', 'Busiest hour')} <b>${hourName(peak)}</b> · ${t('ថ្ងៃមមាញឹកបំផុត', 'busiest day')} <b>${t(DAYS[topD][0], DAYS[topD][1])}</b>` : t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>
+        </section>
+        <section class="rcard"><h3>🏆 ${t('ឡានដែលថ្លឹងច្រើនជាងគេ', 'Top trucks')}</h3>
+          ${top.length ? top.map(p => `<div class="act"><span class="sq">🚚</span><div><b>${esc(p.v)}</b><small>${p.n} ${t('ប័ណ្ណ', p.n === 1 ? 'ticket' : 'tickets')} · ${t('មធ្យម', 'avg')} ${p.min.length ? Math.round(p.min.reduce((a, b) => a + b, 0) / p.min.length) : '–'} ${t('នាទី', 'min')}</small></div><strong>${(p.net / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })} t</strong></div>`).join('') : `<p class="note">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>`}
+        </section>
+      </div>
+      <div class="pills acts2">
+        <button type="button" class="pill" id="rDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
+        <button type="button" class="pill" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
+        <button type="button" class="pill" id="rSheet">📤 ${t('ផ្ញើទៅ Google Sheet', 'Send to Google Sheet')} (${notSheet})</button>
+        <button type="button" class="pill" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
       </div>
       <div id="panel"></div>
       ${tableCard(L, t('ប័ណ្ណថ្លឹង', 'Weighing tickets'), L.length)}`;
+    $$('[data-p]').forEach(b => { b.onclick = () => { if (b.dataset.p === 'custom') { RF.p = 'custom'; if (!RF.from) period('month'), RF.p = 'custom'; } else period(b.dataset.p); renderReport(); }; });
     const re = () => { RF.from = $('#rFrom').value; RF.to = $('#rTo').value; RF.q = $('#rQ').value.trim(); const pos = $('#rQ').selectionStart; const focus = document.activeElement && document.activeElement.id; renderReport(); if (focus) { const el = $('#' + focus); el.focus(); if (focus === 'rQ') el.setSelectionRange(pos, pos); } };
     $('#rFrom').onchange = re; $('#rTo').onchange = re; $('#rQ').oninput = re;
-    $('#rDl').onclick = () => L.length ? download(L, 'Weighing_Tickets_' + (RF.from || '') + '_' + (RF.to || '') + '.xlsx') : toast(t('គ្មានកំណត់ត្រា', 'No records'));
+    $('#rDl').onclick = () => L.length ? download(L, 'Weighing_Tickets_' + (RF.from || 'all') + '_' + (RF.to || '') + '.xlsx') : toast(t('គ្មានកំណត់ត្រា', 'No records'));
     $('#rFile').onclick = async () => { if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); const b = $('#rFile'); busy(b, true); try { const n = await toLocalFile(L); if (n) toast('✅ ' + L.length + t(' ប័ណ្ណ → ', ' tickets → ') + n, 4000); } catch (e) { toast('⚠️ ' + e.message, 6000); } busy(b, false); renderReport(); };
     $('#rSheet').onclick = async () => { const l = RECS.filter(r => !r.sheet); if (!l.length) return toast(t('ទាំងអស់បានផ្ញើរួច', 'All are in the Google Sheet already')); if (!needServer()) return; const b = $('#rSheet'); busy(b, true); try { await toSheet(l); toast('✅ ' + l.length + t(' ប័ណ្ណបានផ្ញើ', ' tickets sent')); } catch (e) { toast('⚠️ ' + e.message, 5000); } renderReport(); };
     $('#rMail').onclick = () => mailPanel(true);
@@ -689,7 +725,7 @@
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintBanner(); grab(); route(); }); }
   window.ISTEEL_REFRESH = () => { grab(); route(); boot(); };
   window.addEventListener('hashchange', () => { grab(); route(); });
-  paintStatic(); paintBanner();
+  paintStatic(); paintBanner(); paintTabs();
   if (LIVE && !signedIn()) blocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { route(); boot(); }
   // Load the reader quietly after the page is up, so the first ticket reads faster.

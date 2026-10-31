@@ -109,3 +109,66 @@ table.rec .ib:hover { background: var(--soft); }
 /* Zoom */
 .zoom { position: fixed; inset: 0; z-index: 30; background: rgba(1, 15, 30, .88); display: flex; align-items: center; justify-content: center; padding: 20px; cursor: zoom-out; }
 .zoom img { max-width: 100%; max-height: 100%; background: #fff; border-radius: 6px; }
+
+/* ---- Clean "card" look from Kim's sample UI (31 Oct 2026): white rounded cards, outlined boxes, pill buttons,
+        soft pastel blocks, big bold titles, emoji everywhere. ISI colours: accent #0B76A0, pastel #D4E1F5. ---- */
+:root { --pastel: #e8f1fb; --ink: #1d2433; --accent: #0b76a0; }
+:root[data-theme="dark"] { --pastel: #112d48; --ink: #e6eef7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --pastel: #112d48; --ink: #e6eef7; } }
+body { background: var(--bg); }
+.de-grid .card, .tcard, .rcard, .set.card { border: 0; border-radius: 24px; box-shadow: 0 2px 6px rgba(1, 30, 65, .05), 0 12px 32px rgba(1, 30, 65, .06); }
+.card .ch { background: none; border: 0; padding: 20px 22px 4px; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+.card .ch .n { background: var(--accent); width: 26px; height: 26px; font-size: 13px; }
+.card .cb { padding: 14px 22px 22px; }
+.drop { background: var(--pastel); border: 0; border-radius: 18px; min-height: 240px; }
+.drop:hover, .drop.over { background: var(--soft); outline: 2px dashed var(--accent); }
+.drop .big { font-size: 54px; }
+.drop .btn.sm { margin-top: 6px; border-radius: 99px; border: 1.5px solid var(--ink); background: var(--card); }
+.prev { border: 0; border-radius: 18px; background: var(--pastel); padding: 10px; }
+.prev img { border-radius: 10px; }
+.extract { border-radius: 12px; background: var(--ink); border-color: var(--ink); color: var(--card); }
+.fgrid label { text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--ink); font-weight: 700; }
+.fgrid .in, .in { border: 1.5px solid var(--ink); border-radius: 10px; }
+.fgrid .in.auto { border-color: var(--pastel); background: var(--pastel); color: var(--accent); }
+.in.unsure { border-color: #e0a100; }
+.chk { border-radius: 12px; }
+.acts .btn { border-radius: 12px; font-size: 16px; min-height: 52px; background: var(--accent) !important; }
+.thead { background: none; color: var(--ink); padding: 20px 22px 10px; }
+.thead b { font-size: 19px; font-weight: 800; }
+.thead .cnt { background: var(--pastel); color: var(--accent); border-radius: 99px; padding: 3px 12px; }
+.thead .seeall { margin-left: auto; margin-right: 10px; color: var(--accent); font-weight: 700; font-size: 14px; text-decoration: none; }
+table.rec th { border-bottom: 0; padding-top: 4px; font-size: 12px; }
+table.rec td { border-bottom: 1px solid var(--line); }
+table.rec tbody tr:hover td { background: var(--pastel); }
+
+/* Report */
+.rhead small { font-size: 14px; color: var(--muted); }
+.rhead h1 { margin: 0 0 14px; font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+.searchbox { display: flex; align-items: center; gap: 10px; border: 1.5px solid var(--ink); border-radius: 12px; padding: 0 14px; background: var(--card); margin-bottom: 12px; }
+.searchbox input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; min-height: 48px; font-size: 16px; }
+.pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.pill { border: 1.5px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 10px; min-height: 40px; padding: 4px 14px; font-weight: 600; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pill:hover:not(.on) { background: var(--pastel); }
+.stats { gap: 12px; }
+.stat { border: 0; border-radius: 20px; box-shadow: 0 2px 6px rgba(1, 30, 65, .05), 0 10px 26px rgba(1, 30, 65, .05); padding: 14px 16px; }
+.stat i { display: inline-flex; width: 38px; height: 38px; border-radius: 12px; background: var(--pastel); align-items: center; justify-content: center; font-style: normal; font-size: 20px; margin-bottom: 6px; }
+.stat b { display: block; font-size: 26px; font-weight: 800; }
+.rgrid { display: grid; gap: 14px; margin-bottom: 14px; }
+@media (min-width: 900px) { .rgrid { grid-template-columns: 1.3fr 1fr; } }
+.rcard { background: var(--card); padding: 18px 20px; }
+.rcard h3 { margin: 0 0 12px; font-size: 18px; font-weight: 800; }
+.crowd { display: flex; align-items: flex-end; gap: 6px; height: 150px; }
+.crowd .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; min-width: 0; }
+.crowd .col i { display: block; width: 100%; max-width: 30px; border-radius: 8px; background: var(--pastel); }
+.crowd .col.peak i { background: var(--accent); }
+.crowd .col .v { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.crowd .col small { font-size: 11px; color: var(--ink); font-weight: 600; }
+.note { text-align: center; margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+.note b { color: var(--accent); }
+.act { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 8px 0; }
+.act .sq { width: 46px; height: 46px; border-radius: 12px; background: var(--pastel); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.act b { display: block; font-size: 16px; }
+.act strong { font-size: 17px; font-weight: 800; }
+.acts2 .pill { min-height: 44px; }
+.set.card h2 { font-size: 19px; font-weight: 800; }
