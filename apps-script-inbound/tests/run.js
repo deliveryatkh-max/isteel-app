@@ -76,7 +76,7 @@ eq(log().length, 3, 'one log row per item');
 
 // finish
 const FIN = { id: r.id, owner: '3PL', carrier: 'FOXS', manpower: 3, remark: 'ok',
-  items: [{ material: '1100000230', grQty: 19800, dmgQty: 2, dmgType: 'rust', dmgPh: [PHOTO] }, { material: '1100000231', grQty: 23550, dmgQty: '' }] };
+  items: [{ material: '1100000230', grQty: 19800, dmgQty: 2, dmgType: 'rust', dmgUom: 'PCS', dmgPh: [PHOTO] }, { material: '1100000231', grQty: 23550, dmgQty: '' }] };
 ok(/Manpower/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { manpower: '' }) }).error), 'manpower required');
 ok(/damage photo/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: 1, dmgQty: 1, dmgType: 'dent' }, { material: '1100000231', grQty: 1 }] }) }).error), 'damage photo required');
 ok(/Actual GR Qty/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: '' }] }) }).error), 'GR qty required');
@@ -87,6 +87,9 @@ ok(log().find(x => x[0] === r.id)[31] === 'A1', 'warehouse in GR Log');
 eq([r.status, r.owner, r.carrier, r.manpower, r.finishedBy], ['Done', '3PL', 'FOXS', 3, 'Dara']);
 eq(r.items.map(i => [i.grQty, i.dmgQty, i.dmgType, i.dmgPh.length]), [[19800, 2, 'rust', 1], [23550, 0, '', 0]]);
 ok(/^\d\d:\d\d$/.test(r.end), 'end time stamped');
+eq(r.items.map(i => i.dmgUom), ['PCS', ''], 'damage UoM kept');
+ok(log().find(x => x[0] === r.id && x[8] === '1100000230')[33] === 'PCS', 'damage UoM in GR Log');
+ok(env.telegrams.some(t => /2 PCS/.test(t.payload.text)), 'damage UoM in Telegram');
 const row = log().find(x => x[8] === '1100000230' && x[0] === r.id);
 eq([row[1], row[13], row[14], row[15], row[16], row[24], row[25]], ['Done', '19800', '2', 'Rust', 'Yes', '3PL Truck', 'FOXS'], 'log row');
 eq(log().length, 3, 'rows replaced, not added');

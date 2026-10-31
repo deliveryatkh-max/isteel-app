@@ -29,7 +29,7 @@ const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Warehouse', 'Voice Note'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Warehouse', 'Voice Note', 'Damage UoM'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
@@ -494,6 +494,7 @@ function update_(p, user, finish) {
       i.grQty = gr;
       i.dmgQty = gr === '' && !dm ? '' : dm;
       i.dmgType = dm > 0 ? (DMG[s.dmgType] ? s.dmgType : clip_(s.dmgType, 40)) : '';
+      i.dmgUom = dm > 0 ? clip_(s.dmgUom, 15) || i.dmgUom || rec.uom : '';   // unit of the damaged qty (Kim, 31 Oct 2026)
       const keep = i.dmgPh || [];
       i.dmgPh = dm > 0 ? (Array.isArray(s.dmgPh) ? s.dmgPh : []).slice(0, MAX_DMG_PHOTOS)
         .map((v, n) => photo_(folder, v, keep, 'damage-' + i.material + '-' + (n + 1) + '.jpg')).filter(Boolean) : [];
@@ -545,11 +546,11 @@ function store_(rec, row) {
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
-  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Warehouse, Voice Note)
+  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Warehouse, Voice Note, Damage UoM)
   const rows = rec.items.map(i => [rec.id, rec.status, rec.po, rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : ''].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
@@ -575,6 +576,8 @@ function telegram_(payload) {
 }
 function button_(r) { const u = setting_('APP_URL'); return u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Open · បើក', url: u + '#/r/' + encodeURIComponent(r.id) }]] }) } : {}; }
 const kg_ = n => Number(n || 0).toLocaleString('en-US');
+const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
+const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
 function telegramArrived_(r) {
   telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
@@ -586,7 +589,7 @@ function telegramDone_(r) {
   if (!dmg.length && !less.length) return;
   const lines = ['⚠️ <b>Receipt ' + esc_(r.id) + '</b> · ' + esc_(r.truck) + ' · ' + esc_(r.po)];
   less.forEach(i => lines.push('⬇ Received less: ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
-  dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
+  dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
   telegram_(Object.assign({ text: lines.join('\n') }, button_(r)));
 }
@@ -793,7 +796,7 @@ function itemRows_(body, r) {
   r.items.forEach((i, n) => {
     const nr = table.insertTableRow(at + 1 + n, row.copy());
     const mat = i.material + ' ' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
-    [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', kg_(i.dmgQty || 0)], ['uom', r.uom]]
+    [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', dmgQ_(i, r)], ['uom', r.uom]]
       .forEach(x => fill_(nr, '{{item.' + x[0] + '}}', x[1]));
   });
   row.removeFromParent();
@@ -900,7 +903,7 @@ function makePdf_(r, folder, name) {
     section_(body, 'B. ' + two_('បរិមាណទំនិញ', 'ITEMS') + ' (' + r.items.length + ')');
     const rows = [['#', two_('សម្ភារៈ', 'Material'), two_('ចំនួន (PO)', 'PO Qty'), two_('ចំនួន (ដល់)', 'Arrival'), two_('ទទួល', 'GR Qty'), two_('ខូច', 'Damaged'), two_('ឯកតា', 'UoM')]];
     r.items.forEach((i, n) => rows.push([String(n + 1), i.material + '\n' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || '') : ''),
-      kg_(i.poQty), kg_(i.arrQty), kg_(i.grQty), kg_(i.dmgQty || 0), r.uom]));
+      kg_(i.poQty), kg_(i.arrQty), kg_(i.grQty), dmgQ_(i, r), r.uom]));
     rows.push(['', two_('សរុប', 'Total'), kg_(tot_(r, 'poQty')), kg_(tot_(r, 'arrQty')), kg_(tot_(r, 'grQty')), kg_(tot_(r, 'dmgQty')), r.uom]);
     const t = body.appendTable(rows);
     t.setBorderColor(LINE);
