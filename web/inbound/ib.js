@@ -886,11 +886,13 @@
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
           <div class="prog"><i style="width:${k ? Math.min(100, r / k * 100) : 0}%"></i></div>
-          <div class="meta">${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</div></a>`;
+          <div class="meta pmeta"><span>${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</span><b class="pct">${pctTxt(r, k)}</b></div></a>`;
       }).join('') || `<div class="empty">${t('មិនទាន់មាន PO', 'No PO yet')}</div>`}</div>`);
     $('#xfile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
     const qi = $('#pq'); qi.oninput = () => { PQ = qi.value; const p = qi.selectionStart; renderPlan(); const n = $('#pq'); n.focus(); n.setSelectionRange(p, p); };
   }
+  // % of completion (Kim, 1 Nov 2026); floor so a nearly done PO never shows 100%
+  function pctTxt(r, k) { if (!k) return '–'; const p = r / k * 100; return (p >= 100 ? Math.round(p) : Math.floor(p)) + '%'; }
   function renderPo(po) {
     paintTabs('plan');
     const lines = PLAN.filter(x => x.po === po); if (!lines.length) { location.hash = '#/plan'; return; }
@@ -902,6 +904,7 @@
         ${kv(t('លេខ Inbound', 'Inbound Number'), esc(h.inbound || '–'))}${kv('Ref. No.', esc(h.ref || '–'))}
         ${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(h.supplier || '–'))}${kv('ETA', esc(showEta(h.eta) || '–'))}
         ${kv(t('ផែនការ', 'Planned'), fmt(planKg(po)) + ' Kg')}${kv(t('បានទទួល', 'Received'), fmt(poRecvd(po)) + ' Kg')}
+        ${kv(t('ភាគរយបញ្ចប់', '% Completion'), pctTxt(poRecvd(po), planKg(po)))}
       </div></section>
       <section class="card"><h2>📦 ${t('មុខទំនិញ', 'Lines')} (${lines.length})</h2>
         <table class="tb pl"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ផែនការ', 'Plan')}</th><th class="n">${t('ទទួល', 'Recv.')}</th><th class="n">${t('នៅសល់', 'Left')}</th></tr>
