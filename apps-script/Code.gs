@@ -109,6 +109,7 @@ const ACTIONS = {
   umOt: umOt_,
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
+  saver: fuelSaver_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -130,7 +131,7 @@ const HOME_APPS = [
 // Agent Data Entry (weighing tickets to Excel, 31 Oct 2026) is not a default either: tick បញ្ចូលទិន្នន័យ.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
-  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel',
+  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel',
   // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
   dashboard: 'dashboard', dashboardSave: 'dashboard',
 };
@@ -1417,6 +1418,32 @@ function dashboardData_(p, user) {
   const raw = dashboardRaw_();
   raw.user = { name: user.name, role: user.role };
   return raw;
+}
+
+/**
+ * "Fuel Saver of the Month" card on the Fuel app's New refill screen (Kim, 1 Nov 2026).
+ * Same top 3 as the dashboard card; only names, plates and L/100 km go out. Cached 30 min
+ * because reading the whole Fuel Refill sheet is slow; the phone also keeps its own copy.
+ */
+function fuelSaver_() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const cache = CacheService.getScriptCache(), key = 'saver_' + y + '_' + m;
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const raw = dashboardRaw_();
+  const s = Object.assign({ minStretches: 3, minKm: 1000 }, raw.settings || {});
+  let r = FuelEngine.monthlyRecap(raw, y, m), fallback = false;
+  if (!r.savers.length) {
+    const prev = FuelEngine.monthlyRecap(raw, y, m - 1);
+    if (prev.savers.length) { r = prev; fallback = true; }
+  }
+  const out = {
+    year: r.year, month: r.month, fallback, minStretches: s.minStretches, minKm: s.minKm, clean: r.clean,
+    list: r.savers.map(x => ({ driver: x.driver, l100: x.l100, gapPct: x.gapPct, dist: x.dist, plate: x.plate })),
+    at: Date.now(),
+  };
+  try { cache.put(key, JSON.stringify(out), 1800); } catch (e) {}
+  return out;
 }
 
 /** Everything the dashboard reads (also used for the Telegram monthly recap). */
