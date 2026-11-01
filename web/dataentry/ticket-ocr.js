@@ -25,7 +25,7 @@
   const ZONES = {
     date:    { box: [1222, 122, 1480, 180], chars: '0123456789/' },
     vehicle: { box: [906, 268, 1258, 344], chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-' },   // some plates are printed in small letters (tk-0100)
-    ticket:  { box: [1262, 268, 1512, 344], chars: '0123456789,' },
+    ticket:  { box: [1262, 257, 1512, 344], chars: '0123456789,' },   // a bit taller: on some scans the number sits high in its box (66 read as 60)
     gross:   { box: [330, 338, 548, 398], chars: '0123456789,' },
     tare:    { box: [330, 424, 548, 486], chars: '0123456789,' },
     net:     { box: [330, 512, 548, 576], chars: '0123456789,' },
@@ -116,7 +116,10 @@
   }
   // Plates look like 3B5956, 2A-1234, 3E-2588. OCR mixes up O/0, I/1, S/5, B/8 in the number part.
   function parsePlate(s) {
-    const c = String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    // The box edge can come out as a stray "l" or "|" before the plate ("l tk-0100"): use the part that looks like a plate.
+    const parts = String(s || '').toUpperCase().split(/\s+/).map(x => x.replace(/[^A-Z0-9-]/g, '')).filter(Boolean);
+    const best = parts.find(x => /^[A-Z]{1,3}-?[0-9OISBZ]{4}$/.test(x) || /^[0-9OIL][A-Z0-9]{1,2}-?[0-9OISBZ]{4}$/.test(x));
+    const c = best || parts.join('');
     // Letters first, like TK-0100 or PP-1617 (Kim, 1 Nov 2026): keep the letters and the dash.
     const lf = c.match(/^([A-Z]{1,3}?)-?([0-9OISBZ]{4})$/);
     if (lf) return lf[1] + '-' + lf[2].replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
@@ -189,6 +192,7 @@
       step(0.15 + 0.8 * i / keys.length, k);
       const r = rect(t, z.box, W, H);
       if (!r) continue;
+      (raw.rects = raw.rects || {})[k] = r;
       await worker.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: z.chars });
       const res = await worker.recognize(image, { rectangle: r }, { text: true });
       raw[k] = (res.data.text || '').trim();

@@ -939,5 +939,5 @@
   else { route(); boot(); }
   // Load the reader quietly after the page is up, so the first ticket reads faster.
   setTimeout(() => { if (!BLOCKED) engine().catch(() => {}); }, 2500);
-  window.DE_DEBUG = { Q: () => Q, RECS: () => RECS };
+  window.DE_DEBUG = { Q: () => Q, RECS: () => RECS, engine: () => engine(), forOcr: c => forOcr(c) };
 })();
