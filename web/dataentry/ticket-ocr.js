@@ -23,7 +23,7 @@
   ];
   // The yellow boxes, on the reference ticket: [x0, y0, x1, y1].
   const ZONES = {
-    date:    { box: [1222, 122, 1480, 180], chars: '0123456789/' },
+    date:    { box: [1222, 113, 1480, 180], chars: '0123456789/' },
     vehicle: { box: [906, 268, 1258, 344], chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-' },   // some plates are printed in small letters (tk-0100)
     ticket:  { box: [1262, 257, 1512, 344], chars: '0123456789,' },   // a bit taller: on some scans the number sits high in its box (66 read as 60)
     gross:   { box: [330, 338, 548, 398], chars: '0123456789,' },
@@ -91,8 +91,10 @@
   function parseDate(s) {
     const m = String(s || '').replace(/[|lI]/g, '1').match(/(\d{1,2})\s*[\/.\-:]\s*(\d{1,2})\s*[\/.\-:]\s*(\d{4})/);
     if (!m) return '';
-    const d = +m[1], mo = +m[2];
-    return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 ? `${m[3]}-${pad2(mo)}-${pad2(d)}` : '';
+    const d = +m[1], mo = +m[2], y = +m[3];
+    // A year far from today is a misread (2026 read as 2820): treat it as not read, so another copy of the date is used.
+    const now = new Date().getFullYear();
+    return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 && y >= now - 5 && y <= now + 1 ? `${m[3]}-${pad2(mo)}-${pad2(d)}` : '';
   }
   function parseTime(s) {
     const m = String(s || '').match(/(\d{1,2})\s*[:.\-]\s*(\d{2})\s*[:.\-]?\s*(\d{2})?\s*([AP])?\s*\.?\s*M?/i);
@@ -150,6 +152,19 @@
       const a = String(w), b = String(f[k]);
       if (oneDigitOff(a, b) || oneDigitOff(b, a)) { f[k] = w; f.fixed = k; return f; }
     }
+    return f;
+  }
+
+  // The date is printed three times (top right, In and Out). Use the one most copies agree on, so one bad read can't win.
+  function pickDate(f, pageDate) {
+    const day = v => (/^\d{4}-\d\d-\d\d/.test(v || '') ? v.slice(0, 10) : '');
+    const c = [day(f.date), day(f.inTime), day(f.outTime), day(pageDate)].filter(Boolean);
+    if (!c.length) return f;
+    const n = {}; c.forEach(d => { n[d] = (n[d] || 0) + 1; });
+    const best = Object.keys(n).sort((a, b) => n[b] - n[a] || (b === day(f.inTime)) - (a === day(f.inTime)))[0];
+    if (n[best] > 1 || !f.date) f.date = best;
+    // In and Out dates that disagree with everything else: give them the ticket date (a weighing takes hours, not days).
+    ['inTime', 'outTime'].forEach(k => { const d = day(f[k]); if (d && d !== f.date && n[d] === 1 && n[f.date] > 1 && Math.abs(Date.parse(d) - Date.parse(f.date)) > 864e5) f[k] = f.date + f[k].slice(10); });
     return f;
   }
 
@@ -222,6 +237,7 @@
     // A time without its date: take the ticket date.
     ['inTime', 'outTime'].forEach(k => { if (f[k] && !/^\d{4}-/.test(f[k]) && f.date) f[k] = f.date + ' ' + f[k]; });
     if (!f.date && f.inTime) f.date = f.inTime.slice(0, 10);
+    pickDate(f, backup.date);
     const checks = {
       weight: f.gross != null && f.tare != null && f.net != null ? f.gross - f.tare === f.net : null,
       times: f.inTime && f.outTime ? f.outTime > f.inTime : null,
@@ -230,6 +246,6 @@
     return { fields: f, raw, checks, anchors: t.anchors };
   }
 
-  const api = { read, fixWeights, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
+  const api = { read, fixWeights, pickDate, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.TicketOCR = api;
 })(typeof self !== 'undefined' ? self : this);
