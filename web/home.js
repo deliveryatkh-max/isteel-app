@@ -73,8 +73,10 @@
     $('#who').textContent = name;
     // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
     if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '' }));
-    // Admins keep the Gallery Manager tile even before the new Code.gs is pasted (the screen then says so).
-    const apps = d.apps.concat(d.user && d.user.role === 'admin' && d.apps.indexOf('adsmgr') < 0 ? ['adsmgr'] : []);
+    // One 🖼️ Gallery tile (Kim, 1 Nov 2026): the Gallery Manager lives inside it as admin-only tabs,
+    // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
+    const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
+    const apps = d.apps.filter(k => k !== 'adsmgr').concat(admin && d.apps.indexOf('gallery') < 0 ? ['gallery'] : []);
     const mine = APPS.filter(a => apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
