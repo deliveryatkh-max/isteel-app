@@ -24,7 +24,7 @@
   // The yellow boxes, on the reference ticket: [x0, y0, x1, y1].
   const ZONES = {
     date:    { box: [1222, 122, 1480, 180], chars: '0123456789/' },
-    vehicle: { box: [916, 268, 1252, 344], chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-' },
+    vehicle: { box: [906, 268, 1258, 344], chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-' },   // some plates are printed in small letters (tk-0100)
     ticket:  { box: [1262, 268, 1512, 344], chars: '0123456789,' },
     gross:   { box: [330, 338, 548, 398], chars: '0123456789,' },
     tare:    { box: [330, 424, 548, 486], chars: '0123456789,' },
@@ -117,6 +117,9 @@
   // Plates look like 3B5956, 2A-1234, 3E-2588. OCR mixes up O/0, I/1, S/5, B/8 in the number part.
   function parsePlate(s) {
     const c = String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    // Letters first, like TK-0100 or PP-1617 (Kim, 1 Nov 2026): keep the letters and the dash.
+    const lf = c.match(/^([A-Z]{1,3}?)-?([0-9OISBZ]{4})$/);
+    if (lf) return lf[1] + '-' + lf[2].replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
     const m = c.match(/([0-9OIL])([A-Z0-9]{1,2})-?([0-9OISBZ]{4})/);
     if (!m) return c.slice(0, 12);
     const fixD = x => x.replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
@@ -140,7 +143,7 @@
     const dts = [];
     t.replace(/(\d{1,2}[\/:.]\d{1,2}[\/:.]\d{4})\s+(\d{1,2}[:.\-]\d{2}[:.\-]\d{2}\s*[AP]\s*M)/gi, (all) => { dts.push(parseDateTime(all)); return all; });
     o.inTime = dts[0] || ''; o.outTime = dts[1] || '';
-    const pm = t.match(/\b(\d[A-Z]{1,2}-?\d{4})\b/);
+    const pm = t.match(/\b(\d[A-Z]{1,2}-?\d{4})\b/) || t.match(/Vehicle[\s\S]{0,40}?\b([A-Za-z]{1,3}-\d{3,5})\b/);
     o.vehicle = pm ? pm[1] : '';
     return o;
   }
