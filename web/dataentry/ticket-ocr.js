@@ -168,6 +168,32 @@
     return f;
   }
 
+  // Text from Google's reader (Drive OCR, done by the Apps Script). Same labels as the page text, plus plate and ticket number:
+  // the ticket number box is right of the plate box, so it is the first plain number after the plate.
+  function fromGoogle(text) {
+    const t = String(text || '').replace(/\r/g, '');
+    const o = fromText(t);
+    const pm = t.match(/(?:^|[\s|(])([A-Za-z]{1,3}-?\d{4}|\d[A-Za-z]{1,2}-?\d{4})(?=$|[\s|)])/m);
+    o.vehicle = pm ? parsePlate(pm[1]) : '';
+    o.ticket = '';
+    const plain = s => { const m = s.match(/(?:^|[\s|])(\d{1,7})(?=$|[\s|])/m); return m ? m[1] : ''; };
+    if (pm) o.ticket = plain(t.slice(pm.index + pm[0].length, pm.index + pm[0].length + 80));
+    if (!o.ticket) { const m = t.match(/Ticket\s*No\.?\)?([\s\S]{0,120})/i); if (m) o.ticket = plain(m[1].replace(/[^\x00-\x7F]/g, ' ')); }
+    if (o.ticket) o.ticket = String(+o.ticket);
+    pickDate(o, o.date);
+    return o;
+  }
+  // The values that decide a ticket: both readers must give the same ones before it is saved without a look.
+  const KEYS = ['ticket', 'vehicle', 'gross', 'tare', 'net', 'date', 'inTime', 'outTime'];
+  const same = (k, a, b) => (k === 'vehicle' ? String(a || '').replace(/[\s\-]/g, '') === String(b || '').replace(/[\s\-]/g, '') : String(a == null ? '' : a) === String(b == null ? '' : b));
+  /** Fields both readers agree on, and the ones they don't: { agree: bool, diff: {key: googleValue} }. */
+  function compare(a, g) {
+    const diff = {};
+    KEYS.forEach(k => { if (!same(k, a[k], g[k]) && g[k] != null && g[k] !== '') diff[k] = g[k]; });
+    const all = KEYS.every(k => a[k] != null && a[k] !== '' && same(k, a[k], g[k]));
+    return { agree: all, diff };
+  }
+
   // Values found in the whole-page text, used when a box read failed.
   function fromText(text) {
     const t = String(text || '');
@@ -246,6 +272,6 @@
     return { fields: f, raw, checks, anchors: t.anchors };
   }
 
-  const api = { read, fixWeights, pickDate, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
+  const api = { read, fixWeights, pickDate, fromGoogle, compare, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.TicketOCR = api;
 })(typeof self !== 'undefined' ? self : this);

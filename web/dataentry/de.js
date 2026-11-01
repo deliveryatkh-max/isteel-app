@@ -212,13 +212,18 @@
   async function readOne(q) {
     q.state = 'reading'; paintQueue(); progress(q, 0.02, t('កំពុងរៀបចំកម្មវិធីអាន…', 'Getting the reader ready…'));
     try {
+      const gP = googleText(q);   // Google's reader works on the server at the same time
       const w = await engine();
       const img = forOcr(q.canvas);
       const r = await TicketOCR.read(w, img, img.width, img.height, (p, step) => progress(q, p, stepName(step)));
       const f = r.fields;
-      q.f = { vehicle: f.vehicle || '', company: companyOf(f.vehicle), ticket: f.ticket || '', gross: f.gross == null ? '' : f.gross, tare: f.tare == null ? '' : f.tare, net: f.net == null ? '' : f.net,
+      q.f = { vehicle: f.vehicle || '', company: '', ticket: f.ticket || '', gross: f.gross == null ? '' : f.gross, tare: f.tare == null ? '' : f.tare, net: f.net == null ? '' : f.net,
         date: f.date || '', inTime: f.inTime || '', outTime: f.outTime || '' };
-      q.checks = r.checks; q.raw = r.raw; q.state = 'done';
+      q.checks = r.checks; q.raw = r.raw;
+      if (gP) { progress(q, 0.97, t('កំពុងប្រៀបធៀបជាមួយ Google…', 'Checking with Google…')); await withGoogle(q, await gP); }
+      q.f.company = companyOf(q.f.vehicle);
+      q.state = 'done';
+      if (autoOk(q)) { autoSave(q); paintQueue(); return; }
       progress(q, 1, r.anchors >= 2 ? '✅ ' + t('អានរួច។ សូមពិនិត្យលេខក្នុងជំហាន ២។', 'Read. Please check the values in step 2.')
         : '⚠️ ' + t('រកមិនឃើញទម្រង់ប័ណ្ណថ្លឹង។ សូមពិនិត្យ ឬវាយបញ្ចូលដោយដៃ។', 'This does not look like the usual weighing ticket. Please check or type the values.'));
     } catch (e) {
@@ -227,6 +232,39 @@
     }
     paintQueue();
     if (q === cur() && !EDIT) paintForm();
+  }
+  // ---------- Google's reader (free Drive OCR on the Apps Script) + saving without a look (Kim, 1 Nov 2026) ----------
+  let GOOGLE_OFF = false;
+  function googleText(q) {
+    if (!LIVE || !signedIn() || GOOGLE_OFF || SET.auto === false) return null;
+    const c = q.canvas, k = Math.min(1, 2000 / c.width);
+    const s2 = document.createElement('canvas'); s2.width = Math.round(c.width * k); s2.height = Math.round(c.height * k);
+    const x = s2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, s2.width, s2.height); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, s2.width, s2.height);
+    return api('ocr', { img: s2.toDataURL('image/jpeg', 0.88) }).then(d => (d && d.text) || '', e => { if (/Unknown action/i.test(e.message)) GOOGLE_OFF = true; console.warn('Google reader', e.message); return null; });
+  }
+  function withGoogle(q, text) {
+    if (!text) { q.google = false; return; }
+    const G = TicketOCR.fromGoogle(text);
+    const cmp = TicketOCR.compare(q.f, G);
+    q.google = true; q.agree = cmp.agree; q.alt = cmp.diff;
+    const bal = o => o.gross !== '' && o.gross != null && o.tare != null && o.tare !== '' && o.net != null && o.net !== '' && +o.gross - +o.tare === +o.net;
+    // Our weights don't add up but Google's do: take Google's.
+    if (!bal(q.f) && bal(G)) ['gross', 'tare', 'net'].forEach(k => { q.f[k] = G[k]; delete q.alt[k]; });
+    // A box we could not read at all: take Google's value.
+    Object.keys(q.alt).forEach(k => { if (q.f[k] === '' || q.f[k] == null) { q.f[k] = q.alt[k]; delete q.alt[k]; } });
+  }
+  function autoOk(q) {
+    const f = q.f, m = minutes(f);
+    return SET.auto !== false && q.agree && !missing(f).length && toNum(f.gross) - toNum(f.tare) === toNum(f.net) && m != null && m <= 24 * 60 && !byTicket(f.ticket, null);
+  }
+  function autoSave(q) {
+    const r = Object.assign({ id: uid(), savedAt: Date.now(), by: me(), file: q.name }, q.f, { mins: minutes(q.f), sheet: false, local: false, updatedAt: Date.now(), img: q.url, auto: true });
+    RECS.push(r); q.rec = r.id; q.state = 'saved'; q.auto = true;
+    stripImages(); try { saveRecs(); } catch (e) { /* toast in set() */ }
+    progress(q, 1, '⚡ ' + t('រក្សាទុកដោយស្វ័យប្រវត្តិ៖ កម្មវិធីអានទាំងពីរយល់ស្រប', 'Saved by itself: both readers agree'));
+    toast('⚡ ' + t('បានរក្សាទុក', 'Saved') + ' · ' + r.ticket + ' · ' + r.vehicle);
+    syncSheet();
+    if (q === cur() && !EDIT) { const i = Q.findIndex(x => x.state !== 'saved'); if (i >= 0) { CUR = i; renderEntry(); } else { Q = []; CUR = -1; renderEntry(); toast('⚡ ' + t('ប័ណ្ណទាំងអស់បានរក្សាទុក', 'All tickets saved') + ' ✓', 4000); } }
   }
   const stepName = s => ({ page: t('កំពុងអានទំព័រ…', 'Reading the page…'), date: t('កាលបរិច្ឆេទ', 'Date'), vehicle: t('លេខឡាន', 'Vehicle no'), ticket: t('លេខប័ណ្ណ', 'Ticket no'),
     gross: 'Gross', tare: 'Tare', net: 'Net', inTime: t('ម៉ោងចូល', 'In time'), outTime: t('ម៉ោងចេញ', 'Out time'), done: '' }[s] || s);
@@ -404,10 +442,20 @@
     if (f.inTime && f.outTime && m == null) out.push(`<div class="chk bad">⚠️ ${t('ម៉ោងចេញមុនម៉ោងចូល', 'Out time is before In time')}</div>`);
     else if (m != null && m > 12 * 60) out.push(`<div class="chk warn">⚠️ ${t('ឡាននៅក្នុងរោងចក្រលើស ១២ ម៉ោង', 'Truck was inside more than 12 hours')}</div>`);
     if (f.date && f.inTime && f.inTime.slice(0, 10) !== f.date) out.push(`<div class="chk warn">⚠️ ${t('ថ្ងៃម៉ោងចូល ខុសពីកាលបរិច្ឆេទឯកសារ', 'In date is not the document date')}</div>`);
+    const qq = !EDIT && cur();
+    if (qq && qq.google === true) {
+      if (qq.alt && Object.keys(qq.alt).length) Object.keys(qq.alt).forEach(k => {
+        const v = qq.alt[k], show = ['gross', 'tare', 'net'].indexOf(k) >= 0 ? kg(v) : String(v).replace('T', ' ');
+        if (String(v) !== String(f[k])) out.push(`<div class="chk warn">🔎 Google ${t('អាន', 'read')} <b>${esc(LBL[k] || k)}</b>: <b>${esc(show)}</b> <button type="button" class="pill" data-alt="${k}">${t('ប្រើ', 'Use')}</button></div>`);
+      });
+      else out.push(`<div class="chk ok">✓ ${t('Google អានដូចគ្នា', 'Google read the same values')}</div>`);
+    }
     const dup = f.ticket && byTicket(f.ticket, EDIT || (cur() && cur().rec));
     if (dup) out.push(`<div class="chk warn">⚠️ ${t('លេខប័ណ្ណនេះមានក្នុងតារាងរួចហើយ', 'This ticket number is already in the table')} (${esc(dup.vehicle)} · ${showDate(dup.date)}). ${canEdit() ? t('រក្សាទុកនឹងជំនួសវា', 'Saving replaces it') : t('មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន', 'Only a Reviewer or Admin can change it')}.</div>`);
     box.innerHTML = out.join('');
+    $$('[data-alt]', box).forEach(b => { b.onclick = () => { const q = cur(); if (!q) return; grab(); q.f[b.dataset.alt] = q.alt[b.dataset.alt]; if (b.dataset.alt === 'vehicle') q.f.company = companyOf(q.f.vehicle) || q.f.company; paintForm(); }; });
   }
+  const LBL = { ticket: 'Ticket No', vehicle: 'Vehicle No', gross: 'Gross', tare: 'Tare', net: 'Net', date: 'Date', inTime: 'In', outTime: 'Out' };
 
   // ------------------------------------------------------------------ Save / send
   function missing(f) { return FIELDS.filter(k => OPTIONAL.indexOf(k) < 0 && (f[k] === '' || f[k] == null)); }
@@ -874,6 +922,11 @@
         <div class="hint">${LIVE ? t('កែតម្លៃក្នុង Google Sheet ផ្ទាំង Price List', 'Edit the prices in the Google Sheet, tab Price List') : t('សាកល្បង៖ តម្លៃពីឯកសារ Excel របស់អ្នក', 'Demo: prices from your Excel file')}</div></div>
     </div>
     <div class="card set">
+      <h2>⚡ ${t('រក្សាទុកដោយស្វ័យប្រវត្តិ', 'Save by itself')}</h2>
+      <label class="f"><input type="checkbox" id="sAuto" ${SET.auto !== false ? 'checked' : ''}> ${t('អានប័ណ្ណដោយ Google ផង ហើយរក្សាទុកដោយខ្លួនឯង ពេលកម្មវិធីអានទាំងពីរយល់ស្រប', 'Read each ticket with Google too, and save it by itself when both readers agree')}</label>
+      <div class="hint">${t('ត្រូវតែ Gross − Tare = Net, ម៉ោងត្រឹមត្រូវ, លេខប័ណ្ណមិនទាន់មាន។ ប័ណ្ណផ្សេងទៀតរង់ចាំនៅជំហាន ២។', 'Also needs Gross − Tare = Net, good times and a new ticket number. Other tickets wait in step 2.')}</div>
+    </div>
+    <div class="card set">
       <h2>✉️ ${t('អ៊ីមែល', 'Email')}</h2>
       <div class="field"><label class="f" for="sMail">${t('ផ្ញើទៅ (ដើម)', 'Default "Send to"')}</label><input class="in" id="sMail" value="${esc(SET.emailTo)}" placeholder="name@isi-group.com, ..."></div>
     </div>
@@ -887,6 +940,7 @@
       <p class="hint">${RECS.length} ${t('កំណត់ត្រា', 'records')} · ${RECS.filter(r => !r.sheet).length} ${t('មិនទាន់នៅ Google Sheet', 'not in the Google Sheet')}</p>
       <button type="button" class="btn danger sm" id="sClear">🗑️ ${t('លុបកំណត់ត្រាដែលបានផ្ញើទៅ Sheet រួច', 'Clear records already in the Google Sheet')}</button>
     </div>`;
+    $('#sAuto').onchange = e => { SET.auto = e.target.checked; saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
     $('#sName').onchange = e => { SET.fileName = e.target.value.trim() || 'Weight_Scale_Data.xlsx'; saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
     $('#sMail').onchange = e => { SET.emailTo = e.target.value.trim(); saveSet(); toast('✅ ' + t('បានរក្សាទុក', 'Saved')); };
     $('#sDir').onclick = async () => { try { const d = await window.showDirectoryPicker({ id: 'weight-scale', mode: 'readwrite' }); await idbPut('dir', d); SET.folderName = d.name; saveSet(); toast('✅ ' + d.name); renderSettings(); } catch (e) { if (e.name !== 'AbortError') toast('⚠️ ' + e.message); } };

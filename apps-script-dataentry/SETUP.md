@@ -57,6 +57,7 @@ Excel, close it first. Other browsers download the Excel file instead.
   (`KPC-MT-10-26-01`, `-02` …); the next number is the last one here + 1.
 
 Saved tickets go to the Google Sheet by themselves (right after Save, and again every minute while unsent ones wait).
+**Google's reader** (action `ocr`): each ticket picture is also read by Google Drive OCR (free, uses the script's Drive access; the temporary Doc is deleted at once). When both readers give the same values and the checks pass, the ticket is saved without stopping at step 2 (Settings › ⚡ Save by itself).
 The 🔄 button in the header reloads the lists from the sheet.
 
 Gmail sends up to 100 emails a day from a free account.
