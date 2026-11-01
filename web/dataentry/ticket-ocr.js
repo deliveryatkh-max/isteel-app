@@ -130,6 +130,26 @@
     return fixD(m[1]) + letters + fixD(m[3]);
   }
 
+  // Still Gross - Tare ≠ Net: a comma is often read as an extra digit (11,360 → 112360), or a digit is lost.
+  // When the value worked out from the other two differs from the read one by just one added or missing digit, use it.
+  const oneDigitOff = (a, b) => {   // b = a with one digit added
+    if (b.length !== a.length + 1) return false;
+    for (let i = 0; i < b.length; i++) if (b.slice(0, i) + b.slice(i + 1) === a) return true;
+    return false;
+  };
+  function fixWeights(f) {
+    const ok = () => f.gross != null && f.tare != null && f.net != null && f.gross - f.tare === f.net;
+    if (f.gross == null || f.tare == null || f.net == null || ok()) return f;
+    const want = { tare: f.gross - f.net, net: f.gross - f.tare, gross: f.tare + f.net };
+    for (const k of ['tare', 'net', 'gross']) {
+      const w = want[k];
+      if (!(w > 0)) continue;
+      const a = String(w), b = String(f[k]);
+      if (oneDigitOff(a, b) || oneDigitOff(b, a)) { f[k] = w; f.fixed = k; return f; }
+    }
+    return f;
+  }
+
   // Values found in the whole-page text, used when a box read failed.
   function fromText(text) {
     const t = String(text || '');
@@ -191,7 +211,8 @@
       else if (backup.tare != null && g - backup.tare === n) f.tare = backup.tare;
       else if (backup.net != null && g - ta === backup.net) f.net = backup.net;
     }
-    if (f.net == null && g != null && ta != null) f.net = g - ta;
+    fixWeights(f);
+    if (f.net == null && f.gross != null && f.tare != null) f.net = f.gross - f.tare;
     // A box read that has no time: use the whole-page text.
     ['inTime', 'outTime'].forEach(k => { if (!/\d\d:\d\d/.test(f[k] || '')) f[k] = backup[k] || f[k]; });
     // A time without its date: take the ticket date.
@@ -205,6 +226,6 @@
     return { fields: f, raw, checks, anchors: t.anchors };
   }
 
-  const api = { read, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
+  const api = { read, fixWeights, parseDate, parseTime, parseDateTime, parsePlate, fromText, REF_W, REF_H };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.TicketOCR = api;
 })(typeof self !== 'undefined' ? self : this);
