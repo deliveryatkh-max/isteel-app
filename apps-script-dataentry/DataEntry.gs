@@ -51,6 +51,7 @@ function route_(action, p, user) {
     case 'save': return withLock_(() => save_(p.rows, user));
     case 'email': return email_(p, user);
     case 'dnlog': return withLock_(() => dnlog_(p, user));
+    case 'ocr': return ocr_(p);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -306,6 +307,33 @@ function save_(rows, user) {
     out.push({ id: p.id, ticket: ticket, row: r, replaced: !!row });
   });
   return { saved: out };
+}
+
+/**
+ * Google's own reader (Drive OCR, free): the picture is uploaded as a Google Doc with OCR, its text read back,
+ * and the Doc deleted at once. The app compares this text with its own reading (Kim, 1 Nov 2026).
+ */
+function ocr_(p) {
+  const m = String(p.img || '').match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
+  if (!m) fail_('BAD', 'No picture.');
+  const bytes = Utilities.base64Decode(m[2]);
+  if (bytes.length > 5 * 1024 * 1024) fail_('BAD', 'The picture is too big.');
+  const auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+  const b = 'de' + Date.now();
+  const head = Utilities.newBlob('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify({ name: 'de-ocr-' + Date.now(), mimeType: 'application/vnd.google-apps.document' }) +
+    '\r\n--' + b + '\r\nContent-Type: ' + m[1] + '\r\n\r\n').getBytes();
+  const tail = Utilities.newBlob('\r\n--' + b + '--').getBytes();
+  const up = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&ocrLanguage=en&fields=id', {
+    method: 'post', contentType: 'multipart/related; boundary=' + b, payload: head.concat(bytes, tail), headers: auth, muteHttpExceptions: true });
+  if (up.getResponseCode() !== 200) fail_('OCR', 'Google reader is not available: ' + up.getContentText().slice(0, 200));
+  const id = JSON.parse(up.getContentText()).id;
+  try {
+    const ex = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=text/plain', { headers: auth, muteHttpExceptions: true });
+    return { text: ex.getResponseCode() === 200 ? ex.getContentText() : '' };
+  } finally {
+    UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id, { method: 'delete', headers: auth, muteHttpExceptions: true });
+  }
 }
 
 function folder_() { return DriveApp.getFolderById(prop_('DE_FOLDER_ID') || fail_('SETUP', 'Run setup() first.')); }
