@@ -358,6 +358,8 @@
   ];
   function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', site: SITE || '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
+  // entrances of one warehouse (Warehouse List tab: Warehouse | Entrance | Description); old tabs have no warehouse = all
+  const ents = site => WAREHOUSES.filter(w => !w.site || !site || w.site === site);
   const whName = c => { const w = WAREHOUSES.find(x => x.code === c); return c ? c + (w && w.desc ? ' · ' + w.desc : '') : ''; };
   // voice note on the remark (Kim, 30 Oct 2026: kept for Khmer transcription later). F.voice = new recording (data URL) or the saved file id.
   const voiceHTML = r => r.voice
@@ -443,9 +445,9 @@
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
-      ${WAREHOUSES.length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
+      ${ents(r.site).length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
         ${siteOn() ? `<div class="field"><label class="f">${t('ឃ្លាំង', 'Warehouse')} <span class="req">*</span></label>${siteLocked(r) ? `<div class="in ro locked">🏭 ${esc(r.site)} <span>🔒</span></div>` : pickBtn('site', r.site)}</div>` : ''}
-        ${WAREHOUSES.length ? `<div class="field"><label class="f">${t('ច្រកចូល', 'Entrance')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div>` : ''}</section>` : ''}
+        ${ents(r.site).length ? `<div class="field"><label class="f">${t('ច្រកចូល', 'Entrance')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div>` : ''}</section>` : ''}
 
       ${started ? `
       <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
@@ -557,7 +559,7 @@
     mark($('#items'), r.po && !r.items.length);
     mark($('#truck'), !r.truck);
     mark($('#dn3pl'), !r.dn3pl);
-    mark($('#wh'), WAREHOUSES.length && !r.warehouse);
+    mark($('#wh'), ents(r.site).length && !r.warehouse);
     $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
     $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
       mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
@@ -605,9 +607,9 @@
     pk('carrier', () => ({ title: t('ក្រុមហ៊ុន 3PL', '3PL company'), value: F.carrier,
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
-    pk('site', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: F.site, groups: [{ items: SITES.map(x => ({ value: x })) }], onPick: v => { F.site = v; re(); } }));
+    pk('site', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: F.site, groups: [{ items: SITES.map(x => ({ value: x })) }], onPick: v => { F.site = v; if (!ents(v).some(w => w.code === F.warehouse)) F.warehouse = ''; re(); } }));
     pk('wh', () => ({ title: t('ច្រកចូល', 'Entrance'), value: whName(F.warehouse),
-      groups: [{ items: WAREHOUSES.map(w => ({ value: whName(w.code), key: w.code })) }],
+      groups: [{ items: ents(F.site).map(w => ({ value: whName(w.code), key: w.code })) }],
       onPick: v => { const w = WAREHOUSES.find(x => whName(x.code) === v); F.warehouse = w ? w.code : v; re(); } }));
     bindVoice(re);
     $$('[data-own]').forEach(b => { b.onclick = () => { F.owner = b.dataset.own; if (F.owner === 'ISI') F.carrier = ''; re(); }; });
@@ -622,7 +624,7 @@
       else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
       if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
       if (siteOn() && !F.site) miss.push(t('ឃ្លាំង', 'Warehouse'));
-      if (WAREHOUSES.length && !F.warehouse) miss.push(t('ច្រកចូល', 'Entrance'));
+      if (ents(F.site).length && !F.warehouse) miss.push(t('ច្រកចូល', 'Entrance'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
     };
@@ -893,15 +895,16 @@
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || a.po.localeCompare(b.po));
   }
   function schedHTML() {
-    const td = today(), tm = addDays(td, 1), wk = addDays(td, 7), all = schedule();
-    const groups = [['late', '⏰', 'យឺត មិនទាន់ទទួល', 'Late, not yet received', o => o.eta && o.eta < td],
-      ['today', '📍', 'ថ្ងៃនេះ', 'Today', o => o.eta === td], ['tom', '🔔', 'ថ្ងៃស្អែក', 'Tomorrow', o => o.eta === tm],
-      ['week', '📅', '៧ ថ្ងៃខាងមុខ', 'Next 7 days', o => o.eta > tm && o.eta <= wk], ['later', '🗓', 'ក្រោយ / គ្មាន ETA', 'Later / no ETA', o => !o.eta || o.eta > wk]];
-    const row = o => `<a class="schr" href="#/plan/${encodeURIComponent(o.po)}"><span class="schd">${o.eta ? showEta(o.eta).slice(0, 5) : '–'}</span>
+    const td = today(), tm = addDays(td, 1), all = schedule();
+    const DOW = [['អាទិត្យ', 'Sun'], ['ច័ន្ទ', 'Mon'], ['អង្គារ', 'Tue'], ['ពុធ', 'Wed'], ['ព្រហស្បតិ៍', 'Thu'], ['សុក្រ', 'Fri'], ['សៅរ៍', 'Sat']];
+    const days = []; all.forEach(o => { const k = o.eta || ''; if (days.indexOf(k) < 0) days.push(k); });
+    const row = o => `<a class="schr" href="#/plan/${encodeURIComponent(o.po)}">
       <span class="scht"><b>${esc(o.po)}${!SITE && o.site ? ` <span class="whtag">🏭 ${esc(o.site)}</span>` : ''}</b><small>${esc(o.supplier || '–')}</small></span>
       <span class="schn"><b>${fmt(o.kg / 1000, 1)} t</b><small>~${o.trucks} 🚛</small></span></a>`;
-    const body = groups.map(g => { const l = all.filter(g[4]); if (!l.length) return '';
-      return `<div class="schg ${g[0]}"><h3>${g[1]} ${t(g[2], g[3])} <small>${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</small></h3>${(g[0] === 'later' ? l.slice(0, 10) : l).map(row).join('')}</div>`; }).join('');
+    const body = days.map(d => { const l = all.filter(o => (o.eta || '') === d), w = d ? DOW[new Date(d + 'T00:00:00').getDay()] : null;
+      const cls = !d ? 'none' : d < td ? 'late' : d === td ? 'today' : d === tm ? 'tom' : '';
+      const tag = !d ? '' : d < td ? '⏰ ' + t('យឺត', 'Late') : d === td ? '📍 ' + t('ថ្ងៃនេះ', 'Today') : d === tm ? '🔔 ' + t('ស្អែក', 'Tomorrow') : '';
+      return `<div class="schg ${cls}"><h3><span>${d ? t(w[0], w[1]) + ' ' + showEta(d) : t('គ្មាន ETA', 'No ETA')}${tag ? ` <em>${tag}</em>` : ''}</span><small>${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t · ~${l.reduce((n, o) => n + o.trucks, 0)} 🚛</small></h3>${l.map(row).join('')}</div>`; }).join('');
     return `<section class="card sched"><h2>📅 ${t('កាលវិភាគទំនិញចូល', 'Incoming schedule')}</h2>${body || `<div class="empty">${t('គ្មាន PO រង់ចាំ', 'No POs waiting')}</div>`}
       <p class="hint">🔔 ${t('Telegram ជូនដំណឹងមួយថ្ងៃមុន', 'Telegram alert one day before')}</p></section>`;
   }
