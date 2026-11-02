@@ -274,10 +274,15 @@ function plan_() {
     iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
     iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   const cell = (r, i) => (i < 0 ? '' : r[i] instanceof Date ? fmt_(r[i], 'yyyy-MM-dd') : String(r[i] == null ? '' : r[i]).trim());
+  const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], p2 = n => ('0' + n).slice(-2);
+  const eta = v => { let m; const t = String(v || '');   // 31-Oct-2026, 31.10.2026, 31/10/2026 typed as text → 2026-10-31
+    if ((m = t.match(/^(\d{1,2})[\s./-]*([A-Za-z]{3})[A-Za-z]*[\s.,/-]*(\d{4})$/)) && MON.indexOf(m[2].toLowerCase()) >= 0) return m[3] + '-' + p2(MON.indexOf(m[2].toLowerCase()) + 1) + '-' + p2(m[1]);
+    if ((m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) return m[3] + '-' + p2(m[2]) + '-' + p2(m[1]);
+    return t; };
   const seen = {};
   return v.slice(1).map(r => ({
     po: cell(r, iPo), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: cell(r, iEta), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
+    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
 

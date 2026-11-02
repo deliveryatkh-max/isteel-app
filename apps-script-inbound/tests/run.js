@@ -231,4 +231,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const recs = env.ss.getSheetByName('Receipts').rows, k = recs.findIndex((r, i) => i && JSON.parse(r[5]).warehouse === 'A1');
   const old = JSON.parse(recs[k][5]); delete old.site; recs[k][5] = JSON.stringify(old);
   eq(must(call('kim@x.com', 'boot', {})).receipts.find(r => r.id === old.id).site, 'WH IB', 'old receipt: warehouse from its entrance'); }
+// ETA typed as text in the sheet (Kim, 2 Nov 2026: 31-Oct-2026)
+{ plan.rows.push([9, 'M77', 'x', 'KMH1', 1020, 1000, 1, 1, '', 1, 'PO5100077777', '', '', '31-Oct-2026', 'YW'], [10, 'M78', 'y', 'KMH1', 1020, 1000, 1, 1, '', 1, 'PO5100077778', '', '', '02.11.2026', 'HS']);
+  const pl = must(call('kim@x.com', 'boot', {})).plan;
+  eq([pl.find(x => x.po === 'PO5100077777').eta, pl.find(x => x.po === 'PO5100077778').eta], ['2026-10-31', '2026-11-02'], 'text ETAs read as dates'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

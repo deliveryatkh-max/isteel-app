@@ -81,7 +81,7 @@
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
-  const showEta = s => showDate(s);
+  const showEta = s => showDate(etaOf(s));   // also 31-Oct-2026 or 31.10.2026 typed in the sheet
 
   // damage types (Kim, 28 Oct 2026: Dent, Rust, ... "suggest more")
   const DMG = [
@@ -891,7 +891,8 @@
   const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
   function schedule() {
     return pendingPOs().map(po => { const ls = pendingLines(po), h = poHead(po), kg = ls.reduce((n, x) => n + left(x), 0);
-      return { po, eta: h.eta || '', supplier: h.supplier || '', site: h.site || '', kg, trucks: Math.max(1, Math.ceil(kg / 40000)) }; })
+      const eta = ls.map(x => etaOf(x.eta)).filter(e => /^\d{4}-\d\d-\d\d$/.test(e)).sort()[0] || '';   // earliest line still to come
+      return { po, eta, supplier: h.supplier || '', site: h.site || '', kg, trucks: Math.max(1, Math.ceil(kg / 40000)) }; })
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || a.po.localeCompare(b.po));
   }
   function schedHTML() {
@@ -1043,11 +1044,14 @@
     if (window.XLSX) return Promise.resolve();
     return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
   }
+  const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   const etaOf = v => {
     if (v instanceof Date) return ymd(new Date(v.getTime() + 12 * 3600000));   // dates come in at UTC midnight: keep the day
     const s = String(v == null ? '' : v).trim(); let m;
     if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + pad(m[2]) + '-' + pad(m[3]);
     if ((m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) return m[3] + '-' + pad(m[2]) + '-' + pad(m[1]);
+    const mo = (m = s.match(/^(\d{1,2})[\s./-]*([A-Za-z]{3})[A-Za-z]*[\s.,/-]*(\d{4})$/)) && MON3.indexOf(m[2].toLowerCase());   // 31-Oct-2026
+    if (mo >= 0 && mo !== null && m) return m[3] + '-' + pad(mo + 1) + '-' + pad(m[1]);
     return s;
   };
   async function readExcel(f) {
