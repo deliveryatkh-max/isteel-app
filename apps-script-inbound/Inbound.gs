@@ -357,8 +357,14 @@ function recRows_() {
   if (sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, REC_COLS.length).getDisplayValues();
 }
+/** Receipts from before the warehouse split have no warehouse: take it from their entrance (A1, I1… belong to WH IB). */
+function siteFix_(rec, ents) {
+  if (rec && !rec.site && rec.warehouse) { const w = (ents || warehouses_()).find(x => x.code === rec.warehouse && x.site); if (w) rec.site = w.site; }
+  return rec;
+}
 function receipts_() {
-  return recRows_().map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).filter(Boolean);
+  const ents = warehouses_();
+  return recRows_().map(r => { try { return siteFix_(JSON.parse(r[5]), ents); } catch (e) { return null; } }).filter(Boolean);
 }
 function boot_(user) {
   const us = userSites_(user);
@@ -447,7 +453,7 @@ function find_(id) {
   const rows = recRows_();
   const i = rows.findIndex(r => r[0] === String(id || ''));
   if (i < 0) fail_('NOTFOUND', 'Receipt not found.', 'រកមិនឃើញការទទួលនេះទេ។');
-  return { row: i + 2, rec: JSON.parse(rows[i][5]) };
+  return { row: i + 2, rec: siteFix_(JSON.parse(rows[i][5])) };
 }
 function nextId_(res) {
   const day = fmt_(new Date(), 'yyMMdd');

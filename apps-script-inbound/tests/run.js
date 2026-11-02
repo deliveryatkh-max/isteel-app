@@ -227,5 +227,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const ob = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH OB', warehouse: '', items: [{ material: '1100000231', arrQty: 1 }] }) }));
   eq([ob.site, ob.warehouse], ['WH OB', ''], 'WH OB has no entrances: none asked');
   const bd = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH BDM', warehouse: 'A1', items: [{ material: '1100000231', arrQty: 1 }] }) }));
-  eq(bd.warehouse, '', 'an IB entrance is not kept for WH BDM'); }
+  eq(bd.warehouse, '', 'an IB entrance is not kept for WH BDM');
+  const recs = env.ss.getSheetByName('Receipts').rows, k = recs.findIndex((r, i) => i && JSON.parse(r[5]).warehouse === 'A1');
+  const old = JSON.parse(recs[k][5]); delete old.site; recs[k][5] = JSON.stringify(old);
+  eq(must(call('kim@x.com', 'boot', {})).receipts.find(r => r.id === old.id).site, 'WH IB', 'old receipt: warehouse from its entrance'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
