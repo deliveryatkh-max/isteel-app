@@ -237,4 +237,9 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq([pl.find(x => x.po === 'PO5100077777').eta, pl.find(x => x.po === 'PO5100077778').eta], ['2026-10-31', '2026-11-02'], 'text ETAs read as dates'); }
 { const pr = env.ss.getSheetByName('Incoming Plan').rows, h = pr[0].map(String), r = pr.find(x => x[h.indexOf('PO Number')] === 'PO5100099100');
   eq(r[h.indexOf('ETA')], '03-Nov-2026', 'ETA written as dd-mmm-yyyy'); }
+// the Telegram group became a supergroup (Kim, 2 Nov 2026): new id saved, message sent again
+{ const set = env.ss.getSheetByName('IB Settings').rows; set[1][1] = '-5351019426'; const n = env.telegrams.length;
+  env.g.telegram_({ text: 'hi' });
+  eq(String(set[1][1]), '-1004445393710', 'new supergroup id saved');
+  eq(env.telegrams.slice(n).map(x => x.payload.chat_id), ['-5351019426', '-1004445393710'], 'sent again to the new id'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
