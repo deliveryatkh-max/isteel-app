@@ -459,9 +459,44 @@
     if (pend.length === 1) F.items = [item(pend[0])];
   }
   // photos are shrunk on the phone (long side 1280 px, JPEG) so saving stays fast on 4G
+  // photo stamp like the Fuel app (Kim, 2 Nov 2026): navy band under the photo, receipt no. left, ISI STEEL + date/time right
+  const TAKEN = new Map();
+  function watermark(dataUrl, id, at) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth, h = img.naturalHeight, band = Math.max(36, Math.round(w * 0.07));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h + band;
+        const x = c.getContext('2d');
+        x.drawImage(img, 0, 0);
+        x.fillStyle = '#011e41'; x.fillRect(0, h, w, band);
+        const d = new Date((at || Date.now()) + 7 * 3600 * 1000), p = n => String(n).padStart(2, '0');
+        const when = p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear() + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+        const pad = Math.round(band * 0.35), mid = h + band / 2;
+        x.textBaseline = 'middle'; x.fillStyle = '#fff';
+        x.font = `700 ${Math.round(band * 0.5)}px system-ui, sans-serif`;
+        x.textAlign = 'left'; x.fillText(id, pad, mid);
+        x.font = `400 ${Math.round(band * 0.4)}px system-ui, sans-serif`;
+        x.textAlign = 'right'; x.fillText('ISI STEEL · ' + when, w - pad, mid);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => reject(new Error('bad image'));
+      img.src = dataUrl;
+    });
+  }
+  // a copy of the receipt with the photos taken in this form stamped; saved photos are left as they are
+  async function stamped(r, id) {
+    const c = JSON.parse(JSON.stringify(r));
+    const one = v => TAKEN.has(v) ? watermark(v, id, TAKEN.get(v)).catch(() => v) : Promise.resolve(v);
+    if (c.ph) for (const k of Object.keys(c.ph)) c.ph[k] = await one(c.ph[k]);
+    for (const i of c.items || []) if (i.dmgPh) i.dmgPh = await Promise.all(i.dmgPh.map(one));
+    return c;
+  }
   function shrink(file, done) {
     const rd = new FileReader();
-    rd.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); done(c.toDataURL('image/jpeg', 0.72)); }; im.onerror = () => done(rd.result); im.src = rd.result; };
+    const at = Date.now();
+    rd.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const u = c.toDataURL('image/jpeg', 0.72); TAKEN.set(u, at); done(u); }; im.onerror = () => done(rd.result); im.src = rd.result; };
     rd.readAsDataURL(file);
   }
   // tick several items at once (same look as the picker)
@@ -586,18 +621,18 @@
       collect(); const miss = need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('start', st); if (rec) { toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + rec.start); location.hash = '#/today'; } return; }
       F.date = today(); F.start = nowHM(); F.id = 'IB' + F.date.slice(2).replace(/-/g, '') + '-' + pad(DATA.length + 1); F.by = t('អ្នក (សាកល្បង)', 'You (demo)');
-      DATA.push(JSON.parse(JSON.stringify(F))); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/today';
+      DATA.push(await stamped(F, F.id)); TAKEN.clear(); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/today';
     };
     const en = $('#endBtn');
     if (en) en.onclick = async () => {
       collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); location.hash = '#/r/' + rec.id; } return; }
-      F.end = nowHM(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
+      F.end = nowHM(); F = await stamped(F, F.id); TAKEN.clear(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
     if (sv) sv.onclick = async () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('save', sv); if (rec) { toast('💾 ' + t('បានរក្សាទុក', 'Saved')); location.hash = '#/r/' + rec.id; } return; }
-      store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+      F = await stamped(F, F.id); TAKEN.clear(); store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
   }
   let REC = null;
   function bindVoice(re) {
@@ -673,7 +708,11 @@
     sending = true;
     const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> ' + t('កំពុងរក្សាទុក…', 'Saving…');
     try {
-      const rec = await api(action, { receipt: F });
+      if (action === 'start' && !F.resId) F.resId = await api('reserve').then(d => d && d.id).catch(() => '');
+      const id = action === 'start' ? F.resId || F.po : F.id;   // old Apps Script has no reserve: PO no. instead
+      const body = await stamped(F, id); if (action === 'start') body.id = F.resId || '';
+      const rec = await api(action, { receipt: body });
+      TAKEN.clear();
       const i = DATA.findIndex(x => x.id === rec.id); if (i >= 0) DATA[i] = rec; else DATA.push(rec);
       save(); F = null;
       return rec;

@@ -64,6 +64,7 @@ function route_(action, p, user) {
   switch (action) {
     case 'boot': return boot_(user);
     case 'start': return start_(p.receipt || {}, user);
+    case 'reserve': return { id: withLock_(reserve_) };   // receipt no. for the photo stamp (Kim, 2 Nov 2026)
     case 'finish': return update_(p.receipt || {}, user, true);
     case 'save': return update_(p.receipt || {}, user, false);
     case 'photos': return photos_(p.ids);
@@ -390,11 +391,26 @@ function find_(id) {
   if (i < 0) fail_('NOTFOUND', 'Receipt not found.', 'រកមិនឃើញការទទួលនេះទេ។');
   return { row: i + 2, rec: JSON.parse(rows[i][5]) };
 }
-function nextId_() {
+function nextId_(res) {
   const day = fmt_(new Date(), 'yyMMdd');
   let n = 0;
-  recRows_().forEach(r => { const m = String(r[0]).match(/^IB-(\d{6})-(\d+)$/); if (m && m[1] === day) n = Math.max(n, +m[2]); });
+  recRows_().map(r => String(r[0])).concat(Object.keys(res || {})).forEach(v => { const m = v.match(/^IB-(\d{6})-(\d+)$/); if (m && m[1] === day) n = Math.max(n, +m[2]); });
   return 'IB-' + day + '-' + String(n + 1).padStart(2, '0');
+}
+// Receipt numbers handed out before Start, so the phone can stamp the photos with them. Kept 3 hours.
+function reserved_() {
+  let res = {};
+  try { res = JSON.parse(prop_('IB_RESERVED') || '{}'); } catch (e) { res = {}; }
+  const now = Date.now();
+  Object.keys(res).forEach(k => { if (!(res[k] > now)) delete res[k]; });
+  return res;
+}
+function saveReserved_(res) { PropertiesService.getScriptProperties().setProperty('IB_RESERVED', JSON.stringify(res)); }
+function reserve_() {
+  const res = reserved_(), id = nextId_(res);
+  res[id] = Date.now() + 3 * 3600 * 1000;
+  saveReserved_(res);
+  return id;
 }
 
 // ---------------------------------------------------------------- photos (one Drive folder per receipt)
@@ -453,7 +469,9 @@ function start_(p, user) {
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
-    const id = nextId_();
+    const res = reserved_(), want = String(p.id || '');
+    const id = res[want] && !recRows_().some(r => String(r[0]) === want) ? want : nextId_(res);
+    if (res[want]) { delete res[want]; saveReserved_(res); }
     const folder = folder_(id);
     const now = new Date();
     const l = plan[0];

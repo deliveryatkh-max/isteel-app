@@ -177,4 +177,13 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const it = [{ material: '1100000231', arrQty: 900, grQty: '' }];
   eq(must(call('sok@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 1000, 'user cannot change Arrival Qty');
   eq(must(call('kim@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 900, 'admin changes Arrival Qty'); }
+// photo stamp: the receipt no. is reserved before Start and used by it
+{ const a = must(call('sok@x.com', 'reserve', {})).id, b = must(call('dara@x.com', 'reserve', {})).id;
+  ok(/^IB-\d{6}-\d+$/.test(a) && a !== b, 'reserved ids differ ' + a + ' ' + b);
+  const rb = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  eq(rb.id, b, 'start uses the reserved id');
+  const rx = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  ok(rx.id !== b && rx.id !== a, 'used id not given twice: ' + rx.id);
+  const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { id: a, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  eq(ra.id, a, 'older reservation still honoured'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
