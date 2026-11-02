@@ -144,6 +144,7 @@ function setup() {
     ['PDF_TEMPLATE_LINK', '', 'Drive link to the report template: a Word file, a Google Doc or a folder (the newest file in it is used). Edit the template and the next report uses it. Empty = built-in layout.'],
     ['PDF_FONT', 'Kantumruy Pro', 'Font for the report text (Google can only print Google fonts). - = keep the template fonts.'],
     ['DAYS_SHOWN', '90', 'How many days of receipts the app loads (receipts of POs still in Incoming Plan always load)'],
+    ['ETA_ALERT_HOUR', '15', 'Hour (0-23) of the daily Telegram alert listing POs due tomorrow. Run setupAlert once after changing it.'],
   ]);
   sheet_(SH.MAIL, MAIL_COLS, MAIL_SEED);
   sheet_(SH.WH, WH_COLS);
@@ -649,6 +650,49 @@ function telegramDone_(r) {
   dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
   telegram_(Object.assign({ text: lines.join('\n') }, button_(r)));
+}
+
+// ---------------------------------------------------------------- incoming alert, one day ahead (Kim, 2 Nov 2026)
+/** POs still to receive, grouped by PO: { po, site, supplier, eta, kg left, lines }. */
+function pendingPOs_() {
+  const got = recvdMap_(), by = {};
+  plan_().forEach(x => {
+    const left = Math.max(0, x.kg - (got[x.po + '|' + x.material] || 0));
+    if (!(left > 0)) return;
+    const o = by[x.po] || (by[x.po] = { po: x.po, site: x.site, supplier: x.supplier, eta: x.eta, inbound: x.inbound, kg: 0, lines: 0 });
+    o.kg += left; o.lines++;
+  });
+  return Object.keys(by).map(k => by[k]);
+}
+/** The Telegram text for POs due on `day` (yyyy-MM-dd); null when there are none. Overdue POs are added at the end. */
+function incomingText_(day, today) {
+  const all = pendingPOs_(), due = all.filter(o => o.eta === day), late = all.filter(o => o.eta && o.eta < today);
+  if (!due.length && !late.length) return null;
+  const t = n => (n / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const line = o => '• ' + (o.site ? '🏭 ' + esc_(o.site) + ' · ' : '') + esc_(o.po) + ' · ' + esc_(o.supplier || '–') + ' · ' + t(o.kg) + ' t (~' + Math.max(1, Math.ceil(o.kg / 40000)) + ' 🚛)';
+  const sort = (a, b) => (a.site + a.po).localeCompare(b.site + b.po);
+  const out = [];
+  if (due.length) out.push('📅 <b>Incoming tomorrow ' + showDate_(day) + '</b> · ' + due.length + ' PO · ' + t(due.reduce((n, o) => n + o.kg, 0)) + ' t', due.sort(sort).map(line).join('\n'));
+  if (late.length) out.push('⏰ <b>Late, not yet received</b> · ' + late.length + ' PO', late.sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 15).map(o => line(o) + ' · ETA ' + showDate_(o.eta)).join('\n'));
+  return out.join('\n\n');
+}
+/** Runs every day (setupAlert): tells the Telegram group what arrives tomorrow. */
+function alertTomorrow() {
+  const now = new Date(), today = fmt_(now, 'yyyy-MM-dd'), day = fmt_(new Date(now.getTime() + 86400000), 'yyyy-MM-dd');
+  const text = incomingText_(day, today);
+  if (!text) return 'Nothing due tomorrow.';
+  const u = setting_('APP_URL');
+  telegram_(Object.assign({ text: text }, u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Schedule · កាលវិភាគ', url: u + '#/sum' }]] }) } : {}));
+  return text;
+}
+/** Run once from the editor: the alert goes out every day at ETA_ALERT_HOUR (IB Settings, default 15 = 3 pm). */
+function setupAlert() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'alertTomorrow').forEach(t => ScriptApp.deleteTrigger(t));
+  const h = Math.min(23, Math.max(0, parseInt(setting_('ETA_ALERT_HOUR'), 10) || 15));
+  ScriptApp.newTrigger('alertTomorrow').timeBased().everyDays(1).atHour(h).inTimezone(TZ).create();
+  const msg = 'Incoming alert set: every day around ' + h + ':00 to the Telegram group.';
+  console.log(msg);
+  return msg;
 }
 
 // ---------------------------------------------------------------- PDF report and email (Kim, 28 Oct 2026)

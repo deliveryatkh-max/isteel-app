@@ -265,3 +265,16 @@ img[data-zoom] { cursor: zoom-in; }
 .whgo { font-size: 24px; color: var(--muted); }
 .in.locked { display: flex; justify-content: space-between; align-items: center; }
 .tmpl { display: block; width: 100%; margin: -4px 0 12px; text-align: center; text-decoration: none; }
+/* incoming schedule (2 Nov 2026) */
+.sched h3 { margin: 12px 0 4px; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+.sched h3 small { color: var(--muted); font-weight: 500; }
+.schg.late h3 { color: var(--bad); } .schg.tom h3 { color: var(--accent); }
+.schr { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--line); text-decoration: none; color: var(--text); }
+.schd { flex: none; width: 46px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.scht, .schn { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.scht { flex: 1; } .scht small, .schn small { color: var(--muted); font-size: 12px; }
+.scht small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.schn { flex: none; text-align: right; }
+.tombar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fff4d6; color: #7a4b00; text-decoration: none; border: 1px solid #f3d27a; }
+.tombar b { flex: 1; } .tombar span { font-weight: 600; }
+:root[data-theme="dark"] .tombar { background: #45300f; color: #f6c27a; border-color: #7a5a1c; }

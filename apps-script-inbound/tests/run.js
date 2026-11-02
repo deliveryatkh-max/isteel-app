@@ -211,4 +211,11 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099001').site, 'WH IB', 'Warehouse column written and read');
   must(call('sai@x.com', 'planSave', { lines: [{ po: '5100099003', material: 'M3', desc: 'z', kg: 500 }] }));
   eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099003').site, 'WH IB', 'no Warehouse column: the uploader\'s warehouse'); }
+// incoming alert one day ahead (Kim, 2 Nov 2026)
+{ const tx = env.g.incomingText_('2026-11-03', '2026-11-02');
+  ok(tx && /Late, not yet received/.test(tx) && /PO5100012751/.test(tx), 'late POs listed: ' + (tx || '').slice(0, 60));
+  must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099100', material: 'M9', desc: 'x', kg: 80000, eta: '2026-11-03', supplier: 'NS', site: 'WH GVM' }] }));
+  const t2 = env.g.incomingText_('2026-11-03', '2026-11-02');
+  ok(/Incoming tomorrow 03\.11\.2026/.test(t2) && /WH GVM · PO5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
+  eq(env.g.incomingText_('2030-01-02', '2020-01-01'), null, 'nothing due = no post'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
