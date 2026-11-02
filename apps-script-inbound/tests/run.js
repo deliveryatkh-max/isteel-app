@@ -208,5 +208,7 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099001', material: 'M1', desc: 'x', kg: 1000, site: 'WH IB' }, { po: '5100099002', material: 'M2', desc: 'y', kg: 1000, site: 'WH BDM' }] }));
   const dp = must(call('dara@x.com', 'boot', {})).plan.map(x => x.po);
   ok(dp.indexOf('PO5100099002') >= 0 && dp.indexOf('PO5100099001') < 0, 'Dara sees only BDM POs');
-  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099001').site, 'WH IB', 'Warehouse column written and read'); }
+  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099001').site, 'WH IB', 'Warehouse column written and read');
+  must(call('sai@x.com', 'planSave', { lines: [{ po: '5100099003', material: 'M3', desc: 'z', kg: 500 }] }));
+  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099003').site, 'WH IB', 'no Warehouse column: the uploader\'s warehouse'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

@@ -324,10 +324,11 @@ function planRows_() {
 function planSave_(lines, user) {
   planner_(user);
   const add = [], seen = {};
+  const us = userSites_(user), mine = !us.all && us.list.length === 1 ? us.list[0] : '';   // one warehouse: filled in for them (Kim, 2 Nov 2026)
   (Array.isArray(lines) ? lines : []).slice(0, 2000).forEach(l => {
     const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg),
       pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80),
-      site: site_(l.site, user) };
+      site: site_(l.site, user) || mine };
     if (!x.po || !x.material || !(x.kg > 0)) return;
     const k = x.po + '|' + x.material; if (seen[k]) { seen[k].kg += x.kg; return; }   // same material twice in a PO: one line
     seen[k] = x; add.push(x);
