@@ -17,6 +17,21 @@
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
   let CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'];
   let WAREHOUSES = [{ code: 'A1', desc: '' }, { code: 'A2', desc: '' }, { code: 'I1', desc: '' }, { code: 'I2', desc: '' }, { code: 'I3', desc: '' }];   // Warehouse List tab
+  // Warehouses (Kim, 2 Nov 2026): each team sees only its own receipts and Incoming Plan. Set per person in 👥 User Management.
+  // SITES = the warehouses this person may open; ALLS = may also see all at once. SITE = the one chosen ('' = all, null = not chosen yet).
+  let SITES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'], ALLS = true;
+  let SITE = (() => { try { const v = localStorage.getItem('ib_site'); return v === null ? null : v; } catch (e) { return null; } })();
+  const setSite = v => { SITE = v; try { localStorage.setItem('ib_site', v); } catch (e) { /* private mode */ } };
+  const siteOn = () => SITES.length > 0;
+  const fixSite = () => { if (!siteOn()) { SITE = ''; return; } if (SITES.length === 1 && !ALLS) setSite(SITES[0]); else if (SITE !== null && SITE !== '' && SITES.indexOf(SITE) < 0) SITE = null; else if (SITE === '' && !ALLS) SITE = null; };
+  const vis = r => !SITE || !r.site || r.site === SITE;
+  const VD = () => DATA.filter(vis);
+  const VPOS = () => POS.filter(po => PLAN.some(x => x.po === po && vis(x)));
+  function siteBar() {
+    if (!siteOn()) return '';
+    const many = SITES.length > 1 || ALLS;
+    return `<div class="whbar"><span class="whi">🏭</span><span class="wht"><small>${t('ឃ្លាំង', 'Warehouse')}</small><b>${SITE ? esc(SITE) : '🌐 ' + t('ទាំងអស់', 'All warehouses')}</b></span>${many ? `<a class="whsw" href="#/site">⇄ ${t('ប្តូរ', 'Change')}</a>` : ''}</div>`;
+  }
   let LISTS = [{ name: 'Warehouse', count: 3 }, { name: 'Procurement', count: 2 }, { name: 'Finance', count: 1 }];   // email lists (Email Lists tab)
 
   // ------------------------------------------------------------------ time helpers
@@ -47,7 +62,7 @@
 
   // ------------------------------------------------------------------ incoming plan (Kim's "Incoming Packing List Template")
   // One row per PO line: the real app reads these from the Incoming Plan tab of the sheet.
-  const PL = (po, inbound, ref, eta, supplier, lines) => lines.map(l => ({ po, inbound, ref, eta, supplier, material: l[0], desc: l[1], plant: 'KMH1', sloc: l[4] || '1020', kg: l[2], pcs: l[3] }));
+  const PL = (po, inbound, ref, eta, supplier, lines, site) => lines.map(l => ({ po, inbound, ref, eta, supplier, material: l[0], desc: l[1], plant: 'KMH1', sloc: l[4] || '1020', kg: l[2], pcs: l[3], site: site || '' }));
   let PLAN = [].concat(
     PL('PO5100012725', 'Test IN 1800048956', '1072003238-Lot1', '2026-10-18', 'Regency', [
       ['1100000230', 'INTANU G300AZ30 BT 1200x0.260', 32520, 7], ['1100000231', 'INTANU G300AZ30 BR 1200x0.220', 23550, 5],
@@ -58,11 +73,11 @@
       ['1100000780', 'INTANU G300AZ30 MK 1200x0.310', 53030, 12], ['1100000781', 'INTANU G300AZ30 MK 1200x0.360', 22830, 5],
       ['1100001392', 'INTANU G300AZ30 SW 1065x0.220', 20870, 5], ['1100001393', 'INTANU G300AZ30 SW 1110x0.220', 53360, 12],
       ['1100000244', 'INTANU G300AZ30 YL 1200x0.220', 50730, 11], ['1100000245', 'INTANU G300AZ30 YL 1200x0.260', 174450, 39],
-      ['1100000246', 'INTANU G300AZ30 YL 1200x0.310', 90890, 20], ['1100000247', 'INTANU G300AZ30 YL 1200x0.360', 42170, 10]]),
+      ['1100000246', 'INTANU G300AZ30 YL 1200x0.310', 90890, 20], ['1100000247', 'INTANU G300AZ30 YL 1200x0.360', 42170, 10]], 'WH BDM'),
     PL('PO5100012740', 'IN 1800049012', '1072003255-Lot2', '2026-10-24', 'Sample Supplier A', [
-      ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]]),
+      ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]], 'WH IB'),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
-      ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]]));
+      ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]], 'WH METAL'));
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
@@ -123,7 +138,7 @@
         id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length], dn3pl: 'DN-' + (26100 + i * 7),
         items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgUom: it[3] ? 'Kg' : '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
         date: ymd(d), start, end, manpower: x[4], owner: end ? x[5] : '', carrier: x[6],
-        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, warehouse: ['A1', 'A2', 'I1'][i % 3], by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
+        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, warehouse: ['A1', 'A2', 'I1'][i % 3], site: p0.site || '', by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
     });
     return out;
@@ -136,7 +151,7 @@
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
   // a PO is pending while any of its lines still has kg to receive
   const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
-  const pendingPOs = skip => POS.filter(po => pendingLines(po, skip).length);
+  const pendingPOs = skip => VPOS().filter(po => pendingLines(po, skip).length);
   // Live: everything comes from the Apps Script in one "boot" call and is kept on the phone, so the app opens at once.
   let USER = null;
   function applyBoot(d) {
@@ -144,7 +159,9 @@
     if (d.plates && d.plates.length) PLATES = d.plates;
     if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
     LISTS = d.lists || [];
-    WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Warehouse box is then hidden
+    WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Entrance box is then hidden
+    SITES = d.sites || []; ALLS = !!d.allSites;   // an older Apps Script sends none: no warehouse split
+    fixSite();
   }
   function load() {
     if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
@@ -154,7 +171,7 @@
   }
   function save() {
     if (DEMO) set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA }));
-    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER, lists: LISTS }));
+    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER, lists: LISTS, warehouses: WAREHOUSES, sites: SITES, allSites: ALLS }));
   }
   const canEdit = r => DEMO || (USER && (USER.admin || USER.reviewer || r.byEmail === USER.email));
 
@@ -245,7 +262,7 @@
   // ------------------------------------------------------------------ chrome
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
-  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
+  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = VD().filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
   const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
@@ -272,11 +289,11 @@
   // ------------------------------------------------------------------ Today
   function renderHome() {
     paintTabs('home');
-    const td = DATA.filter(r => r.date === today());
+    const td = VD().filter(r => r.date === today());
     const live = td.filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
-    view(`
+    view(siteBar() + `
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
@@ -299,7 +316,7 @@
     const q = LQ.toLowerCase();
     const F = { all: () => true, today: r => r.date === today(), todaydone: r => r.date === today() && !!r.end, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess,
       period: r => !!r.end && r.date >= sumFrom() };
-    const rows = DATA.filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
+    const rows = VD().filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
     rows.forEach(r => { if (r.date !== last) { last = r.date; html += `<div class="daylabel">${r.date === today() ? t('ថ្ងៃនេះ', 'Today') + ' · ' : ''}${showDate(r.date)}</div>`; } html += itemHTML(r); });
@@ -315,7 +332,7 @@
   }
   // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
-    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage UoM', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Warehouse', 'Remark'];
+    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage UoM', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Entrance', 'Remark', 'Warehouse'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
@@ -339,7 +356,7 @@
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', ph: {} }; }
+  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', site: SITE || '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
   const whName = c => { const w = WAREHOUSES.find(x => x.code === c); return c ? c + (w && w.desc ? ' · ' + w.desc : '') : ''; };
   // voice note on the remark (Kim, 30 Oct 2026: kept for Khmer transcription later). F.voice = new recording (data URL) or the saved file id.
@@ -390,6 +407,7 @@
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
+  const siteLocked = r => !!(r.site && (r.id ? !(USER && (USER.admin || USER.reviewer)) && !DEMO : SITE));
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) {
@@ -425,8 +443,9 @@
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
-      ${WAREHOUSES.length ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
-        <div class="field"><label class="f">${t('ឃ្លាំងទទួលទំនិញ', 'Receiving warehouse')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div></section>` : ''}
+      ${WAREHOUSES.length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
+        ${siteOn() ? `<div class="field"><label class="f">${t('ឃ្លាំង', 'Warehouse')} <span class="req">*</span></label>${siteLocked(r) ? `<div class="in ro locked">🏭 ${esc(r.site)} <span>🔒</span></div>` : pickBtn('site', r.site)}</div>` : ''}
+        ${WAREHOUSES.length ? `<div class="field"><label class="f">${t('ច្រកចូល', 'Entrance')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div>` : ''}</section>` : ''}
 
       ${started ? `
       <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
@@ -455,6 +474,7 @@
     const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower };
     const b = blank(); const l = PLAN.find(x => x.po === po);
     F = Object.assign(b, l ? header(l) : {}, keep);
+    if (l && l.site) F.site = l.site;   // the PO's warehouse from the packing list
     const pend = pendingLines(po, F.id);
     if (pend.length === 1) F.items = [item(pend[0])];
   }
@@ -585,7 +605,8 @@
     pk('carrier', () => ({ title: t('ក្រុមហ៊ុន 3PL', '3PL company'), value: F.carrier,
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
-    pk('wh', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: whName(F.warehouse),
+    pk('site', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: F.site, groups: [{ items: SITES.map(x => ({ value: x })) }], onPick: v => { F.site = v; re(); } }));
+    pk('wh', () => ({ title: t('ច្រកចូល', 'Entrance'), value: whName(F.warehouse),
       groups: [{ items: WAREHOUSES.map(w => ({ value: whName(w.code), key: w.code })) }],
       onPick: v => { const w = WAREHOUSES.find(x => whName(x.code) === v); F.warehouse = w ? w.code : v; re(); } }));
     bindVoice(re);
@@ -600,7 +621,8 @@
       if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
       else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
       if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
-      if (WAREHOUSES.length && !F.warehouse) miss.push(t('ឃ្លាំង', 'Warehouse'));
+      if (siteOn() && !F.site) miss.push(t('ឃ្លាំង', 'Warehouse'));
+      if (WAREHOUSES.length && !F.warehouse) miss.push(t('ច្រកចូល', 'Entrance'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
     };
@@ -737,7 +759,7 @@
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
         ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
-        ${r.warehouse ? kv(t('ឃ្លាំង', 'Warehouse'), esc(whName(r.warehouse)), 1) : ''}
+        ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
       <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
       <section class="card"><div class="kvs">
@@ -813,7 +835,8 @@
       `- Receipt No.: ${r.id}`,
       `- Truck: ${r.truck}${r.owner === 'ISI' ? ' (ISI truck)' : r.owner === '3PL' ? ' (3PL' + (r.carrier ? ' · ' + r.carrier : '') + ')' : ''}`];
     if (r.dn3pl) l.push(`- 3PL DN No.: ${r.dn3pl}`);
-    if (r.warehouse) l.push(`- Warehouse: ${whName(r.warehouse)}`);
+    if (r.site) l.push(`- Warehouse: ${r.site}`);
+    if (r.warehouse) l.push(`- Entrance: ${whName(r.warehouse)}`);
     l.push(`- Items: ${(r.items || []).length} ${(r.items || []).length === 1 ? 'line' : 'lines'}`,
       `- PO Qty: ${kg(tot(r, 'poQty'))}`,
       `- Arrival Qty: ${kg(tot(r, 'arrQty'))}`,
@@ -840,7 +863,7 @@
     box.innerHTML = `<div class="pbar"><b>📄 ${esc(r.id)}.pdf</b><button type="button" class="btn sm" id="pvX">✕</button></div><div class="page">
       <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><img class="plogo" src="../icons/isi-steel-logo.png" alt="ISI STEEL"></div>
       <h4>A. ${two('ព័ត៌មានទទួល', 'RECEIPT')}</h4>${kv([[two('លេខ PO', 'PO Number'), r.po, two('លេខ Inbound', 'Inbound No.'), r.inbound], ['Ref. No.', r.ref, two('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
-        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), whName(r.warehouse), '', '']])}
+        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), r.site || '', two('ច្រកចូល', 'Entrance'), whName(r.warehouse)]])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
         ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
@@ -864,7 +887,7 @@
   function bindGo() { $$('[data-go]').forEach(a => { a.onclick = () => { LF = a.dataset.go; LQ = ''; }; }); }
   function renderSum() {
     paintTabs('sum');
-    const rows = DATA.filter(r => r.end && r.date >= sumFrom());
+    const rows = VD().filter(r => r.end && r.date >= sumFrom());
     const tn = rows.reduce((s, r) => s + (tons(r) || 0), 0);
     const avgM = rows.length ? rows.reduce((s, r) => s + spentMin(r), 0) / rows.length : null;
     const tr = rows.filter(r => prod(r) != null);
@@ -908,14 +931,14 @@
   function renderMenu() {
     paintTabs('');
     const open = pendingPOs().length;
-    view(`
+    view(siteBar() + `
       <div class="menu2">
         <a class="mtile" href="#/today"><span class="mi">🚛</span><b>${t('ទទួលទំនិញ', 'Receive goods')}</b>
           <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
-          <em>${DATA.filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
+          <em>${VD().filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
         <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
           <small>${t('ផ្ទុក Excel Packing List', 'Upload the Excel packing list')}</small>
-          <em>${POS.length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
+          <em>${VPOS().length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
       </div>`);
   }
 
@@ -935,15 +958,15 @@
     paintTabs('plan');
     if (!canPlan()) return view(`<div class="card done"><div class="emoji">🔒</div><h2>${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</h2></div>`);
     const q = PQ.toLowerCase();
-    const pos = POS.filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
+    const pos = VPOS().filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
       .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
-    view(`
+    view(siteBar() + `
       <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
         return `<a class="item" href="#/plan/${encodeURIComponent(po)}">
-          <div class="top"><span class="id">📑 ${esc(po)}</span>${poStatus(po)}</div>
+          <div class="top"><span class="id">📑 ${esc(po)}${!SITE && h.site ? ` <span class="whtag">🏭 ${esc(h.site)}</span>` : ''}</span>${poStatus(po)}</div>
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
           <div class="prog"><i style="width:${k ? Math.min(100, r / k * 100) : 0}%"></i></div>
@@ -984,7 +1007,7 @@
   // title rows or moved columns are fine.
   let UP = null;   // { file, lines, skipped, missing }
   const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['kg'], pcs: ['pcs'],
-    po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'] };
+    po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'], site: ['warehouse', 'wh', 'site'] };
   const NEED = ['material', 'kg', 'po'];
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve();
@@ -1016,7 +1039,7 @@
         if (!r.some(c => String(c).trim())) return;
         const l = { po: String(v(r, 'po')).replace(/\s+/g, '').toUpperCase(), material: String(v(r, 'material')).trim(), desc: String(v(r, 'desc')).trim(),
           plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, pcs: String(v(r, 'pcs')).trim(),
-          inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim() };
+          inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim(), site: String(v(r, 'site')).trim() || SITE || '' };
         if (l.po && !/^PO/.test(l.po)) l.po = 'PO' + l.po;
         if (!l.po || !l.material || !l.kg) skipped.push(hi + i + 2); else lines.push(l);
       });
@@ -1088,7 +1111,7 @@
       const ls = NP.lines.filter(l => l.material && +String(l.kg).replace(/,/g, '') > 0);
       if (!po || !ls.length) { toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); return; }
       if (POS.indexOf(po) >= 0) { toast('⚠️ ' + po + t(' មានរួចហើយ', ' already exists')); return; }
-      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs }));
+      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs, site: SITE || '' }));
       if (!DEMO) { if (!await planCall('planSave', { lines: add }, $('#saveNp'))) return; } else { setPlan(PLAN.concat(add)); save(); } toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + po); NP = null; location.hash = '#/plan/' + encodeURIComponent(po);
     };
   }
@@ -1096,6 +1119,7 @@
   // ------------------------------------------------------------------ router
   function screen() {
     const h = location.hash.replace(/^#\/?/, '');
+    if (h === 'site' || (siteOn() && SITE === null)) return renderSite();
     if (h === 'new') return renderForm('');
     if (h.indexOf('edit/') === 0) return renderForm(h.slice(5));
     if (h.indexOf('r/') === 0) return renderOne(h.slice(2));
@@ -1107,6 +1131,19 @@
     if (h.indexOf('plan/') === 0) return renderPo(decodeURIComponent(h.slice(5)));
     if (h === 'today' || !canPlan()) return renderHome();
     return renderMenu();
+  }
+  // choose the warehouse (people with several, or All); the choice is remembered on the phone
+  function renderSite() {
+    paintTabs('');
+    const card = (code, sub, on) => {
+      const rs = DATA.filter(r => !code || r.site === code), live = rs.filter(isLive).length;
+      const pos = POS.filter(po => PLAN.some(x => x.po === po && (!code || x.site === code)) && pendingLines(po).length).length;
+      return `<a class="item whcard${on ? ' on' : ''}" href="#/" data-site="${esc(code)}"><span class="whico">${code ? '🏭' : '🌐'}</span>
+        <span class="whtx"><b>${code ? esc(code) : t('ទាំងអស់', 'All warehouses')}</b><small>⏱ ${live} ${t('កំពុងទម្លាក់', 'unloading')} · 📑 ${pos} PO ${t('មិនទាន់ទទួលគ្រប់', 'pending')}</small></span><span class="whgo">›</span></a>`;
+    };
+    view(`<h2 class="whh">🏭 ${t('ជ្រើសឃ្លាំង', 'Choose your warehouse')}</h2><p class="hint">${t('កម្មវិធីនឹងចាំការជ្រើសរើសនេះ។', 'The app remembers your choice.')}</p>
+      <div class="list">${SITES.map(s => card(s, '', s === SITE)).join('')}${ALLS ? card('', '', SITE === '') : ''}</div>`);
+    $$('[data-site]').forEach(a => { a.onclick = e => { e.preventDefault(); setSite(a.dataset.site); location.hash = '#/'; screen(); }; });
   }
   // live timers tick every 20 s without redrawing the screen
   setInterval(() => { $$('[data-timer]').forEach(el => { const r = byId(el.dataset.timer); if (r) { const m = spentMin(r); el.textContent = clock(m); el.classList.toggle('slow', m > 60); } }); }, 20000);

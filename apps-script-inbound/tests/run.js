@@ -10,11 +10,11 @@ const ok = (c, m) => { assert.ok(c, m); pass++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); pass++; };
 
 const USERS = [
-  ['Email', 'Name', 'Role', 'Active', 'ទទួលទំនិញ'],
-  ['kim@x.com', 'Kim', 'admin', 'Yes', false],
-  ['sok@x.com', 'Sokha', 'user', 'Yes', true],
-  ['dara@x.com', 'Dara', 'user', 'Yes', true],
-  ['nobody@x.com', 'Nobody', 'user', 'Yes', false],
+  ['Email', 'Name', 'Role', 'Active', 'ទទួលទំនិញ', 'Inbound Warehouse'],
+  ['kim@x.com', 'Kim', 'admin', 'Yes', false, ''],
+  ['sok@x.com', 'Sokha', 'user', 'Yes', true, ''],
+  ['dara@x.com', 'Dara', 'user', 'Yes', true, 'WH BDM'],
+  ['nobody@x.com', 'Nobody', 'user', 'Yes', false, ''],
 ];
 const TRUCKS = [['CODE', 'ឈ្មោះតៃកុង'], ['3E-2588', 'A'], ['2A-2233', 'B']];
 const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpeg-photo').toString('base64');
@@ -42,7 +42,7 @@ ok(/^AUTH/.test(env.post({ action: 'boot', token: '', payload: {} }).error), 'no
 let b = must(call('sok@x.com', 'boot', {}));
 eq(b.plan.length, 3, 'plan lines');
 eq(b.plan[0], { po: 'PO5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
-  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020' }, 'plan line read by heading');
+  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '' }, 'plan line read by heading');
 eq(b.plates, ['2A-2233', '3E-2588'], 'plates from Driver & Truck');
 eq(b.carriers, ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'], '3PL list from settings');
 ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
@@ -57,8 +57,8 @@ ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { 
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
 const whTab = env.ss.getSheetByName('Warehouse List'); whTab.rows.push(['A1', 'Main'], ['I1', '']);
 eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main' }, { code: 'I1', desc: '' }], 'warehouses in boot');
-ok(/Choose the warehouse/.test(call('sok@x.com', 'start', { receipt: ARR }).error), 'warehouse required');
-ok(/not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
+ok(/Choose the entrance/.test(call('sok@x.com', 'start', { receipt: ARR }).error), 'entrance required');
+ok(/Entrance Z9 is not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
 ARR.warehouse = 'A1';
 let r = must(call('sok@x.com', 'start', { receipt: ARR }));
 eq(r.warehouse, 'A1', 'warehouse saved');
@@ -186,4 +186,24 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(rx.id !== b && rx.id !== a, 'used id not given twice: ' + rx.id);
   const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { id: a, items: [{ material: '1100000231', arrQty: 10 }] }) }));
   eq(ra.id, a, 'older reservation still honoured'); }
+// warehouses (Kim, 2 Nov 2026): Dara works at WH BDM only; Sokha (nothing ticked) and admins see every warehouse
+{ const bd = must(call('dara@x.com', 'boot', {}));
+  eq([bd.sites, bd.allSites], [['WH BDM'], false], 'Dara: WH BDM only');
+  const bs = must(call('sok@x.com', 'boot', {}));
+  eq([bs.sites.length, bs.allSites], [5, true], 'nothing ticked = every warehouse');
+  const ib = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB', items: [{ material: '1100000231', arrQty: 5 }] }) }));
+  eq(ib.site, 'WH IB', 'site saved');
+  ok(!must(call('dara@x.com', 'boot', {})).receipts.some(r => r.id === ib.id), 'Dara does not see WH IB trucks');
+  ok(must(call('sok@x.com', 'boot', {})).receipts.some(r => r.id === ib.id), 'Sokha sees them');
+  ok(/^DENIED/.test(call('dara@x.com', 'save', { receipt: { id: ib.id, remark: 'x' } }).error), 'Dara cannot edit a WH IB truck');
+  ok(/^DENIED/.test(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB' }) }).error), 'Dara cannot start at WH IB');
+  const own = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000231', arrQty: 5 }] }) }));
+  eq(own.site, 'WH BDM', 'one warehouse: used without asking');
+  ok(log().some(x => x[0] === own.id && x[34] === 'WH BDM'), 'warehouse in GR Log');
+  eq(env.ss.getSheetByName('GR Log').rows[0][31], 'Entrance', 'A1/I1 column is now Entrance');
+  // packing list with a Warehouse column; Dara only sees BDM POs
+  must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099001', material: 'M1', desc: 'x', kg: 1000, site: 'WH IB' }, { po: '5100099002', material: 'M2', desc: 'y', kg: 1000, site: 'WH BDM' }] }));
+  const dp = must(call('dara@x.com', 'boot', {})).plan.map(x => x.po);
+  ok(dp.indexOf('PO5100099002') >= 0 && dp.indexOf('PO5100099001') < 0, 'Dara sees only BDM POs');
+  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099001').site, 'WH IB', 'Warehouse column written and read'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

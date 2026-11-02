@@ -259,9 +259,10 @@
     if (!E || E.key !== key) {
       const u = isNew ? null : byEmail(email);
       if (!isNew && !u) { view(`<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`); return; }
-      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '' };
+      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '', ibWh: [] };
       if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'location', 'incident'].indexOf(a.key) >= 0; });
       const orig = JSON.parse(JSON.stringify(u || blank));
+      if (!orig.ibWh) orig.ibWh = [];
       E = { key, isNew, orig, f: JSON.parse(JSON.stringify(orig)), ot: null, otOrig: null, tried: false };
     }
     const f = E.f, me = !isNew && f.email === D.me;
@@ -318,15 +319,26 @@
     $$('[data-role]').forEach(b => b.onclick = () => { f.role = b.dataset.role; renderEdit(email); });
     $('#fActive').onclick = () => { if (me) return; f.active = !f.active; renderEdit(email); };
     $$('.aline [data-app]').forEach(b => b.onclick = () => { f.apps[b.dataset.app] = !f.apps[b.dataset.app]; renderEdit(email); });
+    $$('[data-ibwh]').forEach(b => b.onclick = () => {
+      const w = b.dataset.ibwh, on = f.ibWh || (f.ibWh = []), k = on.indexOf(w);
+      if (k >= 0) on.splice(k, 1); else if (w === 'All') f.ibWh = ['All']; else { on.push(w); const a = on.indexOf('All'); if (a >= 0) on.splice(a, 1); }
+      renderEdit(email);
+    });
     const om = $('#fOt'); if (om) om.onchange = e => { E.ot = e.target.value ? JSON.parse(e.target.value) : null; };
     $('#fSave').onclick = () => saveEdit(email);
     if (f.apps.overtime && !OT) loadOt().then(() => { if (E && E.key === key) renderEdit(email); });
   }
 
-  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role).
+  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role),
+  // the warehouse(s) for Inbound (Kim, 2 Nov 2026: each team sees only its own warehouse).
   function appExtra(key) {
     const f = E.f;
-    if (!f.apps[key]) return '';
+    if (!f.apps[key] && !(key === 'inbound' && f.role === 'admin')) return '';
+    if (key === 'inbound') {
+      const list = (D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).concat('All'), on = f.ibWh || [];
+      return `<div class="sub ibwh"><span>🏭 ${t('ឃ្លាំង', 'Warehouse')}</span>${list.map(w => `<button type="button" class="whc${on.indexOf(w) >= 0 ? ' on' : ''}" data-ibwh="${esc(w)}">${on.indexOf(w) >= 0 ? '☑' : '☐'} ${w === 'All' ? '🌐 ' + t('ទាំងអស់', 'All') : esc(w)}</button>`).join('')}
+        ${on.length ? '' : `<div class="hint" style="width:100%">${t('មិនទាន់ជ្រើស = ឃើញគ្រប់ឃ្លាំង', 'None ticked = sees every warehouse')}</div>`}</div>`;
+    }
     if (key === 'overtime') {
       if (!OT) return `<div class="sub hint"><span class="sp"></span> ${t('កំពុងផ្ទុកអ្នកអនុម័ត…', 'Loading approvers…')}</div>`;
       if (!OT.ok) return `<div class="sub hint">⚠️ ${t('អានសន្លឹក OT មិនបាន', 'Could not read the OT sheet')}: ${esc(OT.error)}</div>`;
@@ -355,6 +367,7 @@
     const apps = {};
     D.apps.forEach(a => { if (isNew || !!f.apps[a.key] !== !!o.apps[a.key]) apps[a.key] = !!f.apps[a.key]; });
     if (Object.keys(apps).length) p.apps = apps;
+    if ((f.ibWh || []).join(',') !== (o.ibWh || []).join(',')) p.ibWh = f.ibWh;
     const otChange = E.ot && E.otOrig && (E.ot.manager !== E.otOrig.manager || E.ot.tg !== E.otOrig.tg);
     if (Object.keys(p).length <= 1 && !otChange) { toast(t('គ្មានការផ្លាស់ប្តូរ', 'No changes')); return; }
     const btn = $('#fSave');
@@ -541,6 +554,7 @@
             if (email === S.me && (patch.role && patch.role !== 'admin' || patch.active === false)) { if (action === 'umSave') throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។'); return; }
             ['name', 'empId', 'dept', 'role'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
             if (patch.apps) Object.assign(u.apps, patch.apps);
+            if (patch.ibWh) u.ibWh = patch.ibWh.slice();
             if (patch.active) u.claimed = '';
             if (patch.active !== undefined && (patch.active !== u.active || (!patch.active && !u.offAt))) { u.active = patch.active; u.offAt = patch.active ? 0 : Date.now(); u.offNote = patch.active ? '' : (patch.offNote || ''); }
             out.push(clone(u));
