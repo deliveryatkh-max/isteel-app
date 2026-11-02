@@ -962,6 +962,7 @@
       .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
     view(siteBar() + `
       <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
+      <a class="btn tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download Excel template')}</a>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;

@@ -264,3 +264,4 @@ img[data-zoom] { cursor: zoom-in; }
 .whtx small { color: var(--muted); font-size: 12px; }
 .whgo { font-size: 24px; color: var(--muted); }
 .in.locked { display: flex; justify-content: space-between; align-items: center; }
+.tmpl { display: block; width: 100%; margin: -4px 0 12px; text-align: center; text-decoration: none; }
