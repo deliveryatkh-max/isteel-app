@@ -293,7 +293,7 @@
     const live = td.filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
-    view(siteBar() + `
+    view(siteBar() + tomorrowBar() + `
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
@@ -885,6 +885,31 @@
   const sumLabel = () => (SP === '1' ? t('ថ្ងៃនេះ', 'Today') : SP === '7' ? t('៧ ថ្ងៃ', '7 days') : t('ខែនេះ', 'This month'));
   // the number boxes open the Log with the matching filter (Kim, 30 Oct 2026)
   function bindGo() { $$('[data-go]').forEach(a => { a.onclick = () => { LF = a.dataset.go; LQ = ''; }; }); }
+  // Incoming schedule (Kim, 2 Nov 2026): POs still to receive by ETA, for this warehouse
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
+  function schedule() {
+    return pendingPOs().map(po => { const ls = pendingLines(po), h = poHead(po), kg = ls.reduce((n, x) => n + left(x), 0);
+      return { po, eta: h.eta || '', supplier: h.supplier || '', site: h.site || '', kg, trucks: Math.max(1, Math.ceil(kg / 40000)) }; })
+      .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || a.po.localeCompare(b.po));
+  }
+  function schedHTML() {
+    const td = today(), tm = addDays(td, 1), wk = addDays(td, 7), all = schedule();
+    const groups = [['late', '⏰', 'យឺត មិនទាន់ទទួល', 'Late, not yet received', o => o.eta && o.eta < td],
+      ['today', '📍', 'ថ្ងៃនេះ', 'Today', o => o.eta === td], ['tom', '🔔', 'ថ្ងៃស្អែក', 'Tomorrow', o => o.eta === tm],
+      ['week', '📅', '៧ ថ្ងៃខាងមុខ', 'Next 7 days', o => o.eta > tm && o.eta <= wk], ['later', '🗓', 'ក្រោយ / គ្មាន ETA', 'Later / no ETA', o => !o.eta || o.eta > wk]];
+    const row = o => `<a class="schr" href="#/plan/${encodeURIComponent(o.po)}"><span class="schd">${o.eta ? showEta(o.eta).slice(0, 5) : '–'}</span>
+      <span class="scht"><b>${esc(o.po)}${!SITE && o.site ? ` <span class="whtag">🏭 ${esc(o.site)}</span>` : ''}</b><small>${esc(o.supplier || '–')}</small></span>
+      <span class="schn"><b>${fmt(o.kg / 1000, 1)} t</b><small>~${o.trucks} 🚛</small></span></a>`;
+    const body = groups.map(g => { const l = all.filter(g[4]); if (!l.length) return '';
+      return `<div class="schg ${g[0]}"><h3>${g[1]} ${t(g[2], g[3])} <small>${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</small></h3>${(g[0] === 'later' ? l.slice(0, 10) : l).map(row).join('')}</div>`; }).join('');
+    return `<section class="card sched"><h2>📅 ${t('កាលវិភាគទំនិញចូល', 'Incoming schedule')}</h2>${body || `<div class="empty">${t('គ្មាន PO រង់ចាំ', 'No POs waiting')}</div>`}
+      <p class="hint">🔔 ${t('Telegram ជូនដំណឹងមួយថ្ងៃមុន', 'Telegram alert one day before')}</p></section>`;
+  }
+  // home: a reminder of tomorrow's arrivals
+  function tomorrowBar() {
+    const tm = addDays(today(), 1), l = schedule().filter(o => o.eta === tm);
+    return l.length ? `<a class="tombar" href="#/sum">🔔 <b>${t('ស្អែក', 'Tomorrow')}: ${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</b><span>${t('មើល', 'View')} ›</span></a>` : '';
+  }
   function renderSum() {
     paintTabs('sum');
     const rows = VD().filter(r => r.end && r.date >= sumFrom());
@@ -902,6 +927,7 @@
     const by = {}; rows.forEach(r => { const k = r.owner === 'ISI' ? 'ISI' : (r.carrier || '3PL'); const o = by[k] || (by[k] = { n: 0, t: 0, m: 0 }); o.n++; o.t += tons(r) || 0; o.m += spentMin(r); });
     const chip = (k, km, en) => `<button class="chip${SP === k ? ' on' : ''}" data-p="${k}">${t(km, en)}</button>`;
     view(`
+      ${schedHTML()}
       <div class="filters">${chip('1', 'ថ្ងៃនេះ', 'Today')}${chip('7', '៧ ថ្ងៃ', '7 days')}${chip('m', 'ខែនេះ', 'This month')}</div>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="period"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></a>
@@ -931,7 +957,7 @@
   function renderMenu() {
     paintTabs('');
     const open = pendingPOs().length;
-    view(siteBar() + `
+    view(siteBar() + tomorrowBar() + `
       <div class="menu2">
         <a class="mtile" href="#/today"><span class="mi">🚛</span><b>${t('ទទួលទំនិញ', 'Receive goods')}</b>
           <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
