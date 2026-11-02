@@ -715,6 +715,26 @@ function alertTomorrow() {
   telegram_(Object.assign({ text: text }, u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Schedule · កាលវិភាគ', url: u + '#/sum' }]] }) } : {}));
   return text;
 }
+/** Run once from the editor after adding the bot to the Inbound Telegram group and sending any message there:
+ *  finds that group, saves its id in IB Settings › TELEGRAM_CHAT_ID, says hello in it, and switches on the daily alert. */
+function telegramConnect() {
+  const token = prop_('TELEGRAM_BOT_TOKEN');
+  if (!token) throw new Error('Add TELEGRAM_BOT_TOKEN in Project Settings › Script properties first (copy it from the Fuel app).');
+  const api = (m, p) => JSON.parse(UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + m, { method: 'post', payload: p || {}, muteHttpExceptions: true }).getContentText() || '{}');
+  const me = api('getMe');
+  if (!me.ok) throw new Error('The bot token is not right: ' + (me.description || ''));
+  const up = api('getUpdates', { limit: '100' });
+  if (!up.ok) throw new Error(/webhook/i.test(up.description || '') ? 'This bot has a webhook, so it cannot list groups. Put the group id in IB Settings › TELEGRAM_CHAT_ID by hand.' : (up.description || 'getUpdates failed'));
+  let chat = null;
+  (up.result || []).forEach(u => { const m = u.message || u.my_chat_member || u.channel_post || u.edited_message; const c = m && m.chat;
+    if (c && (c.type === 'group' || c.type === 'supergroup')) chat = c; });   // the newest group wins
+  if (!chat) throw new Error('No group found. Add @' + me.result.username + ' to the Inbound group, send a message there (e.g. /start@' + me.result.username + '), then run telegramConnect again.');
+  setSetting_('TELEGRAM_CHAT_ID', String(chat.id));
+  api('sendMessage', { chat_id: String(chat.id), parse_mode: 'HTML', text: '✅ <b>Inbound · ទទួលទំនិញ</b>\nក្រុមនេះនឹងទទួល៖ ឡានមកដល់ ការខូចខាត/ខ្វះ និងទំនិញចូលថ្ងៃស្អែក។\nThis group gets: trucks arriving, damage/short receipts, and tomorrow\'s incoming POs (daily).' });
+  const msg = 'Connected to "' + chat.title + '" (' + chat.id + '). ' + setupAlert();
+  console.log(msg);
+  return msg;
+}
 /** Run once from the editor: the alert goes out every day at ETA_ALERT_HOUR (IB Settings, default 15 = 3 pm). */
 function setupAlert() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'alertTomorrow').forEach(t => ScriptApp.deleteTrigger(t));
