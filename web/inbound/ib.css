@@ -278,3 +278,5 @@ img[data-zoom] { cursor: zoom-in; }
 .tombar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fff4d6; color: #7a4b00; text-decoration: none; border: 1px solid #f3d27a; }
 .tombar b { flex: 1; } .tombar span { font-weight: 600; }
 :root[data-theme="dark"] .tombar { background: #45300f; color: #f6c27a; border-color: #7a5a1c; }
+.sched h3 em { font-style: normal; font-size: 12px; font-weight: 600; margin-left: 4px; }
+.schg.today h3 { color: var(--ok); }

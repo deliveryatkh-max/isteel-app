@@ -57,7 +57,7 @@ ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, AR
 ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: '' }) }).error), '3PL DN required');
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
 const whTab = env.ss.getSheetByName('Warehouse List'); whTab.rows.push(['A1', 'Main'], ['I1', '']);
-eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main' }, { code: 'I1', desc: '' }], 'warehouses in boot');
+eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main', site: '' }, { code: 'I1', desc: '', site: '' }], 'warehouses in boot');
 ok(/Choose the entrance/.test(call('sok@x.com', 'start', { receipt: ARR }).error), 'entrance required');
 ok(/Entrance Z9 is not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
 ARR.warehouse = 'A1';
@@ -218,4 +218,14 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const t2 = env.g.incomingText_('2026-11-03', '2026-11-02');
   ok(/Incoming tomorrow 03\.11\.2026/.test(t2) && /WH GVM · PO5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
   eq(env.g.incomingText_('2030-01-02', '2020-01-01'), null, 'nothing due = no post'); }
+// Warehouse List with Warehouse | Entrance | Description (Kim, 2 Nov 2026)
+{ whTab.rows = [['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH IB', 'A1', 'Raw Materials'], ['WH IB', 'I1', 'Trading'], ['WH OB', '', 'Finished Goods Warehouse'], ['WH BDM', '', 'Finished Goods Warehouse']];
+  const kb = must(call('kim@x.com', 'boot', {}));
+  eq(kb.warehouses, [{ code: 'A1', desc: 'Raw Materials', site: 'WH IB' }, { code: 'I1', desc: 'Trading', site: 'WH IB' }], 'entrances with their warehouse');
+  eq(kb.sites, ['WH IB', 'WH OB', 'WH BDM'], 'warehouses from the tab');
+  ok(/Choose the entrance/.test(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB', warehouse: '' }) }).error), 'WH IB needs an entrance');
+  const ob = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH OB', warehouse: '', items: [{ material: '1100000231', arrQty: 1 }] }) }));
+  eq([ob.site, ob.warehouse], ['WH OB', ''], 'WH OB has no entrances: none asked');
+  const bd = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH BDM', warehouse: 'A1', items: [{ material: '1100000231', arrQty: 1 }] }) }));
+  eq(bd.warehouse, '', 'an IB entrance is not kept for WH BDM'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

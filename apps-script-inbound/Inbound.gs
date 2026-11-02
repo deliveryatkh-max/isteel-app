@@ -374,19 +374,43 @@ function boot_(user) {
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
 /** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */
-function warehouses_() {
+/** Entrances from the Warehouse List tab. Old layout: Code | Description. New layout (Kim, 2 Nov 2026):
+ *  Warehouse Code | Entrance Code | Description, so each entrance belongs to a warehouse (site). */
+function whRows_() {
   const sh = ss_().getSheetByName(SH.WH);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().map(r => ({ code: String(r[0]).trim(), desc: String(r[1]).trim() })).filter(w => w.code);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getDisplayValues().map(r => r.map(x => String(x).trim()));
+  const iEnt = v[0].findIndex(h => /^entr/i.test(h));
+  return { iEnt: iEnt, rows: v.slice(1) };
 }
-function warehouse_(v, need) {
-  const list = warehouses_(), code = clip_(v, 40);
-  if (!list.length) return code;
+function warehouses_() {
+  const w = whRows_();
+  if (!w) return [];
+  if (w.iEnt < 0) return w.rows.map(r => ({ code: r[0], desc: r[1] || '', site: '' })).filter(x => x.code);
+  const iDesc = w.iEnt === 1 ? 2 : 1;
+  return w.rows.map(r => ({ code: r[w.iEnt], desc: r[iDesc] || '', site: r[0] })).filter(x => x.code);
+}
+/** Warehouses named in column A of the new-layout Warehouse List tab (in sheet order), or [] */
+function whSites_() {
+  const w = whRows_();
+  if (!w || w.iEnt < 0) return [];
+  return w.rows.map(r => r[0]).filter((x, i, a) => x && a.indexOf(x) === i);
+}
+function warehouse_(v, need, site) {
+  const all = warehouses_(), code = clip_(v, 40);
+  const list = site ? all.filter(w => !w.site || w.site === site) : all;   // only this warehouse's entrances
+  if (!all.length) return code;
+  if (!list.length) return '';   // e.g. WH OB has no entrances: nothing to choose
   if (!code) { if (need) fail_('BAD', 'Choose the entrance.', 'សូមជ្រើសច្រកចូល។'); return ''; }
   if (!list.some(w => w.code === code)) fail_('BAD', 'Entrance ' + code + ' is not in the Warehouse List.', 'ច្រកចូល ' + code + ' មិនមានក្នុងបញ្ជីទេ។');
   return code;
 }
-function sites_() { const v = String(setting_('WAREHOUSES') || '').split(',').map(x => x.trim()).filter(Boolean); return v.length ? v : SITES; }
+function sites_() {
+  const v = String(setting_('WAREHOUSES') || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (v.length) return v;
+  const tab = whSites_();
+  return tab.length ? tab : SITES;
+}
 /** The warehouses a person works in; all = sees every warehouse (admins, reviewers, nobody ticked, or "All"). */
 function userSites_(user) {
   const wh = (user.wh || []).filter(x => x !== 'All');
@@ -499,9 +523,9 @@ function start_(p, user) {
   if (!truck) fail_('BAD', 'Truck number is missing.', 'សូមបញ្ចូលផ្លាកលេខឡាន។');
   const dn = clip_(p.dn3pl, 40);
   if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
-  const wh = warehouse_(p.warehouse, true);
   const us = userSites_(user);
   const site = site_(p.site, user) || plan[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
+  const wh = warehouse_(p.warehouse, true, site);
   if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
@@ -566,8 +590,8 @@ function update_(p, user, finish) {
     const mp = num_(p.manpower);
     rec.manpower = mp > 0 ? Math.round(mp) : rec.manpower;
     rec.remark = clip_(p.remark, 500);
-    if (p.warehouse !== undefined) rec.warehouse = warehouse_(p.warehouse, false) || rec.warehouse || '';
     if (p.site !== undefined && (user.admin || user.reviewer)) rec.site = site_(p.site, user) || rec.site || '';
+    if (p.warehouse !== undefined) rec.warehouse = warehouse_(p.warehouse, false, rec.site) || (p.site !== undefined ? '' : rec.warehouse) || '';
     if (p.voice !== undefined) {
       if (/^data:audio\//.test(String(p.voice))) {
         const id = saveVoice_(folder, p.voice);
