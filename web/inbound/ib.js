@@ -212,11 +212,33 @@
     try {
       const got = await api('photos', { ids: ids.slice(0, 20) });
       ids.forEach(id => { THUMBS[id] = got[id] || ''; });
-      $$('[data-fid]').forEach(el => { const u = THUMBS[el.dataset.fid]; if (u) el.outerHTML = `<img src="${u}" alt="">`; });
+      $$('[data-fid]').forEach(el => { const u = THUMBS[el.dataset.fid]; if (u) el.outerHTML = `<img src="${u}" alt="" data-zoom data-full="${esc(el.dataset.fid)}">`; });
     } catch (e) { /* offline: keep the placeholders */ }
     thumbBusy = false;
     if ($$('[data-fid]').some(el => !(el.dataset.fid in THUMBS))) loadThumbs();
   }
+  // tap a photo to see it big (Kim, 2 Nov 2026); full size comes from Drive, the thumbnail shows meanwhile
+  const FULL = {};
+  function zoom(img) {
+    const bg = document.createElement('div');
+    bg.className = 'zoom-bg';
+    bg.innerHTML = `<img src="${img.src}" alt=""><button type="button" class="icon-btn zoom-x" aria-label="${esc(t('បិទ', 'Close'))}">✕</button>`;
+    const big = bg.querySelector('img'), id = img.dataset.full;
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    const close = () => { document.removeEventListener('keydown', onKey); bg.remove(); };
+    bg.onclick = close;
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(bg);
+    if (id && !DEMO) {
+      if (FULL[id]) big.src = FULL[id];
+      else { bg.classList.add('loading'); api('photo', { id }).then(d => { if (d && d.url) { FULL[id] = d.url; big.src = d.url; } }).catch(() => {}).finally(() => bg.classList.remove('loading')); }
+    }
+  }
+  document.addEventListener('click', e => {
+    const img = e.target.closest && e.target.closest('img[data-zoom]');
+    if (!img || img.closest('label')) return;   // photo boxes in the form still open the camera
+    e.preventDefault(); e.stopPropagation(); zoom(img);
+  }, true);
   const byId = id => DATA.find(r => r.id === id);
   const isLive = r => r.start && !r.end;
 
@@ -326,9 +348,9 @@
     : `<button type="button" class="btn sm" id="vRec">🎤 ${t('ថតសំឡេង', 'Record voice')}</button> <small class="il" id="vTime"></small>`;
   const grey = (lbl, v) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
   const phImg = (v, ic) => !v ? `<span class="sam">${ic}<small>${t('ថត', 'Take')}</small></span>`
-    : /^data:/.test(v) ? `<img src="${v}" alt="">`
+    : /^data:/.test(v) ? `<img src="${v}" alt="" data-zoom>`
     : v === 'sample' ? `<span class="sam">${ic}<small>${t('គំរូ', 'sample')}</small></span>`
-    : THUMBS[v] ? `<img src="${THUMBS[v]}" alt="">` : `<span class="sam" data-fid="${esc(v)}">${ic}<small>⏳</small></span>`;
+    : THUMBS[v] ? `<img src="${THUMBS[v]}" alt="" data-zoom data-full="${esc(v)}">` : `<span class="sam" data-fid="${esc(v)}">${ic}<small>⏳</small></span>`;
   function phTile(k, ic, km, en) {
     const v = F.ph && F.ph[k];
     return `<label class="shot${v ? ' has' : ''}"><input type="file" accept="image/*" capture="environment" data-ph="${k}" hidden><div class="ph">${phImg(v, v ? ic : '📷')}</div><small>${ic} ${t(km, en)} <span class="req">*</span></small></label>`;

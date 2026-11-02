@@ -107,6 +107,8 @@ ok(log().find(x => x[0] === r.id)[16] === '', 'no longer received less');
 const th = must(call('sok@x.com', 'photos', { ids: [keepId, 'f1'] }));
 ok(th[keepId] && /^data:image\/jpeg;base64,/.test(th[keepId]), 'thumbnail');
 ok(!('f1' in th) || env.files.f1.parent !== 'root', 'files outside the folder are not read');
+ok(/^data:image\/jpeg;base64,/.test(must(call('sok@x.com', 'photo', { id: keepId })).url), 'full photo');
+ok(must(call('sok@x.com', 'photo', { id: 'nope' })).url === '', 'unknown photo gives empty url');
 
 // boot: receipts come back; pending is worked out by the app
 b = must(call('sok@x.com', 'boot', {}));

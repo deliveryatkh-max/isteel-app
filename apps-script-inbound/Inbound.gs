@@ -67,6 +67,7 @@ function route_(action, p, user) {
     case 'finish': return update_(p.receipt || {}, user, true);
     case 'save': return update_(p.receipt || {}, user, false);
     case 'photos': return photos_(p.ids);
+    case 'photo': return { url: photos_([p.id], true)[String(p.id)] || '' };   // full size, tap to open (Kim, 2 Nov 2026)
     case 'voice': return voice_(p.id);
     case 'pdf': return pdf_(p, user);
     case 'email': return email_(p, user);
@@ -415,7 +416,7 @@ function photo_(folder, v, keep, name) {
   return keep.indexOf(v) >= 0 ? v : null;
 }
 /** Small thumbnails for the app. Only files inside the Inbound Photos folder are read. */
-function photos_(ids) {
+function photos_(ids, full) {
   const rootId = root_().getId();
   const out = {};
   (Array.isArray(ids) ? ids : []).slice(0, 20).forEach(id => {
@@ -425,7 +426,7 @@ function photos_(ids) {
       const parent = p.hasNext() ? p.next() : null;
       const gp = parent && parent.getParents();
       if (!gp || !gp.hasNext() || gp.next().getId() !== rootId) return;
-      const b = f.getThumbnail() || f.getBlob();
+      const b = (!full && f.getThumbnail()) || f.getBlob();
       out[id] = 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
     } catch (e) { /* gone */ }
   });
