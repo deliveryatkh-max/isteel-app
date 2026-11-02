@@ -315,6 +315,9 @@ function planWrite_(keep, add) {
   })));
   const iNo = head.indexOf('No');
   if (iNo >= 0) rows.forEach((r, i) => { r[iNo] = i + 1; });
+  // ETA written the way Kim types it: dd-mmm-yyyy (2 Nov 2026)
+  const iEta = head.findIndex(h => /^eta$/i.test(h)), MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (iEta >= 0) rows.forEach(r => { const m = String(r[iEta] == null ? '' : r[iEta]).match(/^(\d{4})-(\d\d)-(\d\d)$/); if (m) r[iEta] = m[3] + '-' + MON[+m[2] - 1] + '-' + m[1]; });
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, W).setNumberFormat('@').setValues(rows.map(r => head.map((h, k) => (r[k] == null ? '' : String(r[k])))));
 }
@@ -324,7 +327,7 @@ function planRows_() {
   const v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), width).getValues();
   const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
   const iPo = Math.max(head.indexOf('po number'), head.indexOf('po')), iMat = head.indexOf('material');
-  return v.slice(1).filter(r => r.some(c => String(c).trim())).map(r => ({ po: poOf_(r[iPo]), material: String(r[iMat]).trim(), row: r.map(c => (c instanceof Date ? fmt_(c, 'yyyy-MM-dd') : c)) }));
+  return v.slice(1).filter(r => r.some(c => String(c).trim())).map(r => ({ po: poOf_(r[iPo]), material: String(r[iMat]).trim(), row: r.map(c => (c instanceof Date ? fmt_(c, 'yyyy-MM-dd') : c)) }));   // planWrite_ turns ETA into dd-mmm-yyyy
 }
 /** Upload (Excel or by hand): each PO in the upload replaces its lines; lines already received and not in the upload stay. */
 function planSave_(lines, user) {
@@ -700,6 +703,7 @@ function pendingPOs_() {
   return Object.keys(by).map(k => by[k]);
 }
 /** The Telegram text for POs due on `day` (yyyy-MM-dd); null when there are none. Overdue POs are added at the end. */
+const etaTxt_ = d => { const m = String(d || '').match(/^(\d{4})-(\d\d)-(\d\d)$/); return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : String(d || ''); };
 function incomingText_(day, today) {
   const all = pendingPOs_(), due = all.filter(o => o.eta === day), late = all.filter(o => o.eta && o.eta < today);
   if (!due.length && !late.length) return null;
@@ -707,8 +711,8 @@ function incomingText_(day, today) {
   const line = o => '• ' + (o.site ? '🏭 ' + esc_(o.site) + ' · ' : '') + esc_(o.po) + ' · ' + esc_(o.supplier || '–') + ' · ' + t(o.kg) + ' t (~' + Math.max(1, Math.ceil(o.kg / 40000)) + ' 🚛)';
   const sort = (a, b) => (a.site + a.po).localeCompare(b.site + b.po);
   const out = [];
-  if (due.length) out.push('📅 <b>Incoming tomorrow ' + showDate_(day) + '</b> · ' + due.length + ' PO · ' + t(due.reduce((n, o) => n + o.kg, 0)) + ' t', due.sort(sort).map(line).join('\n'));
-  if (late.length) out.push('⏰ <b>Late, not yet received</b> · ' + late.length + ' PO', late.sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 15).map(o => line(o) + ' · ETA ' + showDate_(o.eta)).join('\n'));
+  if (due.length) out.push('📅 <b>Incoming tomorrow ' + etaTxt_(day) + '</b> · ' + due.length + ' PO · ' + t(due.reduce((n, o) => n + o.kg, 0)) + ' t', due.sort(sort).map(line).join('\n'));
+  if (late.length) out.push('⏰ <b>Late, not yet received</b> · ' + late.length + ' PO', late.sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 15).map(o => line(o) + ' · ETA ' + etaTxt_(o.eta)).join('\n'));
   return out.join('\n\n');
 }
 /** Runs every day (setupAlert): tells the Telegram group what arrives tomorrow. */
