@@ -216,7 +216,7 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(tx && /Late, not yet received/.test(tx) && /PO5100012751/.test(tx), 'late POs listed: ' + (tx || '').slice(0, 60));
   must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099100', material: 'M9', desc: 'x', kg: 80000, eta: '2026-11-03', supplier: 'NS', site: 'WH GVM' }] }));
   const t2 = env.g.incomingText_('2026-11-03', '2026-11-02');
-  ok(/Incoming tomorrow 03\.11\.2026/.test(t2) && /WH GVM · PO5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
+  ok(/Incoming tomorrow 03-Nov-2026/.test(t2) && /WH GVM · PO5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
   eq(env.g.incomingText_('2030-01-02', '2020-01-01'), null, 'nothing due = no post'); }
 // Warehouse List with Warehouse | Entrance | Description (Kim, 2 Nov 2026)
 { whTab.rows = [['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH IB', 'A1', 'Raw Materials'], ['WH IB', 'I1', 'Trading'], ['WH OB', '', 'Finished Goods Warehouse'], ['WH BDM', '', 'Finished Goods Warehouse']];

@@ -81,7 +81,8 @@
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
-  const showEta = s => showDate(etaOf(s));   // also 31-Oct-2026 or 31.10.2026 typed in the sheet
+  const showEta = s => { const e = etaOf(s), m = String(e || '').match(/^(\d{4})-(\d\d)-(\d\d)$/);   // dd-mmm-yyyy like Kim's sheet
+    return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : (e || ''); };
 
   // damage types (Kim, 28 Oct 2026: Dent, Rust, ... "suggest more")
   const DMG = [
