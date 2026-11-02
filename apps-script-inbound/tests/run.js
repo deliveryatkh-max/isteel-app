@@ -15,6 +15,7 @@ const USERS = [
   ['sok@x.com', 'Sokha', 'user', 'Yes', true, ''],
   ['dara@x.com', 'Dara', 'user', 'Yes', true, 'WH BDM'],
   ['nobody@x.com', 'Nobody', 'user', 'Yes', false, ''],
+  ['sai@x.com', 'Sai', 'reviewer', 'Yes', true, 'WH IB'],
 ];
 const TRUCKS = [['CODE', 'ឈ្មោះតៃកុង'], ['3E-2588', 'A'], ['2A-2233', 'B']];
 const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpeg-photo').toString('base64');
@@ -191,6 +192,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq([bd.sites, bd.allSites], [['WH BDM'], false], 'Dara: WH BDM only');
   const bs = must(call('sok@x.com', 'boot', {}));
   eq([bs.sites.length, bs.allSites], [5, true], 'nothing ticked = every warehouse');
+  eq([must(call('sai@x.com', 'boot', {})).sites, must(call('sai@x.com', 'boot', {})).allSites], [['WH IB'], false], 'reviewer with WH IB ticked: WH IB only');
+  eq(must(call('kim@x.com', 'boot', {})).allSites, true, 'admin: every warehouse');
   const ib = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB', items: [{ material: '1100000231', arrQty: 5 }] }) }));
   eq(ib.site, 'WH IB', 'site saved');
   ok(!must(call('dara@x.com', 'boot', {})).receipts.some(r => r.id === ib.id), 'Dara does not see WH IB trucks');
