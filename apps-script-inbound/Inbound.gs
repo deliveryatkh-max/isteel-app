@@ -388,7 +388,9 @@ function sites_() { const v = String(setting_('WAREHOUSES') || '').split(',').ma
 /** The warehouses a person works in; all = sees every warehouse (admins, reviewers, nobody ticked, or "All"). */
 function userSites_(user) {
   const wh = (user.wh || []).filter(x => x !== 'All');
-  const all = !!(user.admin || user.reviewer || !wh.length || (user.wh || []).indexOf('All') >= 0);
+  // Admins see every warehouse. Anyone else (reviewers too, Kim 2 Nov 2026) sees only the warehouses ticked in 👥 Users;
+  // nothing ticked or "All" ticked = every warehouse.
+  const all = !!(user.admin || !wh.length || (user.wh || []).indexOf('All') >= 0);
   return { all: all, list: all ? sites_() : wh };
 }
 const siteOk_ = (user, site) => !site || userSites_(user).all || userSites_(user).list.indexOf(site) >= 0;
