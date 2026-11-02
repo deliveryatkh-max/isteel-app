@@ -280,3 +280,5 @@ img[data-zoom] { cursor: zoom-in; }
 :root[data-theme="dark"] .tombar { background: #45300f; color: #f6c27a; border-color: #7a5a1c; }
 .sched h3 em { font-style: normal; font-size: 12px; font-weight: 600; margin-left: 4px; }
 .schg.today h3 { color: var(--ok); }
+.upl2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.upl2 .btn { margin: 0; width: 100%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 15px; line-height: 1.25; padding: 10px 8px; min-height: 56px; }

@@ -966,7 +966,7 @@
           <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
           <em>${VD().filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
         <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
-          <small>${t('ផ្ទុក Excel Packing List', 'Upload the Excel packing list')}</small>
+          <small>${t('ផ្ទុកផែនការទំនិញចូល', 'Upload the Incoming Plan')}</small>
           <em>${VPOS().length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
       </div>`);
   }
@@ -990,8 +990,8 @@
     const pos = VPOS().filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
       .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
     view(siteBar() + `
-      <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
-      <a class="btn tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download Excel template')}</a>
+      <div class="upl2"><label class="btn ok big upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុកផែនការទំនិញចូល', 'Upload Incoming Plan')}</label>
+      <a class="btn big tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download template')}</a></div>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
