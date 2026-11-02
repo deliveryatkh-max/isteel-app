@@ -25,14 +25,19 @@ const WH_COLS = ['Warehouse Code', 'Warehouse Description'];
 const MAIL_COLS = ['List', 'Emails', 'Active'];
 const MAIL_SEED = [['Warehouse', '', 'Yes'], ['Procurement', '', 'Yes'], ['Finance', '', 'Yes']];
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 'PCS', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier'];
+const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 'PCS', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier', 'Warehouse'];
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Warehouse', 'Voice Note', 'Damage UoM'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
+// Warehouses (Kim, 2 Nov 2026): each team sees only its own. A person's warehouses come from the Users tab column
+// "Inbound Warehouse" (set in 👥 User Management); empty or "All" = every warehouse. IB Settings WAREHOUSES can change the list.
+// The old Warehouse List codes (A1, I1, ...) are now the Entrance.
+const SITES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
+const WH_USER_COL = 'Inbound Warehouse';
 const STATUS = { live: 'Unloading', done: 'Done' };
 const PHOTOS = ['front', 'load', 'doc'];
 const MAX_DMG_PHOTOS = 10;
@@ -207,7 +212,7 @@ function authenticate_(token) {
   const u = usersCached_().find(x => x.email === email && x.ok);
   if (!u) fail_('NOACCESS', email + ' has no Inbound access. Ask the admin to tick ' + APP_COL + ' in Users.',
     email + ' មិនទាន់មានសិទ្ធិប្រើ ' + APP_COL + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
-  return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, session: session };
+  return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, wh: u.wh || [], session: session };
 }
 
 /** The one user list: the Users tab of the Fuel Refill sheet. Active = Yes and ទទួលទំនិញ ticked (Fuel admins always). */
@@ -219,20 +224,21 @@ function users_() {
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   const head = v[0].map(h => String(h).trim());
   const c = n => head.indexOf(n);
-  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL);
+  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL), w = c(WH_USER_COL);
   return v.slice(1).filter(x => x[e]).map(x => {
     const role = r >= 0 ? text_(x[r]) : '';
     const admin = /admin/i.test(role);
     return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', admin: admin, reviewer: admin || /review|supervis/i.test(role),
-      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))) };
+      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))),
+      wh: w >= 0 ? String(x[w] || '').split(',').map(s => s.trim()).filter(Boolean) : [] };
   });
 }
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('ib_users');
+  const hit = cache.get('ib_users2');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('ib_users', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('ib_users2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
@@ -265,12 +271,12 @@ function plan_() {
   const c = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
   const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('kg', 'qty'),
     iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
-    iPlant = c('plant'), iSloc = c('sloc');
+    iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   const cell = (r, i) => (i < 0 ? '' : r[i] instanceof Date ? fmt_(r[i], 'yyyy-MM-dd') : String(r[i] == null ? '' : r[i]).trim());
   const seen = {};
   return v.slice(1).map(r => ({
     po: cell(r, iPo), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: cell(r, iEta), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc),
+    ref: cell(r, iRef), eta: cell(r, iEta), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
 
@@ -287,19 +293,24 @@ function recvdMap_() {
 function planWrite_(keep, add) {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
   const width = Math.max(sh.getLastColumn(), PLAN_COLS.length);
-  const head = sh.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+  let head = sh.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+  if (!head.some(h => /^(warehouse|wh|site)$/i.test(h))) {   // older tab: add the Warehouse column (Kim, 2 Nov 2026)
+    sh.getRange(1, width + 1).setValue('Warehouse').setFontWeight('bold');
+    head = head.concat('Warehouse'); keep = keep.map(r => r.concat(''));
+  }
+  const W = head.length;
   const rows = keep.concat(add.map(l => head.map(h => {
     switch (h.toLowerCase().replace(/\.$/, '')) {
       case 'material': return l.material; case 'description': case 'material description': return l.desc; case 'plant': return l.plant; case 'sloc': return l.sloc;
       case 'kg': return l.kg; case 't': return Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return Math.ceil(l.kg / 1000 / 40);
       case 'po number': case 'po': return l.po; case 'inbound no': case 'inbound number': return l.inbound; case 'ref. no': case 'ref no': return l.ref;
-      case 'eta': return l.eta; case 'supplier': return l.supplier; default: return '';
+      case 'eta': return l.eta; case 'supplier': return l.supplier; case 'warehouse': case 'wh': case 'site': return l.site || ''; default: return '';
     }
   })));
   const iNo = head.indexOf('No');
   if (iNo >= 0) rows.forEach((r, i) => { r[iNo] = i + 1; });
-  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, width).clearContent();
-  if (rows.length) sh.getRange(2, 1, rows.length, width).setNumberFormat('@').setValues(rows.map(r => r.map(v => (v == null ? '' : String(v)))));
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, W).setNumberFormat('@').setValues(rows.map(r => head.map((h, k) => (r[k] == null ? '' : String(r[k])))));
 }
 function planRows_() {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
@@ -315,7 +326,8 @@ function planSave_(lines, user) {
   const add = [], seen = {};
   (Array.isArray(lines) ? lines : []).slice(0, 2000).forEach(l => {
     const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg),
-      pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80) };
+      pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80),
+      site: site_(l.site, user) };
     if (!x.po || !x.material || !(x.kg > 0)) return;
     const k = x.po + '|' + x.material; if (seen[k]) { seen[k].kg += x.kg; return; }   // same material twice in a PO: one line
     seen[k] = x; add.push(x);
@@ -323,16 +335,18 @@ function planSave_(lines, user) {
   if (!add.length) fail_('BAD', 'No rows with PO, Material and Kg.', 'គ្មានជួរដែលមាន PO, Material និង Kg ទេ។');
   const pos = {}; add.forEach(x => { pos[x.po] = 1; });
   const got = recvdMap_();
+  const old = plan_(); old.forEach(x => { if (pos[x.po] && !siteOk_(user, x.site)) fail_('DENIED', x.po + ' belongs to ' + x.site + '.', x.po + ' ជារបស់ ' + x.site + '។'); });
   const keep = planRows_().filter(r => !pos[r.po] || (got[r.po + '|' + r.material] > 0 && !seen[r.po + '|' + r.material])).map(r => r.row);
   planWrite_(keep, add);
-  return plan_();
+  return plan_().filter(x => siteOk_(user, x.site));
 }
 function planDel_(po, user) {
   planner_(user);
   po = poOf_(po);
+  if (plan_().some(x => x.po === po && !siteOk_(user, x.site))) fail_('DENIED', 'This PO belongs to another warehouse.', 'PO នេះជារបស់ឃ្លាំងផ្សេង។');
   if (receipts_().some(r => r.po === po)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
   planWrite_(planRows_().filter(r => r.po !== po).map(r => r.row), []);
-  return plan_();
+  return plan_().filter(x => siteOk_(user, x.site));
 }
 
 // ---------------------------------------------------------------- receipts
@@ -345,15 +359,16 @@ function receipts_() {
   return recRows_().map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).filter(Boolean);
 }
 function boot_(user) {
-  const plan = plan_();
+  const us = userSites_(user);
+  const plan = plan_().filter(x => siteOk_(user, x.site));
   const pos = {}; plan.forEach(x => { pos[x.po] = 1; });
   const days = Math.max(1, num_(setting_('DAYS_SHOWN')) || 90);
   const from = fmt_(new Date(Date.now() - days * 86400000), 'yyyy-MM-dd');
-  const recs = receipts_().filter(r => r.date >= from || pos[r.po]);
+  const recs = receipts_().filter(r => (r.date >= from || pos[r.po]) && siteOk_(user, r.site));
   const carriers = setting_('THREEPL_COMPANIES').split(',').map(s => s.trim()).filter(Boolean);
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
-    warehouses: warehouses_(),
+    warehouses: warehouses_(), sites: us.list, allSites: us.all,
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
 /** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */
@@ -365,9 +380,24 @@ function warehouses_() {
 function warehouse_(v, need) {
   const list = warehouses_(), code = clip_(v, 40);
   if (!list.length) return code;
-  if (!code) { if (need) fail_('BAD', 'Choose the warehouse.', 'សូមជ្រើសឃ្លាំង។'); return ''; }
-  if (!list.some(w => w.code === code)) fail_('BAD', 'Warehouse ' + code + ' is not in the Warehouse List.', 'ឃ្លាំង ' + code + ' មិនមានក្នុងបញ្ជីទេ។');
+  if (!code) { if (need) fail_('BAD', 'Choose the entrance.', 'សូមជ្រើសច្រកចូល។'); return ''; }
+  if (!list.some(w => w.code === code)) fail_('BAD', 'Entrance ' + code + ' is not in the Warehouse List.', 'ច្រកចូល ' + code + ' មិនមានក្នុងបញ្ជីទេ។');
   return code;
+}
+function sites_() { const v = String(setting_('WAREHOUSES') || '').split(',').map(x => x.trim()).filter(Boolean); return v.length ? v : SITES; }
+/** The warehouses a person works in; all = sees every warehouse (admins, reviewers, nobody ticked, or "All"). */
+function userSites_(user) {
+  const wh = (user.wh || []).filter(x => x !== 'All');
+  const all = !!(user.admin || user.reviewer || !wh.length || (user.wh || []).indexOf('All') >= 0);
+  return { all: all, list: all ? sites_() : wh };
+}
+const siteOk_ = (user, site) => !site || userSites_(user).all || userSites_(user).list.indexOf(site) >= 0;
+function site_(v, user) {
+  const site = clip_(v, 30);
+  if (!site) return '';
+  if (sites_().indexOf(site) < 0 && !userSites_(user).all) fail_('BAD', 'Warehouse ' + site + ' is not in the list.', 'ឃ្លាំង ' + site + ' មិនមានក្នុងបញ្ជីទេ។');
+  if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
+  return site;
 }
 /** Voice note of a receipt as a data URL (only the receipt's own file). */
 function voice_(id) {
@@ -466,6 +496,9 @@ function start_(p, user) {
   const dn = clip_(p.dn3pl, 40);
   if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
   const wh = warehouse_(p.warehouse, true);
+  const us = userSites_(user);
+  const site = site_(p.site, user) || plan[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
+  if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
@@ -477,7 +510,7 @@ function start_(p, user) {
     const l = plan[0];
     const rec = {
       id: id, status: STATUS.live, po: l.po, inbound: l.inbound, ref: l.ref, supplier: l.supplier, eta: l.eta, dn3pl: dn, truck: truck,
-      warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
+      site: site, warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
@@ -495,6 +528,7 @@ function update_(p, user, finish) {
     const live = rec.status === STATUS.live;
     if (!live && !(user.admin || user.reviewer || rec.byEmail === user.email)) fail_('DENIED', 'Only the person who recorded it or an admin can change it.', 'មានតែអ្នកកត់ត្រា ឬ Admin ទេដែលអាចកែបាន។');
     if (finish && !live) fail_('BAD', 'This truck is already finished.', 'ឡាននេះបានបញ្ចប់រួចហើយ។');
+    if (!siteOk_(user, rec.site)) fail_('DENIED', 'This truck belongs to ' + rec.site + '.', 'ឡាននេះជារបស់ ' + rec.site + '។');
     const folder = folder_(rec.id);
     const sent = Array.isArray(p.items) ? p.items : [];
     rec.items.forEach(i => {
@@ -529,6 +563,7 @@ function update_(p, user, finish) {
     rec.manpower = mp > 0 ? Math.round(mp) : rec.manpower;
     rec.remark = clip_(p.remark, 500);
     if (p.warehouse !== undefined) rec.warehouse = warehouse_(p.warehouse, false) || rec.warehouse || '';
+    if (p.site !== undefined && (user.admin || user.reviewer)) rec.site = site_(p.site, user) || rec.site || '';
     if (p.voice !== undefined) {
       if (/^data:audio\//.test(String(p.voice))) {
         const id = saveVoice_(folder, p.voice);
@@ -565,11 +600,11 @@ function store_(rec, row) {
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
-  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Warehouse, Voice Note, Damage UoM)
+  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Entrance, Voice Note, Damage UoM, Warehouse)
   const rows = rec.items.map(i => [rec.id, rec.status, rec.po, rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : ''].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
@@ -598,7 +633,7 @@ const kg_ = n => Number(n || 0).toLocaleString('en-US');
 const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
 const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
 function telegramArrived_(r) {
-  telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start),
+  telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
     '📦 ' + r.items.length + ' item(s) · ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)].join('\n') }, button_(r)));
 }
@@ -606,7 +641,7 @@ function telegramArrived_(r) {
 function telegramDone_(r) {
   const dmg = r.items.filter(i => Number(i.dmgQty) > 0), less = r.items.filter(isLess_);
   if (!dmg.length && !less.length) return;
-  const lines = ['⚠️ <b>Receipt ' + esc_(r.id) + '</b> · ' + esc_(r.truck) + ' · ' + esc_(r.po)];
+  const lines = ['⚠️ <b>Receipt ' + esc_(r.id) + '</b> · ' + esc_(r.truck) + ' · ' + esc_(r.po) + (r.site ? ' · 🏭 ' + esc_(r.site) : '')];
   less.forEach(i => lines.push('⬇ Received less: ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
   dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
@@ -684,7 +719,7 @@ function email_(p, user) {
   const note = clip_(p.note, 4000);
   const card = '<div style="background:#011e41;color:#fff;padding:12px 16px;border-radius:8px;margin-bottom:14px"><div style="font-size:12px;opacity:.8">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>' +
     '<div style="font-size:18px;font-weight:700">' + esc_(rec.id) + ' · ' + esc_(rec.truck) + '</div><div style="font-size:12px;opacity:.85">' +
-    esc_([rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>';
+    esc_([rec.site, rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>';
   // With a message, the message carries the summary; without one, a details table is shown instead
   const table = '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
     row('Inbound / Ref.', [rec.inbound, rec.ref].filter(String).join(' · ')) + row('3PL DN', rec.dn3pl) + row('Items', rec.items.length) +
@@ -764,7 +799,7 @@ function pdfValues_(r) {
     dn3pl: r.dn3pl, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '',
     itemCount: r.items.length, totPo: kg_(tot_(r, 'poQty')), totArr: kg_(tot_(r, 'arrQty')), totGr: kg_(tot_(r, 'grQty')), totDmg: kg_(tot_(r, 'dmgQty')), uom: r.uom,
     start: r.start, end: r.end, spent: sp === '' ? '' : sp + ' min', manpower: r.manpower, productivity: pr === '' ? '' : pr + ' t/person/h', remark: r.remark,
-    warehouse: r.warehouse || '', voice: r.voice ? 'Voice note saved in the receipt folder / សំឡេងរក្សាទុកក្នុង Folder' : '',
+    warehouse: [r.site, r.warehouse].filter(Boolean).join(' · '), site: r.site || '', entrance: r.warehouse || '', voice: r.voice ? 'Voice note saved in the receipt folder / សំឡេងរក្សាទុកក្នុង Folder' : '',
     by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '', barcode: r.id, inboundBarcode: r.inbound,
   };
 }
@@ -917,7 +952,7 @@ function makePdf_(r, folder, name) {
       ['Ref. No.', r.ref, two_('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
       ['ETA', showDate_(r.eta), two_('លេខ DN 3PL', '3PL DN No.'), r.dn3pl],
       [two_('ឡាន', 'Truck / trailer'), r.truck, two_('ម្ចាស់ឡាន', 'Truck owner'), r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : ''],
-      [two_('ឃ្លាំង', 'Warehouse'), r.warehouse || '', two_('សំឡេង', 'Voice note'), r.voice ? two_('មាន', 'Saved in the receipt folder') : '']]);
+      [two_('ឃ្លាំង', 'Warehouse'), [r.site, r.warehouse].filter(Boolean).join(' · '), two_('សំឡេង', 'Voice note'), r.voice ? two_('មាន', 'Saved in the receipt folder') : '']]);
 
     section_(body, 'B. ' + two_('បរិមាណទំនិញ', 'ITEMS') + ' (' + r.items.length + ')');
     const rows = [['#', two_('សម្ភារៈ', 'Material'), two_('ចំនួន (PO)', 'PO Qty'), two_('ចំនួន (ដល់)', 'Arrival'), two_('ទទួល', 'GR Qty'), two_('ខូច', 'Damaged'), two_('ឯកតា', 'UoM')]];
