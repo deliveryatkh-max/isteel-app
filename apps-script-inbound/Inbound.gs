@@ -660,12 +660,17 @@ function writeLog_(rec) {
 }
 
 // ---------------------------------------------------------------- Telegram
-function telegram_(payload) {
+function telegram_(payload, moved) {
   const token = prop_('TELEGRAM_BOT_TOKEN'), chat = setting_('TELEGRAM_CHAT_ID');
   if (!token || !chat) return null;
   try {
-    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'post', payload: Object.assign({ chat_id: chat, parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'post', payload: Object.assign({ chat_id: String(chat), parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
     const out = JSON.parse(res.getContentText() || '{}');
+    const to = out.parameters && out.parameters.migrate_to_chat_id;
+    if (!out.ok && to && !moved) {   // the group became a supergroup: save the new id and send again
+      setSetting_('TELEGRAM_CHAT_ID', String(to));
+      return telegram_(payload, true);
+    }
     if (!out.ok) console.error('telegram: ' + res.getContentText());
     return out;
   } catch (e) { console.error('telegram: ' + e); return null; }
