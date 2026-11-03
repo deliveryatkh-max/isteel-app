@@ -560,8 +560,9 @@ function start_(p, user) {
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
+    const tg = telegramArrived_(rec);
+    if (tg && tg.ok && tg.result) rec.tg = tg.result.message_id;   // the finish post replies to it
     store_(rec);
-    telegramArrived_(rec);
     return rec;
   });
 }
@@ -684,19 +685,21 @@ const kg_ = n => Number(n || 0).toLocaleString('en-US');
 const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
 const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
 function telegramArrived_(r) {
-  telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
+  return telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
     '📦 ' + r.items.length + ' item(s) · ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)].join('\n') }, button_(r)));
 }
-/** Posted when a truck finishes with damage or a short quantity. */
+/** Posted for every finished truck (Kim, 3 Nov 2026), as a reply to its arrival post; damage and short lines are added. */
 function telegramDone_(r) {
-  const dmg = r.items.filter(i => Number(i.dmgQty) > 0), less = r.items.filter(isLess_);
-  if (!dmg.length && !less.length) return;
-  const lines = ['⚠️ <b>Receipt ' + esc_(r.id) + '</b> · ' + esc_(r.truck) + ' · ' + esc_(r.po) + (r.site ? ' · 🏭 ' + esc_(r.site) : '')];
+  const dmg = r.items.filter(i => Number(i.dmgQty) > 0), less = r.items.filter(isLess_), bad = dmg.length || less.length;
+  const lines = [(bad ? '⚠️' : '✅') + ' <b>Finished ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + '–' + esc_(r.end) + ' · ' + spent_(r) + ' min' + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
+    '📄 ' + esc_(r.po) + ' · ' + esc_(r.id) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
+    '📦 Received ' + kg_(tot_(r, 'grQty')) + ' / ' + kg_(tot_(r, 'arrQty')) + ' ' + esc_(r.uom) + ' · 👷 ' + esc_(r.manpower)];
   less.forEach(i => lines.push('⬇ Received less: ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
   dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
-  telegram_(Object.assign({ text: lines.join('\n') }, button_(r)));
+  const reply = r.tg ? { reply_to_message_id: String(r.tg), allow_sending_without_reply: 'true' } : {};
+  telegram_(Object.assign({ text: lines.join('\n') }, reply, button_(r)));
 }
 
 // ---------------------------------------------------------------- incoming alert, one day ahead (Kim, 2 Nov 2026)
