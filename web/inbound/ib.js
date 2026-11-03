@@ -291,7 +291,7 @@
   function renderHome() {
     paintTabs('home');
     const td = VD().filter(r => r.date === today());
-    const live = td.filter(isLive), done = td.filter(r => r.end);
+    const live = VD().filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
     view(siteBar() + tomorrowBar() + `
