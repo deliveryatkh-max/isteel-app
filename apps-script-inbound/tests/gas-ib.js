@@ -32,6 +32,7 @@ class Sheet {
   getMaxRows() { return 1000; }
   getRange(r, c, nr, nc) { if (typeof r === 'string') return new Range(this, 1, 1, 1, 1); return new Range(this, r, c, nr || 1, nc || 1); }
   deleteRow(r) { this.rows.splice(r - 1, 1); }
+  appendRow(v) { this.rows.splice(this.getLastRow(), 0, v); }
   setFrozenRows() {}
 }
 class SS {

@@ -183,6 +183,14 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const it = [{ material: '1100000231', arrQty: 900, grQty: '' }];
   eq(must(call('sok@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 1000, 'user cannot change Arrival Qty');
   eq(must(call('kim@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 900, 'admin changes Arrival Qty'); }
+// delete (Kim, 3 Nov 2026): admin only, only while unloading; copy kept in IB Deleted
+{ const d = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DEL-1', items: [{ material: '1100000231', arrQty: 5 }] }) }));
+  ok(/Only an admin/.test(call('sok@x.com', 'delete', { id: d.id }).error), 'non-admin cannot delete');
+  ok(/still unloading/.test(call('kim@x.com', 'delete', { id: r.id }).error), 'finished record cannot be deleted');
+  eq(must(call('kim@x.com', 'delete', { id: d.id, reason: 'double start' })), { deleted: d.id }, 'admin deletes');
+  ok(!must(call('kim@x.com', 'boot', {})).receipts.some(x => x.id === d.id), 'gone from receipts');
+  ok(!log().some(x => x[0] === d.id), 'gone from GR Log');
+  const bin = env.ss.getSheetByName('IB Deleted').rows; ok(bin.some(x => x[3] === d.id && x[2] === 'double start' && x[1] === 'Kim'), 'copy in IB Deleted'); }
 // photo stamp: the receipt no. is reserved before Start and used by it
 { const a = must(call('sok@x.com', 'reserve', {})).id, b = must(call('dara@x.com', 'reserve', {})).id;
   ok(/^IB-\d{6}-\d+$/.test(a) && a !== b, 'reserved ids differ ' + a + ' ' + b);

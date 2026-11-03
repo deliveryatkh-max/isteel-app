@@ -79,6 +79,7 @@ function route_(action, p, user) {
     case 'email': return email_(p, user);
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
+    case 'delete': return withLock_(() => del_(p.id, p.reason, user));   // admin removes a pending unloading record (Kim, 3 Nov 2026)
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -662,6 +663,20 @@ function writeLog_(rec) {
   }
   at.reverse().forEach(r => sh.deleteRow(r));
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, LOG_COLS.length).setNumberFormat('@').setValues(rows);
+}
+
+/** Admin only, and only while the truck is still unloading: the row leaves Receipts and GR Log; a copy goes to the IB Deleted tab. */
+function del_(id, reason, user) {
+  if (!user.admin) fail_('DENIED', 'Only an admin can delete a record.', 'មានតែ Admin ទេដែលអាចលុបបាន។');
+  const f = find_(id);
+  if (f.rec.status !== STATUS.live) fail_('BAD', 'Only a record that is still unloading can be deleted.', 'អាចលុបបានតែកំណត់ត្រាដែលកំពុងទម្លាក់ប៉ុណ្ណោះ។');
+  sheet_('IB Deleted', ['Deleted At', 'Deleted By', 'Reason', 'Receipt ID', 'Truck', 'PO Number', 'Data'])
+    .appendRow([now_(), user.name || user.email, clip_(reason, 300), f.rec.id, f.rec.truck, f.rec.po, JSON.stringify(f.rec)].map(String));
+  sheet_(SH.REC, REC_COLS).deleteRow(f.row);
+  const log = sheet_(SH.LOG, LOG_COLS), last = log.getLastRow();
+  const ids = last > 1 ? log.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
+  ids.map((x, n) => (x === f.rec.id ? n + 2 : 0)).filter(Boolean).reverse().forEach(r => log.deleteRow(r));
+  return { deleted: f.rec.id };
 }
 
 // ---------------------------------------------------------------- Telegram
