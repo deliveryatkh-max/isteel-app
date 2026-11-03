@@ -291,3 +291,8 @@ img[data-zoom] { cursor: zoom-in; }
 .sync.busy { color: var(--accent); }
 .sync.bad { color: #fff; background: #d97706; border-color: #d97706; opacity: 1; font-size: 12px; }
 .sync:not(.bad) { display: none; }
+.btn.danger { color: #fff; background: #dc2626; border-color: #dc2626; }
+#delBtn.btn.danger { color: #dc2626; background: transparent; }
+.delbox { margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(220,38,38,.45); background: rgba(220,38,38,.08); display: grid; gap: 6px; }
+.delbox .in.bad { border-color: #dc2626; }
+.delrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }

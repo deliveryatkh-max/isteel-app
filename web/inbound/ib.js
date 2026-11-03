@@ -791,12 +791,32 @@
       </div>
       <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
       </section>
-      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `
+      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>${USER && USER.admin || DEMO ? `<button class="btn danger mt" id="delBtn">🗑 ${t('លុបកំណត់ត្រានេះ', 'Delete this record')}</button><div id="delBox"></div>` : ''}` : `
       <section class="card rep"><h2>📄 ${t('របាយការណ៍', 'Report')}</h2>
         <div class="rep2"><button class="btn ok big" id="pdfBtn">📄 ${t('បង្កើតរបាយការណ៍ PDF', 'Generate Report (PDF)')}</button>
         <button class="btn big" id="mailBtn">✉️ ${t('ផ្ញើអ៊ីមែល', 'Send Email')}</button></div><div id="mailBox"></div></section>
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
     if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
+    // Admin removes a pending unloading record, e.g. a truck started twice (Kim, 3 Nov 2026); a copy stays in the IB Deleted tab
+    if ($('#delBtn')) $('#delBtn').onclick = () => {
+      $('#delBtn').hidden = true;
+      $('#delBox').innerHTML = `<div class="delbox"><b>🗑 ${t('លុប ', 'Delete ')}${esc(r.id)} · ${esc(r.truck)}?</b>
+        <label class="f" for="delWhy">${t('មូលហេតុ', 'Reason')} <span class="req">*</span></label><input class="in" id="delWhy" placeholder="${t('ឧ. ចុចចាប់ផ្តើមពីរដង', 'e.g. started twice')}">
+        <div class="delrow"><button class="btn" id="delNo">${t('បោះបង់', 'Cancel')}</button><button class="btn danger" id="delYes">🗑 ${t('លុប', 'Delete')}</button></div></div>`;
+      $('#delWhy').focus();
+      $('#delNo').onclick = () => { $('#delBox').innerHTML = ''; $('#delBtn').hidden = false; };
+      $('#delYes').onclick = async () => {
+        const why = $('#delWhy').value.trim();
+        if (!why) { $('#delWhy').classList.add('bad'); toast('⚠️ ' + t('សូមសរសេរមូលហេតុ', 'Write the reason')); return; }
+        if (DEMO) { DATA = DATA.filter(x => x.id !== r.id); save(); }
+        else {
+          const b = $('#delYes'); busy(b, true, t('កំពុងលុប…', 'Deleting…'));
+          try { await api('delete', { id: r.id, reason: why }); DATA = DATA.filter(x => x.id !== r.id); save(); }
+          catch (e) { busy(b, false); toast('⚠️ ' + oldScript(e)); return; }
+        }
+        toast('🗑 ' + t('បានលុប ', 'Deleted ') + r.id); location.hash = '#/today';
+      };
+    };
     if (!isLive(r)) {
       $('#pdfBtn').onclick = () => makePdf(r, $('#pdfBtn'));
       $('#mailBtn').onclick = () => paintMail(r);
