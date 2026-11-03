@@ -814,8 +814,9 @@ function noteHtml_(note) {
 
 function email_(p, user) {
   const rec = doneRec_(p.id);
-  const extra = String(p.extra || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
-  const bad = extra.filter(x => !EMAIL_RE.test(x));
+  // only the addresses count, so Outlook pastes like "Name" <name@x.com>, work
+  const rawExtra = String(p.extra || '').trim(), extra = (rawExtra.match(/[^\s<>()[\],;:"']+@[^\s<>()[\],;:"']+/g) || []).map(x => x.toLowerCase());
+  const bad = rawExtra && !extra.length ? [rawExtra] : extra.filter(x => !EMAIL_RE.test(x));
   if (bad.length) fail_('BAD', 'Check these email addresses: ' + bad.join(', '), 'សូមពិនិត្យអ៊ីមែលទាំងនេះ៖ ' + bad.join(', '));
   const names = Array.isArray(p.lists) ? p.lists.map(String) : [];
   const to = [];
