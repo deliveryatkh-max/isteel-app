@@ -51,15 +51,15 @@ ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
 // arrival
 const ARR = { po: 'PO5100012725', truck: '3e 2588', dn3pl: 'DN-778', ph: { front: PHOTO, load: PHOTO, doc: PHOTO },
   items: [{ material: '1100000230', arrQty: 20000 }, { material: '1100000231', arrQty: '23,550' }] };
-ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { ph: { front: PHOTO } }) }).error), 'photos required');
-ok(/not on this PO/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
-ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
-ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: '' }) }).error), '3PL DN required');
+ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), ph: { front: PHOTO } }) }).error), 'photos required');
+ok(/not on this PO/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
+ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
+ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: '' }) }).error), '3PL DN required');
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
 const whTab = env.ss.getSheetByName('Warehouse List'); whTab.rows.push(['A1', 'Main'], ['I1', '']);
 eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main', site: '' }, { code: 'I1', desc: '', site: '' }], 'warehouses in boot');
 ok(/Choose the entrance/.test(call('sok@x.com', 'start', { receipt: ARR }).error), 'entrance required');
-ok(/Entrance Z9 is not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
+ok(/Entrance Z9 is not in the Warehouse List/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), warehouse: 'Z9' }) }).error), 'unknown warehouse refused');
 ARR.warehouse = 'A1';
 let r = must(call('sok@x.com', 'start', { receipt: ARR }));
 eq(r.warehouse, 'A1', 'warehouse saved');
@@ -70,8 +70,10 @@ ok(PHOTOS_SAVED(r), 'photos saved as Drive ids');
 function PHOTOS_SAVED(x) { return ['front', 'load', 'doc'].every(k => env.files[x.ph[k]] && env.files[x.ph[k]].name); }
 eq(env.telegrams.length, 1, 'arrival posted');
 ok(/Truck arrived 3E2588/.test(env.telegrams[0].payload.text), 'arrival text');
-const r2 = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000230', arrQty: 12520 }] }) }));
+const r2 = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: 'DN-2', items: [{ material: '1100000230', arrQty: 12520 }] }) }));
 ok(/-02$/.test(r2.id), 'second id');
+const tg0 = env.telegrams.length, again = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: 'DN-2', items: [{ material: '1100000230', arrQty: 12520 }] }) }));
+eq([again.id, env.telegrams.length], [r2.id, tg0], 'same truck + DN started twice: first record back, no second post');
 const log = () => env.ss.getSheetByName('GR Log').rows.slice(1).filter(x => x && x[0]);
 eq(log().length, 3, 'one log row per item');
 
@@ -175,18 +177,18 @@ must(call('sok@x.com', 'pdf', { id: r.id }));
 ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE_ERROR')[1]), 'bad link: error noted, built-in layout used');
 
 // Arrival Qty: only reviewers / admins can change it after arrival
-{ const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000231', arrQty: 1000 }] }) }));
+{ const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000231', arrQty: 1000 }] }) }));
   const it = [{ material: '1100000231', arrQty: 900, grQty: '' }];
   eq(must(call('sok@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 1000, 'user cannot change Arrival Qty');
   eq(must(call('kim@x.com', 'save', { receipt: { id: ra.id, items: it } })).items[0].arrQty, 900, 'admin changes Arrival Qty'); }
 // photo stamp: the receipt no. is reserved before Start and used by it
 { const a = must(call('sok@x.com', 'reserve', {})).id, b = must(call('dara@x.com', 'reserve', {})).id;
   ok(/^IB-\d{6}-\d+$/.test(a) && a !== b, 'reserved ids differ ' + a + ' ' + b);
-  const rb = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  const rb = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
   eq(rb.id, b, 'start uses the reserved id');
-  const rx = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  const rx = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), id: b, items: [{ material: '1100000231', arrQty: 10 }] }) }));
   ok(rx.id !== b && rx.id !== a, 'used id not given twice: ' + rx.id);
-  const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { id: a, items: [{ material: '1100000231', arrQty: 10 }] }) }));
+  const ra = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), id: a, items: [{ material: '1100000231', arrQty: 10 }] }) }));
   eq(ra.id, a, 'older reservation still honoured'); }
 // warehouses (Kim, 2 Nov 2026): Dara works at WH BDM only; Sokha (nothing ticked) and admins see every warehouse
 { const bd = must(call('dara@x.com', 'boot', {}));
@@ -195,13 +197,13 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq([bs.sites.length, bs.allSites], [5, true], 'nothing ticked = every warehouse');
   eq([must(call('sai@x.com', 'boot', {})).sites, must(call('sai@x.com', 'boot', {})).allSites], [['WH IB'], false], 'reviewer with WH IB ticked: WH IB only');
   eq(must(call('kim@x.com', 'boot', {})).allSites, true, 'admin: every warehouse');
-  const ib = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB', items: [{ material: '1100000231', arrQty: 5 }] }) }));
+  const ib = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), site: 'WH IB', items: [{ material: '1100000231', arrQty: 5 }] }) }));
   eq(ib.site, 'WH IB', 'site saved');
   ok(!must(call('dara@x.com', 'boot', {})).receipts.some(r => r.id === ib.id), 'Dara does not see WH IB trucks');
   ok(must(call('sok@x.com', 'boot', {})).receipts.some(r => r.id === ib.id), 'Sokha sees them');
   ok(/^DENIED/.test(call('dara@x.com', 'save', { receipt: { id: ib.id, remark: 'x' } }).error), 'Dara cannot edit a WH IB truck');
-  ok(/^DENIED/.test(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB' }) }).error), 'Dara cannot start at WH IB');
-  const own = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000231', arrQty: 5 }] }) }));
+  ok(/^DENIED/.test(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), site: 'WH IB' }) }).error), 'Dara cannot start at WH IB');
+  const own = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000231', arrQty: 5 }] }) }));
   eq(own.site, 'WH BDM', 'one warehouse: used without asking');
   ok(log().some(x => x[0] === own.id && x[34] === 'WH BDM'), 'warehouse in GR Log');
   eq(env.ss.getSheetByName('GR Log').rows[0][31], 'Entrance', 'A1/I1 column is now Entrance');
@@ -224,10 +226,10 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const kb = must(call('kim@x.com', 'boot', {}));
   eq(kb.warehouses, [{ code: 'A1', desc: 'Raw Materials', site: 'WH IB' }, { code: 'I1', desc: 'Trading', site: 'WH IB' }], 'entrances with their warehouse');
   eq(kb.sites, ['WH IB', 'WH OB', 'WH BDM'], 'warehouses from the tab');
-  ok(/Choose the entrance/.test(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH IB', warehouse: '' }) }).error), 'WH IB needs an entrance');
-  const ob = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH OB', warehouse: '', items: [{ material: '1100000231', arrQty: 1 }] }) }));
+  ok(/Choose the entrance/.test(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), site: 'WH IB', warehouse: '' }) }).error), 'WH IB needs an entrance');
+  const ob = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), site: 'WH OB', warehouse: '', items: [{ material: '1100000231', arrQty: 1 }] }) }));
   eq([ob.site, ob.warehouse], ['WH OB', ''], 'WH OB has no entrances: none asked');
-  const bd = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { site: 'WH BDM', warehouse: 'A1', items: [{ material: '1100000231', arrQty: 1 }] }) }));
+  const bd = must(call('kim@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), site: 'WH BDM', warehouse: 'A1', items: [{ material: '1100000231', arrQty: 1 }] }) }));
   eq(bd.warehouse, '', 'an IB entrance is not kept for WH BDM');
   const recs = env.ss.getSheetByName('Receipts').rows, k = recs.findIndex((r, i) => i && JSON.parse(r[5]).warehouse === 'A1');
   const old = JSON.parse(recs[k][5]); delete old.site; recs[k][5] = JSON.stringify(old);
