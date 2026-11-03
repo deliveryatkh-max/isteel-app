@@ -199,10 +199,26 @@
   const formOpen = () => /^#\/(new|edit\/|plan-)/.test(location.hash);
   let lastBoot = '';
   // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  // small pill above the tabs: Updating… / ✓ time of the last good update / ⚠️ not updated (tap to retry)
+  let syncAt = +(get('ib_boot_at') || 0), syncBusy = false;
+  function paintSync(err) {
+    if (DEMO) return;
+    let el = document.getElementById('sync');
+    if (!el) { el = document.createElement('button'); el.id = 'sync'; el.type = 'button'; el.onclick = () => refresh(); document.body.appendChild(el); }
+    const hm = syncAt ? new Date(syncAt).toTimeString().slice(0, 5) : '–', old = !syncAt || Date.now() - syncAt > 3 * 60000;
+    el.className = 'sync' + (syncBusy ? ' busy' : err || old ? ' bad' : '');
+    el.textContent = syncBusy ? '🔄 ' + t('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Updating…')
+      : err || old ? '⚠️ ' + t('ទិន្នន័យម៉ោង ', 'Data from ') + hm + ' · ' + t('ចុចដើម្បីធ្វើថ្មី', 'tap to refresh')
+      : '✓ ' + hm;
+  }
+  setInterval(() => { if (!syncBusy) paintSync(); }, 30000);
   async function refresh(quiet) {
     if (DEMO) return;
+    if (syncBusy) return;
+    syncBusy = true; paintSync();
     try {
       const d = await api('boot'), json = JSON.stringify(d);
+      syncAt = Date.now(); set('ib_boot_at', String(syncAt)); syncBusy = false; paintSync();
       if (quiet === true && json === lastBoot) return;
       lastBoot = json;
       applyBoot(d); save();
@@ -210,6 +226,7 @@
       else if (quiet === true && window.LIVE) LIVE.keep(screen);
       else screen();
     } catch (e) {
+      syncBusy = false; paintSync(true);
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ib_boot', null); showBlocked(e); return; }
       if (quiet === true) throw e;
       toast(e.message);
@@ -1203,5 +1220,5 @@
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { screen(); refresh(); }
   // screens refresh in the background every minute and when the phone comes back to the app (not while a form is open)
-  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: formOpen });
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), every: 30000, busy: formOpen });
 })();

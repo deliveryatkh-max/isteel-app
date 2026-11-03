@@ -544,6 +544,10 @@ function start_(p, user) {
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
+    // the same truck pressed Start twice (slow network, a retry): give back the first record, no second Telegram post
+    const same = recRows_().filter(r => r[1] === STATUS.live && r[4] === truck && r[3] === plan[0].po)
+      .map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).find(x => x && x.dn3pl === dn);
+    if (same) return same;
     const res = reserved_(), want = String(p.id || '');
     const id = res[want] && !recRows_().some(r => String(r[0]) === want) ? want : nextId_(res);
     if (res[want]) { delete res[want]; saveReserved_(res); }

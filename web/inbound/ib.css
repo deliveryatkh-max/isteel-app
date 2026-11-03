@@ -286,3 +286,7 @@ img[data-zoom] { cursor: zoom-in; }
 .mailres small { display: block; font-weight: 400; opacity: .8; margin-top: 2px; word-break: break-word; }
 .mailres.ok { background: rgba(34,197,94,.15); color: #16a34a; border: 1px solid rgba(34,197,94,.45); }
 .mailres.bad { background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.45); }
+.sync { position: fixed; right: 10px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 30; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted, #6b7a8c); font-family: inherit; font-weight: 600; font-size: 11px; line-height: 1.4; box-shadow: var(--shadow); opacity: .9; cursor: pointer; }
+.sync.busy { color: var(--accent); }
+.sync.bad { color: #fff; background: #d97706; border-color: #d97706; opacity: 1; font-size: 12px; }
