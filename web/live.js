@@ -112,5 +112,28 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintAt); else paintAt();
   setInterval(paintAt, 30000);
 
-  window.LIVE = { start, keep, typing, mark };
+  // ---- New app version (Kim, 3 Nov 2026: "the phone is not updated"): a phone keeps the app open for days and the
+  // ISI STEEL refresh only reloads data, so the page compares its own ?v= file tags with the site's newest page and
+  // reloads itself when they differ: on the logo tap, back on screen after 2+ minutes, and every 5 minutes.
+  const tags = list => list.filter(u => /\?v=/.test(u) && !/^https?:/.test(u));
+  function mine() { return tags([].map.call(document.querySelectorAll('script[src],link[href]'), el => el.getAttribute('src') || el.getAttribute('href'))); }
+  let checking = false, lastCheck = 0;
+  function checkVersion() {
+    if (checking || !navigator.onLine || /[?&]demo/.test(location.search)) return;
+    checking = true; lastCheck = Date.now();
+    fetch(location.pathname + '?nosw=1', { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).then(html => {
+      const have = mine(), site = tags((html.match(/(?:src|href)="[^"]+"/g) || []).map(a => a.replace(/^(?:src|href)="|"$/g, '')));
+      if (!have.length || !site.length) return;
+      if (site.some(u => have.indexOf(u) < 0) && !typing()) location.reload();
+    }).catch(() => {}).then(() => { checking = false; });
+  }
+  document.addEventListener('click', e => { if (e.target && e.target.closest && e.target.closest('.isi-logo')) checkVersion(); }, true);
+  let hidAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') { hidAt = Date.now(); return; }
+    if (hidAt && Date.now() - hidAt > 2 * 60 * 1000) checkVersion();
+  });
+  setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - lastCheck > 5 * 60 * 1000) checkVersion(); }, 60000);
+
+  window.LIVE = { start, keep, typing, mark, checkVersion };
 })();
