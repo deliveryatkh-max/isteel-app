@@ -816,15 +816,23 @@
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
       <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
       <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF', 'The PDF report is attached')}</p>
-      <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button></div>`;
+      <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button><div id="mailMsg"></div></div>`;
     $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
-      const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = $('#mailExtra').value.trim();
-      if (!lists.length && !extra) { toast('⚠️ ' + t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
+      // keep only the addresses, so Outlook-style "Name" <name@x.com>, pastes work
+      const raw = $('#mailExtra').value.trim(), found = raw.match(/[^\s<>()[\],;:"']+@[^\s<>()[\],;:"']+\.[^\s<>()[\],;:"']+/g) || [];
+      const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = found.join(', ');
+      const say = (ok, msg) => { $('#mailMsg').innerHTML = `<div class="mailres ${ok ? 'ok' : 'bad'}">${msg}</div>`; toast((ok ? '✅ ' : '⚠️ ') + $('#mailMsg').textContent); };
+      if (raw && !found.length) { say(false, t('រកមិនឃើញអ៊ីមែលក្នុងប្រអប់ "អ៊ីមែលផ្សេងទៀត"', 'No email address found in "Other emails"')); return; }
+      if (!lists.length && !extra) { say(false, t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
       if (DEMO) { const n = LISTS.filter(l => lists.indexOf(l.name) >= 0).reduce((s, l) => s + l.count, 0) + (extra ? extra.split(/[\s,;]+/).length : 0); toast('🧪 ' + t('សាកល្បង៖ នឹងផ្ញើទៅ ', 'Demo: would send to ') + n + t(' នាក់', ' people')); box.innerHTML = ''; return; }
-      const b = $('#mailSend'); busy(b, true, t('កំពុងផ្ញើ…', 'Sending…'));
-      try { const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value }); toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people')); box.innerHTML = ''; }
-      catch (e) { toast('⚠️ ' + oldScript(e)); busy(b, false); }
+      const b = $('#mailSend'); busy(b, true, t('កំពុងផ្ញើ… (PDF ប្រហែល 10–20 វិនាទី)', 'Sending… (PDF takes about 10–20 s)')); $('#mailMsg').innerHTML = '';
+      try {
+        const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value });
+        const when = new Date().toTimeString().slice(0, 5);
+        box.innerHTML = `<div class="mailres ok">✅ ${t('បានផ្ញើអ៊ីមែលទៅ ', 'Email sent to ')}${x.sent}${t(' នាក់', ' people')} · ${when}<small>${esc([lists.join(', '), extra].filter(String).join(' · '))}</small></div>`;
+        toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people'));
+      } catch (e) { busy(b, false); say(false, esc(t('មិនទាន់ផ្ញើទេ៖ ', 'Not sent: ') + oldScript(e))); }
     };
   }
   // Ready-made English email text for the receipt; the user can edit it before sending

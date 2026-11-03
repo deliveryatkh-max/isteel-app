@@ -144,6 +144,7 @@ eq(must(call('sok@x.com', 'email', { id: r.id, lists: ['Warehouse'], extra: 'bos
 const m = env.mails[env.mails.length - 1];
 ok(Object.values(env.files).filter(f => f.name === r.id + '.pdf' && !f.trashed).length === 1, 'PDF reused, not made twice');
 ok(m.to === 'wh1@x.com,wh2@x.com,boss@x.com' && m.attachments.length === 1 && /Goods receipt/.test(m.subject), 'email with PDF');
+eq(must(call('sok@x.com', 'email', { id: r.id, extra: '"Sonal Heng" <Sonal.Heng@x.com>, Dara <d@x.com>;' })), { sent: 2 }, 'Outlook-style names pasted');
 
 // Word template from a Drive folder: an empty folder gets the standard template, each item gets its own table row
 const set = env.ss.getSheetByName('IB Settings');

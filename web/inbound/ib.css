@@ -282,3 +282,7 @@ img[data-zoom] { cursor: zoom-in; }
 .schg.today h3 { color: var(--ok); }
 .upl2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .upl2 .btn { margin: 0; width: 100%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 15px; line-height: 1.25; padding: 10px 8px; min-height: 56px; }
+.mailres { margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-weight: 600; line-height: 1.4; }
+.mailres small { display: block; font-weight: 400; opacity: .8; margin-top: 2px; word-break: break-word; }
+.mailres.ok { background: rgba(34,197,94,.15); color: #16a34a; border: 1px solid rgba(34,197,94,.45); }
+.mailres.bad { background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.45); }
