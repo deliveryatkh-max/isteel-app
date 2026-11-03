@@ -1,0 +1,41 @@
+name: Apps Script deploy
+# After a merge to main that changes Apps Script code, paste it into the project and deploy a New version.
+# Needs the repository secret CLASPRC_JSON (the .clasprc.json made by `clasp login` as deliveryatkh@gmail.com)
+# and the script IDs in .github/apps-script-map.json. Run by hand with "list" to print every project and its Script ID.
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script*/**', '.github/apps-script-map.json']
+  workflow_dispatch:
+    inputs:
+      folder:
+        description: 'Folder to deploy (empty = all), or "list" to print the projects'
+        required: false
+        default: ''
+
+concurrency: { group: apps-script-deploy, cancel-in-progress: false }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 50 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Sign in
+        id: auth
+        env: { CLASPRC_JSON: '${{ secrets.CLASPRC_JSON }}' }
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then echo "::notice::CLASPRC_JSON secret not set yet, nothing deployed"; echo "ok=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          npm install -g @google/clasp@2.4.2 >/dev/null
+          echo "ok=yes" >> "$GITHUB_OUTPUT"
+      - name: List projects
+        if: steps.auth.outputs.ok == 'yes' && github.event.inputs.folder == 'list'
+        run: clasp list
+      - name: Deploy
+        if: steps.auth.outputs.ok == 'yes' && github.event.inputs.folder != 'list'
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then node .github/scripts/gas-deploy.js all "${{ github.event.inputs.folder }}"
+          else node .github/scripts/gas-deploy.js "${{ github.event.before }}"; fi
