@@ -174,7 +174,7 @@ function makeEnv(opts) {
       fetch: (url, o) => {
         if (/api\.telegram\.org/.test(url)) { telegrams.push({ method: url.split('/').pop(), payload: o.payload });
           if (o.payload && o.payload.chat_id === '-5351019426') return { getContentText: () => '{"ok":false,"error_code":400,"description":"Bad Request: group chat was upgraded to a supergroup chat","parameters":{"migrate_to_chat_id":-1004445393710}}' };
-          return { getContentText: () => '{"ok":true}' }; }
+          return { getContentText: () => JSON.stringify({ ok: true, result: { message_id: 100 + telegrams.length } }) }; }
         if (/export\?format=docx/.test(url)) return { getResponseCode: () => 200, getBlob: () => blob('PK-docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'x.docx') };
         if (/ib-template\.docx$/.test(url)) return { getBlob: () => blob('PK-docx', 'application/octet-stream', 't.docx') };
         if (/upload\/drive\/v3\/files/.test(url)) { const id = 'f' + (++nid); files[id] = { id, name: 'Inbound Report Template', data: Buffer.from(''), parent: 'root', trashed: false, tpl: true }; env.templateUploads = (env.templateUploads || 0) + 1; return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) }; }
