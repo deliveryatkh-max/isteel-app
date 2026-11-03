@@ -290,3 +290,4 @@ img[data-zoom] { cursor: zoom-in; }
   background: var(--card); color: var(--muted, #6b7a8c); font-family: inherit; font-weight: 600; font-size: 11px; line-height: 1.4; box-shadow: var(--shadow); opacity: .9; cursor: pointer; }
 .sync.busy { color: var(--accent); }
 .sync.bad { color: #fff; background: #d97706; border-color: #d97706; opacity: 1; font-size: 12px; }
+.sync:not(.bad) { display: none; }
