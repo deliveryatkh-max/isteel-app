@@ -7,5 +7,5 @@
   "apps-script-incident": { "name": "Incident Report", "scriptId": "", "deploymentId": "AKfycbwJMHiQBApOA17rBsKGalaRQVyaltAI7Hl795fS2d1IOZB7ALnmtJdp31FCdZVsy7ED" },
   "apps-script-minutes": { "name": "Meeting Minutes", "scriptId": "", "deploymentId": "AKfycby6Ra9gHp8zxAO-ndJSfUUfDzyhLzObarxlUdNhEDkoJCoHhKSIUbZzHkaJah1ZFPGO" },
   "apps-script-dataentry": { "name": "Data Entry", "scriptId": "", "deploymentId": "AKfycbzVmO1XAaihD0IXK2TomUiqMTsTf3PoQlxUPun_3lVhykv3ZxtkxB8u0z4vQaHJ-RYWGg" },
-  "apps-script-safety": { "name": "Safety Walk & 5S", "scriptId": "", "deploymentId": "" }
+  "apps-script-safety": { "name": "Safety Walk & 5S", "scriptId": "", "deploymentId": "AKfycbxpSwT5WKFgKt79HYhTuf00i5yIqolUZRFImKsSrguifZgN5yiUqOm3wbjUd8IxwdiR" }
 }
