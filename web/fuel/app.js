@@ -468,7 +468,7 @@
     $('#who').innerHTML = '';
     $('#view').innerHTML = `
       <div class="login">
-        <div class="big">⛽</div>
+        <div class="login-logo"><img src="../icons/isi-steel-logo.png" alt="ISI STEEL" width="205" height="79"></div>
         <h2>${L('កត់ត្រាការចាក់សាំង', 'Fuel refill record')}</h2>
         ${expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : ''}
         ${DEMO ? `

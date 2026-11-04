@@ -171,6 +171,9 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--b
 
 .login { text-align: center; padding-top: 40px; }
 .login .big { font-size: 64px; }
+/* ISI STEEL logo on the sign-in screen (Kim, 4 Nov 2026); white card keeps the navy logo readable at night */
+.login-logo { display: inline-block; background: #fff; border-radius: 16px; padding: 12px 18px; margin-bottom: 6px; }
+.login-logo img { display: block; width: 205px; max-width: 60vw; height: auto; }
 #gsiButton { display: flex; justify-content: center; margin: 24px 0; min-height: 44px; }
 
 .tabs {
