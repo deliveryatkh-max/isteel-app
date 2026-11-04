@@ -723,14 +723,20 @@ function weeklySummary() {
   const open = acts.filter(a => a.Status !== ST.closed).length;
   const overdue = acts.filter(a => a.Status === ST.open && a.Due && a.Due < today).length;
   const by = {};
-  walks.filter(w => w.Checklist !== SPOT).forEach(w => { const k = w.Site + ' · ' + w.Area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0 }; o.y += +w.Yes || 0; o.n += +w.No || 0; o.c++; });
+  walks.filter(w => w.Checklist !== SPOT).forEach(w => { const k = w.Site + ' · ' + w.Area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0, ss: 0, sc: 0 }; o.y += +w.Yes || 0; o.n += +w.No || 0; o.c++; if (w['Score %'] !== '') { o.ss += +w['Score %'] || 0; o.sc++; } });
+  const avg = k => (by[k].sc ? Math.round(by[k].ss / by[k].sc) : score_(by[k].y, by[k].n));   // average of the check scores
   const lines = ['📊 <b>Safety week · សង្ខេបប្រចាំសប្តាហ៍</b> (' + from + ' to ' + addDays_(today, -1) + ')',
     '🦺 ' + walks.filter(w => w.Checklist !== SPOT).length + ' checks done' + (walks.some(w => w.Checklist === SPOT) ? ' + ' + walks.filter(w => w.Checklist === SPOT).length + ' spot checks' : '') + ' · ❌ ' + opened + ' new actions · ✅ ' + closed + ' closed', '📋 ' + open + ' still open, ' + overdue + ' overdue'];
-  const keys = Object.keys(by).sort((a, b) => score_(by[a].y, by[a].n) - score_(by[b].y, by[b].n) || by[a].c - by[b].c);
+  const keys = Object.keys(by).sort((a, b) => avg(a) - avg(b) || by[a].c - by[b].c);
   // best performers of the week (Kim, 4 Nov 2026): highest score first, more checks wins a tie
   const best = keys.slice().reverse().filter(k => by[k].y + by[k].n).slice(0, 3);
-  if (best.length) { lines.push('', '🏆 <b>Best areas · តំបន់ល្អបំផុត</b>'); best.forEach((k, i) => lines.push(['🥇', '🥈', '🥉'][i] + ' ' + esc_(k) + ': ' + score_(by[k].y, by[k].n) + '% (' + by[k].c + ')')); }
-  if (keys.length) { lines.push('', '<b>Score by area</b>'); keys.forEach(k => { const s = score_(by[k].y, by[k].n); lines.push((s >= 90 ? '🟢' : s >= 75 ? '🟠' : '🔴') + ' ' + esc_(k) + ': ' + s + '% (' + by[k].c + ')'); }); }
+  if (best.length) { lines.push('', '🏆 <b>Best areas · តំបន់ល្អបំផុត</b>'); best.forEach((k, i) => lines.push(['🥇', '🥈', '🥉'][i] + ' ' + esc_(k) + ': ' + avg(k) + '% (' + by[k].c + ')')); }
+  // who did the most checks and fixed the most actions this week
+  const tally = arr => { const o = {}; arr.filter(String).forEach(n => { o[n] = (o[n] || 0) + 1; }); return Object.keys(o).sort((a, b) => o[b] - o[a]).slice(0, 3).map(n => esc_(n) + ' ' + o[n]).join(', '); };
+  const checkers = tally(walks.map(w => w.Walker));
+  const fixers = tally(acts.filter(a => (a['Done At'] || '').slice(0, 10) >= from && (a['Done At'] || '').slice(0, 10) < today).map(a => a['Done By']));
+  if (checkers || fixers) { lines.push(''); if (checkers) lines.push('🔍 Most checks · ត្រួតពិនិត្យច្រើន: ' + checkers); if (fixers) lines.push('🛠️ Most fixed · កែច្រើន: ' + fixers); }
+  if (keys.length) { lines.push('', '<b>Average score by area</b>'); keys.forEach(k => { const s = avg(k); lines.push((s >= 90 ? '🟢' : s >= 75 ? '🟠' : '🔴') + ' ' + esc_(k) + ': ' + s + '% (' + by[k].c + ')'); }); }
   telegram_('sendMessage', Object.assign({ text: lines.join('\n').slice(0, 4000), parse_mode: 'HTML' }, button_('Open scores · បើកពិន្ទុ', '#/scores')));
 }
 

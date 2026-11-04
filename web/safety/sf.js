@@ -696,11 +696,12 @@
     const inRange = walks().filter(w => w.date >= from);
     const ws = inRange.filter(w => w.list !== SPOT && (!scList || w.list === scList));
     const spotN = scList ? 0 : inRange.filter(w => w.list === SPOT).length;
-    const y = ws.reduce((s, w) => s + w.yes, 0), n = ws.reduce((s, w) => s + w.no, 0);
-    const avg = y + n ? Math.round(100 * y / (y + n)) : null;
+    // average score = mean of the scores of the checks (Kim, 4 Nov 2026)
+    const mean = a => { const v = a.filter(x => x != null && x !== ''); return v.length ? Math.round(v.reduce((p, x) => p + +x, 0) / v.length) : null; };
+    const avg = mean(ws.map(w => w.score));
     const by = {};
-    ws.forEach(w => { const k = w.site + ' · ' + w.area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0, area: w.area, site: w.site }; o.y += w.yes; o.n += w.no; o.c++; });
-    const rows = Object.keys(by).map(k => Object.assign({ k, s: by[k].y + by[k].n ? Math.round(100 * by[k].y / (by[k].y + by[k].n)) : null }, by[k])).sort((a, b) => (a.s == null ? 101 : a.s) - (b.s == null ? 101 : b.s));
+    ws.forEach(w => { const k = w.site + ' · ' + w.area; const o = by[k] = by[k] || { sc: [], c: 0, low: null, area: w.area, site: w.site }; o.sc.push(w.score); o.c++; if (w.score != null && (o.low == null || w.score < o.low)) o.low = w.score; });
+    const rows = Object.keys(by).map(k => Object.assign({ k, s: mean(by[k].sc) }, by[k])).sort((a, b) => (b.s == null ? -1 : b.s) - (a.s == null ? -1 : a.s));
     // best performers: highest score, then more checks, then fewer open actions (Kim, 4 Nov 2026)
     rows.forEach(r => { r.open = acts().filter(a => a.status !== 'Closed' && a.site === r.site && a.area === r.area && (!scList || a.list === scList)).length; });
     const best = rows.filter(r => r.s != null).sort((a, b) => b.s - a.s || b.c - a.c || a.open - b.open).slice(0, 3);
@@ -708,6 +709,27 @@
     const fails = {};
     actsIn.forEach(a => { fails[a.question] = (fails[a.question] || 0) + 1; });
     const top = Object.keys(fails).sort((a, b) => fails[b] - fails[a]).slice(0, 6);
+    const inList = a => !scList || a.list === scList;
+    // by person: checks done, problems found, actions fixed (marked done) and closed in the period
+    const ppl = {};
+    const P = nm => (ppl[nm] = ppl[nm] || { nm, c: 0, spot: 0, found: 0, fixed: 0, onTime: 0, closed: 0 });
+    inRange.filter(w => !scList || w.list === scList).forEach(w => { const o = P(w.walker || '-'); if (w.list === SPOT) o.spot++; else o.c++; o.found += w.no || 0; });
+    const fixedIn = acts().filter(a => inList(a) && a.doneAt && a.doneAt.slice(0, 10) >= from);
+    fixedIn.forEach(a => { const o = P(a.doneBy || a.owner || '-'); o.fixed++; if (!a.due || a.doneAt.slice(0, 10) <= a.due) o.onTime++; });
+    acts().filter(a => inList(a) && a.closedAt && a.closedAt.slice(0, 10) >= from).forEach(a => { P(a.closedBy || '-').closed++; });
+    const people = Object.values(ppl).sort((a, b) => (b.c + b.spot) - (a.c + a.spot) || b.fixed - a.fixed || a.nm.localeCompare(b.nm));
+    const days = fixedIn.map(a => daysBetween(a.raised.slice(0, 10), a.doneAt.slice(0, 10))).filter(d => d >= 0);
+    const avgDays = days.length ? Math.round(10 * days.reduce((p, d) => p + d, 0) / days.length) / 10 : null;
+    const onTimePct = fixedIn.length ? Math.round(100 * fixedIn.filter(a => !a.due || a.doneAt.slice(0, 10) <= a.due).length / fixedIn.length) : null;
+    // who has overdue / open actions now
+    const owners = {};
+    acts().filter(a => a.status === 'Open' && inList(a)).forEach(a => { const o = owners[a.owner || '-'] = owners[a.owner || '-'] || { nm: a.owner || '-', open: 0, late: 0, oldest: 0 }; o.open++; if (overdue(a)) { o.late++; o.oldest = Math.max(o.oldest, daysBetween(a.due, today())); } });
+    const ownerRows = Object.values(owners).sort((a, b) => b.late - a.late || b.open - a.open).slice(0, 10);
+    // last 8 weeks (Monday to Sunday): average score and number of checks
+    const monday = d => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return ymd(x); };
+    const thisMon = monday(today());
+    const weeks = [];
+    for (let k = 7; k >= 0; k--) { const m = addDays(thisMon, -7 * k); const wk = walks().filter(w => w.list !== SPOT && (!scList || w.list === scList) && w.date >= m && w.date < addDays(m, 7)); weeks.push({ m, s: mean(wk.map(w => w.score)), c: wk.length }); }
     const lateAreas = (B.areas || []).filter(a => a.late.some(l => !scList || l === scList));
     const openN = acts().filter(a => a.status !== 'Closed' && (!scList || a.list === scList)).length;
     const odN = acts().filter(a => overdue(a) && (!scList || a.list === scList)).length;
@@ -716,10 +738,20 @@
       <div class="stats"><div class="stat"><small>${t('ពិន្ទុមធ្យម', 'Average score')}</small><b class="${avg == null ? '' : avg >= 90 ? 'ok' : avg >= 75 ? 'warn' : 'bad'}">${avg == null ? '-' : avg + '%'}</b></div>
         <div class="stat"><small>${t('បានត្រួតពិនិត្យ', 'Checks done')}</small><b>${ws.length}${spotN ? ` <small class="il">+ ${spotN} 🔎</small>` : ''}</b></div>
         <div class="stat"><small>${t('សកម្មភាពបើក / ហួស', 'Open / overdue')}</small><b>${openN} <span style="color:var(--bad)">/ ${odN}</span></b></div></div>
+      <div class="stats"><div class="stat"><small>${t('បានកែរួច', 'Fixed')}</small><b class="ok">${fixedIn.length}</b></div>
+        <div class="stat"><small>${t('កែទាន់ពេល', 'Fixed on time')}</small><b class="${onTimePct == null ? '' : onTimePct >= 90 ? 'ok' : onTimePct >= 75 ? 'warn' : 'bad'}">${onTimePct == null ? '-' : onTimePct + '%'}</b></div>
+        <div class="stat"><small>${t('ថ្ងៃមធ្យមដើម្បីកែ', 'Avg days to fix')}</small><b>${avgDays == null ? '-' : avgDays}</b></div></div>
       ${best.length ? `<div class="card best"><h2>🏆 ${t('តំបន់ល្អបំផុត', 'Best areas')}</h2>${best.map((r, i) => `<div class="bestrow"><span class="medal">${['🥇', '🥈', '🥉'][i]}</span>
         <div class="nm"><b>${esc(r.area)}</b><small>${esc(r.site)} · ${r.c} ${t('ដង', r.c === 1 ? 'check' : 'checks')} · ${r.open ? r.open + ' ' + t('សកម្មភាពបើក', 'open actions') : '✅ ' + t('គ្មានសកម្មភាពបើក', 'no open actions')}</small></div>${scTag(r.s)}</div>`).join('')}</div>` : ''}
-      <div class="card"><h2>📍 ${t('ពិន្ទុតាមតំបន់', 'Score by area')}</h2>${rows.length ? `<div class="bars">${rows.map(r => `<div class="brow"><span class="nm" title="${esc(r.k)}">${esc(r.area)} <small>${esc(r.site)} · ${r.c}</small></span>
+      <div class="card"><h2>📍 ${t('ពិន្ទុមធ្យមតាមតំបន់', 'Average score by area')}</h2><p class="hint">${t('ចំនួនដង · ពិន្ទុទាបបំផុត', 'checks · lowest score')}</p>${rows.length ? `<div class="bars">${rows.map(r => `<div class="brow"><span class="nm" title="${esc(r.k)}">${esc(r.area)} <small>${esc(r.site)} · ${r.c}${r.low != null && r.c > 1 ? ' · ↓' + r.low + '%' : ''}</small></span>
         <span class="track"><i class="${scCls(r.s)}" style="width:${r.s || 0}%"></i></span><b>${r.s == null ? '-' : r.s + '%'}</b></div>`).join('')}</div>` : `<div class="empty">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</div>`}</div>
+      <div class="card"><h2>📈 ${t('ពិន្ទុប្រចាំសប្តាហ៍ (៨ សប្តាហ៍)', 'Weekly score (8 weeks)')}</h2><div class="weeks">${weeks.map(w => `<div class="wk" title="${esc(w.m)}"><b>${w.s == null ? '' : w.s}</b><span class="col"><i class="${scCls(w.s)}" style="height:${w.s || 0}%"></i></span><small>${esc(w.m.slice(8))}/${esc(w.m.slice(5, 7))}</small><small class="c">${w.c}</small></div>`).join('')}</div>
+        <p class="hint center">${t('លេខខាងក្រោម = ចំនួនដងត្រួតពិនិត្យ', 'bottom number = checks done')}</p></div>
+      <div class="card"><h2>👥 ${t('តាមបុគ្គល', 'By person')}</h2>${people.length ? `<div class="ptable"><div class="pr ph"><span>${t('ឈ្មោះ', 'Name')}</span><span>${t('ត្រួតពិនិត្យ', 'Checks')}</span><span>${t('រកឃើញ', 'Found')}</span><span>${t('កែរួច', 'Fixed')}</span><span>${t('បិទ', 'Closed')}</span></div>
+        ${people.map((o, i) => `<div class="pr"><span class="nm">${i < 3 && o.c + o.spot ? ['🥇', '🥈', '🥉'][i] + ' ' : ''}${esc(o.nm)}</span><span><b>${o.c}</b>${o.spot ? `<small> +${o.spot}🔎</small>` : ''}</span><span>${o.found}</span><span><b class="${o.fixed ? 'okt' : ''}">${o.fixed}</b>${o.fixed && o.onTime < o.fixed ? `<small class="late-t"> ${o.fixed - o.onTime}⏰</small>` : ''}</span><span>${o.closed}</span></div>`).join('')}</div>
+        <p class="hint">${t('កែរួច = សម្គាល់ "កែរួចហើយ" ជាមួយរូបថតក្រោយ · ⏰ = កែយឺតជាងថ្ងៃកំណត់', 'Fixed = marked done with an after photo · ⏰ = fixed after the due date')}</p>` : `<div class="empty">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</div>`}</div>
+      ${ownerRows.length ? `<div class="card"><h2>⏰ ${t('សកម្មភាពបើក តាមអ្នកកែ', 'Open actions by owner')}</h2><div class="bars">${ownerRows.map(o => `<div class="brow"><span class="nm">${esc(o.nm)}</span><span class="track"><i class="${o.late ? 'r' : 'o'}" style="width:${Math.round(100 * o.open / ownerRows.reduce((m, x) => Math.max(m, x.open), 1))}%"></i></span><b>${o.open}${o.late ? ` <small class="late-t">${o.late}⏰</small>` : ''}</b></div>`).join('')}</div>
+        <p class="hint">${t('⏰ = ហួសកំណត់', '⏰ = overdue')}</p></div>` : ''}
       ${lateAreas.length ? `<div class="card"><h2>⏰ ${t('តំបន់យឺត', 'Late areas')}</h2>${lateAreas.map(a => `<div class="duerow"><div class="nm"><b>${esc(a.area)}</b><small>${esc(a.site)}</small></div><div class="lchips">${a.late.filter(l => !scList || l === scList).map(l => `<span class="lchip late">${esc(listName(l))} · ${a.last[l] ? esc(a.last[l]) : t('មិនទាន់ធ្វើ', 'never')}</span>`).join('')}</div></div>`).join('')}</div>` : ''}
       ${top.length ? `<div class="card"><h2>❌ ${t('បញ្ហាដែលរកឃើញញឹកញាប់', 'Most found problems')}</h2><div class="bars">${top.map(q => `<div class="brow"><span class="nm" title="${esc(q)}">${esc(q)}</span><span class="track"><i class="r" style="width:${Math.round(100 * fails[q] / fails[top[0]])}%"></i></span><b>${fails[q]}</b></div>`).join('')}</div></div>` : ''}`;
     $$('.chip[data-d]').forEach(b => { b.onclick = () => { scDays = +b.dataset.d; renderScores(); }; });

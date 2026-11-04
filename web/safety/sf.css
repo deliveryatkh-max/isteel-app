@@ -174,3 +174,22 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .bestrow .nm { flex: 1; min-width: 0; }
 .bestrow .nm b { display: block; }
 .card.best { border: 1.5px solid #e8a33a; }
+/* scores: weekly columns, by person table */
+.weeks { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; align-items: end; text-align: center; font-size: 12px; }
+.wk b { display: block; font-size: 12px; min-height: 16px; font-variant-numeric: tabular-nums; }
+.wk .col { display: flex; align-items: flex-end; height: 90px; background: var(--line); border-radius: 8px; overflow: hidden; }
+.wk .col i { display: block; width: 100%; border-radius: 8px 8px 0 0; }
+.wk .col i.g { background: var(--ok); } .wk .col i.o { background: #e8a33a; } .wk .col i.r { background: var(--bad); }
+.wk small { display: block; color: var(--muted); font-size: 11px; }
+.wk small.c { color: var(--text); font-weight: 700; }
+.ptable { display: grid; font-size: 14px; }
+.pr { display: grid; grid-template-columns: minmax(0, 1fr) 64px 50px 56px 46px; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); text-align: center; font-variant-numeric: tabular-nums; }
+.pr:last-child { border-bottom: 0; }
+.pr .nm { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pr.ph { color: var(--muted); font-size: 12px; font-weight: 600; }
+.pr small { font-size: 11px; }
+.okt { color: var(--ok); }
+.pr > span { white-space: nowrap; }
+.pr { grid-template-columns: minmax(0, 1fr) 62px 46px 64px 44px; }
+.brow b { white-space: nowrap; }
+.brow:has(.late-t) { grid-template-columns: minmax(90px, 38%) 1fr auto; }
