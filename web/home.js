@@ -78,6 +78,9 @@
     // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
     const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
     const apps = d.apps.filter(k => k !== 'adsmgr').concat(admin && d.apps.indexOf('gallery') < 0 ? ['gallery'] : []);
+    // Admins may open every app, so a new app's tile shows for them even before the Fuel Code.gs with its tick box
+    // column is pasted (Safety Walk, 4 Nov 2026). Everyone else still needs the tick box.
+    if (admin) APPS.forEach(a => { if (a.url && a.key !== 'adsmgr' && apps.indexOf(a.key) < 0) apps.push(a.key); });
     const mine = APPS.filter(a => apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
