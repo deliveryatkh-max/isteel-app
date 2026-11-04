@@ -136,6 +136,7 @@
     const h = location.hash.replace(/^#\/?/, '');
     const top = h.split('/')[0] || 'home';
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 'a' && a.dataset.r === 'actions') || (['new', 'walk', 'done', 'w'].indexOf(top) >= 0 && a.dataset.r === 'home')));
+    document.body.classList.toggle('wide', top === 'scores');
     if (!B) { $('#view').innerHTML = loader('កំពុងផ្ទុក', 'Loading'); screen = route; return; }
     window.scrollTo(0, 0);
     if (h.startsWith('new')) return renderNew(h.slice(4));
@@ -733,15 +734,15 @@
     const lateAreas = (B.areas || []).filter(a => a.late.some(l => !scList || l === scList));
     const openN = acts().filter(a => a.status !== 'Closed' && (!scList || a.list === scList)).length;
     const odN = acts().filter(a => overdue(a) && (!scList || a.list === scList)).length;
-    $('#view').innerHTML = `<div class="chips filter">${[7, 30, 90].map(d => `<button class="chip${d === scDays ? ' on' : ''}" data-d="${d}">${d} ${t('ថ្ងៃ', 'days')}</button>`).join('')}</div>
-      <div class="chips filter"><button class="chip${!scList ? ' on' : ''}" data-l="">${t('ទាំងអស់', 'All')}</button>${(B.lists || []).map(l => `<button class="chip${l.name === scList ? ' on' : ''}" data-l="${esc(l.name)}">${listIc(l.name)} ${esc(listName(l.name))}</button>`).join('')}</div>
-      <div class="stats"><div class="stat"><small>${t('ពិន្ទុមធ្យម', 'Average score')}</small><b class="${avg == null ? '' : avg >= 90 ? 'ok' : avg >= 75 ? 'warn' : 'bad'}">${avg == null ? '-' : avg + '%'}</b></div>
+    $('#view').innerHTML = `<div class="dash"><div class="dfilters"><div class="chips filter">${[7, 30, 90].map(d => `<button class="chip${d === scDays ? ' on' : ''}" data-d="${d}">${d} ${t('ថ្ងៃ', 'days')}</button>`).join('')}</div>
+      <div class="chips filter"><button class="chip${!scList ? ' on' : ''}" data-l="">${t('ទាំងអស់', 'All')}</button>${(B.lists || []).map(l => `<button class="chip${l.name === scList ? ' on' : ''}" data-l="${esc(l.name)}">${listIc(l.name)} ${esc(listName(l.name))}</button>`).join('')}</div></div>
+      <div class="stats kpis"><div class="stat"><small>${t('ពិន្ទុមធ្យម', 'Average score')}</small><b class="${avg == null ? '' : avg >= 90 ? 'ok' : avg >= 75 ? 'warn' : 'bad'}">${avg == null ? '-' : avg + '%'}</b></div>
         <div class="stat"><small>${t('បានត្រួតពិនិត្យ', 'Checks done')}</small><b>${ws.length}${spotN ? ` <small class="il">+ ${spotN} 🔎</small>` : ''}</b></div>
-        <div class="stat"><small>${t('សកម្មភាពបើក / ហួស', 'Open / overdue')}</small><b>${openN} <span style="color:var(--bad)">/ ${odN}</span></b></div></div>
-      <div class="stats"><div class="stat"><small>${t('បានកែរួច', 'Fixed')}</small><b class="ok">${fixedIn.length}</b></div>
+        <div class="stat"><small>${t('សកម្មភាពបើក / ហួស', 'Open / overdue')}</small><b>${openN} <span style="color:var(--bad)">/ ${odN}</span></b></div>
+        <div class="stat"><small>${t('បានកែរួច', 'Fixed')}</small><b class="ok">${fixedIn.length}</b></div>
         <div class="stat"><small>${t('កែទាន់ពេល', 'Fixed on time')}</small><b class="${onTimePct == null ? '' : onTimePct >= 90 ? 'ok' : onTimePct >= 75 ? 'warn' : 'bad'}">${onTimePct == null ? '-' : onTimePct + '%'}</b></div>
         <div class="stat"><small>${t('ថ្ងៃមធ្យមដើម្បីកែ', 'Avg days to fix')}</small><b>${avgDays == null ? '-' : avgDays}</b></div></div>
-      ${best.length ? `<div class="card best"><h2>🏆 ${t('តំបន់ល្អបំផុត', 'Best areas')}</h2>${best.map((r, i) => `<div class="bestrow"><span class="medal">${['🥇', '🥈', '🥉'][i]}</span>
+      <div class="dgrid">${best.length ? `<div class="card best"><h2>🏆 ${t('តំបន់ល្អបំផុត', 'Best areas')}</h2>${best.map((r, i) => `<div class="bestrow"><span class="medal">${['🥇', '🥈', '🥉'][i]}</span>
         <div class="nm"><b>${esc(r.area)}</b><small>${esc(r.site)} · ${r.c} ${t('ដង', r.c === 1 ? 'check' : 'checks')} · ${r.open ? r.open + ' ' + t('សកម្មភាពបើក', 'open actions') : '✅ ' + t('គ្មានសកម្មភាពបើក', 'no open actions')}</small></div>${scTag(r.s)}</div>`).join('')}</div>` : ''}
       <div class="card"><h2>📍 ${t('ពិន្ទុមធ្យមតាមតំបន់', 'Average score by area')}</h2><p class="hint">${t('ចំនួនដង · ពិន្ទុទាបបំផុត', 'checks · lowest score')}</p>${rows.length ? `<div class="bars">${rows.map(r => `<div class="brow"><span class="nm" title="${esc(r.k)}">${esc(r.area)} <small>${esc(r.site)} · ${r.c}${r.low != null && r.c > 1 ? ' · ↓' + r.low + '%' : ''}</small></span>
         <span class="track"><i class="${scCls(r.s)}" style="width:${r.s || 0}%"></i></span><b>${r.s == null ? '-' : r.s + '%'}</b></div>`).join('')}</div>` : `<div class="empty">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</div>`}</div>
@@ -753,7 +754,7 @@
       ${ownerRows.length ? `<div class="card"><h2>⏰ ${t('សកម្មភាពបើក តាមអ្នកកែ', 'Open actions by owner')}</h2><div class="bars">${ownerRows.map(o => `<div class="brow"><span class="nm">${esc(o.nm)}</span><span class="track"><i class="${o.late ? 'r' : 'o'}" style="width:${Math.round(100 * o.open / ownerRows.reduce((m, x) => Math.max(m, x.open), 1))}%"></i></span><b>${o.open}${o.late ? ` <small class="late-t">${o.late}⏰</small>` : ''}</b></div>`).join('')}</div>
         <p class="hint">${t('⏰ = ហួសកំណត់', '⏰ = overdue')}</p></div>` : ''}
       ${lateAreas.length ? `<div class="card"><h2>⏰ ${t('តំបន់យឺត', 'Late areas')}</h2>${lateAreas.map(a => `<div class="duerow"><div class="nm"><b>${esc(a.area)}</b><small>${esc(a.site)}</small></div><div class="lchips">${a.late.filter(l => !scList || l === scList).map(l => `<span class="lchip late">${esc(listName(l))} · ${a.last[l] ? esc(a.last[l]) : t('មិនទាន់ធ្វើ', 'never')}</span>`).join('')}</div></div>`).join('')}</div>` : ''}
-      ${top.length ? `<div class="card"><h2>❌ ${t('បញ្ហាដែលរកឃើញញឹកញាប់', 'Most found problems')}</h2><div class="bars">${top.map(q => `<div class="brow"><span class="nm" title="${esc(q)}">${esc(q)}</span><span class="track"><i class="r" style="width:${Math.round(100 * fails[q] / fails[top[0]])}%"></i></span><b>${fails[q]}</b></div>`).join('')}</div></div>` : ''}`;
+      ${top.length ? `<div class="card"><h2>❌ ${t('បញ្ហាដែលរកឃើញញឹកញាប់', 'Most found problems')}</h2><div class="bars">${top.map(q => `<div class="brow"><span class="nm" title="${esc(q)}">${esc(q)}</span><span class="track"><i class="r" style="width:${Math.round(100 * fails[q] / fails[top[0]])}%"></i></span><b>${fails[q]}</b></div>`).join('')}</div></div>` : ''}</div></div>`;
     $$('.chip[data-d]').forEach(b => { b.onclick = () => { scDays = +b.dataset.d; renderScores(); }; });
     $$('.chip[data-l]').forEach(b => { b.onclick = () => { scList = b.dataset.l; renderScores(); }; });
   }

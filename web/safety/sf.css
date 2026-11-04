@@ -193,3 +193,15 @@ a.item { display: block; color: var(--text); text-decoration: none; }
 .pr { grid-template-columns: minmax(0, 1fr) 62px 46px 64px 44px; }
 .brow b { white-space: nowrap; }
 .brow:has(.late-t) { grid-template-columns: minmax(90px, 38%) 1fr auto; }
+/* Scores as a dashboard on computers (Kim, 4 Nov 2026): wide page, all numbers in one row, cards in columns */
+@media (min-width: 1100px) {
+  body.wide main { max-width: 1480px; padding-left: 24px; padding-right: 24px; }
+  .dash .dfilters { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; }
+  .dash .dfilters .chips.filter { margin-bottom: 12px; }
+  .dash .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .dash .kpis .stat { padding: 14px 16px; }
+  .dash .kpis .stat b { font-size: 30px; }
+  .dash .dgrid { columns: 3 400px; column-gap: 14px; }
+  .dash .dgrid > .card { break-inside: avoid; display: inline-block; width: 100%; margin: 0 0 14px; }
+}
+.pr small, .brow b small, .stat b small { display: inline; }
