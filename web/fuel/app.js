@@ -467,9 +467,10 @@
     $('#navbar').hidden = true;
     $('#who').innerHTML = '';
     $('#view').innerHTML = `
-      <div class="login">
-        <div class="login-logo"><img src="../icons/isi-steel-logo.png" alt="ISI STEEL" width="205" height="79"></div>
-        <h2>${L('កត់ត្រាការចាក់សាំង', 'Fuel refill record')}</h2>
+      <div class="login splash">
+        <div class="splash-mark"><img src="../icons/isi-white.png" alt="ISI" width="84" height="84"><b>STEEL</b></div>
+        <div class="splash-line"></div>
+        <h2>Warehouse &amp; Logistics</h2>
         ${expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : ''}
         ${DEMO ? `
           <p class="hint">Demo mode: choose who to sign in as.</p>
@@ -481,6 +482,7 @@
           <p class="hint">${L('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
           <div id="gsiButton"><div class="spinner"></div></div>
           <div id="loginErr"></div>`}
+        <div class="splash-foot">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
       </div>`;
     if (DEMO) {
       $$('[data-demo]').forEach(b => b.onclick = () => {
@@ -507,7 +509,7 @@
         },
       });
       $('#gsiButton').innerHTML = '';
-      google.accounts.id.renderButton($('#gsiButton'), { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
+      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
       google.accounts.id.prompt();
     }).catch(e => { $('#gsiButton').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; });
   }

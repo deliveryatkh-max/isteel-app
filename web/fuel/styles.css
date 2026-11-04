@@ -171,9 +171,18 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--b
 
 .login { text-align: center; padding-top: 40px; }
 .login .big { font-size: 64px; }
-/* ISI STEEL logo on the sign-in screen (Kim, 4 Nov 2026); white card keeps the navy logo readable at night */
-.login-logo { display: inline-block; background: #fff; border-radius: 16px; padding: 12px 18px; margin-bottom: 6px; }
-.login-logo img { display: block; width: 205px; max-width: 60vw; height: auto; }
+/* Navy ISI STEEL start screen (Kim picked option C, 4 Nov 2026). Sits under the header and bottom bar. */
+.login.splash { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 70px 20px 90px; background: #011E41 url(../icons/banner-pattern.png) center / cover; color: #fff; overflow-y: auto; }
+.splash-mark { display: flex; align-items: center; gap: 14px; }
+.splash-mark img { width: 84px; height: 84px; }
+.splash-mark b { font: 800 46px/1 "Noto Sans", system-ui, sans-serif; letter-spacing: 2px; color: #fff; }
+.splash-line { width: 60px; height: 3px; background: #f2c94c; border-radius: 3px; margin: 22px 0 16px; }
+.login.splash h2 { color: #fff; margin: 0 0 6px; }
+.login.splash .hint { color: rgba(255, 255, 255, .78); margin: 0; }
+.login.splash #gsiButton { margin: 20px 0; }
+.login.splash .spinner { border-color: rgba(255, 255, 255, .25); border-top-color: #fff; }
+.splash-foot { position: absolute; bottom: 78px; left: 0; right: 0; font-size: 12px; color: rgba(255, 255, 255, .55); }
 #gsiButton { display: flex; justify-content: center; margin: 24px 0; min-height: 44px; }
 
 .tabs {
