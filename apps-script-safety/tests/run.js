@@ -143,5 +143,34 @@ eq(b.questions['Forklift check'].map(q => q.no + ':' + q.en), ['1:Only one quest
 ok(/^NOACCESS/.test(call('walker@x.com', 'settings').error), 'settings admin only');
 must(call('kim@x.com', 'testTelegram'));
 
+// What is wrong? problems per question
+b = must(call('walker@x.com', 'boot'));
+ok(b.questions['Safety walk'][1].problems.length >= 3 && b.questions['Safety walk'][1].problems[0][1], 'problems sent with each question (English, Khmer)');
+s = must(call('kim@x.com', 'settings'));
+const qi = s.questions.findIndex(q => q.list === 'Safety walk' && String(q.no) === '2');
+ok(typeof s.questions[qi].problems === 'string' && / \/ /.test(s.questions[qi].problems), 'settings show problems as text');
+s.questions[qi].problems = 'Boxes on the walkway / ប្រអប់នៅលើផ្លូវដើរ\nLine faded';
+must(call('kim@x.com', 'saveSettings', { questions: s.questions }));
+b = must(call('walker@x.com', 'boot'));
+eq(b.questions['Safety walk'][1].problems, [['Boxes on the walkway', 'ប្រអប់នៅលើផ្លូវដើរ'], ['Line faded', 'Line faded']], 'admin edits the problems');
+
+// spot check: only the problems seen, no score
+const sp = must(call('hse@x.com', 'submit', { clientId: 'c-spot', site: 'KMH1', area: 'Coil shed', list: 'Spot check', answers: [
+  { no: 'SW3', q: 'Bundles are stacked below the max height and are stable', km: 'x', critical: true, a: 'No', note: 'Stack too high', photos: [PHOTO], owner: { n: 'Dara' } },
+  { no: '5S1', q: 'Sort: no unneeded items', a: 'No', note: 'Rubbish', photos: [PHOTO], owner: { n: 'Vuthy', id: '100003' } }] }));
+eq([sp.no, sp.actions, sp.critical, sp.score], [2, 2, 1, ''], 'spot check saved with 2 actions and no score');
+ok(/^BAD.*photo/.test(call('hse@x.com', 'submit', { clientId: 'c-spot2', site: 'KMH1', area: 'Coil shed', list: 'Spot check', answers: [{ no: 'SW1', q: 'x', a: 'No', owner: { n: 'Dara' } }] }).error), 'spot check needs a photo');
+const spw = must(call('hse@x.com', 'walk', { id: sp.id }));
+eq([spw.score, spw.list, spw.answers[0].q], [null, 'Spot check', 'Bundles are stacked below the max height and are stable'], 'spot check detail');
+must(call('hse@x.com', 'pdf', { id: sp.id }));
+
+// weekly summary: best areas
+const yday = new Date(Date.now() + 7 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+must(call('walker@x.com', 'submit', { clientId: 'c-wk', site: 'KMH1', area: 'Coil shed', list: '5S audit', date: yday, answers: [{ no: '1', a: 'Yes' }, { no: '2', a: 'Yes' }] }));
+env.g.weeklySummary();
+const wk = env.telegrams[env.telegrams.length - 1].payload.text;
+ok(/Best areas/.test(wk) && /🥇 KMH1 · Coil shed: 100%/.test(wk), 'weekly summary names the best area');
+ok(/1 spot checks|checks done/.test(wk), 'weekly counts');
+
 eq(env.errors, [], 'no server errors');
 console.log('Safety tests passed: ' + pass);

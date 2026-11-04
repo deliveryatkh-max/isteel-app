@@ -27,7 +27,10 @@ const ACT_COLS = ['Action No', 'Walk No', 'Raised', 'Site', 'Area', 'Checklist',
   'Owner', 'Owner Email', 'Owner ID', 'Due', 'Status', 'Done At', 'Done By', 'Done Note', 'After Photo', 'Closed At', 'Closed By',
   'Raised By', 'Raised By Email', 'History', 'Updated'];
 const AREA_COLS = ['Site', 'Area', 'Area Leader', 'Leader Email', 'Safety walk', '5S audit', 'Forklift check', 'Active', 'Note'];
-const CHK_COLS = ['Checklist', 'No', 'Question (English)', 'Question (Khmer)', 'Critical', 'Photo on No', 'Active'];
+const CHK_COLS = ['Checklist', 'No', 'Question (English)', 'Question (Khmer)', 'Critical', 'Photo on No', 'Active', 'Problems'];
+// Problems: the choices of the "What is wrong?" dropdown, "English / ខ្មែរ" separated by ; (Kim, 4 Nov 2026)
+const splitProblems_ = s => String(s || '').split(/\s*[;\n]\s*/).filter(Boolean).slice(0, 15).map(x => { const p = x.split(/\s+\/\s+/); return [clip_(p[0], 120), clip_(p[1] || p[0], 120)]; });
+const joinProblems_ = a => (a || []).map(p => (p[1] && p[1] !== p[0] ? p[0] + ' / ' + p[1] : p[0])).join('; ');
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const LISTS = [
   { name: 'Safety walk', km: 'ដើរត្រួតពិនិត្យសុវត្ថិភាព', icon: '🦺' },
@@ -41,6 +44,8 @@ const LOGO_URL = 'https://isteel-app.pages.dev/icons/isi-steel-logo.png';
 const MAX_PHOTOS = 3;                       // per No answer
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const ST = { open: 'Open', done: 'Done', closed: 'Closed' };
+// A manager's spot check records only the problems seen (picked from any checklist): it has no score (Kim, 4 Nov 2026).
+const SPOT = 'Spot check';
 
 // ---------------------------------------------------------------- web entry points
 function doGet() { return json_({ ok: true, app: 'Safety Walk & 5S' }); }
@@ -150,7 +155,7 @@ function setup() {
   sheet_(SH.ACT, ACT_COLS);
   sheet_(SH.ANS, ANS_COLS);
   sheet_(SH.AREA, AREA_COLS, (def.areas || []).map(a => [a[0], a[1], a[2] || '', '', a[3] || '', a[4] || '', a[5] || '', 'Yes', '']));
-  sheet_(SH.CHK, CHK_COLS, (def.questions || []).map(q => [q[0], String(q[1]), q[2], q[3], q[4] ? 'Y' : 'N', q[5] === false ? 'N' : 'Y', 'Y']));
+  sheet_(SH.CHK, CHK_COLS, (def.questions || []).map(q => [q[0], String(q[1]), q[2], q[3], q[4] ? 'Y' : 'N', q[5] === false ? 'N' : 'Y', 'Y', joinProblems_(q[6])]));
   sheet_(SH.SET, SET_COLS, [
     ['NUMBER_PREFIX', 'SW', 'Walk number = prefix-yymmdd-number, e.g. SW-261104-01'],
     ['TELEGRAM_CHAT_ID', '', 'Telegram group "ISI Safety" (add the bot to the group). Empty = no Telegram posts.'],
@@ -300,7 +305,7 @@ function questions_() {
   const out = {};
   objs_(SH.CHK, CHK_COLS).filter(o => o.Checklist && (o['Question (English)'] || o['Question (Khmer)']) && (o.Active === '' || yes_(o.Active))).forEach(o => {
     (out[o.Checklist] = out[o.Checklist] || []).push({ no: o.No, en: o['Question (English)'], km: o['Question (Khmer)'] || o['Question (English)'],
-      critical: yes_(o.Critical), photo: o['Photo on No'] === '' || yes_(o['Photo on No']) });
+      critical: yes_(o.Critical), photo: o['Photo on No'] === '' || yes_(o['Photo on No']), problems: splitProblems_(o.Problems) });
   });
   return out;
 }
@@ -472,7 +477,7 @@ function submit_(p, user) {
     ansRows.push([id, date, site, area, list, a.no, a.q, a.a, a.critical ? 'Yes' : 'No', a.note, actId]);
     detail.push({ no: a.no, q: a.q, km: a.km, a: a.a, c: a.critical ? 1 : 0, note: a.note, act: actId });
   });
-  const score = score_(y, n);
+  const score = list === SPOT ? '' : score_(y, n);
   const row = [id, clientId, date, site, area, list, user.name, user.email, clip_(p.started, 20), at, y, n, na, String(score), crit, k,
     clip_(p.note, 500), '', JSON.stringify({ a: detail }).slice(0, 49000), at];
   const wsh = sheet_(SH.WALK, WALK_COLS);
@@ -600,7 +605,7 @@ function makePdf_(w) {
     base[DocumentApp.Attribute.FONT_FAMILY] = 'Noto Sans Khmer';
     base[DocumentApp.Attribute.FONT_SIZE] = 8;
     try { body.setAttributes(base); } catch (e) { /* font not offered */ }
-    const list = LISTS.find(l => l.name === w.list) || { km: w.list };
+    const list = LISTS.find(l => l.name === w.list) || (w.list === SPOT ? { km: 'ពិនិត្យភ្លាមៗ' } : { km: w.list });
     const head = body.appendTable([[(w.list || '').toUpperCase() + ' REPORT\n' + list.km + '\n' + w.id + '  ·  ' + w.date, '']]);
     head.setBorderWidth(0);
     const hl = head.getRow(0).getCell(0), hr = head.getRow(0).getCell(1);
@@ -713,10 +718,13 @@ function weeklySummary() {
   const open = acts.filter(a => a.Status !== ST.closed).length;
   const overdue = acts.filter(a => a.Status === ST.open && a.Due && a.Due < today).length;
   const by = {};
-  walks.forEach(w => { const k = w.Site + ' · ' + w.Area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0 }; o.y += +w.Yes || 0; o.n += +w.No || 0; o.c++; });
+  walks.filter(w => w.Checklist !== SPOT).forEach(w => { const k = w.Site + ' · ' + w.Area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0 }; o.y += +w.Yes || 0; o.n += +w.No || 0; o.c++; });
   const lines = ['📊 <b>Safety week · សង្ខេបប្រចាំសប្តាហ៍</b> (' + from + ' to ' + addDays_(today, -1) + ')',
-    '🦺 ' + walks.length + ' checks done · ❌ ' + opened + ' new actions · ✅ ' + closed + ' closed', '📋 ' + open + ' still open, ' + overdue + ' overdue'];
-  const keys = Object.keys(by).sort((a, b) => score_(by[a].y, by[a].n) - score_(by[b].y, by[b].n));
+    '🦺 ' + walks.filter(w => w.Checklist !== SPOT).length + ' checks done' + (walks.some(w => w.Checklist === SPOT) ? ' + ' + walks.filter(w => w.Checklist === SPOT).length + ' spot checks' : '') + ' · ❌ ' + opened + ' new actions · ✅ ' + closed + ' closed', '📋 ' + open + ' still open, ' + overdue + ' overdue'];
+  const keys = Object.keys(by).sort((a, b) => score_(by[a].y, by[a].n) - score_(by[b].y, by[b].n) || by[a].c - by[b].c);
+  // best performers of the week (Kim, 4 Nov 2026): highest score first, more checks wins a tie
+  const best = keys.slice().reverse().filter(k => by[k].y + by[k].n).slice(0, 3);
+  if (best.length) { lines.push('', '🏆 <b>Best areas · តំបន់ល្អបំផុត</b>'); best.forEach((k, i) => lines.push(['🥇', '🥈', '🥉'][i] + ' ' + esc_(k) + ': ' + score_(by[k].y, by[k].n) + '% (' + by[k].c + ')')); }
   if (keys.length) { lines.push('', '<b>Score by area</b>'); keys.forEach(k => { const s = score_(by[k].y, by[k].n); lines.push((s >= 90 ? '🟢' : s >= 75 ? '🟠' : '🔴') + ' ' + esc_(k) + ': ' + s + '% (' + by[k].c + ')'); }); }
   telegram_('sendMessage', Object.assign({ text: lines.join('\n').slice(0, 4000), parse_mode: 'HTML' }, button_('Open scores · បើកពិន្ទុ', '#/scores')));
 }
@@ -739,7 +747,8 @@ function settings_(user) {
     areas: objs_(SH.AREA, AREA_COLS).filter(o => o.Area).map(o => ({ site: o.Site, area: o.Area, leader: o['Area Leader'], walk: o['Safety walk'], s5: o['5S audit'],
       forklift: o['Forklift check'], active: o.Active === '' || yes_(o.Active), note: o.Note })),
     questions: objs_(SH.CHK, CHK_COLS).filter(o => o.Checklist).map(o => ({ list: o.Checklist, no: o.No, en: o['Question (English)'], km: o['Question (Khmer)'],
-      critical: yes_(o.Critical), photo: o['Photo on No'] === '' || yes_(o['Photo on No']), active: o.Active === '' || yes_(o.Active) })),
+      critical: yes_(o.Critical), photo: o['Photo on No'] === '' || yes_(o['Photo on No']), active: o.Active === '' || yes_(o.Active),
+      problems: joinProblems_(splitProblems_(o.Problems)) })),
   };
 }
 function saveSettings_(p, user) {
@@ -760,7 +769,8 @@ function saveSettings_(p, user) {
     const n = {};
     rewrite_(SH.CHK, CHK_COLS, p.questions.filter(q => q && clip_(q.list) && (clip_(q.en) || clip_(q.km))).slice(0, 400).map(q => {
       const l = clip_(q.list, 60); n[l] = (n[l] || 0) + 1;
-      return [l, String(n[l]), clip_(q.en, 300), clip_(q.km, 300), q.critical ? 'Y' : 'N', q.photo === false ? 'N' : 'Y', q.active === false ? 'N' : 'Y'];
+      return [l, String(n[l]), clip_(q.en, 300), clip_(q.km, 300), q.critical ? 'Y' : 'N', q.photo === false ? 'N' : 'Y', q.active === false ? 'N' : 'Y',
+        joinProblems_(Array.isArray(q.problems) ? q.problems : splitProblems_(q.problems))];
     }));
   }
   return settings_(user);

@@ -35,16 +35,37 @@
   const busy = (b, on) => { if (!b) return; b.disabled = on; if (on) { b.dataset.t = b.innerHTML; b.innerHTML = '<span class="sp"></span>'; } else if (b.dataset.t) b.innerHTML = b.dataset.t; };
 
   // ---------------------------------------------------------------- words
-  const LIST_KM = { 'Safety walk': 'ដើរត្រួតពិនិត្យសុវត្ថិភាព', '5S audit': 'ត្រួតពិនិត្យ 5S', 'Forklift check': 'ត្រួតពិនិត្យហ្វកលីប' };
-  const LIST_IC = { 'Safety walk': '🦺', '5S audit': '🧹', 'Forklift check': '🚜' };
+  const SPOT = 'Spot check';                 // a manager's spot check: only the problems seen, picked from any checklist, no score
+  const LIST_KM = { 'Safety walk': 'ដើរត្រួតពិនិត្យសុវត្ថិភាព', '5S audit': 'ត្រួតពិនិត្យ 5S', 'Forklift check': 'ត្រួតពិនិត្យហ្វកលីប', 'Spot check': 'ពិនិត្យភ្លាមៗ' };
+  const LIST_IC = { 'Safety walk': '🦺', '5S audit': '🧹', 'Forklift check': '🚜', 'Spot check': '🔎' };
+  const LIST_AB = { 'Safety walk': 'SW', '5S audit': '5S', 'Forklift check': 'FL' };
   const listName = n => t(LIST_KM[n] || n, n);
   const listIc = n => LIST_IC[n] || '📋';
   const ANS = { Yes: ['បាទ/ចាស', 'Yes'], No: ['ទេ', 'No'], 'N/A': ['មិនពាក់ព័ន្ធ', 'N/A'] };
   const STATUS = { Open: ['ត្រូវកែ', 'Open', 'open'], Done: ['កែរួច រង់ចាំបិទ', 'Done, to close', 'done'], Closed: ['បានបិទ', 'Closed', 'closed'] };
   const statusBadge = s => { const x = STATUS[s] || [s, s, 'open']; return `<span class="badge ${x[2]}">${esc(t(x[0], x[1]))}</span>`; };
   const FREQ = { Daily: ['រៀងរាល់ថ្ងៃ', 'Daily'], Weekly: ['រៀងរាល់សប្តាហ៍', 'Weekly'], Monthly: ['រៀងរាល់ខែ', 'Monthly'] };
-  const qText = q => (isEn() ? q.en || q.q || q.km : q.km || q.en || q.q);
-  const qOther = q => (isEn() ? (q.km && q.km !== q.en ? q.km : '') : (q.en || q.q) !== q.km ? q.en || q.q || '' : '');
+  // Khmer on top, English under it, in both language modes (Kim, 4 Nov 2026)
+  const qText = q => q.km || q.en || q.q || '';
+  const qOther = q => { const en = q.en || q.q || ''; return en && en !== qText(q) ? en : ''; };
+  // "What is wrong?" choices per question: from the Checklists tab (Problems column), else from defaults.json by the English text
+  const normQ = s => String(s || '').trim().toLowerCase();
+  const parseProblems = x => (Array.isArray(x) ? x : String(x || '').split(/\s*[;\n]\s*/).filter(Boolean).map(v => { const p = v.split(/\s+\/\s+/); return [p[0], p[1] || p[0]]; }))
+    .filter(p => p && p[0]);
+  const problemsText = x => parseProblems(x).map(p => (p[1] && p[1] !== p[0] ? p[0] + ' / ' + p[1] : p[0])).join('\n');
+  let DEFP = null;                           // English question text -> problems, from defaults.json
+  const DEFE = {};                           // English question text -> emoji shown before the question
+  function loadDefaults() {
+    if (demoDefaults) return Promise.resolve(demoDefaults);
+    return fetch('defaults.json?v=20261104b').then(r => r.json()).then(d => {
+      demoDefaults = d;
+      DEFP = {};
+      (d.questions || []).forEach(r => { if (r[6] && r[6].length) DEFP[normQ(r[2])] = r[6]; if (r[7]) DEFE[normQ(r[2])] = r[7]; });
+      return d;
+    });
+  }
+  const qEmoji = q => { const e = q.emoji || DEFE[normQ(q.en || q.q)]; return e ? `<span class="qem">${esc(e)}</span>` : ''; };
+  const problemsFor = q => { const own = parseProblems(q.problems); return own.length ? own : ((DEFP && DEFP[normQ(q.en || q.q)]) || []); };
 
   // ---------------------------------------------------------------- sign-in token (from the home menu)
   function claims() {
@@ -186,11 +207,12 @@
     }
     if (ownerOnly()) h += `<div class="alert warn">${t('អ្នកឃើញតែសកម្មភាពដែលអ្នកត្រូវកែ។', 'You see only the actions you need to fix.')}</div>`;
     if (d && d.answers) {
-      const qs = (B.questions[d.list] || []);
+      const qs = d.spot ? d.items || [] : (B.questions[d.list] || []);
       const n = Object.keys(d.answers).filter(k => d.answers[k].a).length;
-      h += `<div class="card draft"><h2>📝 ${t('បន្តការត្រួតពិនិត្យ', 'Continue your walk')}</h2><p><b>${esc(d.area)}</b> · ${esc(listName(d.list))}<br><small>${esc(d.site)} · ${n}/${qs.length} ${t('សំណួរ', 'questions')}</small></p>
+      h += `<div class="card draft"><h2>📝 ${t('បន្តការត្រួតពិនិត្យ', 'Continue your walk')}</h2><p><b>${esc(d.area)}</b> · ${listIc(d.list)} ${esc(listName(d.list))}<br><small>${esc(d.site)} · ${d.spot ? qs.length + ' ' + t('បញ្ហា', 'problems') : n + '/' + qs.length + ' ' + t('សំណួរ', 'questions')}</small></p>
         <div class="row-btns"><a class="btn ok" href="#/walk">${t('បន្ត', 'Continue')}</a><button class="btn" id="dropDraft">${t('បោះបង់', 'Discard')}</button></div></div>`;
-    } else if (!ownerOnly()) h += `<a class="btn big start-btn" href="#/new">🦺 ${t('ចាប់ផ្តើមត្រួតពិនិត្យ', 'Start a walk')}</a>`;
+    } else if (!ownerOnly()) h += `<div class="start-row"><a class="btn big start-btn" href="#/new">🦺 ${t('ចាប់ផ្តើមត្រួតពិនិត្យ', 'Start a walk')}</a>
+      <a class="btn big spot-btn" href="#/new/-/${encodeURIComponent(SPOT)}">🔎 ${t('ពិនិត្យភ្លាមៗ', 'Spot check')}</a></div>`;
     h += `<div class="stats"><a class="stat" href="#/actions/mine"><small>${t('ខ្ញុំត្រូវកែ', 'Mine to fix')}</small><b class="${mine.length ? 'warn' : 'ok'}">${mine.length}</b></a>
       <a class="stat" href="#/actions/late"><small>${t('ហួសកំណត់', 'Overdue')}</small><b class="${od.length ? 'bad' : 'ok'}">${od.length}</b></a>
       <a class="stat" href="#/scores"><small>${t('៧ ថ្ងៃចុងក្រោយ', 'Last 7 days')}</small><b>${week.length}</b></a></div>`;
@@ -218,7 +240,8 @@
     setTimeout(() => { delete btn.dataset.sure; btn.innerHTML = old; }, 3000);
     return false;
   }
-  const walkItem = w => `<a class="item" href="#/w/${encodeURIComponent(w.id)}"><div class="top"><span><b>${esc(w.area)}</b> · ${listIc(w.list)} ${esc(listName(w.list))}</span>${scTag(w.score)}</div>
+  const spotTag = n => `<span class="sc spot">${n} ${t('បញ្ហា', n === 1 ? 'problem' : 'problems')}</span>`;
+  const walkItem = w => `<a class="item" href="#/w/${encodeURIComponent(w.id)}"><div class="top"><span><b>${esc(w.area)}</b> · ${listIc(w.list)} ${esc(listName(w.list))}</span>${w.list === SPOT ? spotTag(w.no) : scTag(w.score)}</div>
     <div class="meta">${esc(w.date)} · ${esc(w.site)} · ${esc(w.walker)}${w.no ? ` · <b style="color:var(--bad)">${w.no} ${t('ទេ', 'No')}</b>` : ''}${w.crit ? ' · 🚨 ' + w.crit : ''}</div></a>`;
 
   // ---------------------------------------------------------------- new walk: site, area, checklist
@@ -226,7 +249,7 @@
     screen = () => {};
     const areas = B.areas || [];
     const [ai, al] = (arg || '').split('/');
-    const pre = areas[+ai];
+    const pre = /^\d+$/.test(ai || '') ? areas[+ai] : null;
     const sites = Array.from(new Set(areas.map(a => a.site).filter(Boolean)));
     const f = { site: pre ? pre.site : getJ('sw_lastsite', '') || sites[0] || '', area: pre ? pre.area : '', list: al ? decodeURIComponent(al) : '', newArea: false };
     const paint = () => {
@@ -244,7 +267,7 @@
           const a = here.find(x => x.area === f.area);
           const fq = a && a.freq && a.freq[l.name];
           return `<button type="button" class="lcardx${l.name === f.list ? ' on' : ''}" data-l="${esc(l.name)}"><span class="ic">${listIc(l.name)}</span><span><b>${esc(listName(l.name))}</b><small>${l.n} ${t('សំណួរ', 'questions')}${fq ? ' · ' + esc(t((FREQ[fq] || [fq])[0], (FREQ[fq] || [fq, fq])[1])) : ''}${a && a.last && a.last[l.name] ? ' · ' + t('ចុងក្រោយ ', 'last ') + esc(a.last[l.name]) : ''}</small></span></button>`;
-        }).join('')}</div>
+        }).join('')}<button type="button" class="lcardx spot${f.list === SPOT ? ' on' : ''}" data-l="${esc(SPOT)}"><span class="ic">🔎</span><span><b>${esc(listName(SPOT))}</b><small>${t('កត់តែបញ្ហាដែលឃើញ ជ្រើសពីបញ្ជីសំណួរ', 'Record only the problems you see, picked from the question lists')}</small></span></button></div>
         <button class="btn ok big mt" id="startBtn" style="width:100%">${t('ចាប់ផ្តើម', 'Start')} →</button></div>`;
       $$('#sites .chip[data-s]').forEach(b => { b.onclick = () => { f.site = b.dataset.s; f.area = ''; f.newArea = false; paint(); }; });
       $('#addSite').onclick = () => {
@@ -262,7 +285,9 @@
       $('#startBtn').onclick = () => {
         if (!f.site || !f.area || !f.list) { toast(t('សូមជ្រើសទីតាំង តំបន់ និងបញ្ជី', 'Pick the site, area and checklist')); return; }
         set('sw_lastsite', JSON.stringify(f.site));
-        set('sw_draft', JSON.stringify({ clientId: uid(), site: f.site, area: f.area, list: f.list, date: today(), started: nowHm(), answers: {}, note: '' }));
+        const dr = { clientId: uid(), site: f.site, area: f.area, list: f.list, date: today(), started: nowHm(), answers: {}, note: '' };
+        if (f.list === SPOT) Object.assign(dr, { spot: true, items: [] });
+        set('sw_draft', JSON.stringify(dr));
         go('#/walk');
       };
     };
@@ -275,11 +300,14 @@
   const people = () => (B && B.people) || [];
   const dueFor = q => addDays(today(), q.critical ? Math.max(1, Math.ceil(((B.settings || {}).criticalHours || 24) / 24)) : ((B.settings || {}).dueDays || 7));
 
+  const curQs = () => (draft && draft.spot ? draft.items || [] : (B.questions[draft.list] || []));
   function renderWalk() {
     draft = getJ('sw_draft', null);
     if (!draft) return go('#/');
     screen = () => {};
-    const qs = B.questions[draft.list] || [];
+    if (!DEFP) loadDefaults().then(() => { if (/^#\/?walk$/.test(location.hash)) renderWalk(); }).catch(() => {});
+    if (draft.spot) return renderSpot();
+    const qs = curQs();
     if (!qs.length) { $('#view').innerHTML = `<div class="card"><div class="alert bad">${t('បញ្ជីនេះគ្មានសំណួរ', 'This checklist has no questions')}</div><a class="btn mt" href="#/">←</a></div>`; return; }
     $('#view').innerHTML = `<div class="prog"><div class="row"><span><b>${esc(draft.area)}</b> · ${listIc(draft.list)} ${esc(listName(draft.list))}</span><span id="progN"></span></div><div class="pbar"><i id="progBar"></i></div></div>
       <button class="btn sm restyes" id="restYes">✅ ${t('ដាក់ "បាទ/ចាស" ឲ្យសំណួរដែលនៅសល់', 'Mark all the rest Yes')}</button>
@@ -292,8 +320,75 @@
     $('#finBtn').onclick = finish;
     progress();
   }
+  // ---------------------------------------------------------------- spot check: pick only the problems seen, from any checklist
+  let spotList = '', spotFind = '';
+  function renderSpot() {
+    const items = draft.items = draft.items || [];
+    $('#view').innerHTML = `<div class="prog"><div class="row"><span><b>${esc(draft.area)}</b> · 🔎 ${esc(listName(SPOT))}</span><span id="progN"></span></div></div>
+      <div id="qs"></div>
+      <div class="card pickcard"><h2>➕ ${items.length ? t('បន្ថែមបញ្ហាទៀត', 'Add another problem') : t('អ្នកឃើញបញ្ហាអ្វី?', 'What problem did you see?')}</h2>
+        <p class="hint">${t('ជ្រើសពីបញ្ជីសំណួរ', 'Pick it from the question lists')}</p>
+        <div class="chips" id="spLists"></div>
+        <input class="in search-in mt6" id="spFind" type="search" value="${esc(spotFind)}" placeholder="🔍 ${t('ស្វែងរកសំណួរ', 'Search the questions')}">
+        <div class="picklist" id="spPick"></div></div>
+      <div class="card"><label class="f">${t('កំណត់ចំណាំទូទៅ', 'General note')}</label><textarea class="in" id="wNote" rows="2" placeholder="${t('ជាជម្រើស', 'Optional')}">${esc(draft.note || '')}</textarea></div>
+      <div class="finish"><button class="btn ok big" id="finBtn" style="width:100%">✔ ${t('បញ្ចប់ និងផ្ញើ', 'Finish and send')}</button></div>`;
+    paintSpotItems();
+    paintPicker();
+    const fi = $('#spFind');
+    fi.oninput = () => { spotFind = fi.value; paintPicker(); };
+    $('#wNote').oninput = e => { draft.note = e.target.value; saveDraft(); };
+    $('#finBtn').onclick = finish;
+  }
+  function paintSpotItems() {
+    const items = draft.items;
+    $('#qs').innerHTML = items.map((q, i) => qCard(q, i)).join('');
+    items.forEach((q, i) => {
+      bindQ(q, i);
+      const rm = $('#q' + i + ' [data-rm]');
+      rm.onclick = () => {
+        if (((draft.answers[q.no] || {}).photos || []).length && !confirmTwice(rm)) return;
+        items.splice(i, 1); delete draft.answers[q.no]; saveDraft(); paintSpotItems(); paintPicker();
+      };
+    });
+    progress();
+  }
+  const spotNo = (n, q) => (LIST_AB[n] || n.slice(0, 2).toUpperCase()) + q.no;
+  function paintPicker() {
+    const names = (B.lists || []).map(l => l.name).filter(n => (B.questions[n] || []).length);
+    if (names.indexOf(spotList) < 0) spotList = names[0] || '';
+    const s = normQ(spotFind);
+    $('#spLists').innerHTML = names.map(n => `<button type="button" class="chip${!s && n === spotList ? ' on' : ''}" data-sp="${esc(n)}">${listIc(n)} ${esc(listName(n))}</button>`).join('');
+    $$('#spLists [data-sp]').forEach(b => { b.onclick = () => { spotList = b.dataset.sp; spotFind = ''; $('#spFind').value = ''; paintPicker(); }; });
+    const pool = [];
+    names.forEach(n => (B.questions[n] || []).forEach(q => {
+      if (s ? [q.en, q.km].concat(problemsFor(q).map(p => p.join(' '))).join(' ').toLowerCase().indexOf(s) >= 0 : n === spotList) pool.push({ n, q });
+    }));
+    const has = new Set(draft.items.map(x => x.no));
+    $('#spPick').innerHTML = pool.length ? pool.slice(0, 40).map((x, k) => {
+      const on = has.has(spotNo(x.n, x.q));
+      return `<button type="button" class="pick${on ? ' on' : ''}" data-pk="${k}"><span class="pno">${s ? listIc(x.n) + ' ' : ''}${esc(x.q.no)}</span><span class="ptx"><b>${qEmoji(x.q)}${esc(qText(x.q))}</b>${qOther(x.q) ? `<small>${esc(qOther(x.q))}</small>` : ''}</span>${x.q.critical ? '<span class="crit">⚠</span>' : ''}<span class="padd">${on ? '✓' : '+'}</span></button>`;
+    }).join('') : `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`;
+    $$('#spPick [data-pk]').forEach(b => {
+      b.onclick = () => {
+        const x = pool[+b.dataset.pk];
+        const no = spotNo(x.n, x.q);
+        let i = draft.items.findIndex(it => it.no === no);
+        if (i < 0) {
+          const item = { no, en: x.q.en, km: x.q.km, critical: !!x.q.critical, photo: true, problems: problemsFor(x.q), src: x.n };
+          draft.items.push(item);
+          draft.answers[no] = { a: 'No', due: dueFor(item) };
+          i = draft.items.length - 1;
+          saveDraft(); paintSpotItems(); paintPicker();
+          const h = $('.pickcard h2'); if (h) h.textContent = '➕ ' + t('បន្ថែមបញ្ហាទៀត', 'Add another problem');
+        }
+        $('#q' + i).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+    });
+  }
   function progress() {
-    const qs = B.questions[draft.list] || [];
+    const qs = curQs();
+    if (draft.spot) { $('#progN').textContent = qs.length + ' ' + t('បញ្ហា', qs.length === 1 ? 'problem' : 'problems'); return; }
     const n = qs.filter(q => (draft.answers[q.no] || {}).a).length;
     $('#progN').textContent = n + ' / ' + qs.length;
     $('#progBar').style.width = (qs.length ? 100 * n / qs.length : 0) + '%';
@@ -301,9 +396,9 @@
   function qCard(q, i) {
     const a = draft.answers[q.no] || {};
     const btn = (k, cls) => `<button type="button" class="${cls}${a.a === k ? ' on' : ''}" data-a="${k}">${esc(t(ANS[k][0], ANS[k][1]))}</button>`;
-    return `<div class="card q" id="q${i}"><div class="qn"><b>${esc(q.no)}</b>${q.critical ? `<span class="crit">⚠ ${t('ធ្ងន់ធ្ងរ', 'Critical')}</span>` : ''}</div>
-      <div class="qt">${esc(qText(q))}</div>${qOther(q) ? `<div class="qe">${esc(qOther(q))}</div>` : ''}
-      <div class="yn">${btn('Yes', 'y')}${btn('No', 'n')}${btn('N/A', 'x')}</div>
+    return `<div class="card q" id="q${i}"><div class="qn"><b>${esc(q.no)}</b>${q.src ? `<span>${listIc(q.src)} ${esc(listName(q.src))}</span>` : ''}${q.critical ? `<span class="crit">⚠ ${t('ធ្ងន់ធ្ងរ', 'Critical')}</span>` : ''}${draft.spot ? `<button type="button" class="x-btn qdel" data-rm="${i}" aria-label="Remove">✕</button>` : ''}</div>
+      <div class="qt">${qEmoji(q)}${esc(qText(q))}</div>${qOther(q) ? `<div class="qe">${esc(qOther(q))}</div>` : ''}
+      ${draft.spot ? '' : `<div class="yn">${btn('Yes', 'y')}${btn('No', 'n')}${btn('N/A', 'x')}</div>`}
       ${a.a === 'No' ? noBox(q, a, i) : ''}</div>`;
   }
   function noBox(q, a, i) {
@@ -313,11 +408,30 @@
       <div><label class="f">📷 ${t('រូបថតបញ្ហា', 'Photo of the problem')} ${needPhoto ? '<span class="req">*</span>' : ''}</label>
         <div class="photos${needPhoto && !photos.length ? ' err' : ''}">${photos.map((p, k) => `<div class="ph"><img src="${p}" alt=""><button type="button" data-del="${k}" aria-label="Delete">×</button></div>`).join('')}
         ${photos.length < MAX_PHOTOS ? `<label class="add">📷<br>${t('ថតរូប', 'Take photo')}<input type="file" accept="image/*" capture="environment" data-photo="${i}"></label>` : ''}</div></div>
-      <div><label class="f">${t('បញ្ហាអ្វី?', 'What is wrong?')}</label><input class="in" data-k="note" value="${esc(a.note || '')}" placeholder="${t('ឧ. ប៉ាឡែតនៅលើផ្លូវដើរ', 'e.g. pallets on the walkway')}"></div>
+      <div>${wrongBox(q, a)}</div>
       <div class="two"><div class="search"><label class="f">👤 ${t('អ្នកកែ', 'Who fixes it')} <span class="req">*</span></label>
         <input class="in${a.owner && a.owner.n ? '' : ' err'}" data-k="owner" autocomplete="off" value="${esc(a.owner ? a.owner.n : '')}" placeholder="${t('ឈ្មោះ ឬ ID', 'Name or ID')}"><div class="sugg" hidden></div></div>
         <div><label class="f">📅 ${t('ថ្ងៃកំណត់', 'Due')} <span class="req">*</span></label><input class="in${a.due ? '' : ' err'}" type="date" data-k="due" value="${esc(a.due || '')}"></div></div></div>`;
   }
+  /** "What is wrong?": the common problems of this question (Khmer · English), or Other to type. A picked problem can get extra words. */
+  function wrongBox(q, a) {
+    const probs = problemsFor(q);
+    const lbl = `<label class="f">${t('បញ្ហាអ្វី?', 'What is wrong?')}</label>`;
+    const typeIn = (v, ph) => `<input class="in" data-k="note" value="${esc(v)}" placeholder="${esc(ph)}">`;
+    if (!probs.length) return lbl + typeIn(a.note || '', t('ឧ. ប៉ាឡែតនៅលើផ្លូវដើរ', 'e.g. pallets on the walkway'));
+    if (a.pick == null && a.note) a.pick = 'o';      // a note typed before the list existed
+    const opt = (v, txt) => `<option value="${v}"${String(a.pick) === String(v) ? ' selected' : ''}>${esc(txt)}</option>`;
+    const sel = `<select class="in" data-k="pick"><option value="">${esc(t('ជ្រើសបញ្ហា', 'Pick the problem'))}</option>${probs.map((p, k) => opt(k, p[1] && p[1] !== p[0] ? p[1] + ' · ' + p[0] : p[0])).join('')}${opt('o', '✏️ ' + t('ផ្សេងទៀត (វាយ)', 'Other (type)'))}</select>`;
+    if (a.pick === 'o') return lbl + sel + `<div class="mt6">${typeIn(a.note || '', t('វាយបញ្ហា', 'Type the problem'))}</div>`;
+    if (a.pick !== '' && a.pick != null) return lbl + sel + `<div class="mt6"><input class="in" data-k="extra" value="${esc(a.extra || '')}" placeholder="${esc(t('ព័ត៌មានបន្ថែម ឧ. កន្លែង (ជាជម្រើស)', 'More detail, e.g. where (optional)'))}"></div>`;
+    return lbl + sel;
+  }
+  const pickedNote = (q, a) => {
+    const p = problemsFor(q)[+a.pick];
+    if (!p) return a.note || '';
+    const base = p[1] && p[1] !== p[0] ? p[1] + ' · ' + p[0] : p[0];
+    return base + (a.extra ? ' - ' + a.extra : '');
+  };
   function repaintQ(q, i) {
     const el = $('#q' + i);
     if (!el) return;
@@ -332,7 +446,7 @@
         a.a = a.a === b.dataset.a ? '' : b.dataset.a;
         if (a.a === 'No' && !a.due) a.due = dueFor(q);
         saveDraft(); repaintQ(q, i); progress();
-        if (a.a && a.a !== 'No') { const next = $('#q' + (i + 1)); if (next && !(draft.answers[(B.questions[draft.list][i + 1] || {}).no] || {}).a) next.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        if (a.a && a.a !== 'No') { const next = $('#q' + (i + 1)); if (next && !(draft.answers[(curQs()[i + 1] || {}).no] || {}).a) next.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
       };
     });
     const a = draft.answers[q.no];
@@ -344,7 +458,17 @@
       for (const file of files) { try { (a.photos = a.photos || []).push(await shrink(file)); } catch (e) { toast(t('មិនអាចអានរូបថត', 'Could not read the photo')); } }
       saveDraft(); repaintQ(q, i);
     };
-    el.querySelector('[data-k="note"]').oninput = e => { a.note = e.target.value; saveDraft(); };
+    const nt = el.querySelector('[data-k="note"]');
+    if (nt) nt.oninput = e => { a.note = e.target.value; saveDraft(); };
+    const pk = el.querySelector('[data-k="pick"]');
+    if (pk) pk.onchange = () => {
+      a.pick = pk.value; a.extra = '';
+      a.note = a.pick === 'o' || a.pick === '' ? '' : pickedNote(q, a);
+      saveDraft(); repaintQ(q, i);
+      const ni = $('#q' + i + ' [data-k="note"]'); if (ni) ni.focus();
+    };
+    const ex = el.querySelector('[data-k="extra"]');
+    if (ex) ex.oninput = e => { a.extra = e.target.value; a.note = pickedNote(q, a); saveDraft(); };
     const du = el.querySelector('[data-k="due"]');
     du.onchange = () => { a.due = du.value; du.classList.toggle('err', !a.due); saveDraft(); };
     ownerPicker(el.querySelector('[data-k="owner"]'), o => { a.owner = o; saveDraft(); });
@@ -389,7 +513,8 @@
     });
   }
   function finish() {
-    const qs = B.questions[draft.list] || [];
+    const qs = curQs();
+    if (draft.spot && !qs.length) { toast(t('សូមបន្ថែមបញ្ហាយ៉ាងហោចណាស់មួយ', 'Add at least one problem')); return; }
     let first = -1;
     qs.forEach((q, i) => {
       const a = draft.answers[q.no] || {};
@@ -403,10 +528,11 @@
       return;
     }
     const payload = { clientId: draft.clientId, site: draft.site, area: draft.area, list: draft.list, date: draft.date, started: draft.started, note: draft.note || '',
-      answers: qs.map(q => { const a = draft.answers[q.no]; const o = { no: q.no, q: q.en, km: q.km, critical: q.critical, a: a.a }; if (a.a === 'No') Object.assign(o, { note: a.note || '', photos: a.photos || [], owner: a.owner, due: a.due }); return o; }) };
+      answers: qs.map(q => { const a = draft.answers[q.no]; const o = { no: q.no, q: q.en, km: q.km, critical: q.critical, a: a.a };
+        if (a.a === 'No' && a.pick != null && a.pick !== 'o' && a.pick !== '') a.note = pickedNote(q, a); if (a.a === 'No') Object.assign(o, { note: a.note || '', photos: a.photos || [], owner: a.owner, due: a.due }); return o; }) };
     const y = payload.answers.filter(a => a.a === 'Yes').length, n = payload.answers.filter(a => a.a === 'No').length;
     const summary = { clientId: draft.clientId, area: draft.area, site: draft.site, list: draft.list, yes: y, no: n, na: payload.answers.length - y - n,
-      crit: payload.answers.filter(a => a.a === 'No' && a.critical).length, score: y + n ? Math.round(100 * y / (y + n)) : null };
+      crit: payload.answers.filter(a => a.a === 'No' && a.critical).length, score: draft.spot ? null : y + n ? Math.round(100 * y / (y + n)) : null };
     const q = queue(); q.push({ payload, at: Date.now() });
     if (!saveQueue(q)) { toast(t('ទូរស័ព្ទពេញ សូមលុបរូបថតខ្លះ', 'Phone storage full, please remove some photos')); return; }
     set('sw_last', JSON.stringify(summary));
@@ -425,9 +551,10 @@
     const st = sent ? `<div class="alert ok sendst">✅ ${t('បានរក្សាទុក', 'Saved')} <b>${esc(sent.id)}</b>${sent.actions ? ' · ' + sent.actions + ' ' + t('សកម្មភាព', 'actions') : ''}${s.crit ? ' · 🚨 ' + t('បានផ្ញើទៅ Telegram', 'posted to Telegram') : ''}</div>`
       : q && q.error && !q.retry ? `<div class="alert bad sendst">⚠️ ${esc(q.error)}</div>`
       : `<div class="alert warn sendst">📤 ${navigator.onLine === false ? t('គ្មានអ៊ីនធឺណិត: រក្សាទុកលើទូរស័ព្ទ នឹងផ្ញើពេលមានសេវា', 'No signal: kept on the phone, it sends when you are back online') : t('កំពុងផ្ញើ…', 'Sending…')}</div>`;
-    $('#view').innerHTML = `<div class="card done"><div class="emoji">${s.no ? (s.crit ? '🚨' : '🛠️') : '🎉'}</div>
-      <div class="big-score ${scCls(s.score)}">${s.score == null ? '-' : s.score + '%'}</div>
-      <p><b>${esc(s.area)}</b> · ${esc(listName(s.list))}<br>✅ ${s.yes} · ❌ ${s.no} · ➖ ${s.na}</p>${st}
+    const spot = s.list === SPOT;
+    $('#view').innerHTML = `<div class="card done"><div class="emoji">${s.crit ? '🚨' : spot ? '🔎' : s.no ? '🛠️' : '🎉'}</div>
+      ${spot ? `<div class="big-score r">${s.no} ${t('បញ្ហា', s.no === 1 ? 'problem' : 'problems')}</div>` : `<div class="big-score ${scCls(s.score)}">${s.score == null ? '-' : s.score + '%'}</div>`}
+      <p><b>${esc(s.area)}</b> · ${esc(listName(s.list))}${spot ? '' : `<br>✅ ${s.yes} · ❌ ${s.no} · ➖ ${s.na}`}</p>${st}
       <div class="row-btns">${sent ? `<button class="btn" id="pdfBtn">📄 PDF</button>` : ''}<a class="btn ok" href="#/new">🦺 ${t('ត្រួតពិនិត្យថ្មី', 'New walk')}</a><a class="btn" href="#/">${t('រួចរាល់', 'Done')}</a></div></div>`;
     const pb = $('#pdfBtn');
     if (pb) pb.onclick = () => openPdf(sent.id, pb);
@@ -547,13 +674,13 @@
     screen = () => {};
     $('#view').innerHTML = loader();
     api('walk', { id }).then(w => {
-      $('#view').innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(w.id)}</b>${scTag(w.score)}</div>
+      $('#view').innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(w.id)}</b>${w.list === SPOT ? spotTag(w.no) : scTag(w.score)}</div>
         <h2 style="margin-top:6px">${listIc(w.list)} ${esc(w.area)} · ${esc(listName(w.list))}</h2>
         <div class="kv2"><span>${t('ទីតាំង', 'Site')}</span><b>${esc(w.site)}</b><span>${t('ថ្ងៃ', 'Date')}</span><b>${esc(w.date)} ${esc(w.started || '')}</b><span>${t('អ្នកត្រួតពិនិត្យ', 'Done by')}</span><b>${esc(w.walker)}</b>
           <span>${t('ចម្លើយ', 'Answers')}</span><b>✅ ${w.yes} · ❌ ${w.no} · ➖ ${w.na}</b></div>${w.note ? `<p>${esc(w.note)}</p>` : ''}
         <div class="row-btns"><button class="btn" id="pdfBtn">📄 PDF</button></div></div>
         <div class="card"><h2>${t('ចម្លើយ', 'Answers')}</h2>${(w.answers || []).map(a => `<div class="ans"><span class="a ${a.a === 'N/A' ? 'NA' : a.a}">${esc(t(ANS[a.a] ? ANS[a.a][0] : a.a, a.a))}</span>
-          <div>${a.c ? '<span class="crit">⚠</span> ' : ''}${esc(isEn() ? a.q : a.km || a.q)}${a.note ? `<br><small>${esc(a.note)}</small>` : ''}${a.act ? ` <a href="#/a/${encodeURIComponent(a.act)}">→ ${esc(a.act)}</a>` : ''}</div></div>`).join('')}</div>
+          <div>${a.c ? '<span class="crit">⚠</span> ' : ''}${esc(a.km || a.q)}${a.km && a.q && a.km !== a.q ? `<br><small class="qe2">${esc(a.q)}</small>` : ''}${a.note ? `<br><small>${esc(a.note)}</small>` : ''}${a.act ? ` <a href="#/a/${encodeURIComponent(a.act)}">→ ${esc(a.act)}</a>` : ''}</div></div>`).join('')}</div>
         ${(w.actionList || []).length ? `<div class="head2"><h2>${t('សកម្មភាព', 'Actions')}</h2></div><div class="list">${w.actionList.map(actItem).join('')}</div>` : ''}`;
       (w.actionList || []).forEach(a => { if (!acts().some(x => x.id === a.id)) B.actions.push(a); });
       $('#pdfBtn').onclick = () => openPdf(w.id, $('#pdfBtn'));
@@ -566,12 +693,17 @@
   function renderScores() {
     screen = renderScores;
     const from = addDays(today(), -scDays);
-    const ws = walks().filter(w => w.date >= from && (!scList || w.list === scList));
+    const inRange = walks().filter(w => w.date >= from);
+    const ws = inRange.filter(w => w.list !== SPOT && (!scList || w.list === scList));
+    const spotN = scList ? 0 : inRange.filter(w => w.list === SPOT).length;
     const y = ws.reduce((s, w) => s + w.yes, 0), n = ws.reduce((s, w) => s + w.no, 0);
     const avg = y + n ? Math.round(100 * y / (y + n)) : null;
     const by = {};
     ws.forEach(w => { const k = w.site + ' · ' + w.area; const o = by[k] = by[k] || { y: 0, n: 0, c: 0, area: w.area, site: w.site }; o.y += w.yes; o.n += w.no; o.c++; });
     const rows = Object.keys(by).map(k => Object.assign({ k, s: by[k].y + by[k].n ? Math.round(100 * by[k].y / (by[k].y + by[k].n)) : null }, by[k])).sort((a, b) => (a.s == null ? 101 : a.s) - (b.s == null ? 101 : b.s));
+    // best performers: highest score, then more checks, then fewer open actions (Kim, 4 Nov 2026)
+    rows.forEach(r => { r.open = acts().filter(a => a.status !== 'Closed' && a.site === r.site && a.area === r.area && (!scList || a.list === scList)).length; });
+    const best = rows.filter(r => r.s != null).sort((a, b) => b.s - a.s || b.c - a.c || a.open - b.open).slice(0, 3);
     const actsIn = acts().filter(a => (a.raised || '').slice(0, 10) >= from && (!scList || a.list === scList));
     const fails = {};
     actsIn.forEach(a => { fails[a.question] = (fails[a.question] || 0) + 1; });
@@ -582,8 +714,10 @@
     $('#view').innerHTML = `<div class="chips filter">${[7, 30, 90].map(d => `<button class="chip${d === scDays ? ' on' : ''}" data-d="${d}">${d} ${t('ថ្ងៃ', 'days')}</button>`).join('')}</div>
       <div class="chips filter"><button class="chip${!scList ? ' on' : ''}" data-l="">${t('ទាំងអស់', 'All')}</button>${(B.lists || []).map(l => `<button class="chip${l.name === scList ? ' on' : ''}" data-l="${esc(l.name)}">${listIc(l.name)} ${esc(listName(l.name))}</button>`).join('')}</div>
       <div class="stats"><div class="stat"><small>${t('ពិន្ទុមធ្យម', 'Average score')}</small><b class="${avg == null ? '' : avg >= 90 ? 'ok' : avg >= 75 ? 'warn' : 'bad'}">${avg == null ? '-' : avg + '%'}</b></div>
-        <div class="stat"><small>${t('បានត្រួតពិនិត្យ', 'Checks done')}</small><b>${ws.length}</b></div>
+        <div class="stat"><small>${t('បានត្រួតពិនិត្យ', 'Checks done')}</small><b>${ws.length}${spotN ? ` <small class="il">+ ${spotN} 🔎</small>` : ''}</b></div>
         <div class="stat"><small>${t('សកម្មភាពបើក / ហួស', 'Open / overdue')}</small><b>${openN} <span style="color:var(--bad)">/ ${odN}</span></b></div></div>
+      ${best.length ? `<div class="card best"><h2>🏆 ${t('តំបន់ល្អបំផុត', 'Best areas')}</h2>${best.map((r, i) => `<div class="bestrow"><span class="medal">${['🥇', '🥈', '🥉'][i]}</span>
+        <div class="nm"><b>${esc(r.area)}</b><small>${esc(r.site)} · ${r.c} ${t('ដង', r.c === 1 ? 'check' : 'checks')} · ${r.open ? r.open + ' ' + t('សកម្មភាពបើក', 'open actions') : '✅ ' + t('គ្មានសកម្មភាពបើក', 'no open actions')}</small></div>${scTag(r.s)}</div>`).join('')}</div>` : ''}
       <div class="card"><h2>📍 ${t('ពិន្ទុតាមតំបន់', 'Score by area')}</h2>${rows.length ? `<div class="bars">${rows.map(r => `<div class="brow"><span class="nm" title="${esc(r.k)}">${esc(r.area)} <small>${esc(r.site)} · ${r.c}</small></span>
         <span class="track"><i class="${scCls(r.s)}" style="width:${r.s || 0}%"></i></span><b>${r.s == null ? '-' : r.s + '%'}</b></div>`).join('')}</div>` : `<div class="empty">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</div>`}</div>
       ${lateAreas.length ? `<div class="card"><h2>⏰ ${t('តំបន់យឺត', 'Late areas')}</h2>${lateAreas.map(a => `<div class="duerow"><div class="nm"><b>${esc(a.area)}</b><small>${esc(a.site)}</small></div><div class="lchips">${a.late.filter(l => !scList || l === scList).map(l => `<span class="lchip late">${esc(listName(l))} · ${a.last[l] ? esc(a.last[l]) : t('មិនទាន់ធ្វើ', 'never')}</span>`).join('')}</div></div>`).join('')}</div>` : ''}
@@ -598,13 +732,15 @@
     screen = () => {};
     if (!isAdmin()) return go('#/');
     $('#view').innerHTML = loader();
-    api('settings').then(s => { S = s; paintSettings(); }).catch(e => { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; });
+    Promise.all([api('settings'), loadDefaults().catch(() => null)]).then(([s]) => { S = s; paintSettings(); }).catch(e => { $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div></div>`; });
   }
   let setList = 'Safety walk';
   function paintSettings() {
     const freqSel = (v, k, i) => `<select class="in" data-i="${i}" data-k="${k}"><option value="">-</option>${Object.keys(FREQ).map(f => `<option value="${f}"${String(v).toLowerCase() === f.toLowerCase() ? ' selected' : ''}>${esc(t(FREQ[f][0], FREQ[f][1]))}</option>`).join('')}</select>`;
     const listNames = Array.from(new Set((B.lists || []).map(l => l.name).concat(S.questions.map(q => q.list))));
-    const qsHere = S.questions.map((q, i) => Object.assign({ i }, q)).filter(q => q.list === setList);
+    // problems shown one per line; empty ones are filled from the starting list (saved with the next Save questions)
+    S.questions.forEach(q => { if (typeof q.problems !== 'string' || !q.problems.trim()) q.problems = problemsText(problemsFor({ problems: q.problems, en: q.en })); });
+    const qsHere = S.questions.map((q, i) => Object.assign({ i, problemsTxt: q.problems }, q)).filter(q => q.list === setList);
     $('#view').innerHTML = `<div class="card"><h2>📣 Telegram</h2>
         <p class="hint">${S.telegramBot ? '✅ ' + t('មាន Bot token', 'Bot token is set') : '⚠️ ' + t('បន្ថែម TELEGRAM_BOT_TOKEN ក្នុង Script properties', 'Add TELEGRAM_BOT_TOKEN in Script properties')}</p>
         <label class="f">${t('Chat ID របស់ក្រុម ISI Safety', 'Chat id of the ISI Safety group')}</label><input class="in" id="tgChat" value="${esc(S.telegramChat)}" placeholder="-100…">
@@ -623,7 +759,9 @@
       <div class="card"><h2>📋 ${t('បញ្ជីសំណួរ', 'Checklists')}</h2>
         <div class="chips">${listNames.map(l => `<button class="chip${l === setList ? ' on' : ''}" data-sl="${esc(l)}">${listIc(l)} ${esc(listName(l))}</button>`).join('')}</div>
         <div id="qRows">${qsHere.map((q, k) => `<div class="qrow"><span class="no">${k + 1}</span><div style="display:grid;gap:6px"><input class="in" data-q="${q.i}" data-k="en" value="${esc(q.en)}" placeholder="English">
-          <input class="in" data-q="${q.i}" data-k="km" value="${esc(q.km)}" placeholder="ខ្មែរ"></div>
+          <input class="in" data-q="${q.i}" data-k="km" value="${esc(q.km)}" placeholder="ខ្មែរ">
+          <label class="f" style="margin:2px 0 0">${t('បញ្ហាញឹកញាប់ (មួយបន្ទាត់: English / ខ្មែរ)', 'Common problems (one per line: English / ខ្មែរ)')}</label>
+          <textarea class="in probs" data-q="${q.i}" data-k="problems" rows="3" placeholder="Pallets on the walkway / ប៉ាឡែតនៅលើផ្លូវដើរ">${esc(q.problemsTxt)}</textarea></div>
           <div class="opts"><label class="check"><input type="checkbox" data-q="${q.i}" data-k="critical"${q.critical ? ' checked' : ''}> ⚠ ${t('ធ្ងន់ធ្ងរ', 'Critical')}</label>
             <label class="check"><input type="checkbox" data-q="${q.i}" data-k="photo"${q.photo ? ' checked' : ''}> 📷 ${t('ត្រូវរូប', 'Photo')}</label>
             <label class="check"><input type="checkbox" data-q="${q.i}" data-k="active"${q.active ? ' checked' : ''}> ${t('ប្រើ', 'Active')}</label>
@@ -636,7 +774,7 @@
     $$('[data-delq]').forEach(b => { b.onclick = () => { S.questions.splice(+b.dataset.delq, 1); paintSettings(); }; });
     $$('[data-sl]').forEach(b => { b.onclick = () => { setList = b.dataset.sl; paintSettings(); }; });
     $('#addArea').onclick = () => { S.areas.push({ site: (S.areas[S.areas.length - 1] || {}).site || '', area: '', leader: '', walk: 'Weekly', s5: 'Monthly', forklift: '', active: true }); paintSettings(); };
-    $('#addQ').onclick = () => { S.questions.push({ list: setList, en: '', km: '', critical: false, photo: true, active: true }); paintSettings(); };
+    $('#addQ').onclick = () => { S.questions.push({ list: setList, en: '', km: '', critical: false, photo: true, active: true, problems: '' }); paintSettings(); };
     const save = async (b, payload) => { busy(b, true); try { S = await api('saveSettings', payload); toast(t('បានរក្សាទុក', 'Saved')); paintSettings(); refresh(true).catch(() => {}); } catch (e) { busy(b, false); toast(e.message); } };
     $('#saveTg').onclick = () => save($('#saveTg'), { telegramChat: $('#tgChat').value.trim(), daily: $('#daily').checked, weekly: $('#weekly').checked, dueDays: +$('#dueDays').value, criticalHours: +$('#critH').value });
     $('#saveAreas').onclick = () => { if (S.areas.some(a => !String(a.area).trim())) { toast(t('សូមបំពេញឈ្មោះតំបន់', 'Fill in every area name')); return; } save($('#saveAreas'), { areas: S.areas }); };
@@ -660,18 +798,19 @@
   window.ISTEEL_REFRESH = () => { if (inForm()) { toast(t('កំពុងបំពេញទម្រង់', 'Form in progress')); return; } refresh(); };
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { if (B) paintTabs(); route(); refresh().then(flush); }
+  loadDefaults().catch(() => {});
   if (window.LIVE && !DEMO) LIVE.start({ run: () => (inForm() ? Promise.resolve() : refresh(true)).then(flush), busy: inForm });
 
   // ---------------------------------------------------------------- demo (no API_URL in config.js)
   async function demoApi(action, p) {
-    if (!demoDefaults) demoDefaults = await fetch('defaults.json').then(r => r.json());
+    await loadDefaults();
     const db = getJ('sw_demo_db', null) || demoSeed(demoDefaults);
     const keep = () => { if (!set('sw_demo_db', JSON.stringify(db))) { db.photos = {}; set('sw_demo_db', JSON.stringify(db)); } };
     const me = { email: 'kim@demo', name: 'Kim (demo)', admin: true, reviewer: true };
     const fail = (en, km) => { throw Object.assign(new Error(t(km, en)), { code: 'BAD' }); };
     const now = () => today() + ' ' + nowHm();
     await new Promise(r => setTimeout(r, action === 'boot' ? 500 : 250));
-    const qsOf = () => { const o = {}; db.questions.filter(q => q.active !== false).forEach(q => { (o[q.list] = o[q.list] || []).push({ no: String(q.no), en: q.en, km: q.km || q.en, critical: q.critical, photo: q.photo !== false }); }); return o; };
+    const qsOf = () => { const o = {}; db.questions.filter(q => q.active !== false).forEach(q => { (o[q.list] = o[q.list] || []).push({ no: String(q.no), en: q.en, km: q.km || q.en, critical: q.critical, photo: q.photo !== false, problems: parseProblems(q.problems) }); }); return o; };
     const view = a => Object.assign({}, a, { mine: a.ownerEmail === me.email, can: { done: a.status === 'Open', close: a.status === 'Done', reopen: a.status !== 'Open', edit: a.status !== 'Closed' } });
     if (action === 'boot') {
       const qs = qsOf(), td = today();
@@ -705,7 +844,7 @@
       });
       const y = ans.filter(a => a.a === 'Yes').length, n = ans.filter(a => a.a === 'No').length;
       const w = { id, clientId: p.clientId, date: p.date || today(), started: p.started, site: p.site, area: p.area, list: p.list, walker: me.name, yes: y, no: n, na: ans.length - y - n,
-        score: y + n ? Math.round(100 * y / (y + n)) : null, crit: ans.filter(a => a.a === 'No' && a.c).length, actions: k, note: p.note, answers: ans };
+        score: p.list === SPOT ? null : y + n ? Math.round(100 * y / (y + n)) : null, crit: ans.filter(a => a.a === 'No' && a.c).length, actions: k, note: p.note, answers: ans };
       db.walks.push(w);
       if (!db.areas.some(a => a.site === p.site && a.area === p.area)) db.areas.push({ site: p.site, area: p.area, leader: '', walk: '', s5: '', forklift: '', active: true });
       keep();
@@ -730,7 +869,7 @@
     throw new Error('Unknown action');
   }
   function demoSeed(def) {
-    const q = def.questions.map(r => ({ list: r[0], no: r[1], en: r[2], km: r[3], critical: r[4], photo: r[5], active: true }));
+    const q = def.questions.map(r => ({ list: r[0], no: r[1], en: r[2], km: r[3], critical: r[4], photo: r[5], active: true, problems: problemsText(r[6]) }));
     const areas = def.areas.map(a => ({ site: a[0], area: a[1], leader: a[2] || '', walk: a[3], s5: a[4], forklift: a[5], active: true }));
     const d = n => addDays(today(), -n);
     const walk = (id, date, area, site, list, nos, crit) => {
