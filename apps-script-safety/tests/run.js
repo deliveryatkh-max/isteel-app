@@ -67,6 +67,9 @@ eq([r.yes, r.no, r.na, r.actions, r.critical, r.score], [9, 2, 1, 2, 1, 82], 'co
 eq(env.telegrams.length - tgBefore, 1, 'critical No posted to Telegram at once');
 eq(env.telegrams[env.telegrams.length - 1].method, 'sendPhoto', 'with the photo');
 ok(/Stack too high/.test(env.telegrams[env.telegrams.length - 1].payload.caption), 'caption has the problem');
+ok(/^<b>បញ្ហាធ្ងន់ធ្ងរ<\/b>\n📍 KMH1 · Pipe yard A · Safety walk SW-/.test(env.telegrams[env.telegrams.length - 1].payload.caption), 'caption layout');
+ok(/\nសំនួរ៖ \S/.test(env.telegrams[env.telegrams.length - 1].payload.caption) && /អ្នកកែ៖👤 Sokha · due 20/.test(env.telegrams[env.telegrams.length - 1].payload.caption), 'caption lines in Khmer');
+eq(env.g.noteKm_('ដាក់ខ្ពស់ពេក · Stack too high - row C'), 'ដាក់ខ្ពស់ពេក - row C', 'Khmer part of a picked problem');
 eq(must(call('walker@x.com', 'submit', walk)).again, true, 'same clientId saved once (offline queue retry)');
 eq(env.ss.getSheetByName('Walks').getLastRow(), 2, 'one walk row');
 eq(env.ss.getSheetByName('Answers').getLastRow(), 13, '12 answer rows');

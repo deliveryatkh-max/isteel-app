@@ -669,10 +669,15 @@ function telegram_(method, payload) {
 const appUrl_ = () => setting_('APP_URL') || 'https://isteel-app.pages.dev/safety/';
 const button_ = (text, hash) => ({ reply_markup: JSON.stringify({ inline_keyboard: [[{ text: text, url: appUrl_() + (hash || '') }]] }) });
 
+/** A picked problem is saved as "Khmer · English - detail": keep the Khmer part and the detail. */
+function noteKm_(note) {
+  const m = String(note || '').match(/^(.*?) · .*?( - .*)?$/);
+  return m ? m[1] + (m[2] || '') : String(note || '');
+}
 function telegramCritical_(w, crits) {
-  const lines = ['🚨 <b>Critical problem found · បញ្ហាធ្ងន់ធ្ងរ</b>', '📍 ' + esc_([w.site, w.area].filter(String).join(' · ')) + ' · ' + esc_(w.list) + ' ' + esc_(w.id),
-    '🧍 ' + esc_(w.walker) + (w.score !== '' ? ' · score ' + w.score + '%' : '')]
-    .concat(crits.map(a => '❌ ' + esc_(a.q) + (a.note ? ' (' + esc_(a.note) + ')' : '') + '\n    👤 ' + esc_(a.owner.n) + ' · due ' + a.due));
+  // layout from Kim (4 Nov 2026): Khmer only for the question and the problem
+  const lines = ['<b>បញ្ហាធ្ងន់ធ្ងរ</b>', '📍 ' + esc_([w.site, w.area].filter(String).join(' · ')) + ' · ' + esc_(w.list) + ' ' + esc_(w.id)]
+    .concat(crits.map(a => 'សំនួរ៖ ' + esc_(a.km || a.q) + '\nបញ្ហាអ្វី?៖ ❌ ' + esc_(noteKm_(a.note) || '-') + '\nអ្នកកែ៖👤 ' + esc_(a.owner.n) + ' · due ' + a.due));
   const first = crits.find(a => (a.photoIds || []).length);
   const extra = button_('Open actions · បើកសកម្មភាព', '#/actions');
   if (first) {
