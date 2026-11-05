@@ -50,7 +50,15 @@ const DMG = { dent: 'Dent', rust: 'Rust', wet: 'Wet / water', edge: 'Edge damage
 // ---------------------------------------------------------------- web entry points
 function doGet() { return json_({ ok: true, app: 'Inbound' }); }
 
+// Kim, 5 Nov 2026: "Inbound takes a long time to refresh". The settings tab, the Warehouse List tab and a person's
+// warehouses were read again for every plan line and every receipt (hundreds of sheet reads per refresh).
+// They are now read once per request.
+// Only inside a request (doPost); triggers and editor runs read fresh each time.
+let memo_ = null;
+const memo = (k, fn) => (!memo_ ? fn() : Object.prototype.hasOwnProperty.call(memo_, k) ? memo_[k] : (memo_[k] = fn()));
+
 function doPost(e) {
+  memo_ = {};
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
@@ -62,7 +70,7 @@ function doPost(e) {
     const msg = String(err && err.message || err);
     if (!/^[A-Z_]+:/.test(msg)) console.error(body.action + ' failed: ' + (err && err.stack || msg));
     return json_({ ok: false, error: /^[A-Z_]+:/.test(msg) ? msg : 'SERVER: ' + msg });
-  }
+  } finally { memo_ = null; }
 }
 
 function route_(action, p, user) {
@@ -245,7 +253,7 @@ function usersCached_() {
 }
 
 // ---------------------------------------------------------------- lists
-function setting_(k) { const r = objs_(SH.SET, SET_COLS).find(o => o.Setting === k); return r ? r.Value : ''; }
+function setting_(k) { const r = memo('set', () => objs_(SH.SET, SET_COLS)).find(o => o.Setting === k); return r ? r.Value : ''; }
 function plates_() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get('ib_plates');
@@ -391,7 +399,8 @@ function boot_(user) {
 /** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */
 /** Entrances from the Warehouse List tab. Old layout: Code | Description. New layout (Kim, 2 Nov 2026):
  *  Warehouse Code | Entrance Code | Description, so each entrance belongs to a warehouse (site). */
-function whRows_() {
+function whRows_() { return memo('wh', whRead_); }
+function whRead_() {
   const sh = ss_().getSheetByName(SH.WH);
   if (!sh || sh.getLastRow() < 2) return null;
   const v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getDisplayValues().map(r => r.map(x => String(x).trim()));
@@ -427,7 +436,8 @@ function sites_() {
   return tab.length ? tab : SITES;
 }
 /** The warehouses a person works in; all = sees every warehouse (admins, reviewers, nobody ticked, or "All"). */
-function userSites_(user) {
+function userSites_(user) { return memo('us|' + user.email, () => userSitesRead_(user)); }
+function userSitesRead_(user) {
   const wh = (user.wh || []).filter(x => x !== 'All');
   // Admins see every warehouse. Anyone else (reviewers too, Kim 2 Nov 2026) sees only the warehouses ticked in 👥 Users;
   // nothing ticked or "All" ticked = every warehouse.
@@ -880,6 +890,7 @@ const TEMPLATE_URL = 'https://isteel-app.pages.dev/inbound/ib-template.docx';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const GDOC_MIME = 'application/vnd.google-apps.document';
 function setSetting_(k, v) {
+  if (memo_) delete memo_.set;
   const sh = ss_().getSheetByName(SH.SET), n = sh.getLastRow(), vals = n ? sh.getRange(1, 1, n, 1).getValues() : [];
   for (let i = 1; i < vals.length; i++) if (vals[i][0] === k) { sh.getRange(i + 1, 2).setValue(v); return; }
   sh.getRange(n + 1, 1, 1, 3).setValues([[k, v, 'Kept by the app']]);
