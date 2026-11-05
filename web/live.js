@@ -50,13 +50,14 @@
 
   function start(o) {
     const every = o.every || 60000;
-    let last = Date.now(), wait = every, running = false;
-    const ready = () => document.visibilityState === 'visible' && navigator.onLine !== false && !running
+    let last = Date.now(), wait = every, running = false, runAt = 0;
+    // a check stuck for over 75 s (phone slept mid-request) no longer blocks the next ones
+    const ready = () => document.visibilityState === 'visible' && navigator.onLine !== false && !(running && Date.now() - runAt < 75000)
       && !typing() && !(o.busy && o.busy());
     async function tick(force) {
       if (!ready()) return;
       if (!force && (Date.now() - last < wait || Date.now() - lastUse > IDLE_MS)) return;
-      running = true; last = Date.now();
+      running = true; runAt = last = Date.now();
       try { await o.run(); wait = every; }
       catch (e) { wait = Math.min(wait * 2, 5 * 60 * 1000); }   // server trouble: check less often
       finally { running = false; }
@@ -102,8 +103,17 @@
   if (window.fetch) {
     const f0 = window.fetch.bind(window);
     window.fetch = function (url, opt) {
+      const api = /script\.google(usercontent)?\.com/.test(String((url && url.url) || url));
+      // Kim, 5 Nov 2026: a request cut off while the phone slept never answered, and the app waited on it forever.
+      // Calls to the Apps Script now give up after 90 s, so the app shows the error and the next refresh runs.
+      let timer = 0;
+      if (api && window.AbortController && !(opt && opt.signal)) {
+        const c = new AbortController(); timer = setTimeout(() => c.abort(), 90000);
+        opt = Object.assign({}, opt, { signal: c.signal });
+      }
       const p = f0(url, opt);
-      if (/script\.google(usercontent)?\.com/.test(String((url && url.url) || url))) {
+      if (timer) p.then(() => clearTimeout(timer), () => clearTimeout(timer));
+      if (api) {
         p.then(res => { if (res.ok) res.clone().json().then(d => { if (d && d.ok !== false && !d.error) mark(); }).catch(() => {}); }).catch(() => {});
       }
       return p;
