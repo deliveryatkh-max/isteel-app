@@ -1208,6 +1208,8 @@ function grSheet_() {
   sh.getRange(1, 1, sh.getMaxRows(), GR_COLS.length).setNumberFormat('@');   // times stay text, never turned into dates
   return sh;
 }
+// Sheets may turn "2026-11-01 08:49" into a date shown as "2026-11-01 8:49": compare the numbers only.
+const grSame_ = (a, b) => { const n = v => (String(v == null ? '' : v).match(/\d+/g) || []).map(x => x.padStart(2, '0')).join('-'); return n(a) === n(b); };
 function grRows_(sh) { return sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, GR_COLS.length).getDisplayValues() : []; }
 
 /** After a receipt is finished or edited: one run of grExport about a minute later (plus an hourly run that catches anything missed).
@@ -1241,7 +1243,7 @@ function grExport() {
     const stamp = () => new Date(lastMs = Math.max(lastMs + 1, Date.now())).toISOString();   // never two files with the same time (the PC asks 'newer than')
     receipts_().filter(r => r.status === STATUS.done).forEach(rec => {
       const i = at[rec.id], old = i == null ? null : rows[i];
-      if (old && old[4] === String(rec.updated || '')) return;
+      if (old && grSame_(old[4], rec.updated)) return;
       if (Date.now() - t0 > GR_RUN_MS) { left++; return; }
       try {
         const g = grName_(rec), folder = grFolder_(g.year, g.month);

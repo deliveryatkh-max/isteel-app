@@ -276,6 +276,7 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq(file.name, g.grName_(rec1).name, 'file named GR YYYY-MM PO GR-no supplier');
   ok(/^%PDF/.test(file.data.toString()), 'file is the PDF');
   ok(/0 PDF copied/.test(g.grExport()), 'nothing new: nothing copied');
+  ok(g.grSame_('2026-11-01 8:49', '2026-11-01 08:49') && !g.grSame_('2026-11-01 08:49', '2026-11-01 08:50'), 'times compared even when Sheets drops the leading zero');
   // a finished receipt is edited: copied again, old copy trashed
   const rr = env.ss.getSheetByName('Receipts').rows, k = rr.findIndex(r => r && r[0] === first[0]);
   const o = JSON.parse(rr[k][5]); o.updated = '2099-01-01 08:00'; o.supplier = 'New Supplier'; rr[k][5] = JSON.stringify(o);
