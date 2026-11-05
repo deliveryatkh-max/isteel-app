@@ -1209,7 +1209,7 @@ function grSheet_() {
   return sh;
 }
 // Sheets may turn "2026-11-01 08:49" into a date shown as "2026-11-01 8:49": compare the numbers only.
-const grSame_ = (a, b) => { const n = v => (String(v == null ? '' : v).match(/\d+/g) || []).map(x => x.padStart(2, '0')).join('-'); return n(a) === n(b); };
+function grSame_(a, b) { const n = v => (String(v == null ? '' : v).match(/\d+/g) || []).map(x => x.padStart(2, '0')).join('-'); return n(a) === n(b); }
 function grRows_(sh) { return sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, GR_COLS.length).getDisplayValues() : []; }
 
 /** After a receipt is finished or edited: one run of grExport about a minute later (plus an hourly run that catches anything missed).
