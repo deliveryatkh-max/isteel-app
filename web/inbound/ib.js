@@ -209,7 +209,7 @@
     const slow = syncBusy && Date.now() - syncFrom > 15000;   // still waiting: show it, the old data stays on screen meanwhile
     el.className = 'sync' + (slow ? ' busy bad' : syncBusy ? ' busy' : err || old ? ' bad' : '');
     el.textContent = syncBusy ? '🔄 ' + t('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Updating…') + (slow ? ' ' + hm : '')
-      : err || old ? '⚠️ ' + t('ទិន្នន័យម៉ោង ', 'Data from ') + hm + ' · ' + t('ចុចដើម្បីធ្វើថ្មី', 'tap to refresh')
+      : err || old ? '⚠️ ' + t('ទិន្នន័យម៉ោង ', 'Data from ') + hm + (typeof err === 'string' ? ' · ' + err : '') + ' · ' + t('ចុចដើម្បីធ្វើថ្មី', 'tap to refresh')
       : '✓ ' + hm;
   }
   setInterval(() => paintSync(), 15000);
@@ -227,7 +227,7 @@
       else if (quiet === true && window.LIVE) LIVE.keep(screen);
       else screen();
     } catch (e) {
-      syncBusy = false; paintSync(true);
+      syncBusy = false; paintSync(e.name === 'AbortError' || /abort/i.test(e.message) ? t('គ្មានចម្លើយ', 'no answer') : e.message || true);
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ib_boot', null); showBlocked(e); return; }
       if (quiet === true) throw e;
       toast(e.message);

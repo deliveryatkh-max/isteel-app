@@ -113,7 +113,10 @@
       }
       const p = f0(url, opt);
       if (timer) p.then(() => clearTimeout(timer), () => clearTimeout(timer));
-      if (api) {
+      // only the app's own data counts: startup ads and photo downloads come from other calls and would hide a failing refresh
+      let act = '';
+      try { act = JSON.parse((opt && opt.body) || '{}').action || ''; } catch (e) { /* not JSON */ }
+      if (api && !/^(ads|adMedia|adSeen|photos?|thumbs?|media|voice)$/.test(act)) {
         p.then(res => { if (res.ok) res.clone().json().then(d => { if (d && d.ok !== false && !d.error) mark(); }).catch(() => {}); }).catch(() => {});
       }
       return p;
