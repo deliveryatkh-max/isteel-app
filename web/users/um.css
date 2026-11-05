@@ -201,3 +201,6 @@ small.inl { display: inline; }
   .bulk b { flex: 1 0 100%; }
   .bulk select.in.sm { flex: 1 1 46%; min-width: 0; }
 }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { .frow { max-width: 1020px; } #view > .card:not(.done):not(.empty), #view > .prof, #view > .sec, #view > .apps2, #view > #eErr, #view > .savebar { max-width: 1020px; } }

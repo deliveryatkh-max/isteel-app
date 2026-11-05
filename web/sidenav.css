@@ -65,3 +65,9 @@
   body.wide .dgrid { columns: 3 360px; column-gap: 14px; }
   body.wide .dgrid > * { break-inside: avoid; display: inline-block; width: 100%; margin: 0 0 14px; vertical-align: top; }
 }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026): screens and bottom sheets that were about 620-680 px wide are now about 930-1020 px.
+   Each app's own CSS sets its width; Delivery (Tailwind main.max-w-2xl) is widened here. Phones are not changed. */
+@media (min-width: 900px) {
+  main.max-w-2xl { max-width: 63rem; }
+}
