@@ -94,12 +94,72 @@
       el = document.createElement('small'); el.id = 'liveAt'; el.className = 'live-at';
       box.classList.add('has-at'); box.appendChild(el);
     }
+    if (spinning) return;
     const old = Date.now() - at > 3 * 60 * 1000;
-    el.classList.toggle('old', old);
+    el.className = 'live-at' + (old ? ' old' : '');
     el.textContent = (old ? '⚠ ' : '🔄 ') + stamp(new Date(at));
     el.title = 'Data last updated';
   }
   function mark() { at = Date.now(); try { localStorage.setItem(AT_KEY, String(at)); } catch (e) { /* private mode */ } paintAt(); }
+  // ---- Refresh you can see (Kim, 5 Nov 2026: "click refresh many times, nothing happens"): the ISI STEEL logo turns while
+  // the app's data is loading, the bar says so (with the seconds when the server is slow), then shows the new time
+  // with a tick, or a warning when the refresh failed.
+  const inflight = {};
+  let pending = 0, spinning = false, spinAt = 0, spinSawCall = false, spinGood = false, spinBad = false, spinTimer = 0, flashTimer = 0;
+  const L = (km, en) => (window.LANG && LANG.get && LANG.get() === 'en' ? en : km);
+  function spinCss() {
+    if (document.getElementById('liveSpinCss')) return;
+    const st = document.createElement('style'); st.id = 'liveSpinCss';
+    st.textContent = '.isi-logo.live-spin img{animation:liveSpin 1s linear infinite}@keyframes liveSpin{to{transform:rotate(360deg)}}' +
+      '.live-at.busy{color:#fff}.live-at.good{color:#4ade80}.live-at.bad{color:#fbbf24}@media (prefers-reduced-motion:reduce){.isi-logo.live-spin img{animation:none;opacity:.6}}';
+    document.head.appendChild(st);
+  }
+  function spinStart() {
+    spinCss();
+    spinning = true; spinAt = Date.now(); spinSawCall = pending > 0; spinGood = spinBad = false;
+    document.querySelectorAll('.isi-logo').forEach(el => el.classList.add('live-spin'));
+    clearInterval(spinTimer);
+    spinTimer = setInterval(() => {
+      const sec = Math.round((Date.now() - spinAt) / 1000);
+      // the app did not ask the server (a form is open, or it only redrew): stop turning
+      if (!spinSawCall && sec >= 3) return spinEnd(true);
+      if (sec > 95) { spinBad = true; return spinEnd(); }
+      paintBusy(sec);
+    }, 1000);
+    paintBusy(0);
+  }
+  function paintBusy(sec) {
+    if (!at) at = Date.now() - 1;
+    paintAt();
+    const el = document.getElementById('liveAt');
+    if (!el || !spinning) return;
+    el.className = 'live-at busy';
+    el.textContent = '⏳ ' + (sec >= 8 ? L('ម៉ាស៊ីនមេយឺត ' + sec + ' វិនាទី…', 'Server is slow, ' + sec + ' s…') : L('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Refreshing…'));
+  }
+  function spinEnd(quiet) {
+    if (!spinning) return;
+    spinning = false; clearInterval(spinTimer);
+    document.querySelectorAll('.isi-logo').forEach(el => el.classList.remove('live-spin'));
+    paintAt();
+    const el = document.getElementById('liveAt');
+    if (!el || quiet) return;
+    clearTimeout(flashTimer);
+    if (spinBad && !spinGood) {
+      el.className = 'live-at bad';
+      el.textContent = '⚠ ' + L('មិនបានធ្វើបច្ចុប្បន្នភាព · ចុចម្តងទៀត', 'Not refreshed · tap again');
+      flashTimer = setTimeout(paintAt, 6000);
+    } else {
+      el.className = 'live-at good';
+      el.textContent = '✓ ' + stamp(new Date(at));
+      flashTimer = setTimeout(paintAt, 2500);
+    }
+  }
+  document.addEventListener('click', e => {
+    if (!(e.target && e.target.closest && e.target.closest('.isi-logo'))) return;
+    if (spinning) return;   // already loading: the same request is reused, nothing new is sent
+    spinStart();
+  }, true);
+
   if (window.fetch) {
     const f0 = window.fetch.bind(window);
     window.fetch = function (url, opt) {
@@ -111,15 +171,26 @@
         const c = new AbortController(); timer = setTimeout(() => c.abort(), 90000);
         opt = Object.assign({}, opt, { signal: c.signal });
       }
+      // Kim, 5 Nov 2026: tapping Refresh again while the first one was still loading sent the same request again and
+      // again, and the Apps Script got slower with each copy. The same request now waits for the one already on its way.
+      const key = api && typeof (opt && opt.body) === 'string' ? String((url && url.url) || url) + '|' + opt.body : '';
+      if (key && inflight[key]) { if (timer) clearTimeout(timer); return inflight[key].then(r => r.clone()); }
       const p = f0(url, opt);
       if (timer) p.then(() => clearTimeout(timer), () => clearTimeout(timer));
+      if (key) { inflight[key] = p; const drop = () => { delete inflight[key]; }; p.then(drop, drop); }
       // only the app's own data counts: startup ads and photo downloads come from other calls and would hide a failing refresh
       let act = '';
       try { act = JSON.parse((opt && opt.body) || '{}').action || ''; } catch (e) { /* not JSON */ }
       if (api && !/^(ads|adMedia|adSeen|photos?|thumbs?|media|voice)$/.test(act)) {
-        p.then(res => { if (res.ok) res.clone().json().then(d => { if (d && d.ok !== false && !d.error) mark(); }).catch(() => {}); }).catch(() => {});
+        pending++; spinSawCall = true;
+        const done = good => { pending = Math.max(0, pending - 1); if (good) spinGood = true; else spinBad = true; if (!pending) spinEnd(); };
+        p.then(res => {
+          if (!res.ok) return done(false);
+          res.clone().json().then(d => { const ok = d && d.ok !== false && !d.error; if (ok) mark(); done(ok); }).catch(() => done(false));
+        }, () => done(false));
+        return key ? p.then(r => r.clone()) : p;
       }
-      return p;
+      return key ? p.then(r => r.clone()) : p;
     };
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintAt); else paintAt();
