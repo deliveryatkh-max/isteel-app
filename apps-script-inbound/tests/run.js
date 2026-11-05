@@ -255,4 +255,41 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   env.g.telegram_({ text: 'hi' });
   eq(String(set[1][1]), '-1004445393710', 'new supergroup id saved');
   eq(env.telegrams.slice(n).map(x => x.payload.chat_id), ['-5351019426', '-1004445393710'], 'sent again to the new id'); }
+// Goods Receipt Report PDFs copied for Kim's OneDrive (Kim, 5 Nov 2026)
+{ const g = env.g;
+  eq(JSON.parse(JSON.stringify(g.grName_({ date: '2026-11-05', po: 'PO5100012725', id: 'IB-261105-03', supplier: 'A/B: Steel "Co" ' }))),
+    { year: 'Goods Receipt Report 2026', month: 'GR 2026-11', path: 'Goods Receipt Report 2026\\GR 2026-11', name: 'GR 2026-11 PO5100012725 IB-261105-03 A-B- Steel -Co-.pdf' }, 'GR file name and folders');
+  ok(env.triggers.some(t => t.spec.fn === 'grExport' && t.spec.after === 60000) && env.triggers.some(t => t.spec.fn === 'grExport' && t.spec.every === 1), 'finishing a truck queues a PDF copy (+ hourly run)');
+  const nTrig = env.triggers.length;
+  g.grQueue_();
+  eq(env.triggers.length, nTrig, 'no second trigger while one is on its way');
+  const recs = () => env.ss.getSheetByName('Receipts').rows.slice(1).filter(r => r && r[1] === 'Done');
+  const nDone = recs().length;
+  ok(nDone > 0, 'there are finished receipts');
+  ok(/copied/.test(g.grExport()), 'grExport runs');
+  const gr = env.ss.getSheetByName('GR Export').rows;
+  eq(gr.length - 1, nDone, 'one copy per finished receipt');
+  eq(JSON.stringify(env.triggers.filter(t => t.spec.fn === 'grExport').map(t => t.spec.every)), '[1]', 'used one-off trigger removed, hourly kept');
+  const first = gr[1].slice(), file = env.files[first[3]], rec1 = JSON.parse(recs().find(r => r[0] === first[0])[5]);
+  const month = env.folders[file.parent], year = env.folders[month.parent], top = env.folders[year.parent];
+  eq([top.name, year.name, month.name], ['Goods Receipt Report', 'Goods Receipt Report ' + rec1.date.slice(0, 4), 'GR ' + rec1.date.slice(0, 7)], 'saved in Goods Receipt Report / year / GR YYYY-MM');
+  eq(file.name, g.grName_(rec1).name, 'file named GR YYYY-MM PO GR-no supplier');
+  ok(/^%PDF/.test(file.data.toString()), 'file is the PDF');
+  ok(/0 PDF copied/.test(g.grExport()), 'nothing new: nothing copied');
+  // a finished receipt is edited: copied again, old copy trashed
+  const rr = env.ss.getSheetByName('Receipts').rows, k = rr.findIndex(r => r && r[0] === first[0]);
+  const o = JSON.parse(rr[k][5]); o.updated = '2099-01-01 08:00'; o.supplier = 'New Supplier'; rr[k][5] = JSON.stringify(o);
+  ok(/^1 PDF copied/.test(g.grExport()), 'edited receipt copied again');
+  const again = env.ss.getSheetByName('GR Export').rows.find(r => r[0] === first[0]);
+  ok(file.trashed && again[3] !== first[3] && /New Supplier\.pdf$/.test(again[2]) && again[6] === first[1] + '\\' + first[2], 'old copy trashed, new name, old name to remove');
+  // Kim's PC asks for the files
+  const get = q => JSON.parse(g.doGet({ parameter: q }).s);
+  ok(/DENIED/.test(get({ action: 'grSync', key: '' }).error), 'no key set: refused');
+  const gk = g.grSyncKey(); ok(/^gr-[0-9a-f]{42}$/.test(gk) && g.grSyncKey() === gk, 'key made once, kept'); env.props.GR_SYNC_KEY = 'k-0123456789abcdefghij';
+  ok(/DENIED/.test(get({ action: 'grSync', key: 'wrong-0123456789abcdefgh' }).error), 'wrong key refused');
+  const s1 = get({ action: 'grSync', key: 'k-0123456789abcdefghij', since: '' }).data;
+  ok(s1.files.length === Math.min(8, nDone) && s1.more === nDone > 8 && Buffer.from(s1.files[0].b64, 'base64').toString().startsWith('%PDF'), 'PC gets the PDFs, 8 at a time');
+  const last = s1.files[s1.files.length - 1].exported, s2 = get({ action: 'grSync', key: 'k-0123456789abcdefghij', since: last }).data;
+  ok(s2.files.every(f => f.exported > last) && s1.files.concat(s2.files).some(f => f.replaces) && s1.files.length + s2.files.length === nDone, 'next call: only newer files; the edited one carries the old name to remove');
+  eq(get({}).app, 'Inbound', 'plain GET still answers'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

@@ -52,8 +52,8 @@ function makeEnv(opts) {
   const users = new SS([new Sheet('Users', opts.users || []), new Sheet('Driver & Truck', opts.trucks || [])]);
   const files = {}, folders = {};
   let nid = 0;
-  const mails = [], docs = {}, telegrams = [];
-  const env = { props, ss, users, files, folders, mails, docs, telegrams, errors: [] };
+  const mails = [], docs = {}, telegrams = [], triggers = [];
+  const env = { props, ss, users, files, folders, mails, docs, telegrams, triggers, errors: [] };
 
   function blob(data, mime, name) {
     let b = buf(data == null ? '' : data);
@@ -87,7 +87,7 @@ function makeEnv(opts) {
       getFoldersByName: n => iter(Object.values(folders).filter(x => x.parent === d.id && x.name === n && !x.trashed).map(folderApi)),
       getFilesByName: n => iter(Object.values(files).filter(x => x.parent === d.id && x.name === n && !x.trashed).map(fileApi)),
       getFiles: () => iter(Object.values(files).filter(x => x.parent === d.id).map(fileApi)),
-      createFolder: n => makeFolder(n, d.id), createFile: b => makeFile(b, d.id), setTrashed(v) { d.trashed = v; return this; },
+      createFolder: n => makeFolder(n, d.id), createFile: b => makeFile(b, d.id), setTrashed(v) { d.trashed = v; return this; }, isTrashed: () => d.trashed,
       getParents: () => iter(folders[d.parent] ? [folderApi(folders[d.parent])] : []),
     };
   }
@@ -140,9 +140,9 @@ function makeEnv(opts) {
   const sandbox = {
     console: { log: () => {}, warn: () => {}, error: (...a) => env.errors.push(a.join(' ')) },
     SpreadsheetApp: { getActive: () => ss, openById: id => { if (id !== 'USERS') throw new Error('bad id'); return users; } },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: k => { delete props[k]; } }) },
     CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = String(v); }, remove: k => { delete cache[k]; } }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }), getUserLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     Utilities: {
       formatDate: (d, tz, f) => f.replace('yyyy', d.getFullYear()).replace('yy', String(d.getFullYear()).slice(2)).replace('MM', pad(d.getMonth() + 1)).replace('dd', pad(d.getDate()))
         .replace('HH', pad(d.getHours())).replace('mm', pad(d.getMinutes())),
@@ -170,7 +170,14 @@ function makeEnv(opts) {
       HorizontalAlignment: { RIGHT: 'R' }, ParagraphHeading: { TITLE: 'T', SUBTITLE: 'S', HEADING2: 'H2' }, GlyphType: { BULLET: 'B' },
     },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: o => mails.push(o) },
-    ScriptApp: { getOAuthToken: () => 'oauth' },
+    ScriptApp: {
+      getOAuthToken: () => 'oauth',
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: t => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
+      newTrigger: fn => { const spec = { fn }; const b = { timeBased: () => b, everyHours: h => { spec.every = h; return b; }, everyDays: d => { spec.days = d; return b; },
+        atHour: () => b, inTimezone: () => b, after: ms => { spec.after = ms; return b; },
+        create: () => { const t = { spec, id: 't' + (++nid), getHandlerFunction: () => fn, getUniqueId: () => t.id }; triggers.push(t); return t; } }; return b; },
+    },
     UrlFetchApp: {
       fetch: (url, o) => {
         if (/api\.telegram\.org/.test(url)) { telegrams.push({ method: url.split('/').pop(), payload: o.payload });

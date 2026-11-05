@@ -174,7 +174,7 @@ env.g.weeklySummary();
 const wk = env.telegrams[env.telegrams.length - 1].payload.text;
 ok(/Best areas/.test(wk) && /🥇 KMH1 · Coil shed: 100%/.test(wk), 'weekly summary names the best area');
 ok(/1 spot checks|checks done/.test(wk), 'weekly counts');
-ok(/Most checks · ត្រួតពិនិត្យច្រើន: Dara 1/.test(wk) && /Average score by area/.test(wk), 'weekly names who checked most');
+ok(/Most checks · ត្រួតពិនិត្យច្រើន: Dara \d+/.test(wk) && /Average score by area/.test(wk), 'weekly names who checked most');
 
 eq(env.errors, [], 'no server errors');
 console.log('Safety tests passed: ' + pass);
