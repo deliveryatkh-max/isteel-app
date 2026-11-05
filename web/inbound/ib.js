@@ -200,22 +200,23 @@
   let lastBoot = '';
   // quiet = background refresh: redraws only when something changed, and keeps the scroll position
   // small pill above the tabs: Updating… / ✓ time of the last good update / ⚠️ not updated (tap to retry)
-  let syncAt = +(get('ib_boot_at') || 0), syncBusy = false;
+  let syncAt = +(get('ib_boot_at') || 0), syncBusy = false, syncFrom = 0;
   function paintSync(err) {
     if (DEMO) return;
     let el = document.getElementById('sync');
     if (!el) { el = document.createElement('button'); el.id = 'sync'; el.type = 'button'; el.onclick = () => refresh(); document.body.appendChild(el); }
     const hm = syncAt ? new Date(syncAt).toTimeString().slice(0, 5) : '–', old = !syncAt || Date.now() - syncAt > 3 * 60000;
-    el.className = 'sync' + (syncBusy ? ' busy' : err || old ? ' bad' : '');
-    el.textContent = syncBusy ? '🔄 ' + t('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Updating…')
+    const slow = syncBusy && Date.now() - syncFrom > 15000;   // still waiting: show it, the old data stays on screen meanwhile
+    el.className = 'sync' + (slow ? ' busy bad' : syncBusy ? ' busy' : err || old ? ' bad' : '');
+    el.textContent = syncBusy ? '🔄 ' + t('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Updating…') + (slow ? ' ' + hm : '')
       : err || old ? '⚠️ ' + t('ទិន្នន័យម៉ោង ', 'Data from ') + hm + ' · ' + t('ចុចដើម្បីធ្វើថ្មី', 'tap to refresh')
       : '✓ ' + hm;
   }
-  setInterval(() => { if (!syncBusy) paintSync(); }, 30000);
+  setInterval(() => paintSync(), 15000);
   async function refresh(quiet) {
     if (DEMO) return;
-    if (syncBusy) return;
-    syncBusy = true; paintSync();
+    if (syncBusy && Date.now() - syncFrom < 95000) return;   // an answer lost while the phone slept no longer blocks refresh
+    syncBusy = true; syncFrom = Date.now(); paintSync();
     try {
       const d = await api('boot'), json = JSON.stringify(d);
       syncAt = Date.now(); set('ib_boot_at', String(syncAt)); syncBusy = false; paintSync();
