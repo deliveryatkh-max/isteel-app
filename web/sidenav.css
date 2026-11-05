@@ -54,3 +54,14 @@
   .side-tool { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .2); color: #fff; }
   .side-hint { color: rgba(255, 255, 255, .7); }
 }
+
+/* Summary reports as a wide dashboard on computers (Kim, 5 Nov 2026). An app turns it on with body.wide on its summary screen:
+   .dash-kpis = the row of numbers (all in one row), .dgrid = the cards, set in columns. Phones are not changed. */
+@media (min-width: 1100px) {
+  body.wide main { max-width: 1480px; padding-left: 24px; padding-right: 24px; }
+  body.wide .dash-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  body.wide .dash-kpis .stat { padding: 14px 16px; }
+  body.wide .dash-kpis .stat b { font-size: 28px; }
+  body.wide .dgrid { columns: 3 360px; column-gap: 14px; }
+  body.wide .dgrid > * { break-inside: avoid; display: inline-block; width: 100%; margin: 0 0 14px; vertical-align: top; }
+}

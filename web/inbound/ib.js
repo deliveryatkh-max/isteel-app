@@ -977,10 +977,10 @@
     const isi = rows.filter(r => r.owner === 'ISI').length, pl = rows.length - isi;
     const by = {}; rows.forEach(r => { const k = r.owner === 'ISI' ? 'ISI' : (r.carrier || '3PL'); const o = by[k] || (by[k] = { n: 0, t: 0, m: 0 }); o.n++; o.t += tons(r) || 0; o.m += spentMin(r); });
     const chip = (k, km, en) => `<button class="chip${SP === k ? ' on' : ''}" data-p="${k}">${t(km, en)}</button>`;
-    view(`
+    view(`<div class="ibdash">
       ${schedHTML()}
       <div class="filters">${chip('1', 'ថ្ងៃនេះ', 'Today')}${chip('7', '៧ ថ្ងៃ', '7 days')}${chip('m', 'ខែនេះ', 'This month')}</div>
-      <div class="stats">
+      <div class="stats dash-kpis">
         <a class="stat go" href="#/log" data-go="period"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></a>
         <a class="stat go" href="#/log" data-go="period"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
         <a class="stat go" href="#/log" data-go="period"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></a>
@@ -988,7 +988,7 @@
         <a class="stat go" href="#/log" data-go="dmg"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></a>
         <a class="stat go" href="#/log" data-go="less"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></a>
       </div>
-      <section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
+      <div class="dgrid"><section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
         <div class="bars">${dk.map(k => `<div class="barrow"><span>${showDate(k).slice(0, 5)}</span><div class="tr"><i style="width:${days[k] / mx * 100}%"></i></div><span>${fmt(days[k], 1)} t</span></div>`).join('') || `<div class="empty">–</div>`}</div>
       </section>
       <section class="card"><h2>🚚 ${t('ឡាន ISI ធៀប 3PL', 'ISI vs 3PL trucks')}</h2>
@@ -997,8 +997,8 @@
         <table class="tb mt"><tr><th>${t('ម្ចាស់ឡាន', 'Owner')}</th><th class="n">${t('ឡាន', 'Trucks')}</th><th class="n">${t('តោន', 'Tonnes')}</th><th class="n">${t('នាទី/ឡាន', 'Min/truck')}</th></tr>
           ${Object.keys(by).sort((a, b) => by[b].n - by[a].n).map(k => `<tr><td>${esc(k)}</td><td class="n">${by[k].n}</td><td class="n">${fmt(by[k].t, 1)}</td><td class="n">${fmt(by[k].m / by[k].n)}</td></tr>`).join('')}
         </table>
-      </section>
-      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p>`);
+      </section></div>
+      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p></div>`);
     $$('[data-p]').forEach(b => { b.onclick = () => { SP = b.dataset.p; renderSum(); }; });
     bindGo();
   }
@@ -1200,6 +1200,7 @@
   // ------------------------------------------------------------------ router
   function screen() {
     const h = location.hash.replace(/^#\/?/, '');
+    document.body.classList.toggle('wide', h === 'sum');   // summary is a wide dashboard on computers
     if (h === 'site' || (siteOn() && SITE === null)) return renderSite();
     if (h === 'new') return renderForm('');
     if (h.indexOf('edit/') === 0) return renderForm(h.slice(5));
