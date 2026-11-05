@@ -536,3 +536,6 @@ body.ad-open { overflow: hidden; }
 .saver-l { text-align: right; font-weight: 700; color: var(--ok); font-size: 17px; flex: none; }
 .saver-l small { font-weight: 400; }
 .saver-f { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { main { max-width: 960px; } .sheet { max-width: 960px; } }

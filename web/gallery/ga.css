@@ -101,3 +101,6 @@ input[type="date"].in { min-width: 0; max-width: 100%; display: block; }
   .gpanel .card { box-shadow: none; }
   .gpanel .savebar { position: static; background: none; }
 }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { .apps2, .gform { max-width: 1080px; } main > .card:not(.gwide), main > .sec, main > .ghead, main > .gbtns, main > .gmore, main > #saveErr, main > .back + .ghead { max-width: 1080px; } }
