@@ -262,7 +262,7 @@
     box.innerHTML = `<img src="icons/isi-logo.png" alt="" width="44" height="44">
       <div class="txt"><b>${t('ដំឡើង STEEL លើទូរស័ព្ទ', 'Install STEEL on your phone')}</b>
         <small>${installEvt ? t('បើកលឿន ប្រើបានទោះអ៊ីនធឺណិតខ្សោយ', 'Opens fast, works on weak internet')
-          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')}</small></div>
+          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')} · <a href="install/">${t('មើលរបៀប', 'How?')}</a></small></div>
       ${installEvt ? `<button type="button" class="btn ok" id="installGo">${t('ដំឡើង', 'Install')}</button>` : ''}
       <button type="button" class="x" id="installX" aria-label="${t('បិទ', 'Close')}">✕</button>`;
     if ($('#installGo')) $('#installGo').onclick = async () => {
