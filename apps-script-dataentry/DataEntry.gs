@@ -70,7 +70,10 @@ const text_ = v => (v == null ? '' : v instanceof Date ? fmt_(v, 'yyyy-MM-dd HH:
 const yes_ = v => v === true || /^(yes|true|y|1|✓)$/i.test(String(v).trim());
 const clip_ = (v, n) => String(v == null ? '' : v).trim().slice(0, n || 200);
 const num_ = v => { const s = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); const n = Number(s); return s !== '' && isFinite(n) ? n : ''; };
-const ss_ = () => SpreadsheetApp.getActive();
+// Opened by id, not used as "the active sheet": after a tab is deleted with the editor open, the active-sheet handle
+// can point at the old tab and every call fails with "Sheet 123 not found" (Kim, 6 Nov 2026).
+let SS_ = null;
+const ss_ = () => SS_ || (SS_ = SpreadsheetApp.openById(prop_('DE_SHEET_ID') || SpreadsheetApp.getActive().getId()));
 const esc_ = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function withLock_(fn) {
@@ -119,6 +122,7 @@ function setup() {
   ]);
   scaleSetup_();   // Truck Scale tabs (Scale.gs)
   const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('DE_SHEET_ID')) props.setProperty('DE_SHEET_ID', ss_().getId());
   if (!props.getProperty('DE_FOLDER_ID')) props.setProperty('DE_FOLDER_ID', DriveApp.createFolder('Weighing Ticket Images').getId());
   const first = ss_().getSheets()[0];
   if (first && first.getName() !== SH.TK && first.getLastRow() === 0) ss_().deleteSheet(first);   // the empty "Sheet1"
