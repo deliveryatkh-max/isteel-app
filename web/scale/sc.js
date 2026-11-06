@@ -895,7 +895,7 @@
     if (!T) throw new Error(t('មិនទាន់មានគំរូ', 'No template yet'));
     await loadJs('../vendor/jszip.min.js');
     const zip = await JSZip.loadAsync(T.b64, { base64: true });
-    if (CORE.paperOf(await zip.file('word/document.xml').async('string')) === 'A4') await zipToA5(zip);
+    if (/^A4/.test(CORE.paperOf(await zip.file('word/document.xml').async('string')))) await zipToA5(zip);
     const u = URL.createObjectURL(await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
     const a = document.createElement('a');
     a.href = u; a.download = String(T.name || 'scale-ticket-template').replace(/\.docx?$/i, '') + ' A5.docx';
@@ -941,7 +941,7 @@
     await loadJs('../vendor/docx-preview.min.js');
     const zip = await JSZip.loadAsync(T.b64, { base64: true });
     let pp = CORE.paperOf(await zip.file('word/document.xml').async('string'));
-    if (paper() === 'A5' && pp === 'A4') { await zipToA5(zip); pp = 'A5'; }
+    if (paper() === 'A5' && /^A4/.test(pp)) { await zipToA5(zip); pp = pp.replace('A4', 'A5'); }
     const vals = tplVals(x);
     const W = '(?:<[^>]*>)*';
     const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
@@ -1037,12 +1037,13 @@
     img.src = c.toDataURL('image/png');
     area.appendChild(img);
   }
-  /** The printed page size (A4 or A5) for the next print. */
+  /** The printed page size for the next print: A4 or A5, with L for landscape (the Word file's own page). */
   function pageSize(p) {
     let st = $('#pageSize');
     if (!st) { st = document.createElement('style'); st.id = 'pageSize'; document.head.appendChild(st); }
-    st.textContent = p === 'A5' ? '@media print { @page { size: A5; margin: 0; } body.printing #printArea img { width: 148mm; height: 210mm; } }'
-      : '@media print { @page { size: A4; margin: 0; } }';
+    const sz = /^A5/.test(p) ? 'A5' : 'A4', land = /L$/.test(p);
+    st.textContent = '@media print { @page { size: ' + sz + (land ? ' landscape' : '') + '; margin: 0; }' +
+      (sz === 'A5' && !land ? ' body.printing #printArea img { width: 148mm; height: 210mm; }' : '') + ' }';
   }
   window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); });
 

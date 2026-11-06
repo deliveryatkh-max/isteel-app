@@ -52,6 +52,9 @@ console.log('scale-core: all checks passed');
   assert.strictEqual(a5, '<w:pgSz w:w="8391" w:h="11906"/><w:pgMar w:top="519" w:gutter="0"/><w:sz w:val="15"/><w:bottom w:val="single" w:sz="8"/><w:tcW w:w="1410" w:type="dxa"/><w:tblW w:w="5000" w:type="pct"/><w:spacing w:line="276" w:lineRule="auto" w:after="85"/><wp:extent cx="704771" cy="352385"/>');
   assert.strictEqual(C.paperOf(a5), 'A5');
   assert.strictEqual(C.paperOf('<w:pgSz w:w="11906" w:h="16838"/>'), 'A4');
+  assert.strictEqual(C.paperOf('<w:pgSz w:w="11906" w:h="8391" w:orient="landscape"/>'), 'A5L');
+  assert.strictEqual(C.paperOf(C.toA5('<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>')), 'A5L');
+  assert.ok(Buffer.from(C.jpegPdf(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), 10, 10, 'A5L')).toString('latin1').indexOf('/MediaBox [0 0 595.28 419.53]') > 0);
   assert.ok(Buffer.from(C.jpegPdf(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), 10, 10, 'A5')).toString('latin1').indexOf('/MediaBox [0 0 419.53 595.28]') > 0);
   console.log('toA5 ok');
 }

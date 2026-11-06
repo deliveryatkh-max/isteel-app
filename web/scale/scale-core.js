@@ -136,10 +136,11 @@
   }
   const pad = n => String(n).padStart(2, '0');
 
-  /** A one-page PDF (A4, or A5 when paper is 'A5') showing one JPEG (bytes) over the whole page. Returns a Uint8Array. */
+  /** A one-page PDF showing one JPEG (bytes) over the whole page. paper: 'A4' (default), 'A5', or 'A4L' / 'A5L' (landscape). Returns a Uint8Array. */
   function jpegPdf(jpeg, w, h, paper) {
     const enc = s => { const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 255; return a; };
-    const W = paper === 'A5' ? 419.53 : 595.28, H = paper === 'A5' ? 595.28 : 841.89;
+    const a5 = /^A5/.test(paper || ''), short = a5 ? 419.53 : 595.28, long = a5 ? 595.28 : 841.89, land = /L$/.test(paper || '');
+    const W = land ? long : short, H = land ? short : long;
     const content = 'q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q';
     const objs = [
       '<< /Type /Catalog /Pages 2 0 R >>',
@@ -172,12 +173,12 @@
     return out;
   }
 
-  /** The paper of a Word file from its document.xml: 'A5' when the page is A5 size or smaller, else 'A4'. */
+  /** The paper of a Word file from its document.xml: 'A5' when the page is A5 size or smaller, else 'A4'; 'L' added when it is landscape (A5L). */
   function paperOf(xml) {
     const m = String(xml || '').match(/<w:pgSz\b[^>]*>/);
     const w = m && m[0].match(/w:w="(\d+)"/), h = m && m[0].match(/w:h="(\d+)"/);
     if (!w || !h) return 'A4';
-    return Math.min(+w[1], +h[1]) <= 9000 ? 'A5' : 'A4';
+    return (Math.min(+w[1], +h[1]) <= 9000 ? 'A5' : 'A4') + (+w[1] > +h[1] ? 'L' : '');
   }
 
   /**
