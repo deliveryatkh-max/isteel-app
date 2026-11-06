@@ -92,6 +92,11 @@ function route_(action, p, user) {
     case 'voice': return voice_(p.id);
     case 'pdf': return pdf_(p, user);
     case 'email': return email_(p, user);
+    case 'mailTo': {   // addresses of the chosen lists, for an Outlook draft made on the phone or computer (Kim, 6 Nov 2026)
+      const names = Array.isArray(p.lists) ? p.lists.map(String) : [], out = [];
+      mailLists_().filter(l => l.active && names.indexOf(l.name) >= 0).forEach(l => l.emails.forEach(e => { if (out.indexOf(e) < 0) out.push(e); }));
+      return { emails: out };
+    }
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
     case 'delete': return withLock_(() => del_(p.id, p.reason, user));   // admin removes a pending unloading record (Kim, 3 Nov 2026)
