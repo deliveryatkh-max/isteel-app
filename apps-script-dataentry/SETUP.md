@@ -94,8 +94,9 @@ Ticket PDFs go to the Drive folder **Scale Tickets PDF**.
    `{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}}
    {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}`.
    The QR picture must keep its alt text **QR** (right-click › View Alt Text) and stay a PNG.
-   Use Google fonts (the template uses Kantumruy Pro); Google can't print other fonts. Avoid text boxes in the footer.
+   The app draws the Word file on the scale PC itself (not in Google), so any font works, but it must be installed on
+   that PC (e.g. MiSans Khmer). Simple tables and paragraphs draw best; avoid text boxes and shapes.
 3. Put the file in Google Drive (Word or Google Doc), copy its link, and paste it in the scale app: ⚙ Settings › Warnings & ticket ›
    **Ticket template (Word)**, then Save. Press **Test the template (PDF)** to check it. A folder link also works: the newest file in it is used.
-4. From then on, Print and PDF use your template (it needs internet; offline, the standard ticket prints). Edit the Drive file
-   any time: the next ticket uses the new version. Clear the link to go back to the standard ticket.
+4. From then on, Print and PDF use your template. The app keeps a copy on the PC, so it also works offline, and checks Drive
+   for a newer version every 10 minutes (Save in Settings fetches it at once). Clear the link to go back to the standard ticket.

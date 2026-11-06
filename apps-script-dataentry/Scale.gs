@@ -38,6 +38,7 @@ function scaleRoute_(action, p, user) {
     case 'scMaster': return withLock_(() => scMaster_(p, user));
     case 'scSettings': return scSettings_(p, user);
     case 'scTicketPdf': return scTicketPdf_(p, user);
+    case 'scTemplate': return scTemplate_(p);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -299,6 +300,39 @@ function scPdf_(b64, no, plate) {
 const SC_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const SC_GDOC = 'application/vnd.google-apps.document';
 const scAuth_ = () => ({ Authorization: 'Bearer ' + ScriptApp.getOAuthToken() });
+
+/** The Word template for the app to draw on the scale PC (keeps the template's own fonts, which Google can't print).
+ *  Sends the file only when it changed since the app's copy (p.stamp). */
+function scTemplate_(p) {
+  const link = String(setting_('SCALE_TEMPLATE_LINK') || '').trim();
+  if (!link) return { none: true };
+  const f = scTemplateFile_();
+  const stamp = f.getId() + '@' + f.getLastUpdated().getTime();
+  if (p && p.stamp === stamp) return { same: true, stamp: stamp };
+  return { stamp: stamp, name: f.getName(), b64: Utilities.base64Encode(scDocxOf_(f)) };
+}
+/** The template file the link points at (a folder link gives its newest Word file or Google Doc). */
+function scTemplateFile_() {
+  const link = String(setting_('SCALE_TEMPLATE_LINK') || '').trim();
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) fail_('SETUP', 'SCALE_TEMPLATE_LINK is not a Google Drive link.', 'SCALE_TEMPLATE_LINK មិនមែនជា Link Google Drive ទេ។');
+  if (!m[2]) return DriveApp.getFileById(m[1] || m[3] || m[4]);
+  let f = null;
+  const it = DriveApp.getFolderById(m[2]).getFiles();
+  while (it.hasNext()) {
+    const x = it.next();
+    if (x.isTrashed() || [SC_DOCX, SC_GDOC].indexOf(x.getMimeType()) < 0) continue;
+    if (!f || x.getLastUpdated() > f.getLastUpdated()) f = x;
+  }
+  if (!f) fail_('SETUP', 'No Word file or Google Doc in the template folder.', 'គ្មានឯកសារ Word ក្នុង Folder គំរូ។');
+  return f;
+}
+function scDocxOf_(f) {
+  if (f.getMimeType() !== SC_GDOC) return f.getBlob().getBytes();
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + f.getId() + '/export?mimeType=' + encodeURIComponent(SC_DOCX), { headers: scAuth_(), muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) fail_('SERVER', 'Could not read the template (' + r.getResponseCode() + ').');
+  return r.getBlob().getBytes();
+}
 
 /** The template as .docx bytes, or null when no link is set. */
 function scTemplateDocx_() {

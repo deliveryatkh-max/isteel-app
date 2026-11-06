@@ -195,14 +195,6 @@
     saveLoc();
     flush();
   }
-  /** Resolves once the ticket is in the sheet (gives up after 30 s). */
-  function afterSync(cid) {
-    return new Promise((res, rej) => {
-      const t0 = Date.now();
-      const tick = () => { const l = LOC[cid]; if (l && l.synced && Q.indexOf(cid) < 0) res(); else if (Date.now() - t0 > 30000) rej(new Error('not saved yet')); else setTimeout(tick, 800); };
-      tick();
-    });
-  }
   window.addEventListener('online', () => flush());
   setInterval(() => flush(), 60000);
   function paintSync() {
@@ -471,11 +463,9 @@
     LASTDONE = tk.cid;
     F = EMPTY_F(); keepForm();
     paintForm(); paintLists(); paintLcd();
-    // With a Word template the server makes the PDF once the ticket is saved; otherwise the built-in PDF goes up with the ticket.
-    const auto = get('sc_autoprint') === '1';
-    if (tplOn()) afterSync(tk.cid).catch(() => {}).then(() => (auto ? printTicket(ticketBy(tk.cid) || tk) : serverPdf(ticketBy(tk.cid) || tk))).catch(() => {});
-    else makePdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
-    if (auto && !tplOn()) printTicket(tk);
+    // The PDF (from the Word template when there is one, else the built-in ticket) goes up to Drive with the ticket.
+    bestPdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
+    if (get('sc_autoprint') === '1') printTicket(tk);
   }
 
   function paintWarn() {
@@ -806,9 +796,29 @@
     for (let i = 0; i < pdf.length; i += 0x8000) s += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
     return btoa(s);
   }
-  // Ticket from the Word template in Drive (Settings › Warnings & ticket), made by the server. Offline or on any error
-  // the built-in ticket above is used instead, so printing never stops.
+  // Ticket from Kim's Word template (Settings › Warnings & ticket). The Word file is drawn here on the scale PC, so the
+  // template keeps its own fonts (e.g. MiSans Khmer, which Google can't print) and layout. The file is kept on this PC,
+  // so it works offline too. With no template, or on any error, the built-in ticket above is used.
   const tplOn = () => !DEMO && !!String(S().SCALE_TEMPLATE_LINK || '').trim();
+  let TPLDOC = getJ('sc_tpl', null);             // { stamp, b64 } of the Word file
+  let tplAsked = 0;
+  async function tplLoad(force) {
+    if (!tplOn()) return null;
+    if (!force && TPLDOC && Date.now() - tplAsked < 10 * 60000) return TPLDOC;
+    tplAsked = Date.now();
+    try {
+      const r = await api('scTemplate', { stamp: force ? '' : (TPLDOC && TPLDOC.stamp) || '' });
+      if (r.none) { TPLDOC = null; set('sc_tpl', null); }
+      else if (!r.same && r.b64) { TPLDOC = { stamp: r.stamp, b64: r.b64 }; set('sc_tpl', JSON.stringify(TPLDOC)); }
+    } catch (e) { if (!TPLDOC || force) throw e; }   // offline: the copy on this PC
+    return TPLDOC;
+  }
+  const libs = {};
+  const loadJs = src => libs[src] || (libs[src] = new Promise((res, rej) => {
+    const el = document.createElement('script'); el.src = src; el.onload = res;
+    el.onerror = () => { delete libs[src]; rej(new Error('Could not load ' + src)); };
+    document.head.appendChild(el);
+  }));
   function qrPng(x) {
     try {
       const qr = qrcode(0, 'M'); qr.addData(ticketUrl(x)); qr.make();
@@ -820,22 +830,85 @@
       return c.toDataURL('image/png');
     } catch (e) { return ''; }
   }
-  const TPL = {};                                // cid -> { key, b64 } of the last template PDF this session
-  async function serverPdf(x) {
-    const key = JSON.stringify([x.v, x.status, x.w2, x.net, x.dns, x.plate, x.item, x.dest, x.note, x.company, S().SCALE_TEMPLATE_LINK]);
-    if (TPL[x.cid] && TPL[x.cid].key === key) return TPL[x.cid].b64;
-    const t = {};
-    ['cid', 'no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dns', 'driver', 'dest', 'note', 'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'op'].forEach(k => { t[k] = x[k]; });
-    const r = await api('scTicketPdf', { t, qr: qrPng(x) });
-    if (r.none || !r.pdf) throw new Error('no template');
-    if (r.url && LOC[x.cid]) { LOC[x.cid].pdf = r.url; saveLoc(); }
-    TPL[x.cid] = { key, b64: r.pdf };
-    return r.pdf;
+  /** The words for each {{tag}} in the Word file. */
+  function tplVals(x) {
+    const when = v => (v ? dmy(v) + ' ' + hm(v) : '');
+    const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
+    const dns = x.dns || [];
+    return {
+      TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '',
+      DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: x.type || '',
+      Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
+      Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
+      Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
+      Printed: dmy(iso(new Date())) + ' ' + hm(iso(new Date())), CompanyName: S().SCALE_COMPANY || 'ISI STEEL',
+    };
   }
-  /** Template PDF when one is set and the server answers, else the built-in one. */
+  /** Fills the Word file for this ticket and draws it into a new box (not yet on the page). */
+  async function tplRender(x) {
+    const T = await tplLoad();
+    if (!T) throw new Error(t('មិនទាន់មានគំរូ', 'No template yet'));
+    await loadJs('../vendor/jszip.min.js');
+    await loadJs('../vendor/docx-preview.min.js');
+    const zip = await JSZip.loadAsync(T.b64, { base64: true });
+    const vals = tplVals(x);
+    const W = '(?:<[^>]*>)*';
+    const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
+    const xml = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let qrTarget = '';
+    for (const n of Object.keys(zip.files)) {
+      if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(n)) continue;
+      let d = await zip.file(n).async('string');
+      d = d.replace(re, (all, k) => { k = k.replace(/<[^>]*>/g, ''); return Object.prototype.hasOwnProperty.call(vals, k) ? xml(vals[k]) : all; });
+      zip.file(n, d);
+      if (n === 'word/document.xml') {
+        const at = d.search(/<wp:docPr\b[^>]*(?:descr|title|name)="QR"/i);
+        const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
+        const rf = zip.file('word/_rels/document.xml.rels');
+        if (emb && rf) {
+          const rel = (await rf.async('string')).match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
+          const tg = rel && rel[0].match(/Target="([^"]+)"/);
+          if (tg) qrTarget = 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '');
+        }
+      }
+    }
+    const qr = qrPng(x);
+    if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
+    const box = document.createElement('div');
+    box.className = 'tplbox';
+    await docx.renderAsync(await zip.generateAsync({ type: 'blob' }), box, null,
+      { inWrapper: false, breakPages: true, renderHeaders: true, renderFooters: true, experimental: true, ignoreLastRenderedPageBreak: true, useBase64URL: true });
+    return box;
+  }
+  /** PDF of the drawn Word file: the first page as a picture, like the built-in ticket. */
+  async function tplPdf(x) {
+    await loadJs('../vendor/html2canvas.min.js');
+    const box = await tplRender(x);
+    const hold = document.createElement('div');
+    hold.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff';
+    hold.appendChild(box);
+    document.body.appendChild(hold);
+    try {
+      try { await document.fonts.ready; } catch (e) { /* old browser */ }
+      await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
+      const page = box.querySelector('section.docx') || box;
+      const c = await html2canvas(page, { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true });
+      const data = c.toDataURL('image/jpeg', 0.88);
+      const bin = atob(data.split(',')[1]);
+      const jpg = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
+      const pdf = CORE.jpegPdf(jpg, c.width, c.height);
+      let s2 = '';
+      for (let i = 0; i < pdf.length; i += 0x8000) s2 += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
+      return btoa(s2);
+    } finally { hold.remove(); }
+  }
+  /** Template PDF when there is a template, else the built-in one. */
   async function bestPdf(x) {
-    if (tplOn()) { try { return await serverPdf(x); } catch (e) { toast(t('ប្រើប័ណ្ណស្តង់ដារ (គំរូ Word មិនដំណើរការ)', 'Using the standard ticket (Word template not available)') + ': ' + e.message); } }
-    return makePdf(x);
+    let b64 = null;
+    if (tplOn()) { try { b64 = await tplPdf(x); } catch (e) { toast(t('ប្រើប័ណ្ណស្តង់ដារ (គំរូ Word មិនដំណើរការ)', 'Using the standard ticket (Word template not available)') + ': ' + e.message); } }
+    if (!b64) b64 = await makePdf(x);
+    return b64;
   }
   const pdfBlob = b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: 'application/pdf' }); };
   async function downloadPdf(x) {
@@ -851,14 +924,14 @@
   async function printTicket(x) {
     if (tplOn()) {
       try {
-        const url = URL.createObjectURL(pdfBlob(await serverPdf(x)));
-        let f = $('#printFrame');
-        if (f) f.remove();
-        f = document.createElement('iframe');
-        f.id = 'printFrame'; f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
-        f.onload = () => { setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { window.open(url, '_blank'); } }, 300); };
-        f.src = url;
-        document.body.appendChild(f);
+        const box = await tplRender(x);
+        const area = $('#printArea');
+        area.innerHTML = '';
+        area.appendChild(box);
+        try { await document.fonts.ready; } catch (e) { /* old browser */ }
+        await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
+        document.body.classList.add('printing');
+        setTimeout(() => { window.print(); }, 80);
         return;
       } catch (e) { toast(t('ប្រើប័ណ្ណស្តង់ដារ (គំរូ Word មិនដំណើរការ)', 'Using the standard ticket (Word template not available)') + ': ' + e.message); }
     }
@@ -1033,8 +1106,8 @@
       <h3>📄 ${t('គំរូប័ណ្ណ Word', 'Ticket template (Word)')}</h3>
       <div class="field"><label class="f" for="rTpl">${t('Link Google Drive របស់ឯកសារ Word (ឬ Folder)', 'Google Drive link of the Word file (or its folder)')}</label>
         <input class="in" id="rTpl" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_LINK || '')}"></div>
-      <p class="hint">${t('ទុកទទេ = ប្រើប័ណ្ណស្តង់ដារ។ ទាញយកគំរូ កែក្នុង Word រក្សាពាក្យ {{...}} ហើយដាក់ក្នុង Drive។ រូប QR ត្រូវមាន Alt Text "QR"។ បើគ្មានអ៊ីនធឺណិត ប្រើប័ណ្ណស្តង់ដារ។',
-        'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". With no internet the standard ticket is used.')}
+      <p class="hint">${t('ទុកទទេ = ប្រើប័ណ្ណស្តង់ដារ។ ទាញយកគំរូ កែក្នុង Word រក្សាពាក្យ {{...}} ហើយដាក់ក្នុង Drive។ រូប QR ត្រូវមាន Alt Text "QR"។ ប័ណ្ណគូរនៅលើកុំព្យូទ័រនេះ ដូច្នេះ Font ក្នុង Word (ឧ. MiSans Khmer) ត្រូវតែដំឡើងលើកុំព្យូទ័រនេះ។',
+        'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The ticket is drawn on this PC, so the fonts used in the Word file (e.g. MiSans Khmer) must be installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
         <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
@@ -1047,6 +1120,7 @@
       try {
         const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim() });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
+        if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { TPLDOC = null; set('sc_tpl', null); }
         setRules();
         return;
       } catch (e) { toast(e.message); }
@@ -1057,7 +1131,8 @@
       const x = tickets().filter(k => k.status === 'Done').sort((a, c) => String(c.t2).localeCompare(String(a.t2)))[0] ||
         { cid: 'test', no: 'WB-TEST-001', status: 'Done', plate: '3B-5956', company: 'ISI Steel', item: 'Steel pipe', dns: ['8000123', '8000124'], dest: 'Phnom Penh', note: 'Test', w1: 32440, t1: iso(new Date()), s1: 'Scale', w2: 11300, t2: iso(new Date()), s2: 'Scale', gross: 32440, tare: 11300, net: 21140, warn: '', op: me().name || '' };
       try {
-        const u = URL.createObjectURL(pdfBlob(await serverPdf(Object.assign({}, x, { v: Date.now() }))));
+        await tplLoad(true);
+        const u = URL.createObjectURL(pdfBlob(await tplPdf(x)));
         const a = document.createElement('a'); a.href = u; a.download = 'template-test.pdf'; document.body.appendChild(a); a.click(); a.remove();
         toast('✅ ' + t('គំរូដំណើរការ', 'The template works'));
       } catch (e) { toast(e.message); }
@@ -1080,7 +1155,7 @@
   window.ISTEEL_REFRESH = () => refresh();
   paintSync();
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
-  else { if (B) paintTabs(); route(); refresh().then(flush); }
+  else { if (B) paintTabs(); route(); refresh().then(flush).then(() => tplLoad()).catch(() => {}); }
   if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true).then(flush), busy: () => /^#\/?set/.test(location.hash) });
   serialStart(false);                            // reconnects to the port picked last time (no prompt)
   setInterval(() => { if (SER.on || SIM.on) lcdSoon(); if ($('#site')) paintLists(); }, 30000);
