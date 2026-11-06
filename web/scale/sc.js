@@ -781,11 +781,11 @@
     const editing = location.hash.indexOf('?edit') > 0;
     $('#view').innerHTML = `<section class="card">
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
-      <div class="emp">
+      ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc((x.dns || []).join(', ')))}
         ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
-      </div>
+      </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
@@ -801,6 +801,7 @@
       </div>
       <div id="tMore"></div></section>`;
     bindDone();
+    if ($('#tPrev')) ticketPreview(x, $('#tPrev'));
     if ($('#tRetry')) $('#tRetry').onclick = () => { putTicket(LOC[x.cid]); renderTicket(key); };
     if ($('#tVoid')) $('#tVoid').onclick = () => {
       $('#tMore').innerHTML = `<div class="alert bad"><b>${t('លុបប័ណ្ណនេះ?', 'Cancel this ticket?')}</b><input class="in mt" id="vWhy" placeholder="${t('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}"><div class="btns mt"><button type="button" class="btn danger" id="vGo">${t('លុប', 'Cancel ticket')}</button></div></div>`;
@@ -834,6 +835,31 @@
   const logo = () => LOGO || (LOGO = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = '../icons/isi-steel-logo.png'; }));
   const ticketUrl = x => location.origin + location.pathname.replace(/[^/]*$/, '') + '#/t/' + encodeURIComponent(x.no);
 
+  /** The ticket as it will print (Word template, else the built-in ticket), shown on the ticket page (Kim). */
+  async function ticketPreview(x, el) {
+    try {
+      if (tplOn()) {
+        try {
+          const box = await tplRender(x);
+          const hold = await tplMount(box);
+          if (!el.isConnected) { hold.remove(); return; }
+          el.innerHTML = ''; el.appendChild(box); hold.remove();
+          const page = box.querySelector('section.docx') || box;
+          // a page wider than the screen is shown smaller (phones); the print itself is not changed
+          const pw = page.offsetWidth || 794;
+          const fit = () => { const room = el.clientWidth - 24; box.style.zoom = pw > room && room > 0 ? (room / pw).toFixed(3) : ''; };
+          fit(); requestAnimationFrame(fit);
+          if (window.ResizeObserver) new ResizeObserver(fit).observe(el);
+          return;
+        } catch (e) { /* template not available: built-in ticket below */ }
+      }
+      const c = await drawTicket(x);
+      if (!el.isConnected) return;
+      el.innerHTML = '';
+      const img = new Image(); img.src = c.toDataURL('image/png'); img.alt = x.no; img.className = 'tprevimg';
+      el.appendChild(img);
+    } catch (e) { el.innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; }
+  }
   async function drawTicket(x) {
     const W = 1240, H = 1754, M = 90;              // A4 at 150 dpi
     const c = document.createElement('canvas');
