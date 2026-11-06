@@ -91,6 +91,7 @@ function route_(action, p, user) {
     case 'photo': return { url: photos_([p.id], true)[String(p.id)] || '' };   // full size, tap to open (Kim, 2 Nov 2026)
     case 'voice': return voice_(p.id);
     case 'pdf': return pdf_(p, user);
+    case 'summary': return summary_(p, user);   // Log date range report from the Excel template (Kim, 6 Nov 2026)
     case 'email': return email_(p, user);
     case 'mailTo': {   // addresses of the chosen lists, for an Outlook draft made on the phone or computer (Kim, 6 Nov 2026)
       const names = Array.isArray(p.lists) ? p.lists.map(String) : [], out = [];
@@ -894,6 +895,128 @@ function email_(p, user) {
   }
   MailApp.sendEmail(msg);
   return { sent: to.length };
+}
+
+// ---- Summary report for a date range (Kim, 6 Nov 2026). The layout is the newest Excel file (or Google Sheet) in the
+// PDF_TEMPLATE_LINK folder, the same folder as the Word receipt template. {{placeholders}} are filled; the rows holding
+// {{id}} (receipts), {{supplier}} (by supplier) and {{material}} (damaged items) are repeated per record, the bold-less
+// sample row above each is removed, and SUM/COUNT formulas just below a block are stretched over it.
+// The standard file is web/inbound/summary-report-template.xlsx; an empty folder gets a copy.
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', GSHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+const SUM_TEMPLATE_URL = 'https://isteel-app.pages.dev/inbound/summary-report-template.xlsx';
+function sumTemplate_() {
+  const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) fail_('SETUP', 'Set PDF_TEMPLATE_LINK (IB Settings) to the template folder.', 'សូមដាក់ Link Folder គំរូក្នុង IB Settings (PDF_TEMPLATE_LINK)។');
+  let folder;
+  if (m[2]) folder = DriveApp.getFolderById(m[2]);
+  else { const ps = DriveApp.getFileById(m[1] || m[3] || m[4]).getParents(); folder = ps.hasNext() ? ps.next() : root_(); }
+  let best = null;
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.isTrashed() || [XLSX_MIME, GSHEET_MIME].indexOf(f.getMimeType()) < 0) continue;
+    if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f;
+  }
+  const src = best || folder.createFile(UrlFetchApp.fetch(SUM_TEMPLATE_URL).getBlob().setName('Summary Report Template.xlsx').setContentType(XLSX_MIME));
+  if (src.getMimeType() === GSHEET_MIME) return src.getId();
+  const stamp = src.getId() + '@' + src.getLastUpdated().getTime(), old = setting_('SUM_TEMPLATE_ID');
+  if (old && setting_('SUM_TEMPLATE_STAMP') === stamp) { try { if (!DriveApp.getFileById(old).isTrashed()) return old; } catch (e) { /* gone: convert again */ } }
+  const b = 'ibsum' + Date.now();
+  const meta = { name: 'Summary Report Template (made from ' + src.getName() + ')', mimeType: GSHEET_MIME, parents: [root_().getId()] };
+  const bytes = x => Utilities.newBlob(x).getBytes();
+  const payload = bytes('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + XLSX_MIME + '\r\n\r\n')
+    .concat(src.getBlob().getBytes(), bytes('\r\n--' + b + '--'));
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+    method: 'post', contentType: 'multipart/related; boundary=' + b, payload, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error('summary template upload ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+  const id = JSON.parse(r.getContentText()).id;
+  if (old && old !== id) { try { DriveApp.getFileById(old).setTrashed(true); } catch (e) { /* already gone */ } }
+  setSetting_('SUM_TEMPLATE_ID', id);
+  setSetting_('SUM_TEMPLATE_STAMP', stamp);
+  return id;
+}
+const dmy_ = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : String(s || ''); };
+const r2_ = n => Math.round(n * 100) / 100;
+/** Values for the summary report: global keys, plus one object per receipt / supplier / damaged item. */
+function sumValues_(rows, p, user) {
+  const ton = (r, k) => tot_(r, k) / 1000, isDmg = r => r.items.some(i => Number(i.dmgQty) > 0), less = rows.filter(r => r.items.some(isLess_));
+  const sup = {}, dmgItems = [];
+  rows.forEach(r => {
+    const o = sup[r.supplier || '-'] || (sup[r.supplier || '-'] = { supplier: r.supplier || '-', trucks: 0, gr: 0, dmgTrucks: 0 });
+    o.trucks++; o.gr = r2_(o.gr + ton(r, 'grQty')); if (isDmg(r)) o.dmgTrucks++;
+    r.items.filter(i => Number(i.dmgQty) > 0).forEach(i => dmgItems.push({ id: r.id, date: dmy_(r.date), material: i.material, desc: i.desc, dmgQty: Number(i.dmgQty), dmgUom: dmgUom_(i, r), dmgType: DMG[i.dmgType] || i.dmgType || '' }));
+  });
+  const mins = rows.map(spent_).filter(x => x !== ''), pr = rows.filter(r => prod_(r) !== '');
+  const manH = pr.reduce((s, r) => s + spent_(r) / 60 * r.manpower, 0);
+  const g = {
+    from: dmy_(p.from || rows[0].date), to: dmy_(p.to || rows[rows.length - 1].date), warehouse: p.site || 'All warehouses',
+    trucks: rows.length, isiTrucks: rows.filter(r => r.owner === 'ISI').length, plTrucks: rows.filter(r => r.owner !== 'ISI').length,
+    poQty: r2_(rows.reduce((s, r) => s + ton(r, 'poQty'), 0)), arrQty: r2_(rows.reduce((s, r) => s + ton(r, 'arrQty'), 0)), grQty: r2_(rows.reduce((s, r) => s + ton(r, 'grQty'), 0)),
+    lessTrucks: less.length, lessQty: r2_(less.reduce((s, r) => s + r.items.filter(isLess_).reduce((a, i) => a + (Number(i.arrQty) - Number(i.grQty)), 0), 0) / 1000),
+    dmgTrucks: rows.filter(isDmg).length, avgMin: mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : '',
+    avgProd: manH ? r2_(pr.reduce((s, r) => s + ton(r, 'grQty'), 0) / manH) : '', suppliers: Object.keys(sup).length,
+    generated: fmt_(new Date(), 'dd-MMM-yyyy HH:mm'), user: user.name || user.email || '',
+  };
+  const rec = rows.map(r => ({ id: r.id, date: dmy_(r.date), po: r.po, supplier: r.supplier, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI' : (r.carrier || r.owner || ''),
+    arrival: r2_(ton(r, 'arrQty')), gr: r2_(ton(r, 'grQty')), damaged: isDmg(r) ? kg_(tot_(r, 'dmgQty')) + ' ' + r.uom : '', min: spent_(r), remark: r.remark || '' }));
+  return { g, rec, sup: Object.keys(sup).sort((a, b) => sup[b].gr - sup[a].gr).map(k => sup[k]), dmg: dmgItems };
+}
+/** Put values into one cell's text: a cell that is just {{key}} keeps a number as a number. */
+function sumCell_(v, vals) {
+  if (typeof v !== 'string' || v.indexOf('{{') < 0) return v;
+  const one = v.match(/^\s*\{\{(\w+)\}\}\s*$/);
+  if (one && one[1] in vals) return vals[one[1]] === '' || vals[one[1]] == null ? '' : vals[one[1]];
+  return v.replace(/\{\{(\w+)\}\}/g, (a, k) => (k in vals ? String(vals[k] == null ? '' : vals[k]) : a));
+}
+function summary_(p, user) {
+  const ids = Array.isArray(p.ids) ? p.ids.map(String).slice(0, 1000) : [];
+  const want = {}; ids.forEach(x => { want[x] = 1; });
+  const rows = receipts_().filter(r => want[r.id] && r.status === STATUS.done && siteOk_(user, r.site)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  if (!rows.length) fail_('BAD', 'No finished trucks in these dates.', 'គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ។');
+  const V = sumValues_(rows, p, user);
+  const copy = DriveApp.getFileById(sumTemplate_()).makeCopy('Summary report (temp)', root_());
+  try {
+    const book = SpreadsheetApp.openById(copy.getId()), sh = book.getSheets()[0];
+    book.getSheets().slice(1).forEach(x => book.deleteSheet(x));   // only the report goes out
+    const W = sh.getLastColumn();
+    const kind = row => { const t = row.join('\u0001'); return /\{\{(material|dmgType|dmgQty)\}\}/.test(t) ? 'dmg' : /\{\{id\}\}/.test(t) ? 'rec' : /\{\{supplier\}\}/.test(t) ? 'sup' : ''; };
+    let vals = sh.getRange(1, 1, sh.getLastRow(), W).getValues();
+    const blocks = [];
+    vals.forEach((row, i) => { const k = kind(row); if (k) blocks.push({ k, row: i + 1 }); });
+    blocks.sort((a, b) => b.row - a.row).forEach(bk => {   // bottom up, so rows above keep their numbers
+      const list = V[bk.k], n = list.length, tplRow = sh.getRange(bk.row, 1, 1, W), tpl = tplRow.getValues()[0];
+      if (n > 1) { sh.insertRowsAfter(bk.row, n - 1); tplRow.copyTo(sh.getRange(bk.row + 1, 1, n - 1, W)); }
+      const out = n ? list.map(o => tpl.map(c => sumCell_(c, o))) : [tpl.map(c => (typeof c === 'string' && c.indexOf('{{') >= 0 ? '' : c))];
+      sh.getRange(bk.row, 1, out.length, W).setValues(out);
+      let first = bk.row, last = bk.row + out.length - 1;
+      // SUM / COUNT / AVERAGE formulas in the row just below now cover every record
+      const fr = sh.getRange(last + 1, 1, 1, W), fs = fr.getFormulas()[0];
+      // the sample row (no placeholders, not bold) just above the block is removed
+      if (bk.row > 1) {
+        const above = sh.getRange(bk.row - 1, 1, 1, W), av = above.getValues()[0];
+        const col = tpl.findIndex(c => typeof c === 'string' && c.indexOf('{{') >= 0) + 1;
+        const bold = col > 0 && sh.getRange(bk.row - 1, col).getFontWeight() === 'bold';
+        if (!bold && av.some(c => c !== '') && !av.some(c => typeof c === 'string' && c.indexOf('{{') >= 0)) { sh.deleteRow(bk.row - 1); first--; last--; }
+      }
+      if (fs.some(Boolean)) sh.getRange(last + 1, 1, 1, W).setFormulas([fs.map(f => (f ? f.replace(/([A-Z]+)\d+:([A-Z]+)\d+/g, (a, c1, c2) => c1 + first + ':' + c2 + last) : f))]);
+      // keep plain cells in that row that are not formulas
+      fs.forEach((f, i) => { if (!f) { const c = sh.getRange(last + 1, i + 1); const v = c.getValue(); if (typeof v === 'string' && v.indexOf('{{') >= 0) c.setValue(sumCell_(v, V.g)); } });
+    });
+    // the rest: one value per {{key}}
+    const rng = sh.getDataRange(), all = rng.getValues(), fm = rng.getFormulas();
+    all.forEach((row, i) => row.forEach((c, j) => { if (!fm[i][j] && typeof c === 'string' && c.indexOf('{{') >= 0) sh.getRange(i + 1, j + 1).setValue(sumCell_(c, V.g)); }));
+    SpreadsheetApp.flush();
+    const fmt = p.fmt === 'xlsx' ? 'xlsx' : 'pdf';
+    const url = 'https://docs.google.com/spreadsheets/d/' + copy.getId() + '/export?format=' + fmt +
+      (fmt === 'pdf' ? '&gid=' + sh.getSheetId() + '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenum=CENTER&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4' : '');
+    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) throw new Error('summary export ' + res.getResponseCode());
+    const name = 'GR Summary ' + V.g.from + ' to ' + V.g.to + (p.site ? ' ' + p.site : '') + '.' + fmt;
+    return { name, b64: Utilities.base64Encode(res.getBlob().getBytes()), mime: fmt === 'pdf' ? 'application/pdf' : XLSX_MIME };
+  } finally {
+    copy.setTrashed(true);
+  }
 }
 
 // ---- Word template for the PDF (same idea as the Incident app). IB Settings PDF_TEMPLATE_LINK = a Drive link to a Word file,
