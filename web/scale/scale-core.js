@@ -112,6 +112,19 @@
   }
   const fmt = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
+  /** A saved ticket keeps its warnings in English ("a | b"); this gives the Khmer words for the Khmer screen. */
+  function warnKm(en) {
+    return String(en || '').split(' | ').map(s => {
+      let m = s.match(/^Empty weight (.+) kg is (\d+)% (above|below) the truck list \((.+) kg\)$/);
+      if (m) return 'ទម្ងន់ឡានទទេ ' + m[1] + ' kg ' + (m[3] === 'above' ? 'លើស' : 'ខ្វះ') + ' ' + m[2] + '% ពីបញ្ជីឡាន (' + m[4] + ' kg)';
+      m = s.match(/^Overload: gross (.+) kg is over the limit (.+) kg \(\+(.+) kg\)$/);
+      if (m) return 'ផ្ទុកលើសទម្ងន់: ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
+      m = s.match(/^Net weight is (.+) kg$/);
+      if (m) return 'ទម្ងន់សុទ្ធ ' + m[1] + ' kg';
+      return s;
+    }).join(' | ');
+  }
+
   /** Next ticket number on this PC: PREFIX-yyMMdd-001, one more than the highest number of today already known. */
   function nextNo(prefix, date, known) {
     const d = date || new Date();
@@ -158,7 +171,7 @@
     return out;
   }
 
-  const api = { parse, Stable, finish, nextNo, jpegPdf, fmt };
+  const api = { parse, Stable, finish, warnKm, nextNo, jpegPdf, fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SCALECORE = api;
 })(typeof window !== 'undefined' ? window : this);
