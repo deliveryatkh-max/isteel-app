@@ -996,8 +996,8 @@
       try { await document.fonts.ready; } catch (e) { /* old browser */ }
       await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
       const page = box.querySelector('section.docx') || box;
-      const c = await html2canvas(page, { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true });
-      const data = c.toDataURL('image/jpeg', 0.88);
+      const c = await html2canvas(page, { scale: 4, backgroundColor: '#ffffff', logging: false, useCORS: true });
+      const data = c.toDataURL('image/jpeg', 0.92);
       const bin = atob(data.split(',')[1]);
       const jpg = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
