@@ -1314,9 +1314,29 @@
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { if (B) paintTabs(); route(); refresh().then(flush).then(() => tplLoad()).catch(() => {}); }
   if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true).then(flush), busy: () => /^#\/?set/.test(location.hash) });
+  if (!DEMO) setTimeout(pingLoop, 3000);
   serialStart(false);                            // reconnects to the port picked last time (no prompt)
   setInterval(() => { if (SER.on || SIM.on) lcdSoon(); if ($('#site')) paintLists(); }, 30000);
   setInterval(() => { if (SER.on && Date.now() - SER.last > 3000) lcdSoon(); }, 1000);
+
+  // ---------------------------------------------------------------- live updates (Kim: refresh every second)
+  // Every second the PC asks the server one small question: "has anything changed?" (a number that each save
+  // changes). Only when the answer changes are the tickets loaded again, so other PCs' trucks show up within
+  // a second or two without loading everything each time.
+  let pingStamp = null, pingOff = false;
+  async function pingLoop() {
+    let wait = 1000;
+    try {
+      if (document.visibilityState === 'visible' && navigator.onLine !== false && signedIn()) {
+        const r = await api('scPing');
+        const st = r && r.stamp;
+        if (st == null) pingOff = true;   // older server copy: the 60-second refresh carries on
+        else if (pingStamp !== null && st !== pingStamp) { await refresh(true); flush(); }
+        if (st != null) pingStamp = st;
+      }
+    } catch (e) { if (e.code === 'BAD') pingOff = true; else wait = 10000; }
+    if (!pingOff) setTimeout(pingLoop, wait);
+  }
 
   // ---------------------------------------------------------------- demo (no API_URL, or ?demo=1)
   async function demoApi(action, p) {
