@@ -88,3 +88,11 @@ If the template fails, the built-in layout is used and the reason is written in 
 - Photos are shrunk on the phone to 1280 px before sending.
 - Productivity = tonnes received ÷ hours ÷ manpower.
 - Times are Phnom Penh time (Asia/Phnom_Penh).
+
+## Goods Receipt Report PDFs in OneDrive (Kim, 5 Nov 2026)
+About a minute after a truck is finished, its PDF is copied to Drive › Goods Receipt Report › Goods Receipt Report YYYY › GR YYYY-MM
+as `GR YYYY-MM <PO> <GR no.> <Supplier>.pdf` (GR no. = receipt number). The list of copies is the **GR Export** tab.
+A small program on Kim's PC saves them in OneDrive every 10 minutes:
+1. After pasting Inbound.gs and deploying a New version, run `grSyncKey` once in the editor and copy the key from the log (gr-...).
+2. On the PC, open `...\00. Data Warehouse\Goods Receipt Report\_Auto-save setup`, double-click **Install GR auto-save.cmd**, paste the key.
+The files are in `gr-sync/`. Undo with **Remove GR auto-save.cmd**. Log: `%LOCALAPPDATA%\iSteel\GR Sync\log.txt`.

@@ -18,7 +18,8 @@
   const APP_NAMES = {
     fuel: ['ចាក់សាំង', 'Fuel Refill'], transport: ['ដឹកជញ្ជូន', 'Transport'], overtime: ['ថែមម៉ោង', 'Overtime'],
     location: ['ទីតាំងថ្មី', 'New Location'], meeting: ['ប្រជុំ', 'Meetings'], incident: ['គ្រោះថ្នាក់', 'Incident Report'],
-    inbound: ['ទទួលទំនិញ', 'Inbound'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Agent Data Entry'], dashboard: ['Dashboard', 'Fuel Dashboard'],
+    inbound: ['ទទួលទំនិញ', 'Inbound'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Agent Data Entry'], safety: ['សុវត្ថិភាព & 5S', 'Safety & 5S'],
+    dashboard: ['Dashboard', 'Fuel Dashboard'],
   };
   const appName = a => { const n = APP_NAMES[a.key]; return n ? t(n[0], n[1]) : a.col; };
   const appIcon = (key, size) => `<img src="../icons/${esc(key)}.svg" alt="" width="${size}" height="${size}">`;
@@ -46,7 +47,8 @@
   let D = null;        // { me, users, apps, depts, log }
   let OT = null;       // OT line managers, loaded when an edit screen needs them
   let otBusy = null;
-  const sel = new Set();   // selected people in the computer table
+  const sel = new Set();   // selected people (computer table, or phone "Select" mode)
+  let PICK = false;        // phone: tap rows to select several people, then change them together (Kim, 2 Nov 2026)
   const F = { q: '', chip: 'all', dept: '' };   // dept: '' = every department, '-' = no department
   const TOKEN_KEY = 'fr_id_token';
   const claims = () => { try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; } };
@@ -148,7 +150,8 @@
     paintTabs('list');
     const us = D.users, waiting = us.filter(isWaiting).length;
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
-        <a class="btn ok add" href="#/new">＋ ${t('បន្ថែមអ្នកប្រើ', 'Add user')}</a></div>
+        <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
+        <a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
       <div class="stats"><div><b>${us.filter(u => u.active).length}</b><small>${t('សកម្ម', 'Active')}</small></div>
         <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
         <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
@@ -157,6 +160,7 @@
         <select class="in dsel${F.dept ? ' on' : ''}" id="fDeptF" aria-label="${t('ផ្នែក', 'Department')}"><option value="">🏢 ${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select></div>
         <div class="chips">${chipList().map(c => `<button type="button" class="chip${F.chip === c[0] ? ' on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''}${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div></div>
       <div id="bulk"></div><div id="res"></div>`);
+    const pb = $('#pickBtn'); if (pb) pb.onclick = () => { PICK = !PICK; if (!PICK) sel.clear(); renderList(); };
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
     $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
     $$('[data-chip]').forEach(b => b.onclick = () => { F.chip = b.dataset.chip; $$('[data-chip]').forEach(x => x.classList.toggle('on', x === b)); drawResults(); });
@@ -186,12 +190,18 @@
       $$('[data-sel]').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); c.closest('tr').classList.toggle('pick', c.checked); drawBulk(); });
       $$('[data-tick]').forEach(b => b.onclick = () => quickApp(b.dataset.tick, b.dataset.app));
     } else {
-      box.innerHTML = `<div class="card ulist">${list.map(u => `
-        <div class="urow${u.active ? '' : ' off'}"><a class="um" href="#/u/${encodeURIComponent(u.email)}">${avatar(u)}
+      box.innerHTML = (PICK ? `<label class="pkall"><input type="checkbox" id="selAll" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}> ${t('ជ្រើសទាំងអស់ដែលបង្ហាញ', 'Select all shown')} (${list.length})</label>` : '') + `<div class="card ulist${PICK ? ' picking' : ''}">${list.map(u => `
+        <div class="urow${u.active ? '' : ' off'}${PICK && sel.has(u.email) ? ' pick' : ''}">${PICK ? `<input type="checkbox" class="pkc" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}">` : ''}<a class="um" href="#/u/${encodeURIComponent(u.email)}"${PICK ? ` data-pk="${esc(u.email)}"` : ''}>${avatar(u)}
           <span class="ut"><span class="l1"><b>${esc(u.name || u.email)}</b>${pill(u)}</span>
           <small>${esc([u.dept, u.empId && 'ID ' + u.empId].filter(Boolean).join(' · ') || u.email)}</small>
           <span class="apps">${D.apps.map(a => `<span class="ai${u.apps[a.key] ? '' : ' no'}" title="${esc(appName(a))}">${appIcon(a.key, 20)}</span>`).join('')}</span></span></a>
-          ${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</div>`).join('')}</div>`;
+          ${PICK ? '' : sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</div>`).join('')}</div>`;
+      if (PICK) {
+        const flip = (email, on) => { on ? sel.add(email) : sel.delete(email); drawResults(); };
+        $('#selAll').onchange = e => { list.forEach(u => e.target.checked ? sel.add(u.email) : sel.delete(u.email)); drawResults(); };
+        $$('[data-sel]').forEach(c => c.onchange = () => flip(c.dataset.sel, c.checked));
+        $$('[data-pk]').forEach(a => a.onclick = e => { e.preventDefault(); flip(a.dataset.pk, !sel.has(a.dataset.pk)); });
+      }
     }
     $$('[data-act]').forEach(b => b.onclick = () => quickActive(b.dataset.act));
     drawBulk();
@@ -223,16 +233,19 @@
     const box = $('#bulk');
     if (!box) return;
     const n = Array.from(sel).filter(byEmail).length;
-    if (!wide() || !n) { box.innerHTML = ''; return; }
+    if (!n || !(wide() || PICK)) { box.innerHTML = ''; return; }
+    const whs = D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
     box.innerHTML = `<div class="bulk"><b>☑ ${t('បានជ្រើស', 'Selected')} ${n}</b>
       <select class="in sm" id="bApp"><option value="">${t('បើក/បិទកម្មវិធី…', 'Tick an app…')}</option>${D.apps.map(a => `<option value="${a.key}:1">✓ ${esc(appName(a))}</option><option value="${a.key}:0">✗ ${esc(appName(a))}</option>`).join('')}</select>
       <select class="in sm" id="bRole"><option value="">${t('ប្តូរតួនាទី…', 'Set role…')}</option>${ROLES.map(r => `<option value="${r[0]}">${esc(t(r[1], r[2]))}</option>`).join('')}</select>
+      <select class="in sm" id="bWh"><option value="">🏭 ${t('ឃ្លាំង Inbound…', 'Inbound warehouse…')}</option>${whs.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="All">🌐 ${t('ទាំងអស់', 'All')}</option><option value="-">${t('គ្មាន (ឃើញទាំងអស់)', 'None (sees all)')}</option></select>
       <select class="in sm" id="bDept"><option value="">${t('ប្តូរផ្នែក…', 'Department…')}</option>${D.depts.map(d => `<option>${esc(d.name)}</option>`).join('')}</select>
       <button type="button" class="btn sm" id="bOn">${t('បើក', 'Switch on')}</button>
       <button type="button" class="btn sm bad" id="bOff">${t('បិទ', 'Switch off')}</button>
       <button type="button" class="link" id="bClear">${t('លុបការជ្រើស', 'Clear')}</button></div>`;
     $('#bApp').onchange = e => { const [k, v] = e.target.value.split(':'); if (k) bulk({ apps: { [k]: v === '1' } }, (v === '1' ? '✓ ' : '✗ ') + appName(D.apps.find(a => a.key === k))); };
     $('#bRole').onchange = e => { if (e.target.value) bulk({ role: e.target.value }, roleName(e.target.value)); };
+    $('#bWh').onchange = e => { const v = e.target.value; if (v) bulk({ ibWh: v === '-' ? [] : [v] }, '🏭 ' + (v === '-' ? t('គ្មានឃ្លាំង', 'No warehouse') : v)); };
     $('#bDept').onchange = e => { if (e.target.value) bulk({ dept: e.target.value }, e.target.value); };
     $('#bOn').onclick = () => bulk({ active: true }, t('បើក', 'Switch on'));
     $('#bOff').onclick = () => bulk({ active: false }, t('បិទ', 'Switch off'));
@@ -259,9 +272,10 @@
     if (!E || E.key !== key) {
       const u = isNew ? null : byEmail(email);
       if (!isNew && !u) { view(`<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`); return; }
-      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '' };
+      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '', ibWh: [] };
       if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'location', 'incident'].indexOf(a.key) >= 0; });
       const orig = JSON.parse(JSON.stringify(u || blank));
+      if (!orig.ibWh) orig.ibWh = [];
       E = { key, isNew, orig, f: JSON.parse(JSON.stringify(orig)), ot: null, otOrig: null, tried: false };
     }
     const f = E.f, me = !isNew && f.email === D.me;
@@ -318,15 +332,26 @@
     $$('[data-role]').forEach(b => b.onclick = () => { f.role = b.dataset.role; renderEdit(email); });
     $('#fActive').onclick = () => { if (me) return; f.active = !f.active; renderEdit(email); };
     $$('.aline [data-app]').forEach(b => b.onclick = () => { f.apps[b.dataset.app] = !f.apps[b.dataset.app]; renderEdit(email); });
+    $$('[data-ibwh]').forEach(b => b.onclick = () => {
+      const w = b.dataset.ibwh, on = f.ibWh || (f.ibWh = []), k = on.indexOf(w);
+      if (k >= 0) on.splice(k, 1); else if (w === 'All') f.ibWh = ['All']; else { on.push(w); const a = on.indexOf('All'); if (a >= 0) on.splice(a, 1); }
+      renderEdit(email);
+    });
     const om = $('#fOt'); if (om) om.onchange = e => { E.ot = e.target.value ? JSON.parse(e.target.value) : null; };
     $('#fSave').onclick = () => saveEdit(email);
     if (f.apps.overtime && !OT) loadOt().then(() => { if (E && E.key === key) renderEdit(email); });
   }
 
-  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role).
+  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role),
+  // the warehouse(s) for Inbound (Kim, 2 Nov 2026: each team sees only its own warehouse).
   function appExtra(key) {
     const f = E.f;
-    if (!f.apps[key]) return '';
+    if (!f.apps[key] && !(key === 'inbound' && f.role === 'admin')) return '';
+    if (key === 'inbound') {
+      const list = (D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).concat('All'), on = f.ibWh || [];
+      return `<div class="sub ibwh"><span>🏭 ${t('ឃ្លាំង', 'Warehouse')}</span>${list.map(w => `<button type="button" class="whc${on.indexOf(w) >= 0 ? ' on' : ''}" data-ibwh="${esc(w)}">${on.indexOf(w) >= 0 ? '☑' : '☐'} ${w === 'All' ? '🌐 ' + t('ទាំងអស់', 'All') : esc(w)}</button>`).join('')}
+        ${on.length ? '' : `<div class="hint" style="width:100%">${t('មិនទាន់ជ្រើស = ឃើញគ្រប់ឃ្លាំង', 'None ticked = sees every warehouse')}</div>`}</div>`;
+    }
     if (key === 'overtime') {
       if (!OT) return `<div class="sub hint"><span class="sp"></span> ${t('កំពុងផ្ទុកអ្នកអនុម័ត…', 'Loading approvers…')}</div>`;
       if (!OT.ok) return `<div class="sub hint">⚠️ ${t('អានសន្លឹក OT មិនបាន', 'Could not read the OT sheet')}: ${esc(OT.error)}</div>`;
@@ -355,6 +380,7 @@
     const apps = {};
     D.apps.forEach(a => { if (isNew || !!f.apps[a.key] !== !!o.apps[a.key]) apps[a.key] = !!f.apps[a.key]; });
     if (Object.keys(apps).length) p.apps = apps;
+    if ((f.ibWh || []).join(',') !== (o.ibWh || []).join(',')) p.ibWh = f.ibWh;
     const otChange = E.ot && E.otOrig && (E.ot.manager !== E.otOrig.manager || E.ot.tg !== E.otOrig.tg);
     if (Object.keys(p).length <= 1 && !otChange) { toast(t('គ្មានការផ្លាស់ប្តូរ', 'No changes')); return; }
     const btn = $('#fSave');
@@ -541,6 +567,7 @@
             if (email === S.me && (patch.role && patch.role !== 'admin' || patch.active === false)) { if (action === 'umSave') throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។'); return; }
             ['name', 'empId', 'dept', 'role'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
             if (patch.apps) Object.assign(u.apps, patch.apps);
+            if (patch.ibWh) u.ibWh = patch.ibWh.slice();
             if (patch.active) u.claimed = '';
             if (patch.active !== undefined && (patch.active !== u.active || (!patch.active && !u.offAt))) { u.active = patch.active; u.offAt = patch.active ? 0 : Date.now(); u.offNote = patch.active ? '' : (patch.offNote || ''); }
             out.push(clone(u));

@@ -184,3 +184,23 @@ small.inl { display: inline; }
 .rq label.f { margin-top: 10px; }
 .rq .hint .bad, .link.bad { color: var(--bad, #b3261e); }
 .link.bad { display: block; margin: 0 0 10px; }
+/* Inbound warehouse ticks (Kim, 2 Nov 2026) */
+.sub.ibwh { gap: 6px; }
+.whc { border: 1.5px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; padding: 5px 10px; font: 600 13px/1.2 inherit; cursor: pointer; }
+.whc.on { border-color: var(--accent); background: var(--soft); color: var(--accent); }
+/* phone: select several people (2 Nov 2026) */
+.hbtns { display: flex; gap: 8px; flex: none; }
+.um-head .add.pk { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.um-head .add.pk.on { background: #011e41; color: #fff; border-color: #011e41; }
+.pkall { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font-weight: 600; font-size: 14px; }
+.pkall input, .pkc { width: 22px; height: 22px; flex: none; accent-color: #011e41; }
+.ulist.picking .urow.pick { background: rgba(97, 203, 244, .16); }
+@media (max-width: 899px) {
+  .bulk { position: fixed; left: 10px; right: 10px; top: auto; bottom: calc(72px + env(safe-area-inset-bottom)); margin: 0; z-index: 20; }
+  .ulist.picking { margin-bottom: 190px; }
+  .bulk b { flex: 1 0 100%; }
+  .bulk select.in.sm { flex: 1 1 46%; min-width: 0; }
+}
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { .frow { max-width: 1020px; } #view > .card:not(.done):not(.empty), #view > .prof, #view > .sec, #view > .apps2, #view > #eErr, #view > .savebar { max-width: 1020px; } }

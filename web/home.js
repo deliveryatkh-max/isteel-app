@@ -14,6 +14,7 @@
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
     { key: 'dataentry', kh: 'បញ្ចូលទិន្នន័យ', en: 'Data Entry', url: 'dataentry/' },
+    { key: 'safety', kh: 'សុវត្ថិភាព & 5S', en: 'Safety & 5S', url: 'safety/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
     // Everyone (switched off in the Gallery Manager's Settings): every ad, to watch again (Kim, 30 Oct 2026).
     { key: 'gallery', kh: 'វិចិត្រសាល', en: 'Gallery', url: 'gallery/' },
@@ -77,6 +78,9 @@
     // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
     const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
     const apps = d.apps.filter(k => k !== 'adsmgr').concat(admin && d.apps.indexOf('gallery') < 0 ? ['gallery'] : []);
+    // Admins may open every app, so a new app's tile shows for them even before the Fuel Code.gs with its tick box
+    // column is pasted (Safety Walk, 4 Nov 2026). Everyone else still needs the tick box.
+    if (admin) APPS.forEach(a => { if (a.url && a.key !== 'adsmgr' && apps.indexOf(a.key) < 0) apps.push(a.key); });
     const mine = APPS.filter(a => apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
@@ -258,7 +262,7 @@
     box.innerHTML = `<img src="icons/isi-logo.png" alt="" width="44" height="44">
       <div class="txt"><b>${t('ដំឡើង STEEL លើទូរស័ព្ទ', 'Install STEEL on your phone')}</b>
         <small>${installEvt ? t('បើកលឿន ប្រើបានទោះអ៊ីនធឺណិតខ្សោយ', 'Opens fast, works on weak internet')
-          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')}</small></div>
+          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')} · <a href="install/">${t('មើលរបៀប', 'How?')}</a></small></div>
       ${installEvt ? `<button type="button" class="btn ok" id="installGo">${t('ដំឡើង', 'Install')}</button>` : ''}
       <button type="button" class="x" id="installX" aria-label="${t('បិទ', 'Close')}">✕</button>`;
     if ($('#installGo')) $('#installGo').onclick = async () => {

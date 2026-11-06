@@ -1,0 +1,11 @@
+{
+  "_note": "One Apps Script project per folder. scriptId: Apps Script editor > Project Settings > Script ID. deploymentId: the AKfycb... part of the app's /exec URL (web/*/config.js). A folder with no scriptId is skipped.",
+  "apps-script": { "name": "Fuel Refill (Code.gs)", "scriptId": "", "deploymentId": "AKfycbzX2644BVKfWn0VfUoJkZGvKaT8xPhLSRpDwCyJZDKwRBAXjiV3UqwbRMPLszO9C_08Xw" },
+  "apps-script-inbound": { "name": "Inbound", "scriptId": "", "deploymentId": "AKfycbw1koBxjhGoLEAA-Ney3u7O-ExuTr8SEws7vThtWDVe3VjJth_JsfFlOl9mLSnrpUNPXQ" },
+  "apps-script-ot": { "name": "Overtime", "scriptId": "", "deploymentId": "AKfycbwKDQPnzj4puLwd7gmFF6L5SiXME73o-osS9eyZp54Uvvb-1IJry9UKUSNwUz8p8j79" },
+  "apps-script-delivery": { "name": "Delivery Journey", "scriptId": "", "deploymentId": "AKfycbxzTlo54t4ByYPx0XpHu1VM2Z6oefc5hFxgjFf6OGJxRWO-xW0VlBdJrGEv8JULRm3ntA" },
+  "apps-script-incident": { "name": "Incident Report", "scriptId": "", "deploymentId": "AKfycbwJMHiQBApOA17rBsKGalaRQVyaltAI7Hl795fS2d1IOZB7ALnmtJdp31FCdZVsy7ED" },
+  "apps-script-minutes": { "name": "Meeting Minutes", "scriptId": "", "deploymentId": "AKfycby6Ra9gHp8zxAO-ndJSfUUfDzyhLzObarxlUdNhEDkoJCoHhKSIUbZzHkaJah1ZFPGO" },
+  "apps-script-dataentry": { "name": "Data Entry", "scriptId": "", "deploymentId": "AKfycbzVmO1XAaihD0IXK2TomUiqMTsTf3PoQlxUPun_3lVhykv3ZxtkxB8u0z4vQaHJ-RYWGg" },
+  "apps-script-safety": { "name": "Safety Walk & 5S", "scriptId": "", "deploymentId": "AKfycbxpSwT5WKFgKt79HYhTuf00i5yIqolUZRFImKsSrguifZgN5yiUqOm3wbjUd8IxwdiR" }
+}

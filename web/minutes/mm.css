@@ -139,3 +139,6 @@ textarea.grow { resize: none; overflow: hidden; min-height: 48px; line-height: 1
 .tick input:focus-visible + span { box-shadow: 0 0 0 3px rgba(11, 118, 160, .3); }
 .donebox { margin-top: 16px; }
 .donebox summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { .sheet { max-width: 840px; } }

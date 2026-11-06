@@ -467,9 +467,10 @@
     $('#navbar').hidden = true;
     $('#who').innerHTML = '';
     $('#view').innerHTML = `
-      <div class="login">
-        <div class="big">⛽</div>
-        <h2>${L('កត់ត្រាការចាក់សាំង', 'Fuel refill record')}</h2>
+      <div class="login splash">
+        <div class="splash-mark"><img src="../icons/isi-white.png" alt="ISI" width="84" height="84"><b>STEEL</b></div>
+        <div class="splash-line"></div>
+        <h2>Warehouse &amp; Logistics</h2>
         ${expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : ''}
         ${DEMO ? `
           <p class="hint">Demo mode: choose who to sign in as.</p>
@@ -481,6 +482,7 @@
           <p class="hint">${L('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
           <div id="gsiButton"><div class="spinner"></div></div>
           <div id="loginErr"></div>`}
+        <div class="splash-foot">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
       </div>`;
     if (DEMO) {
       $$('[data-demo]').forEach(b => b.onclick = () => {
@@ -507,7 +509,7 @@
         },
       });
       $('#gsiButton').innerHTML = '';
-      google.accounts.id.renderButton($('#gsiButton'), { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
+      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
       google.accounts.id.prompt();
     }).catch(e => { $('#gsiButton').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; });
   }
@@ -867,6 +869,51 @@
     return { errors, warnings, needNote };
   }
 
+  // ---------------- Fuel Saver of the Month ----------------
+  // The dashboard's top 3 drivers, shown to everyone under the type tiles (Kim, 1 Nov 2026).
+  // Opens from the copy on the phone at once; asks the server again at most every 30 min, in the background.
+  const SAVER_KEY = 'saver', SAVER_AGE = 30 * 60 * 1000;
+  let saverAsked = 0;
+  function drawSaver() {
+    const box = $('#saverBox');
+    if (!box) return;
+    const d = DEMO ? demoSaver() : local.get(SAVER_KEY);
+    box.innerHTML = d && d.list && d.list.length ? saverHtml(d) : '';
+    if (DEMO || Date.now() - saverAsked < SAVER_AGE || (d && Date.now() - (d.got || 0) < SAVER_AGE)) return;
+    saverAsked = Date.now();
+    callServer('saver').then(r => {
+      if (!r) return;
+      r.got = Date.now();
+      local.set(SAVER_KEY, r);
+      const b = $('#saverBox');
+      if (b) b.innerHTML = r.list && r.list.length ? saverHtml(r) : '';
+    }).catch(() => { /* old server or offline: keep what we have */ });
+  }
+  function saverHtml(d) {
+    const medals = ['🥇', '🥈', '🥉'];
+    const mon = L(KH_MONTHS[d.month], MONTHS_LONG[d.month]);
+    const n1 = x => (Math.round(x * 10) / 10).toFixed(1);
+    const km = x => Math.round(x).toLocaleString('en-US');
+    return `<div class="card saver">
+      <div class="saver-h">🏆 ${L('អ្នកសន្សំសាំងប្រចាំខែ', 'Fuel Saver of the Month')} · ${esc(mon)}</div>
+      <small>${L(`តៃកុងដែលប្រើសាំងតិចជាងឬស្មើកម្រិតធម្មតា (យ៉ាងតិច ${d.minStretches} ដង និង ${km(d.minKm)} km)។`,
+        `Drivers at or below their reference, lowest first (at least ${d.minStretches} stretches and ${km(d.minKm)} km).`)}${d.fallback ? ' ' + L('ខែនេះមិនទាន់មានអ្នកគ្រប់លក្ខខណ្ឌ ដូច្នេះបង្ហាញខែមុន។', 'Nobody qualifies yet this month, so this is last month.') : ''}</small>
+      ${d.list.slice(0, 3).map((x, i) => `<div class="saver-row"><span class="saver-m">${medals[i]}</span>
+        <span class="saver-who"><b>${esc(x.driver)}</b><small>${esc(x.plate || '')}${x.plate ? ' · ' : ''}${km(x.dist)} km · ${x.gapPct < -0.5
+          ? L(`តិចជាងកម្រិត ${Math.round(-x.gapPct)}%`, `${Math.round(-x.gapPct)}% below reference`) : L('ស្មើកម្រិត', 'at reference')}</small></span>
+        <span class="saver-l">${n1(x.l100)}<small>L/100 km</small></span></div>`).join('')}
+      ${d.clean ? `<div class="saver-f">⭐ ${L(`ទិន្នន័យពេញលេញក្នុងខែ${esc(mon)}: តៃកុង ${d.clean} នាក់ គ្មានបញ្ហាទិន្នន័យ`, `Complete Data in ${esc(mon)}: ${d.clean} drivers with no data problems`)}</div>` : ''}
+    </div>`;
+  }
+  const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function demoSaver() {
+    const m = new Date().getMonth();
+    return { month: m, fallback: false, minStretches: 3, minKm: 1000, clean: 12, list: [
+      { driver: '01.សុខ ដារា', plate: '3A-1001', dist: 4210, gapPct: -14.2, l100: 28.4 },
+      { driver: '02.ចាន់ វិចិត្រ', plate: '3B-2002', dist: 3380, gapPct: -8.6, l100: 30.1 },
+      { driver: '03.លី សុភា', plate: '3C-3003', dist: 2950, gapPct: -0.2, l100: 32.9 } ] };
+  }
+
   function renderForm() {
     const f = state.form, cfg = state.config, t = typeInfo(f.type), editing = state.editing;
     const last = lastFor(f.plate);
@@ -899,6 +946,7 @@
           </div>
         </div>
       </div>
+      ${!t && !editing ? '<div id="saverBox"></div>' : ''}
 
       ${t ? `
       <div class="card">
@@ -982,6 +1030,7 @@
       f.remembered = null;
       renderForm();
     });
+    drawSaver();
     if (!t) return;
 
     const plate = $('#plate');

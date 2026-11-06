@@ -109,6 +109,7 @@ const ACTIONS = {
   umOt: umOt_,
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
+  saver: fuelSaver_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -123,14 +124,16 @@ const HOME_APPS = [
   { key: 'incident', col: 'គ្រោះថ្នាក់' },
   { key: 'inbound', col: 'ទទួលទំនិញ' },
   { key: 'dataentry', col: 'បញ្ចូលទិន្នន័យ' },
+  { key: 'safety', col: 'សុវត្ថិភាព' },
 ];
 // Ticked for every user by default (Kim, 10 Oct 2026). Dashboard stays for reviewers and admins.
 // Incident Report: anyone can report, so it starts ticked too (Kim, 25 Oct 2026); untick to hide it.
 // Inbound (goods receipt) is not a default: tick ទទួលទំនិញ for the warehouse staff who receive goods.
 // Agent Data Entry (weighing tickets to Excel, 31 Oct 2026) is not a default either: tick បញ្ចូលទិន្នន័យ.
+// Safety Walk & 5S (4 Nov 2026) is not a default: tick សុវត្ថិភាព for walkers, area leaders and the safety officer.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
-  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel',
+  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel',
   // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
   dashboard: 'dashboard', dashboardSave: 'dashboard',
 };
@@ -330,9 +333,12 @@ function verifyToken_(token) {
 const DEPT_SHEET = 'Department';
 const EMP_ID_MIN = 100000, EMP_ID_MAX = 190000;   // Kim, 10 Oct 2026
 const MASTER_ACCESS = ['Email', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID']);
+  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse']);
 const COPY_HEAD = ['Email', 'Name', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At']);
+  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse']);
+// Inbound app warehouses (Kim, 2 Nov 2026). A person's ticks are kept in "Inbound Warehouse", comma-separated; "All" = every warehouse.
+const IB_WAREHOUSES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
+const ibWhList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 const USERS_BACKUP = 'Users (old, 31 Oct)';
 const CARD_FOLDER_NAME = 'Employee Card Photos';
 const DEPT_SEP = ' · ';
@@ -409,7 +415,7 @@ function mRow_(m, r, i) {
     emails: emailsOf_(g('Email')), role: String(g('Role') || '').trim(), active: g('Active') === true || isYes_(g('Active')),
     apps: apps, team: String(g('TEAM') || '').trim(), offNote: String(g('Off Note') || '').trim(), offAt: at('Off At'),
     appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
-    claimed: idText_(g('Claimed ID')),
+    claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')),
   };
 }
 const displayName_ = e => e.appName || e.kh || e.full;
@@ -466,7 +472,7 @@ function syncUsers_(force) {
     seen[email] = 1;
     if (e.active && /admin/i.test(e.role)) admins++;
     rows.push([email, displayName_(e), e.role || 'user', e.active ? 'Yes' : 'No'].concat(HOME_APPS.map(a => !!e.apps[a.key]),
-      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '']));
+      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', ')]));
   }));
   if (!admins) return 'Skipped: no active admin in Employee & Approver.';
   const props = PropertiesService.getScriptProperties();
@@ -1417,6 +1423,32 @@ function dashboardData_(p, user) {
   const raw = dashboardRaw_();
   raw.user = { name: user.name, role: user.role };
   return raw;
+}
+
+/**
+ * "Fuel Saver of the Month" card on the Fuel app's New refill screen (Kim, 1 Nov 2026).
+ * Same top 3 as the dashboard card; only names, plates and L/100 km go out. Cached 30 min
+ * because reading the whole Fuel Refill sheet is slow; the phone also keeps its own copy.
+ */
+function fuelSaver_() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const cache = CacheService.getScriptCache(), key = 'saver_' + y + '_' + m;
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const raw = dashboardRaw_();
+  const s = Object.assign({ minStretches: 3, minKm: 1000 }, raw.settings || {});
+  let r = FuelEngine.monthlyRecap(raw, y, m), fallback = false;
+  if (!r.savers.length) {
+    const prev = FuelEngine.monthlyRecap(raw, y, m - 1);
+    if (prev.savers.length) { r = prev; fallback = true; }
+  }
+  const out = {
+    year: r.year, month: r.month, fallback, minStretches: s.minStretches, minKm: s.minKm, clean: r.clean,
+    list: r.savers.map(x => ({ driver: x.driver, l100: x.l100, gapPct: x.gapPct, dist: x.dist, plate: x.plate })),
+    at: Date.now(),
+  };
+  try { cache.put(key, JSON.stringify(out), 1800); } catch (e) {}
+  return out;
 }
 
 /** Everything the dashboard reads (also used for the Telegram monthly recap). */
@@ -2953,6 +2985,7 @@ function umUserOf_(e, email) {
     role: UM_ROLES.indexOf(role) >= 0 ? role : 'user', active: e.active, empId: e.id,
     dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
     photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
+    ibWh: e.ibWh,
   };
 }
 const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
@@ -2969,6 +3002,7 @@ function umList_(p, user) {
     users: users,
     emps: rows.filter(e => e.id).map(e => ({ id: e.id, name: e.full, kh: e.kh, dept: deptKey_(e.dept, e.fn), emails: e.emails, active: e.active })),
     apps: HOME_APPS.map(a => ({ key: a.key, col: a.col })),
+    ibWarehouses: IB_WAREHOUSES.concat(rows.reduce((a, e) => a.concat(e.ibWh), []).filter((x, k, all) => x !== 'All' && IB_WAREHOUSES.indexOf(x) < 0 && all.indexOf(x) === k)),
     depts: deptTable_(),
     log: umLogRead_(60),
     v: 2,
@@ -3006,6 +3040,7 @@ function umCheck_(p, isNew) {
     out.apps = {};
     HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
   }
+  if (p.ibWh !== undefined) out.ibWh = (Array.isArray(p.ibWh) ? p.ibWh : ibWhList_(p.ibWh)).map(x => String(x).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (p.removeEmail) out.removeEmail = true;
   return out;
 }
@@ -3097,6 +3132,10 @@ function umWrite_(m, email, v, by, isNew) {
     mPut_(m, i, a.col, on);
     log.push(a.col + (on ? ' ✓' : ' ✗'));
   });
+  if (v.ibWh !== undefined && v.ibWh.join(', ') !== cur.ibWh.join(', ')) {
+    mPut_(m, i, 'Inbound Warehouse', v.ibWh.join(', '));
+    log.push('Inbound warehouse: ' + (cur.ibWh.join(', ') || '–') + ' → ' + (v.ibWh.join(', ') || '–'));
+  }
   // Rejecting a request: Active is already No, so the change is stamping Off At (it leaves the Requests list).
   if (v.active !== undefined && (v.active !== cur.active || isNew || (!v.active && !cur.offAt))) {
     mPut_(m, i, 'Active', v.active ? 'Yes' : 'No');

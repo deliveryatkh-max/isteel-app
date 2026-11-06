@@ -171,6 +171,18 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--b
 
 .login { text-align: center; padding-top: 40px; }
 .login .big { font-size: 64px; }
+/* Navy ISI STEEL start screen (Kim picked option C, 4 Nov 2026). Sits under the header and bottom bar. */
+.login.splash { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 70px 20px 90px; background: #011E41 url(../icons/banner-pattern.png) center / cover; color: #fff; overflow-y: auto; }
+.splash-mark { display: flex; align-items: center; gap: 14px; }
+.splash-mark img { width: 84px; height: 84px; }
+.splash-mark b { font: 800 46px/1 "Noto Sans", system-ui, sans-serif; letter-spacing: 2px; color: #fff; }
+.splash-line { width: 60px; height: 3px; background: #f2c94c; border-radius: 3px; margin: 22px 0 16px; }
+.login.splash h2 { color: #fff; margin: 0 0 6px; }
+.login.splash .hint { color: rgba(255, 255, 255, .78); margin: 0; }
+.login.splash #gsiButton { margin: 20px 0; }
+.login.splash .spinner { border-color: rgba(255, 255, 255, .25); border-top-color: #fff; }
+.splash-foot { position: absolute; bottom: 78px; left: 0; right: 0; font-size: 12px; color: rgba(255, 255, 255, .55); }
 #gsiButton { display: flex; justify-content: center; margin: 24px 0; min-height: 44px; }
 
 .tabs {
@@ -512,3 +524,18 @@ body.ad-open { overflow: hidden; }
 .ad-secs button { flex: 1; min-height: 44px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
 .ad-secs button.on { border-color: var(--brand-2); background: var(--brand-soft); color: var(--brand); box-shadow: 0 0 0 2px var(--brand-2) inset; }
 .row > div:has(> .ad-date) { flex: 1; min-width: 0; }
+
+/* Fuel Saver of the Month card under the type tiles */
+.saver { border-color: #f2c94c; background: linear-gradient(180deg, rgba(242, 201, 76, .14), var(--card) 60%); }
+.saver-h { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+.saver-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.saver-row:first-of-type { margin-top: 8px; }
+.saver-m { font-size: 22px; flex: none; }
+.saver-who { flex: 1; min-width: 0; }
+.saver-who b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saver-l { text-align: right; font-weight: 700; color: var(--ok); font-size: 17px; flex: none; }
+.saver-l small { font-weight: 400; }
+.saver-f { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { main { max-width: 960px; } .sheet { max-width: 960px; } }
