@@ -120,3 +120,13 @@ input[type=range] { flex: 1; min-width: 180px; }
 /* "New truck" on the 2nd weigh card: a clear button, right of the title */
 #formCard > h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .btn.newtruck { margin-left: auto; width: auto; min-height: 42px; padding: 6px 16px; font-size: 15px; font-weight: 700; background: #0b4ea2; border-color: #0b4ea2; color: #fff; }
+/* 2nd weigh: live weight, 1st weight and net in three boxes (Kim's option C) */
+.lcd .nums { display: flex; align-items: stretch; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+.lcd .cell { padding: 2px 20px; border-right: 1px solid #22344d; min-width: 0; }
+.lcd .cell:first-child { padding-left: 0; }
+.lcd .cell.net { border-right: 0; background: #10231a; border-radius: 10px; padding: 6px 20px; }
+.lcd .cell .lab { font-size: 15px; color: #b8c7dc; }
+.lcd .cell .sub { font-size: 13px; color: #8fb3a0; margin-top: 2px; }
+.lcd .cell .num { font-size: clamp(40px, 6vw, 80px); }
+.lcd .num.n1 { font-size: clamp(30px, 4.2vw, 56px); color: #e8fff2; }
+.lcd .num.nn { font-size: clamp(36px, 5.2vw, 70px); color: #ffc46b; }
