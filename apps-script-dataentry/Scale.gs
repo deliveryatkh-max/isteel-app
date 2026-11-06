@@ -27,6 +27,7 @@ const SC_SETTINGS = [
   ['SCALE_SIGN', 'Weigher, Driver, Security', 'Signature boxes on the ticket'],
   ['SCALE_COMPANY', 'ISI STEEL', 'Name printed on the ticket'],
   ['SCALE_TEMPLATE_LINK', '', 'Drive link to the ticket template: a Word file, a Google Doc or a folder (newest file used). Empty = built-in ticket.'],
+  ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -304,18 +305,20 @@ const scAuth_ = () => ({ Authorization: 'Bearer ' + ScriptApp.getOAuthToken() })
 /** The Word template for the app to draw on the scale PC (keeps the template's own fonts, which Google can't print).
  *  Sends the file only when it changed since the app's copy (p.stamp). */
 function scTemplate_(p) {
-  const link = String(setting_('SCALE_TEMPLATE_LINK') || '').trim();
+  const key = p && p.size === 'A5' && String(setting_('SCALE_TEMPLATE_A5_LINK') || '').trim() ? 'SCALE_TEMPLATE_A5_LINK' : 'SCALE_TEMPLATE_LINK';
+  const link = String(setting_(key) || '').trim();
   if (!link) return { none: true };
-  const f = scTemplateFile_();
+  const f = scTemplateFile_(key);
   const stamp = f.getId() + '@' + f.getLastUpdated().getTime();
   if (p && p.stamp === stamp) return { same: true, stamp: stamp };
-  return { stamp: stamp, name: f.getName(), b64: Utilities.base64Encode(scDocxOf_(f)) };
+  return { stamp: stamp, name: f.getName(), size: key === 'SCALE_TEMPLATE_A5_LINK' ? 'A5' : 'A4', b64: Utilities.base64Encode(scDocxOf_(f)) };
 }
 /** The template file the link points at (a folder link gives its newest Word file or Google Doc). */
-function scTemplateFile_() {
-  const link = String(setting_('SCALE_TEMPLATE_LINK') || '').trim();
+function scTemplateFile_(key) {
+  key = key || 'SCALE_TEMPLATE_LINK';
+  const link = String(setting_(key) || '').trim();
   const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
-  if (!m) fail_('SETUP', 'SCALE_TEMPLATE_LINK is not a Google Drive link.', 'SCALE_TEMPLATE_LINK មិនមែនជា Link Google Drive ទេ។');
+  if (!m) fail_('SETUP', key + ' is not a Google Drive link.', key + ' មិនមែនជា Link Google Drive ទេ។');
   if (!m[2]) return DriveApp.getFileById(m[1] || m[3] || m[4]);
   let f = null;
   const it = DriveApp.getFolderById(m[2]).getFiles();
