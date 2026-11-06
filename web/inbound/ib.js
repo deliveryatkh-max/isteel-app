@@ -1123,14 +1123,21 @@
     if (!canPlan()) return view(`<div class="card done"><div class="emoji">🔒</div><h2>${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</h2></div>`);
     const q = PQ.toLowerCase();
     const pos = VPOS().filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
-      .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
+      .sort((a, b) => String(etaOf(poHead(b).eta) || '').localeCompare(String(etaOf(poHead(a).eta) || '')));
+    // Grouped by ETA year and month (Kim, 6 Nov 2026): a header per month with the PO count and tonnes
+    const MON = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+    const ym = po => { const m = String(etaOf(poHead(po).eta) || '').match(/^(\d{4})-(\d\d)/); return m ? m[1] + '-' + m[2] : ''; };
+    const ymTxt = k => k ? MON[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : t('គ្មាន ETA', 'No ETA');
+    let lastYm = null;
     view(siteBar() + `
       <div class="upl2"><label class="btn ok big upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុកផែនការទំនិញចូល', 'Upload Incoming Plan')}</label>
       <a class="btn big tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download template')}</a></div>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
-        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
-        return `<a class="item" href="#/plan/${encodeURIComponent(po)}">
+        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length, g = ym(po);
+        let head = '';
+        if (g !== lastYm) { lastYm = g; const grp = pos.filter(x => ym(x) === g); head = `<div class="daylabel ymlabel">📅 ${esc(ymTxt(g))} · ${grp.length} PO · ${fmt(grp.reduce((s, x) => s + planKg(x), 0) / 1000, 1)} t</div>`; }
+        return head + `<a class="item" href="#/plan/${encodeURIComponent(po)}">
           <div class="top"><span class="id">📑 ${esc(po)}${!SITE && h.site ? ` <span class="whtag">🏭 ${esc(h.site)}</span>` : ''}</span>${poStatus(po)}</div>
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
