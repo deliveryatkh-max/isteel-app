@@ -34,33 +34,14 @@ const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 function scaleRoute_(action, p, user) {
   switch (action) {
     case 'scBoot': return scBoot_(user);
-    case 'scPing': return { stamp: scStamp_() };
-    case 'scSave': return scBump_(withLock_(() => scSave_(p.ops, user)));
+    case 'scSave': return withLock_(() => scSave_(p.ops, user));
     case 'scList': return scList_(p);
-    case 'scMaster': return scBump_(withLock_(() => scMaster_(p, user)));
-    case 'scSettings': return scBump_(scSettings_(p, user));
+    case 'scMaster': return withLock_(() => scMaster_(p, user));
+    case 'scSettings': return scSettings_(p, user);
     case 'scTicketPdf': return scTicketPdf_(p, user);
     case 'scTemplate': return scTemplate_(p);
     default: fail_('BAD', 'Unknown action');
   }
-}
-
-/**
- * A number that changes whenever tickets, lists or settings change. The scale PCs ask for it every second or two
- * (a very small, fast call) and load everything again only when it has changed.
- */
-function scStamp_() {
-  const c = CacheService.getScriptCache().get('sc_stamp');
-  if (c) return c;
-  const v = PropertiesService.getScriptProperties().getProperty('SC_STAMP') || '0';
-  CacheService.getScriptCache().put('sc_stamp', v, 21600);
-  return v;
-}
-function scBump_(out) {
-  const v = String(Date.now());
-  PropertiesService.getScriptProperties().setProperty('SC_STAMP', v);
-  CacheService.getScriptCache().put('sc_stamp', v, 21600);
-  return out;
 }
 
 /** Run once (setup() calls it): the tabs and settings rows. */
