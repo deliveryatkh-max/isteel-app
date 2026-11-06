@@ -7,6 +7,7 @@
  *   - "DE Settings" tab: default email list, days kept
  *   - Drive folder "Weighing Ticket Images": the picture of each ticket (linked from its row)
  * Actions: boot (who is signed in, sheet link), save (tickets + pictures), email (Excel made by the app, attached).
+ * Actions starting with "sc" belong to the Truck Scale app (Scale.gs, same project, tick box ជញ្ជីង).
  *
  * Script Properties (Project Settings > Script properties):
  *   GOOGLE_CLIENT_ID   same Client ID as the other iSteel apps (web/config.js)
@@ -24,6 +25,7 @@ const TK_COLS = ['Ticket No', 'Vehicle No', 'Company', 'Document Date', 'Gross (
   'Total Time (min)', 'Total Time', 'Check', 'Source File', 'Picture', 'Entered By', 'Entered At', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'បញ្ចូលទិន្នន័យ';     // tick box column in the Fuel Refill Users tab (added by the Fuel script)
+const SCALE_COL = 'ជញ្ជីង';           // tick box column for the Truck Scale app (Scale.gs)
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const MAX_ROWS = 50, MAX_IMG_BYTES = 3 * 1024 * 1024, MAX_XLSX_BYTES = 15 * 1024 * 1024, MAX_TO = 20;
 
@@ -34,7 +36,7 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
-    const user = authenticate_(body.token);
+    const user = authenticate_(body.token, /^sc[A-Z]/.test(String(body.action || '')) ? 'scale' : 'dataentry');
     const out = { ok: true, data: route_(body.action, body.payload || {}, user) };
     if (user.session) out.session = user.session;
     return json_(out);
@@ -52,7 +54,9 @@ function route_(action, p, user) {
     case 'email': return email_(p, user);
     case 'dnlog': return withLock_(() => dnlog_(p, user));
     case 'ocr': return ocr_(p);
-    default: fail_('BAD', 'Unknown action');
+    default:
+      if (/^sc[A-Z]/.test(String(action))) return scaleRoute_(action, p, user);   // Truck Scale (Scale.gs)
+      fail_('BAD', 'Unknown action');
   }
 }
 
@@ -113,6 +117,7 @@ function setup() {
     ['EMAIL_TO', '', 'Default "Send to" for Send Excel to Email (comma separated). People can change it in the app.'],
     ['EMAIL_SUBJECT', 'Weighing tickets', 'Start of the email subject'],
   ]);
+  scaleSetup_();   // Truck Scale tabs (Scale.gs)
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('DE_FOLDER_ID')) props.setProperty('DE_FOLDER_ID', DriveApp.createFolder('Weighing Ticket Images').getId());
   const first = ss_().getSheets()[0];
@@ -168,7 +173,7 @@ function verifyGoogle_(token) {
   return email;
 }
 
-function authenticate_(token) {
+function authenticate_(token, app) {
   if (!token) fail_('AUTH', 'Please sign in.', 'សូមចូលគណនី។');
   let email, session = null;
   const own = readSession_(token);
@@ -179,9 +184,10 @@ function authenticate_(token) {
     email = verifyGoogle_(token);
     session = makeSession_(email);
   }
-  const u = usersCached_().find(x => x.email === email && x.ok);
-  if (!u) fail_('NOACCESS', email + ' has no Data Entry access. Ask the admin to tick ' + APP_COL + ' in Users.',
-    email + ' មិនទាន់មានសិទ្ធិប្រើ ' + APP_COL + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
+  const scale = app === 'scale', col = scale ? SCALE_COL : APP_COL;
+  const u = usersCached_().find(x => x.email === email && (scale ? x.okScale : x.ok));
+  if (!u) fail_('NOACCESS', email + ' has no ' + (scale ? 'Truck Scale' : 'Data Entry') + ' access. Ask the admin to tick ' + col + ' in Users.',
+    email + ' មិនទាន់មានសិទ្ធិប្រើ ' + col + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + col + ' ក្នុង Users។');
   return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, session: session };
 }
 
@@ -194,20 +200,21 @@ function users_() {
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   const head = v[0].map(h => String(h).trim());
   const c = n => head.indexOf(n);
-  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL);
+  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL), tick2 = c(SCALE_COL);
   return v.slice(1).filter(x => x[e]).map(x => {
     const role = r >= 0 ? text_(x[r]) : '';
     const admin = /admin/i.test(role);
+    const active = a < 0 || yes_(x[a]);
     return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', admin: admin, reviewer: admin || /review|supervis/i.test(role),
-      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))) };
+      ok: active && (admin || (tick >= 0 && yes_(x[tick]))), okScale: active && (admin || (tick2 >= 0 && yes_(x[tick2]))) };
   });
 }
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('de_users');
+  const hit = cache.get('de_users2');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('de_users', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('de_users2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
