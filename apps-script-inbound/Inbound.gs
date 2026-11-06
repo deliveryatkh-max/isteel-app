@@ -977,11 +977,29 @@ function summary_(p, user) {
   const V = sumValues_(rows, p, user);
   const copy = DriveApp.getFileById(sumTemplate_()).makeCopy('Summary report (temp)', root_());
   try {
-    const book = SpreadsheetApp.openById(copy.getId()), sh = book.getSheets()[0];
-    book.getSheets().slice(1).forEach(x => book.deleteSheet(x));   // only the report goes out
-    const W = sh.getLastColumn();
+    const book = SpreadsheetApp.openById(copy.getId());
+    // every sheet is filled (Kim's template has Summary / By Truck / Damage / By Supplier); the "How to use" sheet is left out
+    book.getSheets().filter(x => /how to use/i.test(x.getName())).forEach(x => { if (book.getSheets().length > 1) book.deleteSheet(x); });
+    book.getSheets().forEach(sh => sumSheet_(sh, V));
+    SpreadsheetApp.flush();
+    const sh = book.getSheets()[0];
+    const fmt = p.fmt === 'pdf' ? 'pdf' : 'xlsx';
+    const url = 'https://docs.google.com/spreadsheets/d/' + copy.getId() + '/export?format=' + fmt +
+      (fmt === 'pdf' ? '&gid=' + sh.getSheetId() + '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenum=CENTER&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4' : '');
+    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) throw new Error('summary export ' + res.getResponseCode());
+    const name = 'GR Summary ' + V.g.from + ' to ' + V.g.to + (p.site ? ' ' + p.site : '') + '.' + fmt;
+    return { name, b64: Utilities.base64Encode(res.getBlob().getBytes()), mime: fmt === 'pdf' ? 'application/pdf' : XLSX_MIME };
+  } finally {
+    copy.setTrashed(true);
+  }
+}
+/** Fill one sheet of the summary template. */
+function sumSheet_(sh, V) {
+    const W = sh.getLastColumn(), H = sh.getLastRow();
+    if (!W || !H) return;
     const kind = row => { const t = row.join('\u0001'); return /\{\{(material|dmgType|dmgQty)\}\}/.test(t) ? 'dmg' : /\{\{id\}\}/.test(t) ? 'rec' : /\{\{supplier\}\}/.test(t) ? 'sup' : ''; };
-    let vals = sh.getRange(1, 1, sh.getLastRow(), W).getValues();
+    let vals = sh.getRange(1, 1, H, W).getValues();
     const blocks = [];
     vals.forEach((row, i) => { const k = kind(row); if (k) blocks.push({ k, row: i + 1 }); });
     blocks.sort((a, b) => b.row - a.row).forEach(bk => {   // bottom up, so rows above keep their numbers
@@ -1006,17 +1024,6 @@ function summary_(p, user) {
     // the rest: one value per {{key}}
     const rng = sh.getDataRange(), all = rng.getValues(), fm = rng.getFormulas();
     all.forEach((row, i) => row.forEach((c, j) => { if (!fm[i][j] && typeof c === 'string' && c.indexOf('{{') >= 0) sh.getRange(i + 1, j + 1).setValue(sumCell_(c, V.g)); }));
-    SpreadsheetApp.flush();
-    const fmt = p.fmt === 'xlsx' ? 'xlsx' : 'pdf';
-    const url = 'https://docs.google.com/spreadsheets/d/' + copy.getId() + '/export?format=' + fmt +
-      (fmt === 'pdf' ? '&gid=' + sh.getSheetId() + '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenum=CENTER&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4' : '');
-    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) throw new Error('summary export ' + res.getResponseCode());
-    const name = 'GR Summary ' + V.g.from + ' to ' + V.g.to + (p.site ? ' ' + p.site : '') + '.' + fmt;
-    return { name, b64: Utilities.base64Encode(res.getBlob().getBytes()), mime: fmt === 'pdf' ? 'application/pdf' : XLSX_MIME };
-  } finally {
-    copy.setTrashed(true);
-  }
 }
 
 // ---- Word template for the PDF (same idea as the Incident app). IB Settings PDF_TEMPLATE_LINK = a Drive link to a Word file,

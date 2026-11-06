@@ -346,7 +346,7 @@
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
       <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('today', 'ថ្ងៃនេះ', 'Today')}${LF === 'todaydone' ? chip('todaydone', '✅ ថ្ងៃនេះ', '✅ Today') : ''}${LF === 'period' ? chip('period', '📊 ' + sumLabel(), '📊 ' + sumLabel()) : ''}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
       <div class="range"><label>${t('ពី', 'From')}<input class="in" type="date" id="lFrom" value="${esc(LFROM)}"></label><label>${t('ដល់', 'To')}<input class="in" type="date" id="lTo" value="${esc(LTO)}"></label>
-        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}<button class="btn ok" id="lRep" type="button">📄 ${t('របាយការណ៍សង្ខេប PDF', 'Summary report PDF')}</button><button class="btn" id="lRepX" type="button">📊 Excel</button></div>
+        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
       <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
@@ -354,15 +354,14 @@
     $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
     $('#lTo').onchange = e => { LTO = e.target.value; if (LFROM && LTO < LFROM) LFROM = LTO; renderLog(); };
     if ($('#lClr')) $('#lClr').onclick = () => { LFROM = LTO = ''; renderLog(); };
-    $('#lRep').onclick = () => sumReport(rows.filter(r => r.end), 'pdf', $('#lRep'));
-    $('#lRepX').onclick = () => sumReport(rows.filter(r => r.end), 'xlsx', $('#lRepX'));
-    $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : exportCsv(rows));
+    // Download Excel = Kim's summary report template filled for the dates shown (Kim, 6 Nov 2026); old Apps Script: the CSV log
+    $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : sumReport(rows.filter(r => r.end), 'xlsx', $('#xls'), () => exportCsv(rows)));
   }
   // Summary report for the selected dates (Kim, 6 Nov 2026), in the style of the IB Goods Receipt Report:
   // navy headings, ISI STEEL logo, bilingual section titles. Opens a print page; "Save as PDF" makes the file.
   // Made by the Apps Script from Kim's Excel template in the report template folder (Kim, 6 Nov 2026).
   // Demo, or an Apps Script without the 'summary' action: the built-in print page below.
-  async function sumReport(rows, fmt, b) {
+  async function sumReport(rows, fmt, b, old) {
     if (!rows.length) { toast(t('គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ', 'No finished trucks in these dates')); return; }
     if (DEMO) { rangeReport(rows); return; }
     busy(b, true, t('កំពុងធ្វើរបាយការណ៍… (10–30 វិនាទី)', 'Making the report… (10–30 s)'));
@@ -373,7 +372,7 @@
       const a = document.createElement('a'); a.href = url; a.download = x.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
-      if (/Unknown action/i.test(e.message || '')) { toast(t('Apps Script ចាស់៖ បង្ហាញទំព័របោះពុម្ពជំនួស', 'Old Apps Script: showing the print page instead')); rangeReport(rows); }
+      if (/Unknown action/i.test(e.message || '')) { toast(t('Apps Script ចាស់៖ ទាញយក CSV ជំនួស', 'Old Apps Script: downloading the CSV instead')); (old || (() => rangeReport(rows)))(); }
       else toast('⚠️ ' + oldScript(e));
     }
     busy(b, false);
