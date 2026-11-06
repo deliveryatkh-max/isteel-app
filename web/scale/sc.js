@@ -260,13 +260,14 @@
       const all = opts.list();
       items = all.filter(x => !q || norm(x.v).indexOf(q) >= 0 || norm(x.sub).indexOf(q) >= 0).slice(0, 40);
       const exact = all.some(x => norm(x.v) === q);
-      const add = opts.addNew && q && !exact ? input.value.trim() : '';
+      const fx = opts.fix || (v => v);
+      const add = opts.addNew && q && !exact ? fx(input.value.trim()) : '';
       box.innerHTML = items.map((x, i) => `<div class="opt${i === at ? ' on' : ''}" data-i="${i}"><span>${esc(x.v)}</span>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</div>`).join('') +
         (add ? `<div class="opt add" data-add="1"><span>＋ ${t('បន្ថែមថ្មី', 'Add new')}: <b>${esc(add)}</b></span></div>` : '') +
         (!items.length && !add ? `<div class="opt none">${t('រកមិនឃើញ', 'No match')}</div>` : '');
       box.hidden = false;
     }
-    const pick = v => { input.value = v; box.hidden = true; at = -1; opts.onPick(v); };
+    const pick = v => { if (opts.fix && !opts.list().some(x => x.v === v)) v = opts.fix(v); if (!v) { input.value = ''; box.hidden = true; return; } input.value = v; box.hidden = true; at = -1; opts.onPick(v); };
     input.addEventListener('focus', () => { at = -1; paint(); });
     input.addEventListener('input', () => { at = -1; paint(); opts.onType && opts.onType(input.value); });
     input.addEventListener('keydown', e => {
@@ -288,13 +289,21 @@
       if (!v) { opts.onPick(''); return; }
       const hit = opts.list().find(x => norm(x.v) === norm(v));
       if (hit) { if (hit.v !== v) input.value = hit.v; opts.onPick(hit.v); }
-      else if (opts.addNew) opts.onPick(v);
+      else if (opts.addNew) { const f = opts.fix ? opts.fix(v) : v; input.value = f; opts.onPick(f); }
       else { input.value = ''; opts.onPick(''); }
     }, 120));
   }
 
   // ---------------------------------------------------------------- weigh screen
   const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '' });
+  /** Truck plates written one way (Kim, 6 Nov 2026): 3A1234 or 3ab1234 becomes 3A-1234 / 3AB-1234. */
+  function fixPlate(v) {
+    const s = String(v || '').toUpperCase().replace(/[\s\-.]/g, '');
+    const m = s.match(/^(\d{0,2}[A-Z]{1,3})(\d{3,5})$/);
+    return m ? m[1] + '-' + m[2] : String(v || '').toUpperCase().trim();
+  }
+  /** A new 3PL company is typed in English capital letters only (Kim, 6 Nov 2026). */
+  const fixCompany = v => String(v || '').toUpperCase().replace(/[^A-Z0-9 &.,()\-\/]/g, '').replace(/\s+/g, ' ').trim();
   let F = getJ('sc_form', null) || EMPTY_F();
   let PENDING = null;                            // 2nd weigh waiting for "Save anyway" after a warning
   let LASTDONE = '';                             // cid of the ticket just finished, shown under the buttons
@@ -336,18 +345,14 @@
         <div class="field"><label class="f">${t('លេខឡាន', 'Truck No')} ${req}</label><div><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"></div>
           ${tr ? `<div class="hint">${tr.type ? esc(tr.type) + ' · ' : ''}${t('ទម្ងន់ទទេ', 'Empty')} ${tr.empty !== '' ? kg(tr.empty) + ' kg' : '—'} · ${t('កំណត់អតិបរមា', 'Max')} ${tr.max !== '' ? kg(tr.max) + ' kg' : '—'}${lastT ? ' · ' + t('ចុងក្រោយ', 'Last') + ' ' + kg(lastT) + ' kg' : ''}</div>`
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
-        <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន', 'Truck company / 3PL')}</label><div><input class="in" id="fCompany" autocomplete="off" value="${esc(F.company)}"></div></div>
-        <div class="field"><label class="f">${t('អតិថិជន', 'Customer')}</label><div><input class="in" id="fCustomer" autocomplete="off" value="${esc(F.customer)}"></div></div>
+        <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
+          <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         <div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>
-        <div class="field"><label class="f">${t('ចូល / ចេញ', 'In / Out')} ${req}</label>
-          <div class="seg">${['In', 'Out'].map(k => `<button type="button" class="chip${F.type === k ? ' on' : ''}" data-type="${k}">${esc(typeName(k))}</button>`).join('')}</div></div>
-        <div class="field"><label class="f">${t('អ្នកបើកបរ', 'Driver')}</label><div><input class="in" id="fDriver" autocomplete="off" value="${esc(F.driver)}"></div></div>
-        <div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${F.type === 'Out' ? ' ' + req : ''}</label>
-          <div class="dnbox in${F.type === 'Out' && !F.dns.length && sel ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
-            <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div>
-          <div class="hint">${t('ដាក់ DN ពេលថ្លឹងលើកទី១ ឬលើកទី២ ក៏បាន', 'Add DNs at the 1st or the 2nd weigh')}</div></div>
         <div class="field"><label class="f">${t('គោលដៅ', 'Destination')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>
-        <div class="field"><label class="f">${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
+        ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${F.type === 'Out' ? ' ' + req : ''}</label>
+          <div class="dnbox in${F.type === 'Out' && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
+            <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
+        <div class="field span2"><label class="f">${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
       ${sel ? `<div class="w3"><div><small>${t('លើកទី១', '1st weigh')} · ${hm(sel.t1)}</small><b>${kg(sel.w1)}</b>${sel.s1 !== 'Scale' ? `<em class="src">${esc(sel.s1)}</em>` : ''}</div><div><small>${t('លើកទី២ (ឥឡូវ)', '2nd (now)')}</small><b id="w2now">—</b></div><div><small>${t('សុទ្ធ', 'Net')}</small><b id="netNow">—</b></div></div>` : ''}
       <div id="warnBox"></div>
@@ -362,22 +367,20 @@
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
     picker($('#fPlate'), {
-      list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true,
-      onPick: v => { const was = F.plate; upd('plate', v ? v.toUpperCase() : ''); const tr2 = truckOf(v); if (tr2 && was !== F.plate) { F.company = tr2.company || F.company; if (tr2.drivers.length === 1) F.driver = tr2.drivers[0]; keepForm(); } paintForm(); },
+      list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true, fix: fixPlate,
+      onPick: v => { const was = F.plate; upd('plate', v ? fixPlate(v) : ''); const tr2 = truckOf(v); if (tr2 && was !== F.plate) { F.company = tr2.company || F.company; if (tr2.drivers.length === 1) F.driver = tr2.drivers[0]; keepForm(); } paintForm(); },
     });
     const companies = () => { const s = []; trucks().forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort().map(v => ({ v })); };
-    picker($('#fCompany'), { list: companies, addNew: true, onPick: v => upd('company', v) });
-    picker($('#fCustomer'), { list: () => ((B && B.customers) || []).map(c => ({ v: c[1], sub: c[0] })), addNew: true, onPick: v => upd('customer', v) });
+    picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
-    picker($('#fDriver'), { list: () => { const tr2 = truckOf(F.plate); const own = tr2 ? tr2.drivers : []; const all = []; trucks().forEach(x => x.drivers.forEach(d => { if (all.indexOf(d) < 0 && own.indexOf(d) < 0) all.push(d); })); return own.map(v => ({ v, sub: F.plate })).concat(all.sort().map(v => ({ v }))); }, addNew: true, onPick: v => upd('driver', v) });
     picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: v => upd('dest', v) });
     $('#fNote').oninput = e => upd('note', e.target.value);
-    $$('[data-type]').forEach(b => { b.onclick = () => { upd('type', b.dataset.type); paintForm(); }; });
     const addDn = raw => {
       String(raw || '').split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
       keepForm(); paintForm(); setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);
     };
     const dn = $('#fDn');
+    if (dn) {
     dn.onkeydown = e => {
       if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab' || e.key === ' ') { if (dn.value.trim()) { e.preventDefault(); addDn(dn.value); } }
       else if (e.key === 'Backspace' && !dn.value && F.dns.length) { F.dns.pop(); keepForm(); paintForm(); setTimeout(() => $('#fDn').focus(), 0); }
@@ -385,6 +388,7 @@
     dn.onblur = () => { if (dn.value.trim()) addDn(dn.value); };
     dn.addEventListener('paste', e => { const s = (e.clipboardData || window.clipboardData).getData('text'); if (/[\s,;]/.test(s.trim())) { e.preventDefault(); addDn(s); } });
     $('#dnBox').onclick = e => { const x = e.target.closest('[data-dn]'); if (x) { F.dns.splice(+x.dataset.dn, 1); keepForm(); paintForm(); } else dn.focus(); };
+    }
     if ($('#newBtn')) $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); PENDING = null; paintForm(); paintLcd(); };
     if ($('#w1Btn')) $('#w1Btn').onclick = weigh1;
     if ($('#w2Btn')) $('#w2Btn').onclick = () => weigh2(false);
@@ -717,14 +721,15 @@
       const ls = wrap(value, width - LW - 20).slice(0, 2);
       ls.forEach((l, i) => g.fillText(l, cx + LW, y + (ls.length > 1 ? 32 : 44) + i * 32));
     };
-    const pairs = [[['Truck No', 'លេខឡាន', x.plate], ['Truck company', 'ក្រុមហ៊ុនឡាន', x.company]],
-      [['Customer', 'អតិថិជន', x.customer], ['Item', 'ទំនិញ', x.item]],
-      [['In / Out', 'ចូល / ចេញ', x.type === 'In' ? 'In / ចូល' : x.type === 'Out' ? 'Out / ចេញ' : x.type], ['Driver', 'អ្នកបើកបរ', x.driver]],
-      [['Destination', 'គោលដៅ', x.dest], ['Note', 'កំណត់ចំណាំ', x.note]]];
+    // Customer, In / Out and Driver are no longer typed on the scale (Kim, 6 Nov 2026); older tickets still show them
+    const cells = [['Truck No', 'លេខឡាន', x.plate], ['Truck company', 'ក្រុមហ៊ុនឡាន', x.company], ['Item', 'ទំនិញ', x.item], ['Destination', 'គោលដៅ', x.dest]]
+      .concat(x.customer ? [['Customer', 'អតិថិជន', x.customer]] : [], x.driver ? [['Driver', 'អ្នកបើកបរ', x.driver]] : [], [['Note', 'កំណត់ចំណាំ', x.note]]);
+    const pairs = [];
+    for (let i = 0; i < cells.length; i += 2) pairs.push([cells[i], cells[i + 1] || null]);
     g.strokeStyle = '#d0d7e2'; g.lineWidth = 2;
     const rule = () => { g.strokeStyle = '#d0d7e2'; g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke(); };
     rule();
-    pairs.forEach(pr => { cellAt(M, pr[0][0], pr[0][1], pr[0][2], half); cellAt(M + half + 20, pr[1][0], pr[1][1], pr[1][2], half - 20); y += 80; rule(); });
+    pairs.forEach(pr => { cellAt(M, pr[0][0], pr[0][1], pr[0][2], half); if (pr[1]) cellAt(M + half + 20, pr[1][0], pr[1][1], pr[1][2], half - 20); y += 80; rule(); });
     font(24, 400); g.fillStyle = GREY; g.fillText('DN No', M, y + 30); font(21, 400); g.fillText('លេខ DN (' + (x.dns || []).length + ')', M, y + 58);
     font(30, 700); g.fillStyle = NAVY;
     const dl = wrap((x.dns || []).join(', '), W - 2 * M - LW).slice(0, 3);
