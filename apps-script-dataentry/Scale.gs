@@ -238,7 +238,7 @@ function scSave_(ops, user) {
     const dns = (Array.isArray(p.dns) ? p.dns : String(p.dns || '').split(/[,\s]+/)).map(s => clip_(s, 30).replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean);
     const uniq = dns.filter((d, i) => dns.indexOf(d) === i).slice(0, 30);
     const pdf = p.pdf ? scPdf_(p.pdf, no, plate) : (old ? old[22] : '');
-    const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), clip_(p.type, 20), uniq.join(', '), uniq.length,
+    const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), both ? (w1 > w2 ? 'In' : 'Out') : '', uniq.join(', '), uniq.length,
       clip_(p.driver, 80), clip_(p.dest, 80), clip_(p.note, 300),
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid];
