@@ -61,3 +61,28 @@ Saved tickets go to the Google Sheet by themselves (right after Save, and again 
 The 🔄 button in the header reloads the lists from the sheet.
 
 Gmail sends up to 100 emails a day from a free account.
+
+## Truck Scale (ជញ្ជីងឡាន) — `Scale.gs`, same project (6 Nov 2026)
+
+The scale page (isteel-app.pages.dev/scale/) uses this same Apps Script and the same `/exec` URL.
+
+1. In this Apps Script project: **+ (Add a file) → Script**, name it `Scale`, paste `Scale.gs`. Paste the new `DataEntry.gs` too.
+2. **Run `setup()` once** (adds the tabs below, the scale rows in DE Settings, and the 3 truck columns in the Fuel sheet).
+3. **Deploy → Manage deployments → ✎ → New version** (the URL stays the same).
+4. Paste the new `apps-script/Code.gs` into the **Fuel** Apps Script and deploy a new version: a **ជញ្ជីង** tick box column
+   appears in Users. Tick it for the scale operators (admins always have it).
+5. On the scale PC: close the old "S3 Smart Weight" program, open the app in **Chrome or Edge**, ⚙ Settings › Scale connection ›
+   **Connect scale** and pick the USB serial port. The app remembers the port.
+
+One source for every list (Kim, 6 Nov 2026):
+- **Trucks, drivers, truck companies**: Fuel Refill sheet › **Driver & Truck**. The scale adds the columns **Truck Type**,
+  **Empty Weight (kg)** and **Max Gross (kg)** at the end. A new plate typed on the scale is added there; an empty
+  Empty Weight fills itself from the truck's first finished weigh.
+- **Customers**: SSK-DELIVERY-DATA › **Customer** (shared with the Delivery app). Script property `DELIVERY_SHEET_ID` overrides the id.
+- **Destinations**: the Destination column of **Price List** in this sheet.
+- **Items**: **Item List** in this sheet (Item, Unit, Active).
+
+Tabs added here: **Scale Tickets** (one row per truck: 1st and 2nd weight, gross, tare, net, DN numbers, warnings, PDF link),
+**Item List**, **Scale Log** (every new ticket, change, cancel, typed weight and master change, with who, before, after and reason).
+DE Settings rows: `SCALE_TARE_PCT` (warning %, default 5), `SCALE_MIN_KG`, `SCALE_PREFIX`, `SCALE_SIGN`, `SCALE_COMPANY`.
+Ticket PDFs go to the Drive folder **Scale Tickets PDF**.

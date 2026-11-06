@@ -15,6 +15,7 @@
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
     { key: 'dataentry', kh: 'បញ្ចូលទិន្នន័យ', en: 'Data Entry', url: 'dataentry/' },
     { key: 'safety', kh: 'សុវត្ថិភាព & 5S', en: 'Safety & 5S', url: 'safety/' },
+    { key: 'scale', kh: 'ជញ្ជីងឡាន', en: 'Truck Scale', url: 'scale/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
     // Everyone (switched off in the Gallery Manager's Settings): every ad, to watch again (Kim, 30 Oct 2026).
     { key: 'gallery', kh: 'វិចិត្រសាល', en: 'Gallery', url: 'gallery/' },

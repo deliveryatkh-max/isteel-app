@@ -125,12 +125,14 @@ const HOME_APPS = [
   { key: 'inbound', col: 'ទទួលទំនិញ' },
   { key: 'dataentry', col: 'បញ្ចូលទិន្នន័យ' },
   { key: 'safety', col: 'សុវត្ថិភាព' },
+  { key: 'scale', col: 'ជញ្ជីង' },
 ];
 // Ticked for every user by default (Kim, 10 Oct 2026). Dashboard stays for reviewers and admins.
 // Incident Report: anyone can report, so it starts ticked too (Kim, 25 Oct 2026); untick to hide it.
 // Inbound (goods receipt) is not a default: tick ទទួលទំនិញ for the warehouse staff who receive goods.
 // Agent Data Entry (weighing tickets to Excel, 31 Oct 2026) is not a default either: tick បញ្ចូលទិន្នន័យ.
 // Safety Walk & 5S (4 Nov 2026) is not a default: tick សុវត្ថិភាព for walkers, area leaders and the safety officer.
+// Truck Scale (6 Nov 2026) is not a default: tick ជញ្ជីង for the weighbridge operators.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
   config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel',

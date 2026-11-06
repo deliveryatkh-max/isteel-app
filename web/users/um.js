@@ -18,7 +18,7 @@
   const APP_NAMES = {
     fuel: ['ចាក់សាំង', 'Fuel Refill'], transport: ['ដឹកជញ្ជូន', 'Transport'], overtime: ['ថែមម៉ោង', 'Overtime'],
     location: ['ទីតាំងថ្មី', 'New Location'], meeting: ['ប្រជុំ', 'Meetings'], incident: ['គ្រោះថ្នាក់', 'Incident Report'],
-    inbound: ['ទទួលទំនិញ', 'Inbound'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Agent Data Entry'], safety: ['សុវត្ថិភាព & 5S', 'Safety & 5S'],
+    inbound: ['ទទួលទំនិញ', 'Inbound'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Agent Data Entry'], safety: ['សុវត្ថិភាព & 5S', 'Safety & 5S'], scale: ['ជញ្ជីងឡាន', 'Truck Scale'],
     dashboard: ['Dashboard', 'Fuel Dashboard'],
   };
   const appName = a => { const n = APP_NAMES[a.key]; return n ? t(n[0], n[1]) : a.col; };
