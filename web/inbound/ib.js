@@ -331,13 +331,13 @@
   }
 
   // ------------------------------------------------------------------ Log
-  let LQ = '', LF = 'all';
+  let LQ = '', LF = 'all', LFROM = '', LTO = '';   // Log date range (Kim, 6 Nov 2026)
   function renderLog() {
     paintTabs('log');
     const q = LQ.toLowerCase();
     const F = { all: () => true, today: r => r.date === today(), todaydone: r => r.date === today() && !!r.end, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess,
       period: r => !!r.end && r.date >= sumFrom() };
-    const rows = VD().filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
+    const rows = VD().filter(F[LF]).filter(r => (!LFROM || r.date >= LFROM) && (!LTO || r.date <= LTO)).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
     rows.forEach(r => { if (r.date !== last) { last = r.date; html += `<div class="daylabel">${r.date === today() ? t('ថ្ងៃនេះ', 'Today') + ' · ' : ''}${showDate(r.date)}</div>`; } html += itemHTML(r); });
@@ -345,11 +345,65 @@
     view(`
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
       <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('today', 'ថ្ងៃនេះ', 'Today')}${LF === 'todaydone' ? chip('todaydone', '✅ ថ្ងៃនេះ', '✅ Today') : ''}${LF === 'period' ? chip('period', '📊 ' + sumLabel(), '📊 ' + sumLabel()) : ''}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
+      <div class="range"><label>${t('ពី', 'From')}<input class="in" type="date" id="lFrom" value="${esc(LFROM)}"></label><label>${t('ដល់', 'To')}<input class="in" type="date" id="lTo" value="${esc(LTO)}"></label>
+        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}<button class="btn ok" id="lRep" type="button">📄 ${t('របាយការណ៍សង្ខេប', 'Summary report')}</button></div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
       <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
+    $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
+    $('#lTo').onchange = e => { LTO = e.target.value; if (LFROM && LTO < LFROM) LFROM = LTO; renderLog(); };
+    if ($('#lClr')) $('#lClr').onclick = () => { LFROM = LTO = ''; renderLog(); };
+    $('#lRep').onclick = () => rangeReport(rows.filter(r => r.end));
     $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : exportCsv(rows));
+  }
+  // Summary report for the selected dates (Kim, 6 Nov 2026), in the style of the IB Goods Receipt Report:
+  // navy headings, ISI STEEL logo, bilingual section titles. Opens a print page; "Save as PDF" makes the file.
+  function rangeReport(rows) {
+    if (!rows.length) { toast(t('គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ', 'No finished trucks in these dates')); return; }
+    rows = rows.slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+    const two = (km, en) => `${km} · ${en}`, v = x => (x === '' || x == null ? '-' : esc(x));
+    const ds = rows.map(r => r.date).sort(), from = LFROM || ds[0], to = LTO || ds[ds.length - 1];
+    const tn = rows.reduce((s, r) => s + tons(r), 0), arr = rows.reduce((s, r) => s + tot(r, 'arrQty'), 0) / 1000, po = rows.reduce((s, r) => s + tot(r, 'poQty'), 0) / 1000;
+    const dmgR = rows.filter(isDamaged), lessR = rows.filter(isLess), isi = rows.filter(r => r.owner === 'ISI').length;
+    const short = lessR.reduce((s, r) => s + (r.items || []).filter(isLessItem).reduce((a, i) => a + (+i.arrQty - +i.grQty), 0), 0) / 1000;
+    const avgM = rows.reduce((s, r) => s + spentMin(r), 0) / rows.length;
+    const tr = rows.filter(r => prod(r) != null), manH = tr.reduce((s, r) => s + spentMin(r) / 60 * r.manpower, 0);
+    const avgP = manH ? tr.reduce((s, r) => s + tons(r), 0) / manH : null;
+    const sup = {}; rows.forEach(r => { const k = r.supplier || '-'; const o = sup[k] || (sup[k] = { n: 0, t: 0, d: 0 }); o.n++; o.t += tons(r); if (isDamaged(r)) o.d++; });
+    const kv = q => `<table class="kv">${q.map(x => `<tr><th>${x[0]}</th><td>${x[1]}</td><th>${x[2]}</th><td>${x[3]}</td></tr>`).join('')}</table>`;
+    const dmgItems = [].concat.apply([], dmgR.map(r => (r.items || []).filter(i => +i.dmgQty > 0).map(i => ({ r, i }))));
+    const logo = 'https://isteel-app.pages.dev/icons/isi-steel-logo.png', trk = n => n + (n === 1 ? ' truck' : ' trucks');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Goods Receipt Summary ${showDate(from)} - ${showDate(to)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;700&display=swap" rel="stylesheet">
+<style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:11px/1.45 Arial,'Noto Sans Khmer',sans-serif;color:#011e41;margin:0;padding:16px}
+.head{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #011e41;padding-bottom:8px;margin-bottom:10px}.head b{font-size:16px}.head img{height:46px}
+h4{background:#011e41;color:#fff;padding:4px 8px;margin:14px 0 6px;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #b9c3cf;padding:3px 6px;text-align:left;vertical-align:top}
+.kv th{background:#d4e1f5;width:20%}.kv td{width:30%}.lst th{background:#d4e1f5;font-size:10px}.lst td{font-size:10px}.n{text-align:right}.tot td{font-weight:bold;background:#f2f5f9}
+.bad{color:#b3261e;font-weight:bold}.foot{margin-top:14px;color:#6b7a8c;font-size:9px;text-align:center}.noprint{text-align:right;margin-bottom:8px}.noprint button{font:inherit;font-size:13px;padding:6px 14px;background:#011e41;color:#fff;border:0;border-radius:6px;cursor:pointer}
+@media print{.noprint{display:none}body{padding:0}}</style></head><body>
+<div class="noprint"><button onclick="print()">🖨 Print / Save as PDF</button></div>
+<div class="head"><div><b>ISI STEEL · GOODS RECEIPT SUMMARY REPORT</b><br>របាយការណ៍សង្ខេបការទទួលទំនិញ<br>${showDate(from)} – ${showDate(to)}${SITE ? ' · ' + esc(SITE) : ''}</div><img src="${logo}" alt="ISI STEEL"></div>
+<h4>A. ${two('សង្ខេប', 'SUMMARY')}</h4>${kv([
+      [two('ឡានទទួលរួច', 'Trucks received'), rows.length, two('ឡាន ISI / 3PL', 'ISI / 3PL trucks'), isi + ' / ' + (rows.length - isi)],
+      [two('បរិមាណ PO', 'PO qty'), fmt(po, 1) + ' t', two('បរិមាណមកដល់', 'Arrival qty'), fmt(arr, 1) + ' t'],
+      [two('បរិមាណទទួល', 'Received (GR)'), fmt(tn, 1) + ' t', two('ទទួលខ្វះ', 'Received less'), lessR.length ? trk(lessR.length) + ' · ' + fmt(short, 1) + ' t' : 'None'],
+      [two('ខូចខាត', 'Damaged'), dmgR.length ? trk(dmgR.length) : 'None', two('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck'), fmt(avgM) + ' min'],
+      [two('ផលិតភាពមធ្យម', 'Avg productivity'), avgP == null ? '-' : fmt(avgP, 2) + ' t/person/h', two('អ្នកផ្គត់ផ្គង់', 'Suppliers'), Object.keys(sup).length]])}
+<h4>B. ${two('បញ្ជីឡានទទួល', 'RECEIPTS')} (${rows.length})</h4>
+<table class="lst"><tr><th>#</th><th>Receipt No.</th><th>Date</th><th>PO</th><th>Supplier</th><th>Truck</th><th>Owner</th><th class="n">Arrival (t)</th><th class="n">GR (t)</th><th class="n">Damaged</th><th class="n">Min</th><th>Remark</th></tr>
+${rows.map((r, n) => `<tr><td>${n + 1}</td><td>${esc(r.id)}</td><td>${showDate(r.date)}</td><td>${v(r.po)}</td><td>${v(r.supplier)}</td><td>${v(r.truck)}</td><td>${r.owner === 'ISI' ? 'ISI' : esc(r.carrier || r.owner || '-')}</td><td class="n">${fmt(tot(r, 'arrQty') / 1000, 2)}</td><td class="n">${fmt(tons(r), 2)}${isLess(r) ? ' ⬇' : ''}</td><td class="n${isDamaged(r) ? ' bad' : ''}">${isDamaged(r) ? fmt(tot(r, 'dmgQty')) + ' ' + esc(r.uom || '') : '-'}</td><td class="n">${spentMin(r)}</td><td>${v(r.remark)}</td></tr>`).join('')}
+<tr class="tot"><td></td><td colspan="6">${two('សរុប', 'Total')}</td><td class="n">${fmt(arr, 2)}</td><td class="n">${fmt(tn, 2)}</td><td class="n">${dmgR.length || '-'}</td><td class="n">${fmt(avgM)}</td><td></td></tr></table>
+<h4>C. ${two('តាមអ្នកផ្គត់ផ្គង់', 'BY SUPPLIER')}</h4>
+<table class="lst"><tr><th>Supplier</th><th class="n">Trucks</th><th class="n">GR (t)</th><th class="n">Damaged trucks</th></tr>
+${Object.keys(sup).sort((a, b) => sup[b].t - sup[a].t).map(k => `<tr><td>${esc(k)}</td><td class="n">${sup[k].n}</td><td class="n">${fmt(sup[k].t, 2)}</td><td class="n">${sup[k].d || '-'}</td></tr>`).join('')}</table>
+${dmgItems.length ? `<h4>D. ${two('ទំនិញខូចខាត', 'DAMAGED ITEMS')}</h4><table class="lst"><tr><th>Receipt No.</th><th>Date</th><th>Material</th><th>Description</th><th class="n">Damaged</th><th>Type</th></tr>
+${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><td>${v(x.i.material)}</td><td>${v(x.i.desc)}</td><td class="n">${fmt(x.i.dmgQty)} ${esc(x.i.dmgUom || x.r.uom || '')}</td><td>${v(dmgEn(x.i.dmgType))}</td></tr>`).join('')}</table>` : ''}
+<div class="foot">Generated ${showDate(today())} ${new Date().toTimeString().slice(0, 5)}${USER && USER.name ? ' by ' + esc(USER.name) : ''} · This is a computer-generated document. No signature is required.</div>
+<script>window.onload=function(){setTimeout(function(){print()},600)}<\/script></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast(t('សូមអនុញ្ញាត pop-up ដើម្បីបើករបាយការណ៍', 'Allow pop-ups to open the report')); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   }
   // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
