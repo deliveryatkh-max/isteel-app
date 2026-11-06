@@ -110,3 +110,8 @@ input[type=range] { flex: 1; min-width: 180px; }
   body.printing #printArea img { width: 210mm; height: 297mm; display: block; }
 }
 .sitesearch { min-height: 44px; font-size: 16px; margin-bottom: 8px; }
+/* Word template drawn on this PC (docx-preview): print the page as it is */
+@media print {
+  body.printing #printArea .tplbox section.docx { margin: 0 !important; box-shadow: none !important; page-break-after: avoid; }
+  body.printing #printArea .tplbox section.docx + section.docx { display: none; }
+}

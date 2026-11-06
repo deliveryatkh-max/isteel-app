@@ -12,7 +12,7 @@ const SHELL = [
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'minutes/', 'minutes/mm.js', 'minutes/mm.css', 'minutes/config.js',
   'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js', 'incident/texts.js',
-  'scale/', 'scale/sc.js', 'scale/sc.css', 'scale/config.js',
+  'scale/', 'scale/sc.js', 'scale/sc.css', 'scale/config.js', 'scale/scale-core.js', 'vendor/jszip.min.js', 'vendor/docx-preview.min.js', 'vendor/html2canvas.min.js',
   'safety/', 'safety/sf.js', 'safety/sf.css', 'safety/config.js', 'safety/defaults.json',
   'inbound/', 'inbound/ib.js', 'inbound/ib.css', 'inbound/config.js',
   'dataentry/', 'dataentry/de.js', 'dataentry/de.css', 'dataentry/config.js', 'dataentry/ticket-ocr.js', 'vendor/xlsx.mini.min.js',
