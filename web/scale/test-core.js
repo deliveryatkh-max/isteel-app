@@ -38,3 +38,10 @@ const sx = +pdf.match(/startxref\n(\d+)/)[1]; assert.strictEqual(pdf.slice(sx, s
 const offs = [...pdf.matchAll(/(\d{10}) 00000 n/g)].map(m => +m[1]);
 offs.forEach((o, i) => assert.strictEqual(pdf.slice(o, o + 8), (i + 1) + ' 0 obj\n'));
 console.log('scale-core: all checks passed');
+
+// saved English warnings shown in Khmer
+{
+  const f = C.finish(30000, 12500, { empty: 11000, max: 25000 }, 5);
+  if (C.warnKm(f.warn.map(x => x.en).join(' | ')) !== f.warn.map(x => x.km).join(' | ')) throw new Error('warnKm');
+  console.log('warnKm ok');
+}
