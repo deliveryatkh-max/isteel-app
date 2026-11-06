@@ -850,7 +850,7 @@
     const box = $('#mailBox');
     if (box.innerHTML) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="mailbox"><b>✉️ ${t('ផ្ញើរបាយការណ៍តាមអ៊ីមែល', 'Email the report')}</b>
-      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}"> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
+      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}" checked> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
         : `<p class="hint">${t('មិនទាន់មានបញ្ជីអ៊ីមែលទេ (Email Lists ក្នុង Sheet)', 'No email lists yet (Email Lists tab in the Sheet)')}</p>`}
       <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
