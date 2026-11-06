@@ -175,7 +175,7 @@
         if (pdf) op.pdf = pdf;
         try {
           const r = await api('scSave', { ops: [op] });
-          const s = (r.saved || [])[0] || {};
+          const s = ((r && r.saved) || [])[0] || {};   // an older server copy may answer without the list; the ticket is saved all the same
           const now = LOC[cid];
           if (now) { now.no = s.no || now.no; if (s.pdf) now.pdf = s.pdf; now.synced = Date.now(); }
           // a newer change made while sending stays queued
