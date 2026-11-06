@@ -841,7 +841,7 @@
       const x = await api('pdf', { id: r.id });
       const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url; a.download = x.name || r.id + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { toast('⚠️ ' + oldScript(e)); }
     busy(b, false);
@@ -881,6 +881,7 @@
         to = to.filter((x, i) => to.indexOf(x) === i);
         const subject = mailSubject(r), body = $('#mailNote').value;
         const pdf = DEMO ? { name: r.id + '.pdf', b64: btoa('%PDF-1.4 demo') } : await api('pdf', { id: r.id });
+        pdf.name = fileName(r) + '.pdf';
         if (matchMedia('(pointer: coarse)').matches && innerWidth < 900) {
           savePdf(pdf);
           location.href = 'mailto:' + to.map(encodeURIComponent).join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
@@ -895,21 +896,23 @@
           let viaHelper = false;
           if (get('ib_olhelper') === '1' && navigator.clipboard) {
             const S = '\n#ISTEEL#\n';
-            try { await navigator.clipboard.writeText(['ISTEEL-DRAFT-1', to.join('; '), subject, pdf.name || r.id + '.pdf', pdf.b64, html].join(S)); viaHelper = true; } catch (e) { /* page not focused: use the .eml */ }
+            try { await navigator.clipboard.writeText(['ISTEEL-DRAFT-1', to.join('; '), subject, pdf.name, pdf.b64, html].join(S)); viaHelper = true; } catch (e) { /* page not focused: use the .eml */ }
           }
           if (viaHelper) {
             location.href = 'isteel-outlook:draft';
-            say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + `<small>${t('មិនបើកទេ? ', 'Did not open? ')}<a href="${url}" download="${esc(r.id)}.eml">${t('ទាញយក .eml', 'Download the .eml')}</a></small>`);
+            say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + `<small>${t('មិនបើកទេ? ', 'Did not open? ')}<a href="${url}" download="${esc(fileName(r))}.eml">${t('ទាញយក .eml', 'Download the .eml')}</a></small>`);
             busy(b, false); return;
           }
-          const a = document.createElement('a'); a.href = url; a.download = r.id + '.eml'; document.body.appendChild(a); a.click(); a.remove();
-          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(r.id) + '.eml ' +
+          const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.eml'; document.body.appendChild(a); a.click(); a.remove();
+          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(fileName(r)) + '.eml ' +
             t('នៅផ្នែកទាញយក រួចជ្រើស "Always open files of this type" (ធ្វើតែម្តង)', 'in the downloads, then pick "Always open files of this type" (one time only)') + '</small>');
         }
       } catch (e) { say(false, esc(oldScript(e))); }
       busy(b, false);
     };
   }
+  // File name for the PDF and the email (Kim, 6 Nov 2026): IB-261106-14 PO 5100013709 3A-3057
+  const fileName = r => [r.id, r.po ? 'PO ' + String(r.po).replace(/^PO\s*/i, '') : '', r.truck].filter(String).join(' ').replace(/[\\/:*?"<>|]/g, '-');
   const mailSubject = r => 'Goods receipt ' + r.id + ': ' + r.po + ' · ' + r.truck + ((r.items || []).some(i => +i.dmgQty > 0) ? ' · DAMAGED' : '') + ((r.items || []).some(isLessItem) ? ' · RECEIVED LESS' : '');
   function savePdf(x) {
     const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
