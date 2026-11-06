@@ -346,9 +346,9 @@
       <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
       <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('today', 'ថ្ងៃនេះ', 'Today')}${LF === 'todaydone' ? chip('todaydone', '✅ ថ្ងៃនេះ', '✅ Today') : ''}${LF === 'period' ? chip('period', '📊 ' + sumLabel(), '📊 ' + sumLabel()) : ''}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
       <div class="range"><label>${t('ពី', 'From')}<input class="in" type="date" id="lFrom" value="${esc(LFROM)}"></label><label>${t('ដល់', 'To')}<input class="in" type="date" id="lTo" value="${esc(LTO)}"></label>
-        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}</div>
+        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}<button class="btn ok" id="xls" type="button">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button></div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
-      <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
+`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
     $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
