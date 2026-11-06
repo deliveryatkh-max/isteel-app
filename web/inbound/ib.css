@@ -313,3 +313,7 @@ img[data-zoom] { cursor: zoom-in; }
 @media (max-width: 899px) { nav.tabs a.tab.pc-only { display: none; } }
 @media (min-width: 900px) { nav.tabs a.tab.pc-only { margin-top: auto; } }
 .ymlabel { font-size: 14px; color: var(--text, #011e41); margin-top: 12px; }
+.range { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.range label { flex: 1 1 130px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.range label .in { margin-top: 2px; }
+.range .btn { width: auto; min-height: 44px; padding: 0 14px; margin: 0; }
