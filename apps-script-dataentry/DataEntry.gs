@@ -151,8 +151,12 @@ function makeSession_(email) {
 }
 function readSession_(token) {
   const parts = String(token).split('.');
-  if (parts.length !== 3 || parts[0] !== SESSION_HEAD() || !prop_('SESSION_SECRET')) return null;
-  if (sessionSig_(parts[0] + '.' + parts[1]) !== parts[2]) fail_('AUTH', AUTH_MSG[0], AUTH_MSG[1]);
+  if (parts.length !== 3 || parts[0] !== b64url_(JSON.stringify({ alg: 'HS256', typ: 'STEEL' }))) return null;
+  // A STEEL sign-in from the home menu: this script needs the Fuel app's SESSION_SECRET to read it.
+  if (!prop_('SESSION_SECRET')) fail_('SETUP', 'SESSION_SECRET is missing in this Apps Script (Project Settings > Script properties). Copy it from the Fuel app\'s Apps Script.',
+    'មិនទាន់មាន SESSION_SECRET ក្នុង Apps Script នេះ (Project Settings > Script properties)។ សូមចម្លងពី Apps Script របស់ Fuel។');
+  if (sessionSig_(parts[0] + '.' + parts[1]) !== parts[2]) fail_('SETUP', 'SESSION_SECRET in this Apps Script is not the same as the Fuel app\'s. Copy it again from the Fuel Apps Script.',
+    'SESSION_SECRET ក្នុង Apps Script នេះ មិនដូចរបស់ Fuel ទេ។ សូមចម្លងម្តងទៀតពី Apps Script របស់ Fuel។');
   const b = JSON.parse(b64urlText_(parts[1]));
   if (!(b.exp * 1000 > Date.now())) fail_('AUTH', AUTH_MSG[0], AUTH_MSG[1]);
   return { email: String(b.email).toLowerCase(), exp: b.exp };
