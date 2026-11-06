@@ -130,3 +130,4 @@ input[type=range] { flex: 1; min-width: 180px; }
 .lcd .cell .num { font-size: clamp(40px, 6vw, 80px); }
 .lcd .num.n1 { font-size: clamp(30px, 4.2vw, 56px); color: #e8fff2; }
 .lcd .num.nn { font-size: clamp(36px, 5.2vw, 70px); color: #ffc46b; }
+.fitnw, .fitnw * { white-space: nowrap !important; }

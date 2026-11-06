@@ -985,16 +985,43 @@
     return box;
   }
   /** PDF of the drawn Word file: the first page as a picture, like the built-in ticket. */
-  async function tplPdf(x) {
-    await loadJs('../vendor/html2canvas.min.js');
-    const box = await tplRender(x);
+  /** Puts the drawn Word file on the page out of sight, waits for its fonts and pictures, and fits table text like Word. */
+  async function tplMount(box) {
     const hold = document.createElement('div');
     hold.style.cssText = 'position:fixed;left:-10000px;top:0;background:#fff';
     hold.appendChild(box);
     document.body.appendChild(hold);
+    try { await document.fonts.ready; } catch (e) { /* old browser */ }
+    await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
+    fitCells(box);
+    return hold;
+  }
+  /**
+   * The browser measures text a little wider than Word, so a table label that just fits on one line in Word
+   * (e.g. "ក្រុមហ៊ុនឡាន / Company") can wrap here. Such text is made up to 12% smaller so it stays on one line;
+   * text that really is longer than its cell still wraps, as in Word.
+   */
+  function fitCells(box) {
+    box.querySelectorAll('td p, th p').forEach(p => {
+      if (!p.textContent.trim() || p.querySelector('br')) return;
+      const avail = p.clientWidth, h = p.getBoundingClientRect().height;
+      if (!avail || !h) return;
+      p.classList.add('fitnw');
+      const rg = document.createRange(); rg.selectNodeContents(p);
+      const need = rg.getBoundingClientRect().width, h1 = p.getBoundingClientRect().height;
+      p.classList.remove('fitnw');
+      if (!(h > h1 * 1.4 && need > avail && need <= avail * 1.12)) return;
+      const k = (avail / need) * 0.98;
+      const els = [p, ...p.querySelectorAll('span')];
+      const sizes = els.map(e => parseFloat(getComputedStyle(e).fontSize));
+      els.forEach((e, i) => { if (sizes[i]) e.style.fontSize = (sizes[i] * k).toFixed(2) + 'px'; });
+    });
+  }
+  async function tplPdf(x) {
+    await loadJs('../vendor/html2canvas.min.js');
+    const box = await tplRender(x);
+    const hold = await tplMount(box);
     try {
-      try { await document.fonts.ready; } catch (e) { /* old browser */ }
-      await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
       const page = box.querySelector('section.docx') || box;
       const c = await html2canvas(page, { scale: 4, backgroundColor: '#ffffff', logging: false, useCORS: true });
       const data = c.toDataURL('image/jpeg', 0.92);
@@ -1029,12 +1056,12 @@
     if (tplOn()) {
       try {
         const box = await tplRender(x);
+        const hold = await tplMount(box);
         const area = $('#printArea');
         area.innerHTML = '';
         area.appendChild(box);
+        hold.remove();
         pageSize(box.dataset.paper);
-        try { await document.fonts.ready; } catch (e) { /* old browser */ }
-        await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
         document.body.classList.add('printing');
         setTimeout(() => { window.print(); }, 80);
         return;
