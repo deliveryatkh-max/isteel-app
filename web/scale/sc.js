@@ -305,6 +305,7 @@
   /** A new 3PL company is typed in English capital letters only (Kim, 6 Nov 2026). */
   const fixCompany = v => String(v || '').toUpperCase().replace(/[^A-Z0-9 &.,()\-\/]/g, '').replace(/\s+/g, ' ').trim();
   let F = getJ('sc_form', null) || EMPTY_F();
+  let SITEQ = '';                                // search over the trucks waiting for the 2nd weigh (Kim, 6 Nov 2026)
   let PENDING = null;                            // 2nd weigh waiting for "Save anyway" after a warning
   let LASTDONE = '';                             // cid of the ticket just finished, shown under the buttons
   const keepForm = () => set('sc_form', JSON.stringify(F));
@@ -320,6 +321,7 @@
         <section class="card" id="formCard"></section>
         <section class="card">
           <h2>🚚 ${t('ឡានកំពុងរង់ចាំថ្លឹងលើកទី២', 'On site, waiting for 2nd weigh')} <span class="cnt" id="siteCnt"></span></h2>
+          <input type="search" class="in sitesearch" id="siteQ" data-live-ok autocomplete="off" placeholder="🔍 ${t('ស្វែងរកលេខឡាន', 'Search truck number')}" value="${esc(SITEQ)}">
           <div id="site"></div>
         </section>
       </div>
@@ -327,6 +329,7 @@
         <div class="head2"><h2>📋 ${t('ថ្ងៃនេះ', 'Today')} <span class="cnt" id="todayCnt"></span></h2><a class="btn" href="#/list">${t('មើលទាំងអស់', 'All tickets')}</a></div>
         <div id="todayList"></div>
       </section>`;
+    $('#siteQ').oninput = e => { SITEQ = e.target.value; paintLists(); };
     paintForm(); paintLcd(); paintLists();
   }
 
@@ -518,9 +521,11 @@
 
   function paintLists() {
     if ($('#site')) {
-      const open = openTickets();
-      $('#siteCnt').textContent = open.length ? '(' + open.length + ')' : '';
-      $('#site').innerHTML = open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th></tr>
+      const all = openTickets();
+      const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
+      const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
+      $('#siteCnt').textContent = all.length ? '(' + (q ? open.length + ' / ' : '') + all.length + ')' : '';
+      $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th></tr>
         ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b><small>${esc(x.company || '')}</small></td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
