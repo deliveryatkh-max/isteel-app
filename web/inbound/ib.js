@@ -12,6 +12,8 @@
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
   const CFG = window.IB_CONFIG || {};
   const DEMO = !CFG.API_URL;
+  // The Outlook helper installer opens the app with ?olhelper=1 (removal: 0), so this PC remembers it has the helper
+  try { const q = new URLSearchParams(location.search).get('olhelper'); if (q != null) { set('ib_olhelper', q); history.replaceState(null, '', location.pathname + location.hash); } } catch (e) { /* old browser */ }
 
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
@@ -839,7 +841,7 @@
       const x = await api('pdf', { id: r.id });
       const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url; a.download = x.name || r.id + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { toast('⚠️ ' + oldScript(e)); }
     busy(b, false);
@@ -848,12 +850,13 @@
     const box = $('#mailBox');
     if (box.innerHTML) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="mailbox"><b>✉️ ${t('ផ្ញើរបាយការណ៍តាមអ៊ីមែល', 'Email the report')}</b>
-      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}"> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
+      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}" checked> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
         : `<p class="hint">${t('មិនទាន់មានបញ្ជីអ៊ីមែលទេ (Email Lists ក្នុង Sheet)', 'No email lists yet (Email Lists tab in the Sheet)')}</p>`}
       <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
       <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
       <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF · បើកក្នុង Outlook ដើម្បីកែ អ្នកផ្ញើ អ្នកទទួល ឬសារ មុនផ្ញើ', 'The PDF report is attached · opens in Outlook so you can change the sender, recipients or text before sending')}</p>
+      ${get('ib_olhelper') === '1' ? '' : `<p class="hint olhint">⚡ <a href="outlook-helper/" target="_blank" rel="noopener">${t('ដំឡើង Outlook helper ម្តង', 'Install the Outlook helper once')}</a> ${t('ដើម្បីបើក Outlook ភ្លាម ជាមួយ PDF (កុំព្យូទ័រ)', 'so Outlook opens straight away with the PDF (computer)')}</p>`}
       <button class="btn ok big" id="mailSend">📧 ${t('បើកក្នុង Outlook', 'Open in Outlook')}</button><div id="mailMsg"></div></div>`;
     $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
@@ -878,22 +881,38 @@
         to = to.filter((x, i) => to.indexOf(x) === i);
         const subject = mailSubject(r), body = $('#mailNote').value;
         const pdf = DEMO ? { name: r.id + '.pdf', b64: btoa('%PDF-1.4 demo') } : await api('pdf', { id: r.id });
+        pdf.name = fileName(r) + '.pdf';
         if (matchMedia('(pointer: coarse)').matches && innerWidth < 900) {
           savePdf(pdf);
           location.href = 'mailto:' + to.map(encodeURIComponent).join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
           say(true, t('បានបើក Outlook · PDF ត្រូវបានទាញយក សូមភ្ជាប់វាក្នុងអ៊ីមែល', 'Outlook opened · the PDF was downloaded, attach it to the email'));
         } else {
-          const eml = emlDraft(to, subject, body, pdf, mailHtml(r, body));
+          const html = mailHtml(r, body);
+          const eml = emlDraft(to, subject, body, pdf, html);
           const url = URL.createObjectURL(new Blob([eml], { type: 'message/rfc822' }));
-          const a = document.createElement('a'); a.href = url; a.download = r.id + '.eml'; document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(r.id) + '.eml ' +
+          setTimeout(() => URL.revokeObjectURL(url), 600000);
+          // With the Outlook helper on this PC (Kim, 6 Nov 2026): hand the email over through the clipboard and
+          // open isteel-outlook:, so Outlook shows the draft with the PDF attached and nothing is downloaded
+          let viaHelper = false;
+          if (get('ib_olhelper') === '1' && navigator.clipboard) {
+            const S = '\n#ISTEEL#\n';
+            try { await navigator.clipboard.writeText(['ISTEEL-DRAFT-1', to.join('; '), subject, pdf.name, pdf.b64, html].join(S)); viaHelper = true; } catch (e) { /* page not focused: use the .eml */ }
+          }
+          if (viaHelper) {
+            location.href = 'isteel-outlook:draft';
+            say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + `<small>${t('មិនបើកទេ? ', 'Did not open? ')}<a href="${url}" download="${esc(fileName(r))}.eml">${t('ទាញយក .eml', 'Download the .eml')}</a></small>`);
+            busy(b, false); return;
+          }
+          const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.eml'; document.body.appendChild(a); a.click(); a.remove();
+          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(fileName(r)) + '.eml ' +
             t('នៅផ្នែកទាញយក រួចជ្រើស "Always open files of this type" (ធ្វើតែម្តង)', 'in the downloads, then pick "Always open files of this type" (one time only)') + '</small>');
         }
       } catch (e) { say(false, esc(oldScript(e))); }
       busy(b, false);
     };
   }
+  // File name for the PDF and the email (Kim, 6 Nov 2026): IB-261106-14 PO 5100013709 3A-3057
+  const fileName = r => [r.id, r.po ? 'PO ' + String(r.po).replace(/^PO\s*/i, '') : '', r.truck].filter(String).join(' ').replace(/[\\/:*?"<>|]/g, '-');
   const mailSubject = r => 'Goods receipt ' + r.id + ': ' + r.po + ' · ' + r.truck + ((r.items || []).some(i => +i.dmgQty > 0) ? ' · DAMAGED' : '') + ((r.items || []).some(isLessItem) ? ' · RECEIVED LESS' : '');
   function savePdf(x) {
     const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
@@ -910,7 +929,7 @@
       'Content-Type: multipart/mixed; boundary="' + k + '"', '', '--' + k,
       'Content-Type: multipart/alternative; boundary="' + a + '"', '', '--' + a,
       'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(body)), '--' + a,
-      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(html)), '--' + a + '--', '--' + k,
+      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' + html + '</body></html>')), '--' + a + '--', '--' + k,
       'Content-Type: application/pdf; name="' + pdf.name + '"', 'Content-Disposition: attachment; filename="' + pdf.name + '"',
       'Content-Transfer-Encoding: base64', '', wrap(pdf.b64), '--' + k + '--', ''].join('\r\n');
   }
@@ -939,7 +958,7 @@
       else { flushRows(); para.push(esc(line)); }
     });
     flushRows(); flushPara();
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div></body></html>`;
+    return `<div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div><br>`;
   }
   // Ready-made English email text for the receipt; the user can edit it before sending
   function mailDraft(r) {
@@ -1104,14 +1123,21 @@
     if (!canPlan()) return view(`<div class="card done"><div class="emoji">🔒</div><h2>${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</h2></div>`);
     const q = PQ.toLowerCase();
     const pos = VPOS().filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
-      .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
+      .sort((a, b) => String(etaOf(poHead(b).eta) || '').localeCompare(String(etaOf(poHead(a).eta) || '')));
+    // Grouped by ETA year and month (Kim, 6 Nov 2026): a header per month with the PO count and tonnes
+    const MON = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+    const ym = po => { const m = String(etaOf(poHead(po).eta) || '').match(/^(\d{4})-(\d\d)/); return m ? m[1] + '-' + m[2] : ''; };
+    const ymTxt = k => k ? MON[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : t('គ្មាន ETA', 'No ETA');
+    let lastYm = null;
     view(siteBar() + `
       <div class="upl2"><label class="btn ok big upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុកផែនការទំនិញចូល', 'Upload Incoming Plan')}</label>
       <a class="btn big tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download template')}</a></div>
       <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
       <div class="list">${pos.map(po => {
-        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
-        return `<a class="item" href="#/plan/${encodeURIComponent(po)}">
+        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length, g = ym(po);
+        let head = '';
+        if (g !== lastYm) { lastYm = g; const grp = pos.filter(x => ym(x) === g); head = `<div class="daylabel ymlabel">📅 ${esc(ymTxt(g))} · ${grp.length} PO · ${fmt(grp.reduce((s, x) => s + planKg(x), 0) / 1000, 1)} t</div>`; }
+        return head + `<a class="item" href="#/plan/${encodeURIComponent(po)}">
           <div class="top"><span class="id">📑 ${esc(po)}${!SITE && h.site ? ` <span class="whtag">🏭 ${esc(h.site)}</span>` : ''}</span>${poStatus(po)}</div>
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>

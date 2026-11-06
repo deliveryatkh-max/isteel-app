@@ -308,3 +308,8 @@ img[data-zoom] { cursor: zoom-in; }
 
 /* Forms 50% wider on computers (Kim, 5 Nov 2026) */
 @media (min-width: 900px) { .sheet { max-width: 960px; } }
+
+/* Outlook helper link: computers only, at the bottom of the side menu (Kim, 6 Nov 2026) */
+@media (max-width: 899px) { nav.tabs a.tab.pc-only { display: none; } }
+@media (min-width: 900px) { nav.tabs a.tab.pc-only { margin-top: auto; } }
+.ymlabel { font-size: 14px; color: var(--text, #011e41); margin-top: 12px; }
