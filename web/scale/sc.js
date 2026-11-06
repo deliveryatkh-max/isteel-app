@@ -249,6 +249,7 @@
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 't' && a.dataset.r === 'list')));
     if (!B) { $('#view').innerHTML = '<div class="spinner"></div>'; screen = route; return; }
     if (top === 'list') return renderList();
+    if (top === 'tat') return renderTat();
     if (top === 't') return renderTicket(decodeURIComponent(h.slice(2)));
     if (top === 'set') return isAdmin() ? renderSettings(h.split('/')[1] || 'trucks') : (location.hash = '#/');
     return renderHome();
@@ -674,6 +675,91 @@
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
   }
   const num = v => (v === '' || v == null ? '' : Number(v));
+
+  // ---------------------------------------------------------------- turnaround per 3PL (Kim, feature 8)
+  // Time on site = 1st weigh (truck arrives on the scale) to 2nd weigh (truck leaves). Per truck company, for
+  // finished tickets in the dates picked, plus the trucks still on site now. Feeds the 3PL scorecard.
+  const monthStart = () => today().slice(0, 8) + '01';
+  let TAT = { from: monthStart(), to: today(), rows: null, slow: 120 };
+  const mins = x => { const a = new Date(x.t1), b = new Date(x.t2); const m = (b - a) / 60000; return isFinite(m) && m >= 0 ? Math.round(m) : null; };
+  const dur = m => (m == null ? '—' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60));
+  function renderTat() {
+    screen = renderTat;
+    document.body.classList.add('wide');
+    $('#view').innerHTML = `<section class="card">
+      <div class="head2"><h2>⏱️ ${t('រយៈពេលឡាននៅក្នុងរោងចក្រ តាមក្រុមហ៊ុនឡាន', 'Turnaround time per truck company')}</h2></div>
+      <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')}</p>
+      <div class="filters">
+        <label>${t('ពី', 'From')}<input type="date" class="in" id="tFrom" value="${TAT.from}"></label>
+        <label>${t('ដល់', 'To')}<input type="date" class="in" id="tTo" value="${TAT.to}"></label>
+        <label>${t('យឺត បើលើស (នាទី)', 'Slow if over (min)')}<input type="number" class="in" id="tSlow" min="10" step="10" value="${TAT.slow}" style="width:110px"></label>
+        <button type="button" class="btn ok" id="tGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
+        <button type="button" class="btn" id="tXls">⬇ Excel</button>
+      </div>
+      <div id="tBody"><div class="spinner"></div></div></section>`;
+    $('#tGo').onclick = () => { TAT.from = $('#tFrom').value; TAT.to = $('#tTo').value; loadTat(); };
+    $('#tSlow').onchange = e => { TAT.slow = Math.max(10, +e.target.value || 120); paintTat(); };
+    $('#tXls').onclick = tatXls;
+    loadTat();
+  }
+  async function loadTat() {
+    const local = tickets().filter(x => { const d = String(x.t1 || '').slice(0, 10); return d >= TAT.from && d <= TAT.to; });
+    TAT.rows = local; paintTat();
+    if (DEMO) return;
+    try {
+      const r = await api('scList', { from: TAT.from, to: TAT.to });
+      const map = {};
+      r.tickets.forEach(x => { map[x.cid || x.no] = x; });
+      local.forEach(x => { if (LOC[x.cid]) map[x.cid] = x; });
+      TAT.rows = Object.keys(map).map(k => map[k]);
+      paintTat();
+    } catch (e) { if (e.code !== 'NET') toast(e.message); }
+  }
+  function tatStats() {
+    const by = {};
+    const row = c => by[c] || (by[c] = { co: c, m: [], net: 0, slow: 0, onsite: 0, wait: 0, inn: 0, out: 0 });
+    (TAT.rows || []).forEach(x => {
+      if (x.status === 'Done') {
+        const m = mins(x); if (m == null) return;
+        const r = row(x.company || '—'); r.m.push(m); r.net += Number(x.net || 0); if (m > TAT.slow) r.slow++;
+        if (typeOf(x) === 'In') r.inn++; else r.out++;
+      }
+    });
+    openTickets().forEach(x => { const r = row(x.company || '—'); r.onsite++; r.wait = Math.max(r.wait, Math.round((Date.now() - new Date(x.t1)) / 60000)); });
+    const list = Object.keys(by).map(k => by[k]).map(r => {
+      const s = r.m.slice().sort((a, b) => a - b);
+      return Object.assign(r, { n: s.length, avg: s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : null, med: s.length ? Math.round((s[Math.floor((s.length - 1) / 2)] + s[Math.ceil((s.length - 1) / 2)]) / 2) : null, max: s.length ? s[s.length - 1] : null });
+    });
+    return list.sort((a, b) => (b.avg || 0) - (a.avg || 0) || b.onsite - a.onsite);
+  }
+  function paintTat() {
+    if (!$('#tBody')) return;
+    const L = tatStats(), all = [].concat.apply([], L.map(r => r.m)).sort((a, b) => a - b);
+    const avg = all.length ? Math.round(all.reduce((a, b) => a + b, 0) / all.length) : null;
+    const slow = (TAT.rows || []).filter(x => x.status === 'Done' && mins(x) > TAT.slow).sort((a, b) => mins(b) - mins(a)).slice(0, 10);
+    const maxAvg = Math.max.apply(null, [1].concat(L.map(r => r.avg || 0)));
+    $('#tBody').innerHTML = `
+      <div class="sumline"><b>${all.length}</b> ${t('ជើងឡានចប់', 'finished trips')} · ${t('មធ្យម', 'average')} <b>${dur(avg)}</b> · ${t('យឺត', 'slow')} <b>${all.filter(m => m > TAT.slow).length}</b> · ${t('នៅលើទីតាំងឥឡូវ', 'on site now')} <b>${openTickets().length}</b></div>
+      ${L.length ? `<div class="tbl"><table class="tt"><tr><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th class="r">${t('ជើង', 'Trips')}</th><th class="r">${t('ចេញ/ចូល', 'Out/In')}</th><th>${t('មធ្យម', 'Average')}</th><th class="r">${t('កណ្តាល', 'Median')}</th><th class="r">${t('យូរបំផុត', 'Longest')}</th><th class="r">${t('យឺត', 'Slow')}</th><th class="r">${t('ទម្ងន់សុទ្ធ', 'Net')} (t)</th><th class="r">${t('នៅលើទីតាំងឥឡូវ', 'On site now')}</th></tr>
+        ${L.map(r => `<tr><td><b>${esc(r.co)}</b></td><td class="r">${r.n}</td><td class="r">${r.out}/${r.inn}</td>
+          <td><div class="tatbar"><i style="width:${Math.round((r.avg || 0) / maxAvg * 100)}%" class="${r.avg > TAT.slow ? 'bad' : ''}"></i><span>${dur(r.avg)}</span></div></td>
+          <td class="r">${dur(r.med)}</td><td class="r">${dur(r.max)}</td><td class="r">${r.slow ? `<span class="badge pending">${r.slow} (${Math.round(r.slow / r.n * 100)}%)</span>` : r.n ? '0' : ''}</td>
+          <td class="r mono">${kg(r.net / 1000)}</td><td class="r">${r.onsite ? `<span class="badge follow">${r.onsite} · ${dur(r.wait)}</span>` : ''}</td></tr>`).join('')}</table></div>`
+        : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`}
+      ${slow.length ? `<h3 class="mt">🐢 ${t('ជើងយឺតបំផុត', 'Slowest trips')}</h3><div class="tbl"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ចូល', 'In')}</th><th>${t('ចេញ', 'Out')}</th><th class="r">${t('រយៈពេល', 'Time')}</th></tr>
+        ${slow.map(x => `<tr class="pick" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}</td><td>${esc(x.plate)}</td><td>${esc(x.company || '')}</td><td>${String(x.t1 || '').slice(5, 16).replace('T', ' ')}</td><td>${String(x.t2 || '').slice(5, 16).replace('T', ' ')}</td><td class="r"><b>${dur(mins(x))}</b></td></tr>`).join('')}</table></div>` : ''}`;
+    bindTable();
+  }
+  function tatXls() {
+    if (!window.XLSX) return;
+    const L = tatStats();
+    const a = [['Truck company', 'Trips', 'Out', 'In', 'Average (min)', 'Median (min)', 'Longest (min)', 'Slow (> ' + TAT.slow + ' min)', 'Net (t)', 'On site now']].concat(L.map(r => [r.co, r.n, r.out, r.inn, r.avg, r.med, r.max, r.slow, Math.round(r.net) / 1000, r.onsite]));
+    const b = [['Ticket No', 'Truck No', 'Company', 'In/Out', '1st Time', '2nd Time', 'Minutes']].concat((TAT.rows || []).filter(x => x.status === 'Done').map(x => [x.no, x.plate, x.company, typeOf(x), String(x.t1 || '').replace('T', ' '), String(x.t2 || '').replace('T', ' '), mins(x)]));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'By company');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(b), 'Trips');
+    XLSX.writeFile(wb, 'Turnaround_' + TAT.from + '_' + TAT.to + '.xlsx');
+  }
 
   // ---------------------------------------------------------------- one ticket
   async function renderTicket(key) {

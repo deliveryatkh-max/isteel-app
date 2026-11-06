@@ -66,6 +66,26 @@
   const saveRecs = () => set(REC_KEY, JSON.stringify(RECS));
   const saveSet = () => set(SET_KEY, JSON.stringify(SET));
   const byTicket = (no, skip) => RECS.find(r => r.ticket && r.ticket === no && r.id !== skip);
+  // Finished tickets from the iSteel Truck Scale (Kim, feature 10): shown in the Report and usable for the Debit Note
+  // without scanning. They are read from the server for the dates in view, never stored here, and can't be edited here.
+  let SCALE = [], SCALE_KEY = '';
+  const allRecs = () => { const have = new Set(RECS.map(r => r.ticket)); return RECS.concat(SCALE.filter(r => !have.has(r.ticket))); };
+  const sortedAll = () => allRecs().sort((a, b) => String(b.inTime || b.date).localeCompare(String(a.inTime || a.date)) || (b.savedAt || 0) - (a.savedAt || 0));
+  function scaleRec(x) {
+    const w1 = Number(x.w1), w2 = Number(x.w2), tm = s => String(s || '').replace('T', ' ').slice(0, 16);
+    return { id: 'sc_' + (x.cid || x.no), scale: true, ticket: String(x.no || ''), vehicle: x.plate || '', company: x.company || '', gross: x.gross, tare: x.tare, net: x.net,
+      date: String(x.t2 || x.t1 || '').slice(0, 10), inTime: tm(x.t1), outTime: tm(x.t2), type: w1 > w2 ? 'In' : 'Out', dns: x.dns || [] };
+  }
+  async function loadScale(from, to) {
+    const key = from + '|' + to;
+    if (!LIVE || !signedIn() || key === SCALE_KEY) return;
+    SCALE_KEY = key;
+    try {
+      const r = await api('scaleTickets', { from, to });
+      SCALE = (r && r.tickets || []).map(scaleRec);
+      if (screen === renderReport) renderReport();
+    } catch (e) { SCALE_KEY = ''; }   // older server copy or offline: only scanned tickets are shown
+  }
   const sorted = () => RECS.slice().sort((a, b) => String(b.inTime || b.date).localeCompare(String(a.inTime || a.date)) || b.savedAt - a.savedAt);
 
   // The local folder (File System Access API) is kept in IndexedDB so it is picked only once.
@@ -667,8 +687,8 @@
         ${list.map(r => { const m = minutes(r); return `<tr class="${r.id === EDIT ? 'cur' : ''}">
           <td><b>${esc(r.vehicle)}</b></td><td>${esc(r.company || '')}</td><td>${esc(r.ticket)}</td><td class="r">${kg(r.gross)} kg</td><td class="r">${kg(r.tare)} kg</td><td class="r net">${kg(r.net)} kg</td>
           <td>${showDate(r.date)}</td><td>${showTime(r.inTime)}</td><td>${showTime(r.outTime)}</td><td class="${m > 120 ? 'long' : ''}">${showMin(m)}</td>
-          <td class="st"><span title="Google Sheet" class="${r.sheet ? '' : 'off'}">📤</span><span title="${t('ឯកសារ Excel', 'Local file')}" class="${r.local ? '' : 'off'}">💾</span><span title="Email" class="${r.mailed ? '' : 'off'}">✉️</span></td>
-          <td>${canEdit() ? `<button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button>` : ''}</td></tr>`; }).join('')}
+          <td class="st">${r.scale ? `<span title="${t('ពីជញ្ជីងឡាន iSteel', 'From the iSteel Truck Scale')}">⚖️ ${r.type === 'In' ? t('ចូល', 'In') : t('ចេញ', 'Out')}</span>` : `<span title="Google Sheet" class="${r.sheet ? '' : 'off'}">📤</span><span title="${t('ឯកសារ Excel', 'Local file')}" class="${r.local ? '' : 'off'}">💾</span><span title="Email" class="${r.mailed ? '' : 'off'}">✉️</span>`}</td>
+          <td>${canEdit() && !r.scale ? `<button type="button" class="ib" data-edit="${r.id}" title="${t('កែ', 'Edit')}">✎</button><button type="button" class="ib" data-del="${r.id}" title="${t('លុប', 'Delete')}">🗑️</button>` : ''}</td></tr>`; }).join('')}
         </tbody></table>` : `<div class="empty">${t('មិនទាន់មានកំណត់ត្រា', 'No records yet')}</div>`}</div></div>`;
   }
   function wireTable() {
@@ -697,7 +717,8 @@
     screen = renderReport;
     if (!RF.p) period('month');
     const ql = RF.q.toLowerCase();
-    REPORT_ROWS = sorted().filter(r => (!RF.co || (RF.co === '-' ? !r.company : r.company === RF.co)) && (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.company || '') + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
+    { const d = new Date(); const f = RF.from || ymd(new Date(d.getFullYear(), d.getMonth() - 3, 1)); loadScale(f, RF.to || ymd(d)); }
+    REPORT_ROWS = sortedAll().filter(r => (!RF.co || (RF.co === '-' ? !r.company : r.company === RF.co)) && (!RF.from || r.date >= RF.from) && (!RF.to || r.date <= RF.to) && (!ql || (r.vehicle + ' ' + r.ticket + ' ' + (r.company || '') + ' ' + (r.file || '')).toLowerCase().indexOf(ql) >= 0));
     const L = REPORT_ROWS, ms = L.map(minutes).filter(m => m != null);
     const net = L.reduce((s, r) => s + (toNum(r.net) || 0), 0);
     const avg = ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
@@ -719,7 +740,7 @@
       <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}
         <select class="pill cosel ${RF.co ? 'on' : ''}" id="rCo" aria-label="${t('ក្រុមហ៊ុន', 'Company')}">
           <option value="">🏢 ${t('គ្រប់ក្រុមហ៊ុន', 'All companies')}</option>
-          ${Array.from(new Set(RECS.map(r => r.company).filter(Boolean).concat(companies()))).sort().map(c => `<option value="${esc(c)}" ${RF.co === c ? 'selected' : ''}>🏢 ${esc(c)}</option>`).join('')}
+          ${Array.from(new Set(allRecs().map(r => r.company).filter(Boolean).concat(companies()))).sort().map(c => `<option value="${esc(c)}" ${RF.co === c ? 'selected' : ''}>🏢 ${esc(c)}</option>`).join('')}
           <option value="-" ${RF.co === '-' ? 'selected' : ''}>❔ ${t('គ្មានក្រុមហ៊ុន', 'No company')}</option>
         </select></div>
       <div class="fbar" ${RF.p === 'custom' ? '' : 'hidden'}>
@@ -802,7 +823,8 @@
     const dnPre = () => { const d = toDate(H.date) || now; return (String(H.dest || 'DN').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'DN') + '-MT-' + pad(d.getMonth() + 1) + '-' + String(d.getFullYear()).slice(2); };
     const dnNo = () => dnPre() + '-' + pad(lastSeq(dnPre()) + 1);
     H.agent = co;   // Transportation Agent = the 3PL company
-    const items = L.slice().sort((a, b) => String(a.inTime || a.date).localeCompare(String(b.inTime || b.date)));
+    const items = L.filter(r => r.type !== 'In').sort(   // a truck coming in to deliver to ISI is not a 3PL delivery trip
+      (a, b) => String(a.inTime || a.date).localeCompare(String(b.inTime || b.date)));
     const OV = {};   // per-trip price or remark typed in the table
     const box = $('#panel');
     function draw() {

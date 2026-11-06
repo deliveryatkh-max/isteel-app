@@ -54,6 +54,8 @@ function route_(action, p, user) {
     case 'email': return email_(p, user);
     case 'dnlog': return withLock_(() => dnlog_(p, user));
     case 'ocr': return ocr_(p);
+    // Finished Truck Scale tickets for the Report and Debit Note, so they need no scanning (Kim, feature 10).
+    case 'scaleTickets': return { tickets: typeof scList_ === 'function' ? scList_(p).tickets.filter(x => x.status === 'Done') : [] };
     default:
       if (/^sc[A-Z]/.test(String(action))) return scaleRoute_(action, p, user);   // Truck Scale (Scale.gs)
       fail_('BAD', 'Unknown action');
