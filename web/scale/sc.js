@@ -365,7 +365,6 @@
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f">${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
-      ${sel ? `<div class="w3"><div><small>${t('លើកទី១', '1st weigh')} · ${hm(sel.t1)}</small><b>${kg(sel.w1)}</b>${sel.s1 !== 'Scale' ? `<em class="src">${esc(sel.s1)}</em>` : ''}</div><div><small>${t('លើកទី២ (ឥឡូវ)', '2nd (now)')}</small><b id="w2now">—</b></div><div><small>${t('សុទ្ធ', 'Net')}</small><b id="netNow">—</b></div></div>` : ''}
       <div id="warnBox"></div>
       <div class="btns">
         ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងលើកទី២ + រក្សាទុក', 'Weigh 2nd + Save')}</button>
@@ -514,7 +513,7 @@
         const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
         const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
-          <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}</div></div>
+          <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}${sel.s1 && sel.s1 !== 'Scale' ? ' · ' + esc(sel.s1) : ''}</div></div>
           <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
       }
       const side = `<div class="side"><span class="st">${state[1]}</span>
