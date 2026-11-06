@@ -12,6 +12,8 @@
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
   const CFG = window.IB_CONFIG || {};
   const DEMO = !CFG.API_URL;
+  // The Outlook helper installer opens the app with ?olhelper=1 (removal: 0), so this PC remembers it has the helper
+  try { const q = new URLSearchParams(location.search).get('olhelper'); if (q != null) { set('ib_olhelper', q); history.replaceState(null, '', location.pathname + location.hash); } } catch (e) { /* old browser */ }
 
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
@@ -854,6 +856,7 @@
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
       <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
       <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF · បើកក្នុង Outlook ដើម្បីកែ អ្នកផ្ញើ អ្នកទទួល ឬសារ មុនផ្ញើ', 'The PDF report is attached · opens in Outlook so you can change the sender, recipients or text before sending')}</p>
+      ${get('ib_olhelper') === '1' ? '' : `<p class="hint olhint">⚡ <a href="outlook-helper/" target="_blank" rel="noopener">${t('ដំឡើង Outlook helper ម្តង', 'Install the Outlook helper once')}</a> ${t('ដើម្បីបើក Outlook ភ្លាម ជាមួយ PDF (កុំព្យូទ័រ)', 'so Outlook opens straight away with the PDF (computer)')}</p>`}
       <button class="btn ok big" id="mailSend">📧 ${t('បើកក្នុង Outlook', 'Open in Outlook')}</button><div id="mailMsg"></div></div>`;
     $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
@@ -883,10 +886,23 @@
           location.href = 'mailto:' + to.map(encodeURIComponent).join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
           say(true, t('បានបើក Outlook · PDF ត្រូវបានទាញយក សូមភ្ជាប់វាក្នុងអ៊ីមែល', 'Outlook opened · the PDF was downloaded, attach it to the email'));
         } else {
-          const eml = emlDraft(to, subject, body, pdf, mailHtml(r, body));
+          const html = mailHtml(r, body);
+          const eml = emlDraft(to, subject, body, pdf, html);
           const url = URL.createObjectURL(new Blob([eml], { type: 'message/rfc822' }));
+          setTimeout(() => URL.revokeObjectURL(url), 600000);
+          // With the Outlook helper on this PC (Kim, 6 Nov 2026): hand the email over through the clipboard and
+          // open isteel-outlook:, so Outlook shows the draft with the PDF attached and nothing is downloaded
+          let viaHelper = false;
+          if (get('ib_olhelper') === '1' && navigator.clipboard) {
+            const S = '\n#ISTEEL#\n';
+            try { await navigator.clipboard.writeText(['ISTEEL-DRAFT-1', to.join('; '), subject, pdf.name || r.id + '.pdf', pdf.b64, html].join(S)); viaHelper = true; } catch (e) { /* page not focused: use the .eml */ }
+          }
+          if (viaHelper) {
+            location.href = 'isteel-outlook:draft';
+            say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + `<small>${t('មិនបើកទេ? ', 'Did not open? ')}<a href="${url}" download="${esc(r.id)}.eml">${t('ទាញយក .eml', 'Download the .eml')}</a></small>`);
+            busy(b, false); return;
+          }
           const a = document.createElement('a'); a.href = url; a.download = r.id + '.eml'; document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
           say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(r.id) + '.eml ' +
             t('នៅផ្នែកទាញយក រួចជ្រើស "Always open files of this type" (ធ្វើតែម្តង)', 'in the downloads, then pick "Always open files of this type" (one time only)') + '</small>');
         }
@@ -910,7 +926,7 @@
       'Content-Type: multipart/mixed; boundary="' + k + '"', '', '--' + k,
       'Content-Type: multipart/alternative; boundary="' + a + '"', '', '--' + a,
       'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(body)), '--' + a,
-      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(html)), '--' + a + '--', '--' + k,
+      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' + html + '</body></html>')), '--' + a + '--', '--' + k,
       'Content-Type: application/pdf; name="' + pdf.name + '"', 'Content-Disposition: attachment; filename="' + pdf.name + '"',
       'Content-Transfer-Encoding: base64', '', wrap(pdf.b64), '--' + k + '--', ''].join('\r\n');
   }
@@ -939,7 +955,7 @@
       else { flushRows(); para.push(esc(line)); }
     });
     flushRows(); flushPara();
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div></body></html>`;
+    return `<div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div><br>`;
   }
   // Ready-made English email text for the receipt; the user can edit it before sending
   function mailDraft(r) {
