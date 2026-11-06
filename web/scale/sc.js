@@ -839,7 +839,7 @@
     const bin = atob(data.split(',')[1]);
     const jpg = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
-    const pdf = CORE.jpegPdf(jpg, c.width, c.height);
+    const pdf = CORE.jpegPdf(jpg, c.width, c.height, paper());
     let s = '';
     for (let i = 0; i < pdf.length; i += 0x8000) s += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
     return btoa(s);
@@ -847,19 +847,53 @@
   // Ticket from Kim's Word template (Settings › Warnings & ticket). The Word file is drawn here on the scale PC, so the
   // template keeps its own fonts (e.g. MiSans Khmer, which Google can't print) and layout. The file is kept on this PC,
   // so it works offline too. With no template, or on any error, the built-in ticket above is used.
+  // Paper of this PC's printer: A4 (default) or A5. On A5 the A5 template is used, or the A4 one shrunk to A5.
+  const paper = () => (get('sc_paper') === 'A5' ? 'A5' : 'A4');
   const tplOn = () => !DEMO && !!String(S().SCALE_TEMPLATE_LINK || '').trim();
-  let TPLDOC = getJ('sc_tpl', null);             // { stamp, b64 } of the Word file
-  let tplAsked = 0;
-  async function tplLoad(force) {
-    if (!tplOn()) return null;
-    if (!force && TPLDOC && Date.now() - tplAsked < 10 * 60000) return TPLDOC;
-    tplAsked = Date.now();
+  // The Word files are kept in the browser's Cache Storage (a template with its fonts is a few MB, too big for localStorage).
+  set('sc_tpl', null);                           // old place
+  const TPL = {}, tplAsked = {};                 // size -> { stamp, name, b64 }
+  const tplKey = size => 'sc-tpl-' + size;
+  async function tplCache(size, v) {
     try {
-      const r = await api('scTemplate', { stamp: force ? '' : (TPLDOC && TPLDOC.stamp) || '' });
-      if (r.none) { TPLDOC = null; set('sc_tpl', null); }
-      else if (!r.same && r.b64) { TPLDOC = { stamp: r.stamp, b64: r.b64 }; set('sc_tpl', JSON.stringify(TPLDOC)); }
-    } catch (e) { if (!TPLDOC || force) throw e; }   // offline: the copy on this PC
-    return TPLDOC;
+      const c = await caches.open('sc-tpl');
+      if (v === undefined) { const r = await c.match(tplKey(size)); return r ? await r.json() : null; }
+      if (v) await c.put(tplKey(size), new Response(JSON.stringify(v), { headers: { 'Content-Type': 'application/json' } }));
+      else await c.delete(tplKey(size));
+    } catch (e) { /* no Cache Storage: kept in memory only */ }
+    return v;
+  }
+  async function tplLoad(force, size) {
+    if (!tplOn()) return null;
+    size = size || paper();
+    if (TPL[size] === undefined) TPL[size] = await tplCache(size);
+    const T = TPL[size];
+    if (!force && T && Date.now() - (tplAsked[size] || 0) < 10 * 60000) return T;
+    tplAsked[size] = Date.now();
+    try {
+      const r = await api('scTemplate', { size: size, stamp: force ? '' : (T && T.stamp) || '' });
+      if (r.none) { TPL[size] = null; tplCache(size, null); }
+      else if (!r.same && r.b64) { TPL[size] = { stamp: r.stamp, name: r.name || '', b64: r.b64 }; tplCache(size, TPL[size]); }
+    } catch (e) { if (!T || force) throw e; }    // offline: the copy on this PC
+    return TPL[size];
+  }
+  const A5_PARTS = /^word\/(document|header\d*|footer\d*|styles|footnotes|endnotes)\.xml$/;
+  /** Shrinks a Word file (JSZip) from A4 to A5 in place. */
+  async function zipToA5(zip) {
+    for (const n of Object.keys(zip.files)) if (A5_PARTS.test(n)) zip.file(n, CORE.toA5(await zip.file(n).async('string')));
+  }
+  /** Settings: downloads an A5 copy of the A4 template, to change in Word and put in Drive as the A5 template. */
+  async function a5Copy() {
+    const T = await tplLoad(true, 'A4');
+    if (!T) throw new Error(t('មិនទាន់មានគំរូ', 'No template yet'));
+    await loadJs('../vendor/jszip.min.js');
+    const zip = await JSZip.loadAsync(T.b64, { base64: true });
+    if (CORE.paperOf(await zip.file('word/document.xml').async('string')) === 'A4') await zipToA5(zip);
+    const u = URL.createObjectURL(await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+    const a = document.createElement('a');
+    a.href = u; a.download = String(T.name || 'scale-ticket-template').replace(/\.docx?$/i, '') + ' A5.docx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 30000);
   }
   const libs = {};
   const loadJs = src => libs[src] || (libs[src] = new Promise((res, rej) => {
@@ -899,6 +933,8 @@
     await loadJs('../vendor/jszip.min.js');
     await loadJs('../vendor/docx-preview.min.js');
     const zip = await JSZip.loadAsync(T.b64, { base64: true });
+    let pp = CORE.paperOf(await zip.file('word/document.xml').async('string'));
+    if (paper() === 'A5' && pp === 'A4') { await zipToA5(zip); pp = 'A5'; }
     const vals = tplVals(x);
     const W = '(?:<[^>]*>)*';
     const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
@@ -924,6 +960,7 @@
     if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
     const box = document.createElement('div');
     box.className = 'tplbox';
+    box.dataset.paper = pp;
     await docx.renderAsync(await zip.generateAsync({ type: 'blob' }), box, null,
       { inWrapper: false, breakPages: true, renderHeaders: true, renderFooters: true, experimental: true, ignoreLastRenderedPageBreak: true, useBase64URL: true });
     return box;
@@ -945,7 +982,7 @@
       const bin = atob(data.split(',')[1]);
       const jpg = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) jpg[i] = bin.charCodeAt(i);
-      const pdf = CORE.jpegPdf(jpg, c.width, c.height);
+      const pdf = CORE.jpegPdf(jpg, c.width, c.height, box.dataset.paper);
       let s2 = '';
       for (let i = 0; i < pdf.length; i += 0x8000) s2 += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
       return btoa(s2);
@@ -976,6 +1013,7 @@
         const area = $('#printArea');
         area.innerHTML = '';
         area.appendChild(box);
+        pageSize(box.dataset.paper);
         try { await document.fonts.ready; } catch (e) { /* old browser */ }
         await Promise.all([...box.querySelectorAll('img')].map(im => (im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; }))));
         document.body.classList.add('printing');
@@ -986,10 +1024,18 @@
     const c = await drawTicket(x);
     const area = $('#printArea');
     area.innerHTML = '';
+    pageSize(paper());
     const img = new Image();
     img.onload = () => { document.body.classList.add('printing'); setTimeout(() => { window.print(); }, 50); };
     img.src = c.toDataURL('image/png');
     area.appendChild(img);
+  }
+  /** The printed page size (A4 or A5) for the next print. */
+  function pageSize(p) {
+    let st = $('#pageSize');
+    if (!st) { st = document.createElement('style'); st.id = 'pageSize'; document.head.appendChild(st); }
+    st.textContent = p === 'A5' ? '@media print { @page { size: A5; margin: 0; } body.printing #printArea img { width: 148mm; height: 210mm; } }'
+      : '@media print { @page { size: A4; margin: 0; } }';
   }
   window.addEventListener('afterprint', () => { document.body.classList.remove('printing'); });
 
@@ -1154,21 +1200,35 @@
       <h3>📄 ${t('គំរូប័ណ្ណ Word', 'Ticket template (Word)')}</h3>
       <div class="field"><label class="f" for="rTpl">${t('Link Google Drive របស់ឯកសារ Word (ឬ Folder)', 'Google Drive link of the Word file (or its folder)')}</label>
         <input class="in" id="rTpl" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_LINK || '')}"></div>
-      <p class="hint">${t('ទុកទទេ = ប្រើប័ណ្ណស្តង់ដារ។ ទាញយកគំរូ កែក្នុង Word រក្សាពាក្យ {{...}} ហើយដាក់ក្នុង Drive។ រូប QR ត្រូវមាន Alt Text "QR"។ ប័ណ្ណគូរនៅលើកុំព្យូទ័រនេះ ដូច្នេះ Font ក្នុង Word (ឧ. MiSans Khmer) ត្រូវតែដំឡើងលើកុំព្យូទ័រនេះ។',
-        'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The ticket is drawn on this PC, so the fonts used in the Word file (e.g. MiSans Khmer) must be installed on this PC.')}
+      <p class="hint">${t('ទុកទទេ = ប្រើប័ណ្ណស្តង់ដារ។ ទាញយកគំរូ កែក្នុង Word រក្សាពាក្យ {{...}} ហើយដាក់ក្នុង Drive។ រូប QR ត្រូវមាន Alt Text "QR"។ Font ក្នុង Word (ឧ. MiSans Khmer) ត្រូវភ្ជាប់ក្នុងឯកសារ (Word › Options › Save › Embed fonts) ឬដំឡើងលើកុំព្យូទ័រនេះ។',
+        'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
         <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
-      ${s.SCALE_TEMPLATE_LINK ? `<button type="button" class="btn mt" id="rTest">🧪 ${t('សាកល្បងគំរូ (PDF)', 'Test the template (PDF)')}</button>` : ''}
-      <label class="chip mt"><input type="checkbox" id="rAuto"${get('sc_autoprint') === '1' ? ' checked' : ''}> ${t('បោះពុម្ពដោយខ្លួនឯង ក្រោយថ្លឹងលើកទី២ (កុំព្យូទ័រនេះ)', 'Print by itself after the 2nd weigh (this PC)')}</label>
+      <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
+        <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
+      <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
+        'Empty = the A4 template shrunk to A5 by itself. Press "A5 copy" to download it, change it in Word, then put it in Drive.')}</p>
+      <div class="field mt"><span class="f">${t('ក្រដាសរបស់ម៉ាស៊ីនបោះពុម្ព (កុំព្យូទ័រនេះ)', 'Printer paper (this PC)')}</span>
+        <div class="chips" style="display:flex;gap:8px;flex-wrap:wrap"><label class="chip"><input type="radio" name="rPaper" value="A4"${paper() === 'A4' ? ' checked' : ''}> A4</label>
+        <label class="chip"><input type="radio" name="rPaper" value="A5"${paper() === 'A5' ? ' checked' : ''}> A5</label></div></div>
+      ${s.SCALE_TEMPLATE_LINK ? `<div class="btns mt"><button type="button" class="btn" id="rA5">📄 ${t('ទាញយកច្បាប់ចម្លង A5 (Word)', 'Download an A5 copy (Word)')}</button>
+        <button type="button" class="btn" id="rTest">🧪 ${t('សាកល្បងគំរូ (PDF)', 'Test the template (PDF)')}</button></div>` : ''}
+      <div class="mt"></div><label class="chip mt"><input type="checkbox" id="rAuto"${get('sc_autoprint') === '1' ? ' checked' : ''}> ${t('បោះពុម្ពដោយខ្លួនឯង ក្រោយថ្លឹងលើកទី២ (កុំព្យូទ័រនេះ)', 'Print by itself after the 2nd weigh (this PC)')}</label>
       <div class="btns mt"><button type="button" class="btn ok" id="rSave">💾 ${t('រក្សាទុក', 'Save')}</button></div>`;
     $('#rAuto').onchange = e => set('sc_autoprint', e.target.checked ? '1' : null);
+    document.querySelectorAll('input[name="rPaper"]').forEach(r => { r.onchange = () => { set('sc_paper', r.value === 'A5' ? 'A5' : null); toast(t('ក្រដាស ', 'Paper ') + r.value); if (tplOn()) tplLoad().catch(() => {}); }; });
+    if ($('#rA5')) $('#rA5').onclick = async () => {
+      const b = $('#rA5'); busy(b, true);
+      try { await a5Copy(); } catch (e) { toast(e.message); }
+      busy(b, false);
+    };
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busy(b, true);
       try {
-        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim() });
+        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim() });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
-        if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { TPLDOC = null; set('sc_tpl', null); }
+        if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { ['A4', 'A5'].forEach(z => { TPL[z] = null; tplCache(z, null); }); }
         setRules();
         return;
       } catch (e) { toast(e.message); }
@@ -1248,7 +1308,7 @@
       keep();
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
-    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
+    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }
 })();

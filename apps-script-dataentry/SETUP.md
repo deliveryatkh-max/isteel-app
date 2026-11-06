@@ -94,9 +94,13 @@ Ticket PDFs go to the Drive folder **Scale Tickets PDF**.
    `{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}}
    {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}`.
    The QR picture must keep its alt text **QR** (right-click › View Alt Text) and stay a PNG.
-   The app draws the Word file on the scale PC itself (not in Google), so any font works, but it must be installed on
-   that PC (e.g. MiSans Khmer). Simple tables and paragraphs draw best; avoid text boxes and shapes.
+   The app draws the Word file on the scale PC itself (not in Google), so any font works, but it must be embedded in the
+   Word file (Word › Options › Save › Embed fonts) or installed on that PC (e.g. MiSans Khmer). Simple tables and paragraphs draw best; avoid text boxes and shapes.
 3. Put the file in Google Drive (Word or Google Doc), copy its link, and paste it in the scale app: ⚙ Settings › Warnings & ticket ›
    **Ticket template (Word)**, then Save. Press **Test the template (PDF)** to check it. A folder link also works: the newest file in it is used.
 4. From then on, Print and PDF use your template. The app keeps a copy on the PC, so it also works offline, and checks Drive
    for a newer version every 10 minutes (Save in Settings fetches it at once). Clear the link to go back to the standard ticket.
+5. **A5 paper:** on a scale PC whose printer uses A5, tick **Printer paper › A5** (Settings › Warnings & ticket, per PC). Print
+   and PDF are then A5: the A4 template is shrunk to A5 with the same layout. To change the A5 version by hand, press
+   **Download an A5 copy (Word)**, edit it, put it in Drive and paste its link in **Link of the A5 template**
+   (setting SCALE_TEMPLATE_A5_LINK).

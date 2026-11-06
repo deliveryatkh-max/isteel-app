@@ -3,7 +3,8 @@
 //   Stable      decides when the weight has stopped moving
 //   finish()    gross / tare / net and the warnings (unusual empty weight, overload) at the 2nd weigh
 //   nextNo()    ticket numbers made on the scale PC, so it keeps working offline
-//   jpegPdf()   wraps the ticket picture in a one-page A4 PDF (no PDF library needed)
+//   jpegPdf()   wraps the ticket picture in a one-page A4 or A5 PDF (no PDF library needed)
+//   toA5()      shrinks the page of a Word file (its XML) from A4 to A5, keeping the layout and fonts
 (function (root) {
   'use strict';
 
@@ -135,10 +136,10 @@
   }
   const pad = n => String(n).padStart(2, '0');
 
-  /** A one-page A4 PDF showing one JPEG (bytes) over the whole page. Returns a Uint8Array. */
-  function jpegPdf(jpeg, w, h) {
+  /** A one-page PDF (A4, or A5 when paper is 'A5') showing one JPEG (bytes) over the whole page. Returns a Uint8Array. */
+  function jpegPdf(jpeg, w, h, paper) {
     const enc = s => { const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 255; return a; };
-    const W = 595.28, H = 841.89;
+    const W = paper === 'A5' ? 419.53 : 595.28, H = paper === 'A5' ? 595.28 : 841.89;
     const content = 'q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q';
     const objs = [
       '<< /Type /Catalog /Pages 2 0 R >>',
@@ -171,7 +172,44 @@
     return out;
   }
 
-  const api = { parse, Stable, finish, warnKm, nextNo, jpegPdf, fmt };
+  /** The paper of a Word file from its document.xml: 'A5' when the page is A5 size or smaller, else 'A4'. */
+  function paperOf(xml) {
+    const m = String(xml || '').match(/<w:pgSz\b[^>]*>/);
+    const w = m && m[0].match(/w:w="(\d+)"/), h = m && m[0].match(/w:h="(\d+)"/);
+    if (!w || !h) return 'A4';
+    return Math.min(+w[1], +h[1]) <= 9000 ? 'A5' : 'A4';
+  }
+
+  /**
+   * Shrinks one XML part of a Word file (document, header, footer, styles) from A4 to A5: the page, margins, font sizes,
+   * table and column widths, spacing, indents, tab stops and pictures all get the same factor (A5 is A4 at 70.7%),
+   * so the layout stays the same. Fonts, colours and borders are not touched.
+   */
+  function toA5(xml, f) {
+    f = f || 8391 / 11906;
+    const n = v => String(+v > 0 ? Math.max(1, Math.round(+v * f)) : 0);
+    const attrs = (tag, names, test) => tag.replace(new RegExp('\\b(' + names + ')="(-?\\d+)"', 'g'), (a, k, v) => (test && !test(k, tag) ? a : k + '="' + (k.indexOf('w:') === 0 && +v < 0 ? '-' + n(-v) : n(v)) + '"'));
+    return String(xml || '')
+      .replace(/<w:pgSz\b[^>]*>/g, t => {
+        const land = /w:orient="landscape"/.test(t);
+        return t.replace(/w:w="\d+"/, 'w:w="' + (land ? 11906 : 8391) + '"').replace(/w:h="\d+"/, 'w:h="' + (land ? 8391 : 11906) + '"');
+      })
+      .replace(/<w:pgMar\b[^>]*>/g, t => attrs(t, 'w:top|w:right|w:bottom|w:left|w:header|w:footer|w:gutter'))
+      .replace(/<w:(sz|szCs|kern)\b[^>]*>/g, t => attrs(t, 'w:val'))
+      .replace(/<w:spacing\b[^>]*>/g, t => attrs(t, 'w:before|w:after|w:val|w:line', k => k !== 'w:line' || /w:lineRule="(exact|atLeast)"/.test(t)))
+      .replace(/<w:ind\b[^>]*>/g, t => attrs(t, 'w:left|w:right|w:start|w:end|w:hanging|w:firstLine'))
+      .replace(/<w:(trHeight|tblInd|tblCellSpacing|gridCol|tcW|tblW|wAfter|wBefore|top|left|bottom|right|start|end)\b[^>]*>/g, t => attrs(t, 'w:w|w:val',
+        k => (k === 'w:w' ? !/w:type="(pct|auto|nil)"/.test(t) : /^<w:trHeight/.test(t))))
+      .replace(/<w:tab\b[^>]*w:pos=[^>]*>/g, t => attrs(t, 'w:pos'))
+      .replace(/<w:framePr\b[^>]*>/g, t => attrs(t, 'w:w|w:h|w:x|w:y|w:hSpace|w:vSpace'))
+      .replace(/<(wp:extent|a:ext)\b[^>]*>/g, t => attrs(t, 'cx|cy'))
+      .replace(/<a:off\b[^>]*>/g, t => attrs(t, 'x|y'))
+      .replace(/<wp:effectExtent\b[^>]*>/g, t => attrs(t, 'l|t|r|b'))
+      .replace(/<wp:(anchor|inline)\b[^>]*>/g, t => attrs(t, 'distT|distB|distL|distR'))
+      .replace(/(<wp:posOffset>)(-?\d+)(<\/wp:posOffset>)/g, (a, x, v, y) => x + (+v < 0 ? '-' + n(-v) : n(v)) + y);
+  }
+
+  const api = { parse, Stable, finish, warnKm, nextNo, jpegPdf, paperOf, toA5, fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SCALECORE = api;
 })(typeof window !== 'undefined' ? window : this);
