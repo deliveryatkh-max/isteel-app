@@ -147,3 +147,29 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .tprev .tprevimg { display: block; width: 100%; max-width: 760px; margin: 0 auto; background: #fff; }
 /* all bottom tabs on one row (Weigh, Tickets, Turnaround, Settings) */
 .tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }
+
+/* Debit Note check (Kim, 6 Nov 2026): the filters stay on top while the table scrolls */
+.dncf { position: sticky; top: 58px; z-index: 4; }
+.dncf .filters { margin-bottom: 0; }
+.dncf .head2 h2 { margin: 0 0 8px; }
+.dcards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.dcard { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); display: grid; gap: 2px; }
+.dcard b { font-size: 22px; }
+.dcard small { color: var(--muted); font-size: 12.5px; }
+.dcard.ok b { color: var(--ok); } .dcard.warn b { color: var(--warn); } .dcard.bad b { color: var(--bad); }
+.dtabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.tbl tr.warnrow { background: var(--warn-soft); }
+.dnct td.dd { white-space: normal; min-width: 220px; font-size: 13px; }
+.dnct td.dd small { display: block; }
+.dnct td:nth-child(3) { min-width: 0; white-space: nowrap; }
+.dnct { font-size: 13.5px; }
+.dlist { margin: 6px 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.in.sm { min-height: 34px; padding: 4px 6px; font-size: 13.5px; }
+.spin-s { width: 14px; height: 14px; border: 2.5px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -2px; }
+.alist { display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.arow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.arow[hidden] { display: none; }
+@media (max-width: 900px) {
+  .dcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dncf { position: static; }
+}

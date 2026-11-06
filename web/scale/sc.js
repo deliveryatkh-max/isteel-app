@@ -239,7 +239,7 @@
     }
   }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
-  function paintTabs() { const st = $('.tab[data-r="set"]'); if (st) st.hidden = !isAdmin(); }
+  function paintTabs() { const st = $('.tab[data-r="set"]'); if (st) st.hidden = !isAdmin(); const dc = $('.tab[data-r="dnc"]'); if (dc) dc.hidden = !canDnc(); }
 
   // ---------------------------------------------------------------- router
   let screen = () => {};
@@ -250,6 +250,7 @@
     if (!B) { $('#view').innerHTML = '<div class="spinner"></div>'; screen = route; return; }
     if (top === 'list') return renderList();
     if (top === 'tat') return renderTat();
+    if (top === 'dnc') return renderDnc();
     if (top === 't') return renderTicket(decodeURIComponent(h.slice(2)));
     if (top === 'set') return isAdmin() ? renderSettings(h.split('/')[1] || 'trucks') : (location.hash = '#/');
     return renderHome();
@@ -304,7 +305,9 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: '', dns: [], driver: '', dest: '', note: '' });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: '', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || '' });
+  // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
+  const places = () => { const s = []; [get('sc_load')].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
   /** Truck plates written one way (Kim, 6 Nov 2026): 3A1234 or 3ab1234 becomes 3A-1234 / 3AB-1234. */
   function fixPlate(v) {
     const s = String(v || '').toUpperCase().replace(/[\s\-.]/g, '');
@@ -360,7 +363,8 @@
         <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         <div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>
-        <div class="field"><label class="f">${t('គោលដៅ', 'Destination')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>
+        <div class="field"><label class="f">${t('កន្លែងផ្ទុក', 'Loading place')}</label><div><input class="in" id="fLoad" autocomplete="off" value="${esc(F.load || '')}"></div></div>
+        <div class="field"><label class="f">${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>
         ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
@@ -385,6 +389,7 @@
     picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
     picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: v => upd('dest', v) });
+    picker($('#fLoad'), { list: places, addNew: true, onPick: v => upd('load', v) });
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
       String(raw || '').split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
@@ -430,7 +435,7 @@
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
   }
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
@@ -597,7 +602,7 @@
         ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
@@ -665,11 +670,11 @@
   function exportXls() {
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
-    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
-    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, x.driver, x.dest, x.note,
+    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'Driver', 'Loading Place', 'Destination', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
+    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, x.driver, x.load || '', x.dest, x.note,
       String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
-    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 18, 16, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
+    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 18, 16, 16, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Scale Tickets');
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
@@ -761,6 +766,202 @@
     XLSX.writeFile(wb, 'Turnaround_' + TAT.from + '_' + TAT.to + '.xlsx');
   }
 
+  // ---------------------------------------------------------------- Debit Note check (Kim, 6 Nov 2026, option C)
+  // The tickets of one truck company next to the Debit Note it sent: each DN line is matched to a ticket by truck and
+  // date, then the net weight, unit price, date and company are compared. Unit price and UoM come from the Price List.
+  function canDnc() { return !!(me().admin || me().dnc); }
+  let DNC = { from: monthStart(), to: today(), co: '', q: '', tab: 'all', rows: null, dn: null, file: '', busy: '' };
+  const normC = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(CO|LTD|COLTD|COMPANY)$/, '');
+  const normD = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const tripDay = x => String(x.t2 || x.t1 || '').slice(0, 10);
+  const dayDiff = (a, b) => Math.round((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000);
+  const money2 = v => (v == null || v === '' || !isFinite(v) ? '' : Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  function priceOf(x) {
+    const P = (B && B.prices) || [];
+    const d = normD(x.dest);
+    if (!d) return null;
+    const hit = P.find(r => normC(r[0]) === normC(x.company) && normD(r[1]) === d) || (() => { const same = P.filter(r => normD(r[1]) === d); return same.length && same.every(r => r[3] === same[0][3]) ? same[0] : null; })();
+    return hit ? { price: hit[3], per: hit[2], uom: hit[4] || hit[2] || '' } : null;
+  }
+  function plateGap(a, b) {   // letters that differ, same length only (3E-0044 read for 3E-9044 = 1)
+    a = normP(a); b = normP(b);
+    if (a === b) return 0;
+    if (a.length !== b.length) return 9;
+    let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+    return n;
+  }
+  const dncCompanies = () => { const s = []; trucks().concat(DNC.rows || []).forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort(); };
+  const dncTickets = () => {
+    const q = DNC.q.trim().toLowerCase();
+    return (DNC.rows || []).filter(x => x.status === 'Done' && (!DNC.co || normC(x.company) === normC(DNC.co)) &&
+      (!q || [x.no, x.plate, x.company, x.item, x.dest, x.load, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0))
+      .sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
+  };
+  /** Pairs DN lines with tickets: same truck (or one letter off, a reading slip) within 3 days, closest weight first. */
+  function dncMatch() {
+    const T = dncTickets(), dn = DNC.dn;
+    const res = T.map(x => ({ x, d: null, diffs: [], notes: [] }));
+    if (!dn) return { res, only: [] };
+    const pairs = [];
+    dn.rows.forEach((d, di) => res.forEach((r, ti) => {
+      // same weight to 20 kg is a strong sign: then a scan may have misread two letters of the plate or a digit of the day
+      const qd = d.qty ? Math.abs(d.qty - Number(r.x.net || 0) / 1000) : 5, same = qd <= 0.02;
+      const g = plateGap(d.plate, r.x.plate); if (g > (same ? 2 : 1)) return;
+      const dd = d.date ? Math.abs(dayDiff(d.date, tripDay(r.x))) : 1; if (dd > (same ? 10 : 3)) return;
+      pairs.push({ di, ti, s: g * 6 + dd * 2 + Math.min(qd, 5) });
+    }));
+    pairs.sort((a, b) => a.s - b.s);
+    const usedD = {}, usedT = {};
+    pairs.forEach(p => { if (usedD[p.di] || usedT[p.ti]) return; usedD[p.di] = usedT[p.ti] = 1; res[p.ti].d = dn.rows[p.di]; });
+    const agent = normC(dn.agent);
+    res.forEach(r => {
+      const d = r.d, x = r.x; if (!d) return;
+      const pl = priceOf(x), netT = Number(x.net || 0) / 1000;
+      if (normP(d.plate) !== normP(x.plate)) r.notes.push(t('DN អានបាន ', 'DN read ') + d.plate);
+      if (!d.ok || d.guess) r.notes.push('⚠ ' + t('ជួរនេះអានមិនច្បាស់: ពិនិត្យក្នុងតារាង DN ខាងក្រោម', 'this DN line was not read clearly: check it in the DN lines below'));
+      if (d.date && d.date !== tripDay(x)) r.diffs.push({ k: 'date', txt: t('ថ្ងៃ', 'Date') + ' DN ' + dmy(d.date) + ' · ' + t('កម្មវិធី', 'app') + ' ' + dmy(tripDay(x)) });
+      if (d.qty != null && Math.abs(d.qty * 1000 - Number(x.net || 0)) > 10) r.diffs.push({ k: 'net', kg: Math.round(d.qty * 1000 - Number(x.net || 0)), txt: 'Net DN ' + kg(Math.round(d.qty * 1000)) + ' · ' + t('កម្មវិធី', 'app') + ' ' + kg(x.net) + ' (' + (d.qty * 1000 > x.net ? '+' : '') + kg(Math.round(d.qty * 1000 - x.net)) + ' kg)' });
+      if (pl && d.price != null && Math.abs(d.price - pl.price) > 0.005) r.diffs.push({ k: 'price', txt: t('តម្លៃ', 'Price') + ' DN ' + money2(d.price) + ' · ' + t('បញ្ជីតម្លៃ', 'price list') + ' ' + money2(pl.price) });
+      if (agent && x.company && normC(x.company) !== agent && normC(x.company).indexOf(agent) < 0 && agent.indexOf(normC(x.company)) < 0) r.diffs.push({ k: 'co', txt: t('ក្រុមហ៊ុន', 'Company') + ' DN ' + dn.agent + ' · ' + t('កម្មវិធី', 'app') + ' ' + x.company });
+      r.billed = d.total != null ? d.total : (d.qty || 0) * ((d.price || 0) + (d.extra || 0));
+      r.app = netT * ((pl ? pl.price : d.price) || 0) + netT * (d.extra || 0);
+    });
+    const only = dn.rows.filter((d, i) => !usedD[i]);
+    return { res, only };
+  }
+  function renderDnc() {
+    if (!canDnc()) { location.hash = '#/'; return; }
+    screen = renderDnc;
+    document.body.classList.add('wide');
+    $('#view').innerHTML = `<section class="card dncf">
+      <div class="head2"><h2>🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}</h2></div>
+      <div class="filters">
+        <label>${t('ពី', 'From')}<input type="date" class="in" id="dFrom" value="${DNC.from}"></label>
+        <label>${t('ដល់', 'To')}<input type="date" class="in" id="dTo" value="${DNC.to}"></label>
+        <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<select class="in" id="dCo"><option value="">${t('ទាំងអស់', 'All')}</option>${dncCompanies().map(c => `<option${normC(c) === normC(DNC.co) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+        <button type="button" class="btn ok" id="dGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
+        <input type="search" class="in grow" id="dQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...')}" value="${esc(DNC.q)}">
+        <button type="button" class="btn" id="dXls">⬇ Excel</button>
+        <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>
+      </div>
+      <div id="dStat"></div></section>
+      <div id="dBody"><div class="spinner"></div></div>`;
+    $('#dGo').onclick = () => { DNC.from = $('#dFrom').value; DNC.to = $('#dTo').value; loadDnc(); };
+    $('#dCo').onchange = e => { DNC.co = e.target.value; paintDnc(); };
+    $('#dQ').oninput = e => { DNC.q = e.target.value; paintDnc(); };
+    $('#dXls').onclick = dncXls;
+    $('#dUp').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) readDn(f); };
+    loadDnc();
+  }
+  async function loadDnc() {
+    const local = tickets().filter(x => { const d = tripDay(x); return d >= DNC.from && d <= DNC.to; });
+    DNC.rows = local; paintDnc();
+    if (DEMO) return;
+    try {
+      const r = await api('scList', { from: DNC.from, to: DNC.to });
+      const map = {};
+      r.tickets.forEach(x => { map[x.cid || x.no] = x; });
+      local.forEach(x => { if (LOC[x.cid]) map[x.cid] = x; });
+      DNC.rows = Object.keys(map).map(k => map[k]);
+      paintDnc();
+    } catch (e) { if (e.code !== 'NET') toast(e.message); }
+  }
+  async function readDn(file) {
+    if (!window.DnRead) { toast('dn-read.js'); return; }
+    DNC.busy = t('កំពុងអាន Debit Note…', 'Reading the Debit Note…'); DNC.file = file.name; paintDnc();
+    try {
+      const r = await DnRead.readFile(file, s => { if (s === 'ocr') { DNC.busy = t('កំពុងអានរូបភាព (ស្កេន)… ប្រហែល ១០ វិនាទី', 'Reading the scanned page… about 10 seconds'); paintDnc(); } });
+      const dn = DnRead.parse(r.lines);
+      dn.scanned = r.scanned;
+      DNC.dn = dn; DNC.busy = '';
+      if (!dn.rows.length) toast(t('រកមិនឃើញជួរជើងឡានក្នុង Debit Note', 'No trip lines found in the Debit Note'));
+      // the DN's truck company picks the filter, and its trip dates the period
+      if (dn.agent) { const c = dncCompanies().find(c2 => normC(c2) === normC(dn.agent)) || dncCompanies().find(c2 => normC(c2).indexOf(normC(dn.agent)) >= 0 || normC(dn.agent).indexOf(normC(c2)) >= 0); if (c) DNC.co = c; }
+      const ds = dn.rows.map(d => d.date).filter(Boolean).sort();
+      if (ds.length && (ds[0] < DNC.from || ds[ds.length - 1] > DNC.to)) { DNC.from = ds[0] < DNC.from ? ds[0] : DNC.from; DNC.to = ds[ds.length - 1] > DNC.to ? ds[ds.length - 1] : DNC.to; renderDnc(); return; }
+      renderDnc();
+    } catch (e) { DNC.busy = ''; paintDnc(); toast(e.message); }
+  }
+  const CHK = {
+    ok: ['approved', '✅', 'ត្រូវ', 'Matched'], diff: ['pending', '⚠️', 'ខុស', 'Different'], only: ['rejected', '➕', 'មានតែក្នុង DN', 'On DN only'], none: ['recorded', '—', 'មិនមានក្នុង DN', 'Not on DN'],
+  };
+  const chip = k => `<span class="badge ${CHK[k][0]}">${CHK[k][1]} ${t(CHK[k][2], CHK[k][3])}</span>`;
+  function dncState(r) { return !DNC.dn ? '' : !r.d ? 'none' : r.diffs.length ? 'diff' : 'ok'; }
+  function paintDnc() {
+    if (!$('#dBody')) return;
+    const M = dncMatch(), dn = DNC.dn;
+    $('#dStat').innerHTML = DNC.busy ? `<div class="sumline"><span class="spin-s"></span> ${esc(DNC.busy)}</div>`
+      : dn ? `<div class="sumline">📄 <b>${esc(DNC.file)}</b> · ${dn.no ? 'No ' + esc(dn.no) + ' · ' : ''}${dn.agent ? esc(dn.agent) + ' · ' : ''}${dn.date ? dmy(dn.date) + ' · ' : ''}${dn.rows.length} ${t('ជួរ', 'lines')}${dn.scanned ? ' · ' + t('ស្កេន', 'scanned') : ''}
+          <button type="button" class="link" id="dClr">✕ ${t('ដក DN ចេញ', 'Remove DN')}</button></div>` : '';
+    if ($('#dClr')) $('#dClr').onclick = () => { DNC.dn = null; DNC.file = ''; paintDnc(); };
+    const n = { all: M.res.length + M.only.length, ok: 0, diff: 0, only: M.only.length, none: 0 };
+    M.res.forEach(r => { const s = dncState(r); if (s) n[s]++; });
+    const billed = M.res.reduce((s, r) => s + (r.billed || 0), 0) + M.only.reduce((s, d) => s + (d.total != null ? d.total : (d.qty || 0) * ((d.price || 0) + (d.extra || 0))), 0);
+    const app = M.res.reduce((s, r) => s + (r.app || 0), 0);
+    const card = (v, l, cls) => `<div class="dcard ${cls || ''}"><b>${v}</b><small>${l}</small></div>`;
+    const cards = `<div class="dcards">${card(M.res.length, t('ជើងក្នុងកម្មវិធី', 'Trips in app'))}${card(dn ? dn.rows.length : '—', t('ជើងក្នុង DN', 'Trips on DN'))}
+      ${card(dn ? n.ok : '—', t('ត្រូវ', 'Matched'), 'ok')}${card(dn ? n.diff : '—', t('ខុស', 'Different'), n.diff ? 'warn' : '')}${card(dn ? n.only : '—', t('មានតែក្នុង DN', 'On DN only'), n.only ? 'bad' : '')}
+      ${card(dn ? (billed - app >= 0 ? '+' : '−') + '$' + money2(Math.abs(billed - app)) : '—', t('DN គិត − កម្មវិធី', 'Billed − app'), dn && Math.abs(billed - app) > 1 ? 'bad' : '')}</div>`;
+    const tabs = dn ? `<div class="dtabs">${[['all', t('ទាំងអស់', 'All')], ['ok', t('ត្រូវ', 'Matched')], ['diff', t('ខុស', 'Different')], ['only', t('មានតែក្នុង DN', 'On DN only')], ['none', t('មិនមានក្នុង DN', 'Not on DN')]]
+      .map(x => `<button type="button" class="chip${DNC.tab === x[0] ? ' on' : ''}" data-tab="${x[0]}">${x[1]} <b>${n[x[0]]}</b></button>`).join('')}</div>` : '';
+    const show = s => !dn || DNC.tab === 'all' || DNC.tab === s;
+    const rowHtml = r => {
+      const x = r.x, pl = priceOf(x), s = dncState(r);
+      return `<tr class="pick${s === 'diff' ? ' warnrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td>${s ? chip(s) : ''}</td><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.item || '')}</td>
+        <td>${esc(x.load || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono"><b>${kg(x.net)}</b></td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td>${pl ? esc(pl.uom) : ''}</td>
+        <td class="dd">${r.diffs.map(d => esc(d.txt)).join('<br>')}${r.notes.length ? `<small class="muted">${esc(r.notes.join(' · '))}</small>` : ''}</td></tr>`;
+    };
+    const onlyHtml = d => `<tr class="warnrow"><td>${chip('only')}</td><td class="muted">DN #${d.n}</td><td><b>${esc(d.plate)}</b></td><td>${esc(dn.agent || '')}</td><td></td><td></td><td></td><td>${esc(d.place || '')}</td><td class="nw">${d.date ? dmy(d.date) : '?'}</td>
+      <td class="r mono">${d.qty != null ? kg(Math.round(d.qty * 1000)) : ''}</td><td class="r mono">${money2(d.price)}</td><td></td><td class="dd">${t('គ្មានប័ណ្ណថ្លឹងសម្រាប់ជួរនេះ', 'No weigh ticket for this line')}</td></tr>`;
+    const body = M.res.filter(r => show(dncState(r))).map(rowHtml).join('') + (show('only') && dn ? M.only.map(onlyHtml).join('') : '');
+    const list = M.res.filter(r => dncState(r) === 'diff');
+    const diffList = dn ? `<h3 class="mt">📝 ${t('សេចក្តីសង្ខេបភាពខុសគ្នា', 'Summary of differences')}</h3>
+      ${!list.length && !M.only.length && !n.none ? `<div class="alert ok">✅ ${t('Debit Note ត្រូវនឹងប័ណ្ណថ្លឹងទាំងអស់', 'The Debit Note matches the weigh tickets')}</div>` : `<ul class="dlist">
+        ${list.map(r => `<li>${chip('diff')} <b>${esc(r.x.plate)}</b> ${dmy(tripDay(r.x))} · <span class="mono">${esc(r.x.no)}</span>: ${r.diffs.map(d => esc(d.txt)).join('; ')}${r.notes.length ? ` <small class="muted">(${esc(r.notes.join(' · '))})</small>` : ''}</li>`).join('')}
+        ${M.only.map(d => `<li>${chip('only')} DN #${d.n} <b>${esc(d.plate)}</b> ${d.date ? dmy(d.date) : ''} · ${d.qty != null ? kg(Math.round(d.qty * 1000)) + ' kg' : ''} · $${money2(d.total)}: ${t('គ្មានប័ណ្ណថ្លឹង', 'no weigh ticket')}</li>`).join('')}
+        ${n.none ? `<li>${chip('none')} ${n.none} ${t('ប័ណ្ណក្នុងកម្មវិធី មិនមានក្នុង Debit Note នេះទេ (អាចនៅក្នុង DN ផ្សេង)', 'tickets in the app are not on this Debit Note (they may be on another one)')}</li>` : ''}</ul>`}
+      ${dncTotals(M)}
+      ${dncReadTable()}` : `<p class="hint mt">${t('ផ្ទុក Debit Note (PDF ឬរូបថត) ដើម្បីប្រៀបធៀបជាមួយប័ណ្ណថ្លឹងក្នុងតារាងនេះ៖ លេខឡាន ថ្ងៃ ទម្ងន់សុទ្ធ តម្លៃ និងក្រុមហ៊ុនឡាន។', 'Upload the Debit Note (PDF or photo) to compare it with the weigh tickets in this table: truck, date, net weight, unit price and truck company.')}</p>`;
+    $('#dBody').innerHTML = `<section class="card">${cards}${tabs}
+      ${body ? `<div class="tbl"><table class="tt dnct"><tr><th>${t('ពិនិត្យ', 'Check')}</th><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>DN</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('កន្លែងផ្ទុក', 'Loading place')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th>${t('ភាពខុសគ្នា', 'Difference')}</th></tr>${body}</table></div>`
+        : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`}
+      ${diffList}</section>`;
+    $$('[data-tab]').forEach(b => { b.onclick = () => { DNC.tab = b.dataset.tab; paintDnc(); }; });
+    bindTable();
+    $$('[data-dn-row]').forEach(inp => { inp.onchange = () => { const d = DNC.dn.rows[+inp.dataset.dnRow], k = inp.dataset.k; d[k] = k === 'date' ? inp.value : k === 'plate' ? inp.value.trim().toUpperCase() : (inp.value === '' ? null : +inp.value); d.ok = true; d.guess = false; paintDnc(); }; });
+    if ($('#dAdd')) $('#dAdd').onclick = () => { DNC.dn.rows.push({ n: DNC.dn.rows.length + 1, date: DNC.to, plate: '', qty: null, price: null, extra: 0, total: null, place: '', ok: true }); paintDnc(); };
+  }
+  function dncTotals(M) {
+    const dn = DNC.dn, sumQ = dn.rows.reduce((s, d) => s + (d.qty || 0), 0), sumT = dn.rows.reduce((s, d) => s + (d.total || 0), 0), extra = dn.rows.reduce((s, d) => s + (d.qty || 0) * (d.extra || 0), 0);
+    const appT = M.res.filter(r => r.d).reduce((s, r) => s + Number(r.x.net || 0), 0) / 1000;
+    return `<div class="sumline mt">${t('សរុបក្នុង DN', 'DN total')}: <b>${kg(Math.round(sumQ * 1000) / 1000)} t</b> · <b>$${money2(sumT)}</b>${dn.total != null && Math.abs(dn.total - sumT) > 0.5 ? ` <span class="badge pending">${t('សរុបដែលបោះពុម្ព', 'printed total')} $${money2(dn.total)}: ${t('ពិនិត្យជួរដែលអានមិនបាន', 'check lines not read')}</span>` : ''}
+      · ${t('ប័ណ្ណដែលត្រូវគ្នា', 'matched tickets')}: <b>${kg(Math.round(appT * 1000) / 1000)} t</b>${extra ? ` · ${t('ថ្លៃបន្ថែម', 'extra charge')} $${money2(extra)}` : ''}</div>`;
+  }
+  /** The DN lines as read, editable: a scan can misread a digit, so the person can fix it and the check runs again. */
+  function dncReadTable() {
+    const dn = DNC.dn, bad = dn.rows.filter(d => !d.ok || d.guess).length;
+    const cell = (i, k, v, type, w) => `<input class="in sm" data-dn-row="${i}" data-k="${k}" type="${type}" value="${v == null ? '' : esc(v)}" style="width:${w}px"${type === 'number' ? ' step="0.01"' : ''}>`;
+    return `<details class="mt"${bad ? ' open' : ''}><summary><b>📄 ${t('ជួរ Debit Note ដែលបានអាន', 'Debit Note lines as read')} (${dn.rows.length})</b>${bad ? ` <span class="badge pending">⚠ ${bad} ${t('សូមពិនិត្យ', 'to check')}</span>` : ''}</summary>
+      <p class="hint">${t('កែលេខដែលអានខុស នោះការពិនិត្យនឹងរត់ម្តងទៀត។ ជួរ ⚠ = ចំនួន × តម្លៃ មិនស្មើសរុប ឬថ្ងៃមិនច្បាស់។', 'Fix anything read wrong and the check runs again. ⚠ = qty × price does not equal the total, or the date was not clear.')}</p>
+      <div class="tbl"><table class="tt"><tr><th>#</th><th>${t('ថ្ងៃ', 'Date')}</th><th>${t('ឡាន', 'Truck')}</th><th class="r">Qty (t)</th><th class="r">${t('តម្លៃ', 'Price')}</th><th class="r">${t('បន្ថែម', 'Extra')}</th><th class="r">${t('សរុប', 'Total')}</th><th>${t('ទីកន្លែង', 'Place')}</th><th></th></tr>
+      ${dn.rows.map((d, i) => `<tr class="${!d.ok || d.guess ? 'warnrow' : ''}"><td>${i + 1}</td><td>${cell(i, 'date', d.date, 'date', 150)}</td><td>${cell(i, 'plate', d.plate, 'text', 100)}</td><td class="r">${cell(i, 'qty', d.qty, 'number', 90)}</td><td class="r">${cell(i, 'price', d.price, 'number', 80)}</td><td class="r">${cell(i, 'extra', d.extra, 'number', 70)}</td><td class="r">${cell(i, 'total', d.total, 'number', 100)}</td><td>${esc(d.place || '')}</td><td>${!d.ok || d.guess ? '⚠' : ''}</td></tr>`).join('')}</table></div>
+      <button type="button" class="btn mt" id="dAdd">＋ ${t('បន្ថែមជួរ', 'Add a line')}</button></details>`;
+  }
+  function dncXls() {
+    if (!window.XLSX) return;
+    const M = dncMatch(), dn = DNC.dn;
+    const st = r => ({ ok: 'Matched', diff: 'Different', none: 'Not on DN', '': '' })[dncState(r)];
+    const a = [['Check', 'Ticket No', 'Truck No', 'Truck Company', 'DN No', 'Item', 'Loading Place', 'Unloading Place', 'Trip Date', 'Net (kg)', 'Unit Price', 'UoM', 'DN Qty (t)', 'DN Price', 'DN Extra', 'DN Total', 'App Amount', 'Difference']]
+      .concat(M.res.map(r => { const x = r.x, pl = priceOf(x), d = r.d || {}; return [st(r), x.no, x.plate, x.company, (x.dns || []).join(', '), x.item, x.load || '', x.dest, tripDay(x), num(x.net), pl ? pl.price : '', pl ? pl.uom : '', d.qty == null ? '' : d.qty, d.price == null ? '' : d.price, d.extra == null ? '' : d.extra, d.total == null ? '' : d.total, r.app ? Math.round(r.app * 100) / 100 : '', r.diffs.map(z => z.txt).concat(r.notes).join('; ')]; }))
+      .concat(dn ? M.only.map(d => ['On DN only', '', d.plate, dn.agent, '', '', '', d.place, d.date, '', '', '', d.qty, d.price, d.extra, d.total, '', 'No weigh ticket']) : []);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(a);
+    ws['!cols'] = a[0].map((h, i) => ({ wch: [12, 16, 11, 18, 16, 14, 16, 16, 11, 10, 9, 8, 9, 8, 8, 10, 10, 50][i] }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Check');
+    if (dn) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['#', 'Date', 'Truck No', 'Qty (t)', 'Price', 'Extra', 'Total', 'Place', 'Read OK']].concat(dn.rows.map((d, i) => [i + 1, d.date, d.plate, d.qty, d.price, d.extra, d.total, d.place, d.ok && !d.guess ? 'Yes' : 'Check']))), 'Debit Note');
+    XLSX.writeFile(wb, 'Debit_Note_Check_' + (DNC.co ? DNC.co.replace(/[^A-Za-z0-9]+/g, '_') + '_' : '') + DNC.from + '_' + DNC.to + '.xlsx');
+  }
+
   // ---------------------------------------------------------------- one ticket
   async function renderTicket(key) {
     screen = () => renderTicket(key);
@@ -784,7 +985,7 @@
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc((x.dns || []).join(', ')))}
-        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
+        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
@@ -814,16 +1015,17 @@
     const f = (id, label, v) => `<div class="field"><label class="f">${label}</label><div><input class="in" id="${id}" autocomplete="off" value="${esc(v || '')}"></div></div>`;
     $('#tMore').innerHTML = `<div class="card soft mt"><div class="fgrid">
       ${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
-      ${f('eDn', 'DN No (, )', (x.dns || []).join(', '))}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
+      ${f('eDn', 'DN No (, )', (x.dns || []).join(', '))}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eLoad', t('កន្លែងផ្ទុក', 'Loading place'), x.load || '')}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
       ${f('eNote', t('កំណត់ចំណាំ', 'Note'), x.note)}${f('eWhy', t('មូលហេតុនៃការកែ', 'Reason for the change'), '')}</div>
       <div class="hint">${t('ទម្ងន់មិនអាចកែបានទេ។ ការកែទាំងអស់ត្រូវកត់ត្រាក្នុង Scale Log។', 'Weights cannot be changed here. Every change is written to the Scale Log.')}</div>
       <div class="btns mt"><button type="button" class="btn ok" id="eSave">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
     picker($('#eCustomer'), { list: () => ((B && B.customers) || []).map(c => ({ v: c[1], sub: c[0] })), addNew: true, onPick: () => {} });
     picker($('#eItem'), { list: () => ((B && B.items) || []).map(i => ({ v: i[0] })), addNew: true, onPick: () => {} });
     picker($('#eDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: () => {} });
+    picker($('#eLoad'), { list: places, addNew: true, onPick: () => {} });
     $('#eSave').onclick = () => {
       const v = id => $(id).value.trim();
-      const nx = Object.assign({}, x, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: v('#eDn').split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), note: v('#eNote'), reason: v('#eWhy') });
+      const nx = Object.assign({}, x, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: v('#eDn').split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), load: v('#eLoad'), note: v('#eNote'), reason: v('#eWhy') });
       putTicket(nx);
       toast(t('បានរក្សាទុក', 'Saved'));
       renderTicket(key);
@@ -1202,13 +1404,13 @@
 
   // ---------------------------------------------------------------- settings (Admin)
   const SET_TABS = [['trucks', '🚚', 'ឡាន', 'Trucks'], ['customers', '🏢', 'អតិថិជន', 'Customers'], ['items', '📦', 'ទំនិញ', 'Items'], ['dests', '📍', 'គោលដៅ', 'Destinations'],
-    ['scale', '🔌', 'ការភ្ជាប់ជញ្ជីង', 'Scale connection'], ['rules', '⚠️', 'ការព្រមាន & ប័ណ្ណ', 'Warnings & ticket']];
+    ['scale', '🔌', 'ការភ្ជាប់ជញ្ជីង', 'Scale connection'], ['rules', '⚠️', 'ការព្រមាន & ប័ណ្ណ', 'Warnings & ticket'], ['access', '👥', 'អ្នកមើល Debit Note', 'Debit Note check access']];
   let setQ = '';
   function renderSettings(tab) {
     screen = () => renderSettings(tab);
     document.body.classList.add('wide');
     $('#view').innerHTML = `<div class="setwrap"><nav class="setnav">${SET_TABS.map(x => `<a href="#/set/${x[0]}" class="${x[0] === tab ? 'on' : ''}">${x[1]} ${t(x[2], x[3])}</a>`).join('')}</nav><section class="card setbody" id="setBody"></section></div>`;
-    ({ trucks: setTrucks, customers: setCustomers, items: setItems, dests: setDests, scale: setScale, rules: setRules }[tab] || setTrucks)();
+    ({ trucks: setTrucks, customers: setCustomers, items: setItems, dests: setDests, scale: setScale, rules: setRules, access: setAccess }[tab] || setTrucks)();
   }
   function masterTable(o) {
     // o: { title, note, cols: [[label, key, align]], rows: [], tmpl: [header...], fromRow(obj) -> payload row, key, form(row) html, read() -> payload row, kind }
@@ -1347,6 +1549,30 @@
     $('#simKg').oninput = e => { SIM.target = +e.target.value; $('#simV').textContent = kg(SIM.target) + ' kg'; };
     paintLcd();
   }
+  /** Admin picks who sees the Debit Note check menu (Kim, 6 Nov 2026). Admins always see it. */
+  function setAccess() {
+    const on = String(S().SCALE_DNC_USERS || '').toLowerCase().split(/[\s,;]+/).filter(Boolean);
+    const ppl = ((B && B.people) || []).slice().sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+    const extra = on.filter(e => !ppl.some(p => p.email === e));
+    $('#setBody').innerHTML = `<h2>👥 ${t('អ្នកដែលមើលឃើញ "ពិនិត្យ Debit Note"', 'Who sees "Debit Note check"')}</h2>
+      <p class="hint">${t('ធីកអ្នកដែលអាចមើលម៉ឺនុយនេះ (មានតម្លៃដឹកជញ្ជូន)។ Admin មើលឃើញជានិច្ច។', 'Tick the people who can see this menu (it shows transport prices). Admins always see it.')}</p>
+      <input type="search" class="in" id="aQ" data-live-ok placeholder="${t('ស្វែងរក', 'Search')}">
+      <div class="alist mt">${ppl.map(p => `<label class="arow" data-q="${esc((p.name + ' ' + p.email).toLowerCase())}"><input type="checkbox" value="${esc(p.email)}"${p.admin ? ' checked disabled' : on.indexOf(p.email) >= 0 ? ' checked' : ''}> <b>${esc(p.name || p.email)}</b> <small class="muted">${esc(p.email)}</small>${p.admin ? ' <span class="badge follow">Admin</span>' : ''}</label>`).join('')
+        || `<div class="empty">${t('មិនទាន់មានបញ្ជីអ្នកប្រើ។ សូមដាក់ Scale.gs ថ្មី ហើយ Deploy។', 'No user list yet. Paste the new Scale.gs and deploy.')}</div>`}</div>
+      ${extra.length ? `<p class="hint">${t('ផ្សេងទៀត', 'Others')}: ${esc(extra.join(', '))}</p>` : ''}
+      <div class="btns mt"><button type="button" class="btn ok" id="aSave">💾 ${t('រក្សាទុក', 'Save')}</button></div>`;
+    $('#aQ').oninput = e => { const q = e.target.value.trim().toLowerCase(); $$('.arow').forEach(r => { r.hidden = !!q && r.dataset.q.indexOf(q) < 0; }); };
+    $('#aSave').onclick = async () => {
+      const b = $('#aSave'); busy(b, true);
+      const list = $$('.arow input:checked:not([disabled])').map(i => i.value).concat(extra);
+      try {
+        const r = await api('scSettings', { SCALE_DNC_USERS: list.join(', ') });
+        B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved')); setAccess();
+        return;
+      } catch (e) { toast(e.message); }
+      busy(b, false);
+    };
+  }
   function setRules() {
     const s = S();
     $('#setBody').innerHTML = `<h2>⚠️ ${t('ការព្រមាន & ប័ណ្ណ', 'Warnings & ticket')}</h2>
@@ -1370,6 +1596,8 @@
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
         'Empty = the A4 template shrunk to A5 by itself. Press "A5 copy" to download it, change it in Word, then put it in Drive.')}</p>
+      <div class="field mt"><label class="f" for="rLoad">${t('កន្លែងផ្ទុកលំនាំដើម (កុំព្យូទ័រនេះ)', 'Default loading place (this PC)')}</label>
+        <input class="in" id="rLoad" autocomplete="off" placeholder="KMH1" value="${esc(get('sc_load') || '')}"></div>
       <div class="field mt"><span class="f">${t('ក្រដាសរបស់ម៉ាស៊ីនបោះពុម្ព (កុំព្យូទ័រនេះ)', 'Printer paper (this PC)')}</span>
         <div class="chips" style="display:flex;gap:8px;flex-wrap:wrap"><label class="chip"><input type="radio" name="rPaper" value="A4"${paper() === 'A4' ? ' checked' : ''}> A4</label>
         <label class="chip"><input type="radio" name="rPaper" value="A5"${paper() === 'A5' ? ' checked' : ''}> A5</label></div></div>
@@ -1378,6 +1606,7 @@
       <div class="mt"></div><label class="chip mt"><input type="checkbox" id="rAuto"${get('sc_autoprint') === '1' ? ' checked' : ''}> ${t('បោះពុម្ពដោយខ្លួនឯង ក្រោយថ្លឹងលើកទី២ (កុំព្យូទ័រនេះ)', 'Print by itself after the 2nd weigh (this PC)')}</label>
       <div class="btns mt"><button type="button" class="btn ok" id="rSave">💾 ${t('រក្សាទុក', 'Save')}</button></div>`;
     $('#rAuto').onchange = e => set('sc_autoprint', e.target.checked ? '1' : null);
+    picker($('#rLoad'), { list: places, addNew: true, onPick: v => { set('sc_load', v || null); if (!F.cid && !F.plate) { F.load = v || ''; keepForm(); } toast(t('បានរក្សាទុក', 'Saved')); } });
     document.querySelectorAll('input[name="rPaper"]').forEach(r => { r.onchange = () => { set('sc_paper', r.value === 'A5' ? 'A5' : null); toast(t('ក្រដាស ', 'Paper ') + r.value); if (tplOn()) tplLoad().catch(() => {}); }; });
     if ($('#rA5')) $('#rA5').onclick = async () => {
       const b = $('#rA5'); busy(b, true);
@@ -1440,11 +1669,12 @@
       customers: [['6100000002', '000002-Hun Bonita'], ['6100000005', '000005-ក្រុមហ៊ុន ហ្វូស៊ីន ស្ទីល ប៊ីលឌីង ឯ.ក']],
       items: [['Steel pipe', 'kg', 'Yes'], ['Steel coil', 'kg', 'Yes'], ['Scrap', 'kg', 'Yes']],
       dests: ['KPC Branch', 'Kampong Cham', 'Siem Reap'], tickets: [],
-      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '' },
+      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '', SCALE_DNC_USERS: '' },
+      prices: [['CHROEK KIMHENG', 'KPC Branch', 'Per t', 8.5, 't'], ['3PL #1', 'Kampong Cham', 'Per t', 9, 't']],
     };
     const keep = () => set('sc_demo', JSON.stringify(db));
     const u = { name: 'Kim (demo)', email: 'kim@demo', admin: true, reviewer: true };
-    if (action === 'scBoot') return { user: u, trucks: db.trucks, customers: db.customers, items: db.items, dests: db.dests, settings: db.settings, tickets: db.tickets, lastTare: {}, sheetUrl: '' };
+    if (action === 'scBoot') return { user: Object.assign({ dnc: true }, u), prices: db.prices || [], people: [{ email: 'kim@demo', name: 'Kim (demo)', admin: true }, { email: 'dara@demo', name: 'Dara' }, { email: 'sok@demo', name: 'Sok' }], trucks: db.trucks, customers: db.customers, items: db.items, dests: db.dests, settings: db.settings, tickets: db.tickets, lastTare: {}, sheetUrl: '' };
     if (action === 'scSave') {
       const out = [];
       p.ops.forEach(op => {
