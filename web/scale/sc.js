@@ -195,6 +195,14 @@
     saveLoc();
     flush();
   }
+  /** Resolves once the ticket is in the sheet (gives up after 30 s). */
+  function afterSync(cid) {
+    return new Promise((res, rej) => {
+      const t0 = Date.now();
+      const tick = () => { const l = LOC[cid]; if (l && l.synced && Q.indexOf(cid) < 0) res(); else if (Date.now() - t0 > 30000) rej(new Error('not saved yet')); else setTimeout(tick, 800); };
+      tick();
+    });
+  }
   window.addEventListener('online', () => flush());
   setInterval(() => flush(), 60000);
   function paintSync() {
@@ -463,8 +471,11 @@
     LASTDONE = tk.cid;
     F = EMPTY_F(); keepForm();
     paintForm(); paintLists(); paintLcd();
-    makePdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
-    if (get('sc_autoprint') === '1') printTicket(tk);
+    // With a Word template the server makes the PDF once the ticket is saved; otherwise the built-in PDF goes up with the ticket.
+    const auto = get('sc_autoprint') === '1';
+    if (tplOn()) afterSync(tk.cid).catch(() => {}).then(() => (auto ? printTicket(ticketBy(tk.cid) || tk) : serverPdf(ticketBy(tk.cid) || tk))).catch(() => {});
+    else makePdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
+    if (auto && !tplOn()) printTicket(tk);
   }
 
   function paintWarn() {
@@ -795,8 +806,40 @@
     for (let i = 0; i < pdf.length; i += 0x8000) s += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
     return btoa(s);
   }
+  // Ticket from the Word template in Drive (Settings › Warnings & ticket), made by the server. Offline or on any error
+  // the built-in ticket above is used instead, so printing never stops.
+  const tplOn = () => !DEMO && !!String(S().SCALE_TEMPLATE_LINK || '').trim();
+  function qrPng(x) {
+    try {
+      const qr = qrcode(0, 'M'); qr.addData(ticketUrl(x)); qr.make();
+      const n = qr.getModuleCount(), cell = 8, q = 4, c = document.createElement('canvas');
+      c.width = c.height = (n + 2 * q) * cell;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+      for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) g.fillRect((k + q) * cell, (r + q) * cell, cell, cell);
+      return c.toDataURL('image/png');
+    } catch (e) { return ''; }
+  }
+  const TPL = {};                                // cid -> { key, b64 } of the last template PDF this session
+  async function serverPdf(x) {
+    const key = JSON.stringify([x.v, x.status, x.w2, x.net, x.dns, x.plate, x.item, x.dest, x.note, x.company, S().SCALE_TEMPLATE_LINK]);
+    if (TPL[x.cid] && TPL[x.cid].key === key) return TPL[x.cid].b64;
+    const t = {};
+    ['cid', 'no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dns', 'driver', 'dest', 'note', 'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'op'].forEach(k => { t[k] = x[k]; });
+    const r = await api('scTicketPdf', { t, qr: qrPng(x) });
+    if (r.none || !r.pdf) throw new Error('no template');
+    if (r.url && LOC[x.cid]) { LOC[x.cid].pdf = r.url; saveLoc(); }
+    TPL[x.cid] = { key, b64: r.pdf };
+    return r.pdf;
+  }
+  /** Template PDF when one is set and the server answers, else the built-in one. */
+  async function bestPdf(x) {
+    if (tplOn()) { try { return await serverPdf(x); } catch (e) { toast(t('ប្រើប័ណ្ណស្តង់ដារ (គំរូ Word មិនដំណើរការ)', 'Using the standard ticket (Word template not available)') + ': ' + e.message); } }
+    return makePdf(x);
+  }
+  const pdfBlob = b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: 'application/pdf' }); };
   async function downloadPdf(x) {
-    const b64 = await makePdf(x);
+    const b64 = await bestPdf(x);
     const bin = atob(b64), u = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     const url = URL.createObjectURL(new Blob([u], { type: 'application/pdf' }));
@@ -806,6 +849,19 @@
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
   async function printTicket(x) {
+    if (tplOn()) {
+      try {
+        const url = URL.createObjectURL(pdfBlob(await serverPdf(x)));
+        let f = $('#printFrame');
+        if (f) f.remove();
+        f = document.createElement('iframe');
+        f.id = 'printFrame'; f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+        f.onload = () => { setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { window.open(url, '_blank'); } }, 300); };
+        f.src = url;
+        document.body.appendChild(f);
+        return;
+      } catch (e) { toast(t('ប្រើប័ណ្ណស្តង់ដារ (គំរូ Word មិនដំណើរការ)', 'Using the standard ticket (Word template not available)') + ': ' + e.message); }
+    }
     const c = await drawTicket(x);
     const area = $('#printArea');
     area.innerHTML = '';
@@ -974,14 +1030,36 @@
         ${inp('rSign', t('ប្រអប់ហត្ថលេខា (ក្បៀស)', 'Signature boxes (comma separated)'), s.SCALE_SIGN)}
       </div>
       <p class="hint">${t('ការព្រមានលើសទម្ងន់ ប្រើ Max Gross (kg) ក្នុងបញ្ជីឡាន។', 'The overload warning uses Max Gross (kg) in the truck list.')}</p>
+      <h3>📄 ${t('គំរូប័ណ្ណ Word', 'Ticket template (Word)')}</h3>
+      <div class="field"><label class="f" for="rTpl">${t('Link Google Drive របស់ឯកសារ Word (ឬ Folder)', 'Google Drive link of the Word file (or its folder)')}</label>
+        <input class="in" id="rTpl" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_LINK || '')}"></div>
+      <p class="hint">${t('ទុកទទេ = ប្រើប័ណ្ណស្តង់ដារ។ ទាញយកគំរូ កែក្នុង Word រក្សាពាក្យ {{...}} ហើយដាក់ក្នុង Drive។ រូប QR ត្រូវមាន Alt Text "QR"។ បើគ្មានអ៊ីនធឺណិត ប្រើប័ណ្ណស្តង់ដារ។',
+        'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". With no internet the standard ticket is used.')}
+        <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
+      <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
+      ${s.SCALE_TEMPLATE_LINK ? `<button type="button" class="btn mt" id="rTest">🧪 ${t('សាកល្បងគំរូ (PDF)', 'Test the template (PDF)')}</button>` : ''}
       <label class="chip mt"><input type="checkbox" id="rAuto"${get('sc_autoprint') === '1' ? ' checked' : ''}> ${t('បោះពុម្ពដោយខ្លួនឯង ក្រោយថ្លឹងលើកទី២ (កុំព្យូទ័រនេះ)', 'Print by itself after the 2nd weigh (this PC)')}</label>
       <div class="btns mt"><button type="button" class="btn ok" id="rSave">💾 ${t('រក្សាទុក', 'Save')}</button></div>`;
     $('#rAuto').onchange = e => set('sc_autoprint', e.target.checked ? '1' : null);
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busy(b, true);
       try {
-        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value });
+        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim() });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
+        setRules();
+        return;
+      } catch (e) { toast(e.message); }
+      busy(b, false);
+    };
+    if ($('#rTest')) $('#rTest').onclick = async () => {
+      const b = $('#rTest'); busy(b, true);
+      const x = tickets().filter(k => k.status === 'Done').sort((a, c) => String(c.t2).localeCompare(String(a.t2)))[0] ||
+        { cid: 'test', no: 'WB-TEST-001', status: 'Done', plate: '3B-5956', company: 'ISI Steel', item: 'Steel pipe', dns: ['8000123', '8000124'], dest: 'Phnom Penh', note: 'Test', w1: 32440, t1: iso(new Date()), s1: 'Scale', w2: 11300, t2: iso(new Date()), s2: 'Scale', gross: 32440, tare: 11300, net: 21140, warn: '', op: me().name || '' };
+      try {
+        const u = URL.createObjectURL(pdfBlob(await serverPdf(Object.assign({}, x, { v: Date.now() }))));
+        const a = document.createElement('a'); a.href = u; a.download = 'template-test.pdf'; document.body.appendChild(a); a.click(); a.remove();
+        toast('✅ ' + t('គំរូដំណើរការ', 'The template works'));
       } catch (e) { toast(e.message); }
       busy(b, false);
     };
@@ -1018,7 +1096,7 @@
       customers: [['6100000002', '000002-Hun Bonita'], ['6100000005', '000005-ក្រុមហ៊ុន ហ្វូស៊ីន ស្ទីល ប៊ីលឌីង ឯ.ក']],
       items: [['Steel pipe', 'kg', 'Yes'], ['Steel coil', 'kg', 'Yes'], ['Scrap', 'kg', 'Yes']],
       dests: ['KPC Branch', 'Kampong Cham', 'Siem Reap'], tickets: [],
-      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL' },
+      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '' },
     };
     const keep = () => set('sc_demo', JSON.stringify(db));
     const u = { name: 'Kim (demo)', email: 'kim@demo', admin: true, reviewer: true };
@@ -1047,7 +1125,7 @@
       keep();
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
-    if (action === 'scSettings') { Object.keys(db.settings).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
+    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }
 })();

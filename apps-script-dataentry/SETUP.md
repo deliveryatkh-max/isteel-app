@@ -86,3 +86,16 @@ Tabs added here: **Scale Tickets** (one row per truck: 1st and 2nd weight, gross
 **Item List**, **Scale Log** (every new ticket, change, cancel, typed weight and master change, with who, before, after and reason).
 DE Settings rows: `SCALE_TARE_PCT` (warning %, default 5), `SCALE_MIN_KG`, `SCALE_PREFIX`, `SCALE_SIGN`, `SCALE_COMPANY`.
 Ticket PDFs go to the Drive folder **Scale Tickets PDF**.
+
+### Ticket template in Word (6 Nov 2026)
+
+1. Download the template from https://isteel-app.pages.dev/scale/scale-ticket-template.docx (Settings › Warnings & ticket has the same link).
+2. Change it in Word however you like. Keep the `{{...}}` words: each one is swapped for the ticket's value. They are
+   `{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Note}} {{Weight1}} {{Time1}} {{Source1}}
+   {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}`.
+   The QR picture must keep its alt text **QR** (right-click › View Alt Text) and stay a PNG.
+   Use Google fonts (the template uses Kantumruy Pro); Google can't print other fonts. Avoid text boxes in the footer.
+3. Put the file in Google Drive (Word or Google Doc), copy its link, and paste it in the scale app: ⚙ Settings › Warnings & ticket ›
+   **Ticket template (Word)**, then Save. Press **Test the template (PDF)** to check it. A folder link also works: the newest file in it is used.
+4. From then on, Print and PDF use your template (it needs internet; offline, the standard ticket prints). Edit the Drive file
+   any time: the next ticket uses the new version. Clear the link to go back to the standard ticket.

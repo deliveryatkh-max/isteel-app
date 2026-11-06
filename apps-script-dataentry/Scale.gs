@@ -26,6 +26,7 @@ const SC_SETTINGS = [
   ['SCALE_PREFIX', 'WB', 'Start of the ticket number, e.g. WB-261106-001'],
   ['SCALE_SIGN', 'Weigher, Driver, Security', 'Signature boxes on the ticket'],
   ['SCALE_COMPANY', 'ISI STEEL', 'Name printed on the ticket'],
+  ['SCALE_TEMPLATE_LINK', '', 'Drive link to the ticket template: a Word file, a Google Doc or a folder (newest file used). Empty = built-in ticket.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -36,6 +37,7 @@ function scaleRoute_(action, p, user) {
     case 'scList': return scList_(p);
     case 'scMaster': return withLock_(() => scMaster_(p, user));
     case 'scSettings': return scSettings_(p, user);
+    case 'scTicketPdf': return scTicketPdf_(p, user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -287,6 +289,138 @@ function scPdf_(b64, no, plate) {
   const old = f.getFilesByName(name);
   while (old.hasNext()) old.next().setTrashed(true);
   return f.createFile(Utilities.newBlob(bytes, 'application/pdf', name)).getUrl();
+}
+
+// ---------------------------------------------------------------- ticket PDF from Kim's Word template (Kim, 6 Nov 2026)
+// DE Settings SCALE_TEMPLATE_LINK = a Drive link to a Word file, a Google Doc, or a folder (the newest one in it is used).
+// The Word file keeps {{tags}} such as {{TicketNo}} and {{Net}}; a picture with alt text "QR" becomes the ticket's QR code.
+// Only Drive is used (no Docs scope): the tags are filled inside the .docx, Google turns it into a Doc, the Doc is
+// exported as PDF and thrown away. web/scale/scale-ticket-template.docx is the starting template.
+const SC_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const SC_GDOC = 'application/vnd.google-apps.document';
+const scAuth_ = () => ({ Authorization: 'Bearer ' + ScriptApp.getOAuthToken() });
+
+/** The template as .docx bytes, or null when no link is set. */
+function scTemplateDocx_() {
+  const link = String(setting_('SCALE_TEMPLATE_LINK') || '').trim();
+  if (!link) return null;
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) fail_('SETUP', 'SCALE_TEMPLATE_LINK is not a Google Drive link.', 'SCALE_TEMPLATE_LINK មិនមែនជា Link Google Drive ទេ។');
+  let f = null;
+  if (m[2]) {
+    const it = DriveApp.getFolderById(m[2]).getFiles();
+    while (it.hasNext()) {
+      const x = it.next();
+      if (x.isTrashed() || [SC_DOCX, SC_GDOC].indexOf(x.getMimeType()) < 0) continue;
+      if (!f || x.getLastUpdated() > f.getLastUpdated()) f = x;
+    }
+    if (!f) fail_('SETUP', 'No Word file or Google Doc in the template folder.', 'គ្មានឯកសារ Word ក្នុង Folder គំរូ។');
+  } else f = DriveApp.getFileById(m[1] || m[3] || m[4]);
+  if (f.getMimeType() !== SC_GDOC) return f.getBlob().getBytes();
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + f.getId() + '/export?mimeType=' + encodeURIComponent(SC_DOCX), { headers: scAuth_(), muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) fail_('SERVER', 'Could not read the template (' + r.getResponseCode() + ').');
+  return r.getBlob().getBytes();
+}
+
+const scXml_ = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** Fills the {{tags}} (Word may split a tag over several runs) and swaps the "QR" picture. Returns .docx bytes. */
+function scFillDocx_(bytes, vals, qrPng) {
+  const files = Utilities.unzip(Utilities.newBlob(bytes, 'application/zip'));
+  const byName = {};
+  files.forEach(b => { byName[b.getName()] = b; });
+  const T = '(?:<[^>]*>)*';
+  const re = new RegExp('\\{' + T + '\\{((?:' + T + '[A-Za-z0-9_])+)' + T + '\\}' + T + '\\}', 'g');
+  const text = v => scXml_(v == null ? '' : v).split('\n').join('</w:t><w:br/><w:t xml:space="preserve">');
+  const out = [];
+  let qrTarget = '';
+  files.forEach(b => {
+    const n = b.getName();
+    if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(n)) { out.push(b); return; }
+    let x = b.getDataAsString('UTF-8');
+    x = x.replace(re, (all, k) => { const key = k.replace(/<[^>]*>/g, ''); return Object.prototype.hasOwnProperty.call(vals, key) ? text(vals[key]) : all; });
+    x = x.replace(/<w:t>/g, '<w:t xml:space="preserve">');
+    if (n === 'word/document.xml' && qrPng) {
+      const at = x.search(/<wp:docPr\b[^>]*(?:descr|title|name)="QR"/i);
+      if (at >= 0) {
+        const emb = x.slice(at).match(/r:embed="([^"]+)"/);
+        const rels = byName['word/_rels/document.xml.rels'];
+        if (emb && rels) {
+          const rx = rels.getDataAsString('UTF-8').match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
+          const tg = rx && rx[0].match(/Target="([^"]+)"/);
+          if (tg) qrTarget = 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '');
+        }
+      }
+    }
+    out.push(Utilities.newBlob(x, 'application/xml', n));
+  });
+  if (qrTarget) {
+    const i = out.findIndex(b => b.getName() === qrTarget);
+    const type = /\.jpe?g$/i.test(qrTarget) ? 'image/jpeg' : 'image/png';
+    if (i >= 0 && type === 'image/png') out[i] = Utilities.newBlob(Utilities.base64Decode(qrPng), 'image/png', qrTarget);
+  }
+  return Utilities.zip(out, 'ticket.docx').getBytes();
+}
+
+/** Google turns the .docx into a Doc for a moment; the PDF of it comes back. */
+function scDocxPdf_(docx, name) {
+  const b = 'sctk' + Date.now();
+  const meta = { name: name + ' (temp)', mimeType: SC_GDOC, parents: [scPdfFolder_().getId()] };
+  const bytes = s => Utilities.newBlob(s).getBytes();
+  const payload = bytes('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + SC_DOCX + '\r\n\r\n')
+    .concat(docx, bytes('\r\n--' + b + '--'));
+  const up = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+    method: 'post', contentType: 'multipart/related; boundary=' + b, payload: payload, headers: scAuth_(), muteHttpExceptions: true });
+  if (up.getResponseCode() !== 200) fail_('SERVER', 'Template upload failed (' + up.getResponseCode() + '): ' + up.getContentText().slice(0, 150));
+  const id = JSON.parse(up.getContentText()).id;
+  try {
+    const ex = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=application/pdf', { headers: scAuth_(), muteHttpExceptions: true });
+    if (ex.getResponseCode() !== 200) fail_('SERVER', 'PDF export failed (' + ex.getResponseCode() + ').');
+    return ex.getBlob().setName(name + '.pdf').setContentType('application/pdf');
+  } finally {
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* already gone */ }
+  }
+}
+
+/** The words for each {{tag}}, from the ticket the app sends. */
+function scTicketVals_(x) {
+  const num = v => (v === '' || v == null || isNaN(v) ? '' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }));
+  const s = v => String(v || '');
+  const dmy = v => (s(v) ? s(v).slice(8, 10) + '/' + s(v).slice(5, 7) + '/' + s(v).slice(0, 4) : '');
+  const when = v => (s(v) ? dmy(v) + ' ' + s(v).slice(11, 16) : '');
+  const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
+  const dns = Array.isArray(x.dns) ? x.dns : s(x.dns).split(/[,\s]+/).filter(Boolean);
+  return {
+    TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest),
+    DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
+    Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
+    Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',
+    Operator: s(x.op), Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
+    Printed: fmt_(new Date(), 'dd/MM/yyyy HH:mm'), CompanyName: s(setting_('SCALE_COMPANY') || 'ISI STEEL'),
+  };
+}
+
+/** PDF of one ticket from the Word template: saved in "Scale Tickets PDF", its link written on the ticket row. */
+function scTicketPdf_(p, user) {
+  const x = p.t || {};
+  if (!x.no || !x.plate) fail_('BAD', 'Ticket missing.');
+  const docx = scTemplateDocx_();
+  if (!docx) return { none: true };
+  const qr = String(p.qr || '').replace(/^data:image\/png;base64,/, '');
+  const name = clip_(x.no, 40) + '_' + String(x.plate).toUpperCase().replace(/[^A-Z0-9\-]/g, '');
+  const pdf = scDocxPdf_(scFillDocx_(docx, scTicketVals_(x), qr), name);
+  const f = scPdfFolder_();
+  const old = f.getFilesByName(name + '.pdf');
+  while (old.hasNext()) old.next().setTrashed(true);
+  const url = f.createFile(pdf).getUrl();
+  if (x.cid) {
+    const sh = sheet_(SC.TK, SC_TK_COLS);
+    const n = sh.getLastRow() - 1;
+    if (n > 0) {
+      const ids = sh.getRange(2, 28, n, 1).getDisplayValues();
+      for (let i = 0; i < n; i++) if (ids[i][0] === String(x.cid)) { sh.getRange(i + 2, 23).setValue(url); break; }
+    }
+  }
+  return { url: url, pdf: Utilities.base64Encode(pdf.getBytes()) };
 }
 
 // ---------------------------------------------------------------- master edits (Admin)
