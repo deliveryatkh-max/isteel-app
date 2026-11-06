@@ -115,3 +115,5 @@ input[type=range] { flex: 1; min-width: 180px; }
   body.printing #printArea .tplbox section.docx { margin: 0 !important; box-shadow: none !important; page-break-after: avoid; }
   body.printing #printArea .tplbox section.docx + section.docx { display: none; }
 }
+.lcd .lcdbtns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.lcd .btn.conn2 { min-height: 40px; width: auto; background: transparent; border-color: #3a5170; color: #b8c7dc; }
