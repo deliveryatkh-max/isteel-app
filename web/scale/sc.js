@@ -33,6 +33,11 @@
   const busy = (b, on) => { if (!b) return; b.disabled = on; if (on) { b.dataset.t = b.innerHTML; b.innerHTML = '<span class="sp"></span>'; } else if (b.dataset.t) b.innerHTML = b.dataset.t; };
   const TYPE = { In: ['ចូល (ទទួល)', 'In (receive)'], Out: ['ចេញ (ដឹក)', 'Out (deliver)'] };
   const typeName = k => (TYPE[k] ? t(TYPE[k][0], TYPE[k][1]) : k || '');
+  // In or Out comes from the weights: heavier at the 1st weigh = came in loaded (In, receive), lighter = left loaded (Out, deliver).
+  const dirOf = (w1, w2) => (w1 === '' || w1 == null || w2 === '' || w2 == null ? '' : Number(w1) > Number(w2) ? 'In' : 'Out');
+  const typeOf = x => dirOf(x.w1, x.w2);
+  /** At the 2nd weigh: is a DN needed? Yes unless the scale now reads lighter than the 1st weigh (truck came in loaded). */
+  const dnNeed = sel => { if (!sel) return false; const w = cur(); return !(w.kg != null && w.kg !== '' && dirOf(sel.w1, w.kg) === 'In'); };
 
   // ---------------------------------------------------------------- Apps Script
   const msgOf = e => { const s = String(e || 'Error'); const m = s.match(/^([A-Z_]+):\s*([\s\S]*)$/); const txt = m ? m[2] : s; const p = txt.split(' || '); return { code: m ? m[1] : '', text: t(p[1] || p[0], p[0]) }; };
@@ -298,7 +303,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '' });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: '', dns: [], driver: '', dest: '', note: '' });
   /** Truck plates written one way (Kim, 6 Nov 2026): 3A1234 or 3ab1234 becomes 3A-1234 / 3AB-1234. */
   function fixPlate(v) {
     const s = String(v || '').toUpperCase().replace(/[\s\-.]/g, '');
@@ -346,7 +351,7 @@
     const req = '<span class="req">*</span>';
     card.innerHTML = `
       <h2>${sel ? '⚖️ ' + t('ថ្លឹងលើកទី២', '2nd weigh') + ' · <span class="mono">' + esc(sel.no) + '</span>' : '🆕 ' + t('ថ្លឹងថ្មី (លើកទី១)', 'New weighing (1st weigh)')}
-        ${sel ? `<button type="button" class="link" id="newBtn">✕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
+        ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
       <div class="fgrid">
         <div class="field"><label class="f">${t('លេខឡាន', 'Truck No')} ${req}</label><div><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"></div>
           ${tr ? `<div class="hint">${tr.type ? esc(tr.type) + ' · ' : ''}${t('ទម្ងន់ទទេ', 'Empty')} ${tr.empty !== '' ? kg(tr.empty) + ' kg' : '—'} · ${t('កំណត់អតិបរមា', 'Max')} ${tr.max !== '' ? kg(tr.max) + ' kg' : '—'}${lastT ? ' · ' + t('ចុងក្រោយ', 'Last') + ' ' + kg(lastT) + ' kg' : ''}</div>`
@@ -355,8 +360,8 @@
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         <div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>
         <div class="field"><label class="f">${t('គោលដៅ', 'Destination')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>
-        ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${F.type === 'Out' ? ' ' + req : ''}</label>
-          <div class="dnbox in${F.type === 'Out' && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
+        ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
+          <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f">${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
@@ -418,7 +423,9 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (!F.item) miss.push('#fItem');
-    if (second && F.type === 'Out' && !F.dns.length) miss.push('#dnBox');
+    if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
+      if (dnNeed(ticketBy(F.cid)) || !ticketBy(F.cid)) miss.push('#dnBox');
+    }
     miss.forEach(s => $(s) && $(s).classList.add('need'));
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
@@ -458,7 +465,7 @@
     const use = force && PENDING ? PENDING : { kg: w.kg, src: w.src, warn: f.warn };
     const g = CORE.finish(Number(sel.w1), use.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
     const reason = [sel.reason, use.src === 'Manual' && MANUAL ? MANUAL.reason : ''].filter(Boolean).join(' · ');
-    const tk = Object.assign({}, sel, fromForm(), { status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
+    const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
       warn: g.warn.map(x => x.en).join(' | '), reason: reason });
     PENDING = null; MANUAL = null;
     putTicket(tk);
@@ -579,7 +586,7 @@
         ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b><small>${esc(x.company || '')}</small></td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || 'Out', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
@@ -592,7 +599,7 @@
   }
   function ticketTable(list) {
     return `<div class="tbl"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('អតិថិជន', 'Customer')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ចូល/ចេញ', 'In/Out')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
-      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}${x.status === 'Void' ? ` <span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : ''}${x.status === 'Open' ? ` <span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.customer || '')}</td><td>${esc(x.item || '')}</td><td>${esc(x.type || '')}</td>
+      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}${x.status === 'Void' ? ` <span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : ''}${x.status === 'Open' ? ` <span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.customer || '')}</td><td>${esc(x.item || '')}</td><td>${esc(typeName(typeOf(x)))}</td>
         <td>${dmy(x.t1) === dmy(new Date().toISOString()) ? '' : dmy(x.t1) + ' '}${hm(x.t1)}${x.t2 ? '–' + hm(x.t2) : ''}</td><td class="r mono">${kg(x.gross)}</td><td class="r mono">${kg(x.tare)}</td><td class="r mono"><b>${kg(x.net)}</b></td>
         <td class="nw">${x.warn ? '<span title="' + esc(warnTxt(x.warn)) + '">⚠️</span>' : ''}${[x.s1, x.s2].some(s => s === 'Manual') ? '<span title="Manual">✍</span>' : ''}${[x.s1, x.s2].some(s => s === 'Simulator') ? '<span title="Simulator">🧪</span>' : ''}${x.err ? '<span title="' + esc(x.err) + '">❗</span>' : Q.indexOf(x.cid) >= 0 ? '<span title="' + t('រង់ចាំផ្ញើ', 'Waiting to send') + '">⏳</span>' : ''}</td></tr>`).join('')}</table></div>`;
   }
@@ -647,7 +654,7 @@
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
     const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
-    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, x.type, (x.dns || []).join(', '), (x.dns || []).length, x.driver, x.dest, x.note,
+    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, x.driver, x.dest, x.note,
       String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
     ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 18, 16, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
@@ -678,7 +685,7 @@
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
       <div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
-        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(x.type)))}${kv('DN No', esc((x.dns || []).join(', ')))}
+        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc((x.dns || []).join(', ')))}
         ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
@@ -919,7 +926,7 @@
     const dns = x.dns || [];
     return {
       TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '',
-      DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: x.type || '',
+      DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
       Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',

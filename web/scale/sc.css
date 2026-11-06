@@ -117,3 +117,6 @@ input[type=range] { flex: 1; min-width: 180px; }
 }
 .lcd .lcdbtns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .lcd .btn.conn2 { min-height: 40px; width: auto; background: transparent; border-color: #3a5170; color: #b8c7dc; }
+/* "New truck" on the 2nd weigh card: a clear button, right of the title */
+#formCard > h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn.newtruck { margin-left: auto; width: auto; min-height: 42px; padding: 6px 16px; font-size: 15px; font-weight: 700; background: #0b4ea2; border-color: #0b4ea2; color: #fff; }
