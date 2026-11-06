@@ -646,7 +646,7 @@
       local.forEach(x => { if (LOC[x.cid]) map[x.cid] = x; });
       LIST.rows = Object.keys(map).map(k => map[k]);
       paintListBody();
-    } catch (e) { if (e.code !== 'NET') toast(e.message); else $('#lSum').insertAdjacentHTML('beforeend', ` <span class="badge pending">${t('គ្មានអ៊ីនធឺណិត៖ បង្ហាញតែទិន្នន័យក្នុងកុំព្យូទ័រ', 'Offline: showing what is on this PC')}</span>`); }
+    } catch (e) { if (e.code !== 'NET') toast(e.message); else if ($('#lSum')) $('#lSum').insertAdjacentHTML('beforeend', ` <span class="badge pending">${t('គ្មានអ៊ីនធឺណិត៖ បង្ហាញតែទិន្នន័យក្នុងកុំព្យូទ័រ', 'Offline: showing what is on this PC')}</span>`); }
   }
   const listRows = () => {
     const q = LIST.q.trim().toLowerCase();
@@ -654,6 +654,7 @@
       .sort((a, b) => String(b.t1).localeCompare(String(a.t1)));
   };
   function paintListBody() {
+    if (!$('#lSum')) return;   // the list was left before the server answered
     const rows = listRows();
     const done = rows.filter(x => x.status === 'Done');
     $('#lSum').innerHTML = `<b>${done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}`;
@@ -687,6 +688,7 @@
         const r = await api('scList', { from: d, to: d });
         x = r.tickets.find(r2 => r2.no === key || r2.cid === key);
       } catch (e) { toast(e.message); }
+      if (!/^#\/?t\//.test(location.hash)) return;   // left this ticket before the server answered
     }
     if (!x) { $('#view').innerHTML = `<div class="card empty">${t('រកមិនឃើញប័ណ្ណ', 'Ticket not found')} ${esc(key)}</div>`; return; }
     const kv = (a, b) => `<div class="kv"><span>${a}</span><b>${b || '—'}</b></div>`;
