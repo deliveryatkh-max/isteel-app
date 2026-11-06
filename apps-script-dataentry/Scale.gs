@@ -15,7 +15,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 const SC_DT_NEW = ['Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'];   // added to the Fuel "Driver & Truck" tab
@@ -27,6 +27,7 @@ const SC_SETTINGS = [
   ['SCALE_SIGN', 'Weigher, Driver, Security', 'Signature boxes on the ticket'],
   ['SCALE_COMPANY', 'ISI STEEL', 'Name printed on the ticket'],
   ['SCALE_TEMPLATE_LINK', '', 'Drive link to the ticket template: a Word file, a Google Doc or a folder (newest file used). Empty = built-in ticket.'],
+  ['SCALE_DNC_USERS', '', 'Emails that can see the Debit Note check menu (comma separated). Admins always see it.'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
@@ -131,13 +132,16 @@ function scSettingsMap_() {
 const scTime_ = v => (v instanceof Date ? fmt_(v, "yyyy-MM-dd'T'HH:mm:ss") : String(v || ''));
 function scRows_() {
   const sh = sheet_(SC.TK, SC_TK_COLS);
+  // Columns added later (Loading Place, 6 Nov 2026) get their header on the old sheet.
+  if (sh.getMaxColumns() < SC_TK_COLS.length) sh.insertColumnsAfter(sh.getMaxColumns(), SC_TK_COLS.length - sh.getMaxColumns());
+  if (sh.getRange(1, SC_TK_COLS.length).getValue() === '') sh.getRange(1, 28, 1, SC_TK_COLS.length - 27).setValues([SC_TK_COLS.slice(27)]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
   const n = sh.getLastRow() - 1;
   return { sh, rows: n > 0 ? sh.getRange(2, 1, n, SC_TK_COLS.length).getValues() : [] };
 }
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   delete o.dn; delete o.dnCount;
@@ -157,14 +161,23 @@ function scBoot_(user) {
   }
   const last = {};   // last empty weight seen per plate (from finished tickets), for the warning hint
   rows.forEach(r => { if (r[1] === 'Done' && r[2] && r[19] !== '') last[scNorm_(r[2])] = Number(r[19]); });
+  const dnc = scCanDnc_(user);
   return {
-    user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer },
+    user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer, dnc: dnc },
+    prices: dnc && typeof prices_ === 'function' ? prices_() : [],   // vendor prices: only for people who see the Debit Note check
+    people: user.admin ? usersCached_().filter(u => u.okScale).map(u => ({ email: u.email, name: u.name, admin: u.admin })) : [],
     trucks: scTrucks_(), customers: scCustomers_(), items: scItems_(), dests: scDests_(),
     settings: scSettingsMap_(), tickets: tickets, lastTare: last, sheetUrl: ss_().getUrl(), at: new Date().getTime(),
   };
 }
 
 /** Tickets between two dates (yyyy-MM-dd, by 1st weigh time) for the list, search and Excel. */
+/** Debit Note check menu: Admins, plus the people an Admin ticked (DE Settings SCALE_DNC_USERS). */
+function scCanDnc_(user) {
+  if (user.admin) return true;
+  return String(setting_('SCALE_DNC_USERS') || '').toLowerCase().split(/[\s,;]+/).indexOf(String(user.email || '').toLowerCase()) >= 0;
+}
+
 function scList_(p) {
   const from = date_(p.from), to = date_(p.to);
   if (!from || !to) fail_('BAD', 'Pick the dates.');
@@ -241,13 +254,14 @@ function scSave_(ops, user) {
     const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), both ? (w1 > w2 ? 'In' : 'Out') : '', uniq.join(', '), uniq.length,
       clip_(p.driver, 80), clip_(p.dest, 80), clip_(p.note, 300),
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
-      clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid];
+      clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
+      p.load === undefined && old ? old[28] : clip_(p.load, 80)];
     let row;
     if (old) {
       row = idx + 2;
       const log = [];
       SC_TK_COLS.forEach((h, i) => {
-        if (i >= 22) return;   // PDF, operator, times: not logged
+        if (i >= 22 && i !== 28) return;   // PDF, operator, times: not logged
         const a = old[i] instanceof Date ? fmt_(old[i], 'yyyy-MM-dd HH:mm:ss') : String(old[i]);
         const b = vals[i] instanceof Date ? fmt_(vals[i], 'yyyy-MM-dd HH:mm:ss') : String(vals[i]);
         if (a !== b) log.push([h, a, b]);
@@ -573,7 +587,7 @@ function scSettings_(p, user) {
   const keys = n > 0 ? sh.getRange(2, 1, n, 1).getDisplayValues().map(r => String(r[0]).trim()) : [];
   SC_SETTINGS.forEach(def => {
     if (p[def[0]] === undefined) return;
-    const v = clip_(p[def[0]], 200);
+    const v = clip_(p[def[0]], def[0] === 'SCALE_DNC_USERS' ? 3000 : 200);
     const i = keys.indexOf(def[0]);
     if (i >= 0) {
       const before = sh.getRange(i + 2, 2).getDisplayValue();
