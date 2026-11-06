@@ -146,6 +146,7 @@ ok(/Check these/.test(call('sok@x.com', 'email', { id: r.id, extra: 'nope' }).er
 ok(/Tick a list/.test(call('sok@x.com', 'email', { id: r.id }).error), 'nobody to send to');
 eq(must(call('sok@x.com', 'email', { id: r.id, lists: ['Warehouse'], extra: 'boss@x.com wh1@x.com', note: 'hi' })), { sent: 3 }, 'sent once per person');
 const m = env.mails[env.mails.length - 1];
+eq(must(call('sok@x.com', 'mailTo', { lists: ['Warehouse', 'Nope'] })).emails, ['wh1@x.com', 'wh2@x.com'], 'list addresses for the Outlook draft');
 ok(Object.values(env.files).filter(f => f.name === r.id + '.pdf' && !f.trashed).length === 1, 'PDF reused, not made twice');
 ok(m.to === 'wh1@x.com,wh2@x.com,boss@x.com' && m.attachments.length === 1 && /Goods receipt/.test(m.subject), 'email with PDF');
 eq(must(call('sok@x.com', 'email', { id: r.id, extra: '"Sonal Heng" <Sonal.Heng@x.com>, Dara <d@x.com>;' })), { sent: 2 }, 'Outlook-style names pasted');

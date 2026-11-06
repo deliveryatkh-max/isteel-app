@@ -853,8 +853,8 @@
       <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
       <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
-      <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF', 'The PDF report is attached')}</p>
-      <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button><div id="mailMsg"></div></div>`;
+      <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF · បើកក្នុង Outlook ដើម្បីកែ អ្នកផ្ញើ អ្នកទទួល ឬសារ មុនផ្ញើ', 'The PDF report is attached · opens in Outlook so you can change the sender, recipients or text before sending')}</p>
+      <button class="btn ok big" id="mailSend">📧 ${t('បើកក្នុង Outlook', 'Open in Outlook')}</button><div id="mailMsg"></div></div>`;
     $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
       // keep only the addresses, so Outlook-style "Name" <name@x.com>, pastes work
@@ -862,16 +862,84 @@
       const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = found.join(', ');
       const say = (ok, msg) => { $('#mailMsg').innerHTML = `<div class="mailres ${ok ? 'ok' : 'bad'}">${msg}</div>`; toast((ok ? '✅ ' : '⚠️ ') + $('#mailMsg').textContent); };
       if (raw && !found.length) { say(false, t('រកមិនឃើញអ៊ីមែលក្នុងប្រអប់ "អ៊ីមែលផ្សេងទៀត"', 'No email address found in "Other emails"')); return; }
-      if (!lists.length && !extra) { say(false, t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
-      if (DEMO) { const n = LISTS.filter(l => lists.indexOf(l.name) >= 0).reduce((s, l) => s + l.count, 0) + (extra ? extra.split(/[\s,;]+/).length : 0); toast('🧪 ' + t('សាកល្បង៖ នឹងផ្ញើទៅ ', 'Demo: would send to ') + n + t(' នាក់', ' people')); box.innerHTML = ''; return; }
-      const b = $('#mailSend'); busy(b, true, t('កំពុងផ្ញើ… (PDF ប្រហែល 10–20 វិនាទី)', 'Sending… (PDF takes about 10–20 s)')); $('#mailMsg').innerHTML = '';
+      // Kim, 6 Nov 2026: the email opens in Outlook as a draft instead of being sent by the app, so the sender,
+      // recipients and text can be changed there. Computer: an .eml draft (X-Unsent) with the PDF attached, which Outlook
+      // opens ready to edit. Phone: the PDF is downloaded and Outlook opens through mailto (attach the PDF there).
+      const b = $('#mailSend'); busy(b, true, t('កំពុងរៀបចំ PDF… (10–20 វិនាទី)', 'Preparing the PDF… (10–20 s)')); $('#mailMsg').innerHTML = '';
       try {
-        const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value });
-        const when = new Date().toTimeString().slice(0, 5);
-        box.innerHTML = `<div class="mailres ok">✅ ${t('បានផ្ញើអ៊ីមែលទៅ ', 'Email sent to ')}${x.sent}${t(' នាក់', ' people')} · ${when}<small>${esc([lists.join(', '), extra].filter(String).join(' · '))}</small></div>`;
-        toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people'));
-      } catch (e) { busy(b, false); say(false, esc(t('មិនទាន់ផ្ញើទេ៖ ', 'Not sent: ') + oldScript(e))); }
+        let to = found.slice();
+        if (lists.length) {
+          if (DEMO) to = to.concat(lists.map(n => n.toLowerCase() + '@isisteel.com'));
+          else {
+            try { to = to.concat((await api('mailTo', { lists })).emails || []); }
+            catch (e) { if (!/Unknown action/i.test(e.message)) throw e; say(false, t('Apps Script ចាស់៖ សូមវាយអ៊ីមែលអ្នកទទួលក្នុង Outlook', 'Old Apps Script: add the list recipients in Outlook')); }
+          }
+        }
+        to = to.filter((x, i) => to.indexOf(x) === i);
+        const subject = mailSubject(r), body = $('#mailNote').value;
+        const pdf = DEMO ? { name: r.id + '.pdf', b64: btoa('%PDF-1.4 demo') } : await api('pdf', { id: r.id });
+        if (matchMedia('(pointer: coarse)').matches && innerWidth < 900) {
+          savePdf(pdf);
+          location.href = 'mailto:' + to.map(encodeURIComponent).join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+          say(true, t('បានបើក Outlook · PDF ត្រូវបានទាញយក សូមភ្ជាប់វាក្នុងអ៊ីមែល', 'Outlook opened · the PDF was downloaded, attach it to the email'));
+        } else {
+          const eml = emlDraft(to, subject, body, pdf, mailHtml(r, body));
+          const url = URL.createObjectURL(new Blob([eml], { type: 'message/rfc822' }));
+          const a = document.createElement('a'); a.href = url; a.download = r.id + '.eml'; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(r.id) + '.eml ' +
+            t('នៅផ្នែកទាញយក រួចជ្រើស "Always open files of this type" (ធ្វើតែម្តង)', 'in the downloads, then pick "Always open files of this type" (one time only)') + '</small>');
+        }
+      } catch (e) { say(false, esc(oldScript(e))); }
+      busy(b, false);
     };
+  }
+  const mailSubject = r => 'Goods receipt ' + r.id + ': ' + r.po + ' · ' + r.truck + ((r.items || []).some(i => +i.dmgQty > 0) ? ' · DAMAGED' : '') + ((r.items || []).some(isLessItem) ? ' · RECEIVED LESS' : '');
+  function savePdf(x) {
+    const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a'); a.href = url; a.download = x.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  // An unsent e-mail file: Outlook opens it as a new draft (X-Unsent: 1) with the PDF already attached
+  function emlDraft(to, subject, body, pdf, html) {
+    const b64 = str => btoa(unescape(encodeURIComponent(str)));
+    const wrap = x => x.replace(/.{1,76}/g, '$&\r\n');
+    const k = 'isteel-' + Date.now().toString(36), a = k + '-alt';
+    return ['To: ' + to.join(', '), 'Subject: =?UTF-8?B?' + b64(subject) + '?=', 'X-Unsent: 1', 'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="' + k + '"', '', '--' + k,
+      'Content-Type: multipart/alternative; boundary="' + a + '"', '', '--' + a,
+      'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(body)), '--' + a,
+      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(html)), '--' + a + '--', '--' + k,
+      'Content-Type: application/pdf; name="' + pdf.name + '"', 'Content-Disposition: attachment; filename="' + pdf.name + '"',
+      'Content-Transfer-Encoding: base64', '', wrap(pdf.b64), '--' + k + '--', ''].join('\r\n');
+  }
+  // The email body for Outlook: the navy banner, then the message, where "- Label: value" lines become a table.
+  // Tables with bgcolor (not div backgrounds) so classic Outlook keeps the colours.
+  function mailHtml(r, text) {
+    const font = "font-family:Arial,'Noto Sans Khmer',sans-serif;";
+    const banner = `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px"><tr><td bgcolor="#011e41" style="background:#011e41;padding:12px 16px;${font}color:#ffffff">` +
+      `<div style="font-size:12px;color:#c9d3e0">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>` +
+      `<div style="font-size:18px;font-weight:bold;color:#ffffff">${esc(r.id)} · ${esc(r.truck)}</div>` +
+      `<div style="font-size:12px;color:#d9e1eb">${esc([r.site, r.po, r.supplier, showDate(r.date) + ' ' + r.start + '–' + r.end].filter(String).join(' · '))}</div></td></tr></table>`;
+    const cell = 'padding:5px 10px;border:1px solid #d6dee8;font-size:13px;' + font;
+    const out = [];
+    let rows = [], para = [];
+    const flushRows = () => { if (rows.length) out.push('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:4px 0 12px;min-width:420px">' + rows.join('') + '</table>'); rows = []; };
+    const flushPara = () => { if (para.length) out.push('<p style="margin:0 0 12px">' + para.join('<br>') + '</p>'); para = []; };
+    String(text || '').split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*[-*•]\s+(.*)$/);
+      if (m) {
+        flushPara();
+        const kv = m[1].match(/^([^:]{1,60}):\s*(.*)$/);
+        rows.push(kv ? `<tr><td bgcolor="#f2f5f9" style="${cell}background:#f2f5f9;font-weight:bold;white-space:nowrap">${esc(kv[1])}</td><td style="${cell}">${esc(kv[2])}</td></tr>`
+          : `<tr><td colspan="2" style="${cell}">${esc(m[1])}</td></tr>`);
+      } else if (!line.trim()) { flushRows(); flushPara(); }
+      else if (/:\s*$/.test(line) && line.length < 40) { flushRows(); flushPara(); out.push(`<p style="margin:0 0 4px;font-weight:bold">${esc(line.trim().replace(/:$/, ''))}</p>`); }
+      else { flushRows(); para.push(esc(line)); }
+    });
+    flushRows(); flushPara();
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div></body></html>`;
   }
   // Ready-made English email text for the receipt; the user can edit it before sending
   function mailDraft(r) {
