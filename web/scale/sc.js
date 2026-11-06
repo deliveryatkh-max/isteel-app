@@ -507,6 +507,16 @@
         : w.stable ? ['ok', 'STABLE'] : ['move', t('កំពុងរំកិល', 'MOVING')];
       el.className = 'lcd ' + state[0];
       const num = `${w.kg != null ? kg(w.kg) : '-----'}<span>kg</span>`;
+      // At the 2nd weigh (a waiting truck is picked): live weight, 1st weight and net side by side (Kim's option C).
+      const sel = ticketBy(F.cid);
+      let nums = `<div class="num">${num}</div>`;
+      if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
+        const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
+        const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
+        nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
+          <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}</div></div>
+          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
+      }
       const side = `<div class="side"><span class="st">${state[1]}</span>
           <span>${SIM.on ? '🧪 ' + t('ម៉ាស៊ីនសាកល្បង', 'Simulator') : SER.on ? '🔌 ' + t('ភ្ជាប់ជញ្ជីង', 'Scale connected') + ' · ' + conn().baud : ''}</span>
           ${SER.finding ? `<span class="err">🔍 ${esc(SER.finding)}</span>` : SER.on && !w.live && !SIM.on && Date.now() - SER.since > 3000 ? `<span class="err">${esc(noSignalWhy())}</span>` : ''}
@@ -518,9 +528,10 @@
           </div>
           ${SER.err ? `<span class="err">${esc(SER.err)}</span>` : ''}</div>`;
       // only the number changes many times a second; the buttons are drawn again only when they change, so clicks are not lost
-      if (el._side === side && el.querySelector('.num')) { el.querySelector('.num').innerHTML = num; paintButtons(); return paintRaw(); }
+      if (el._side === side && el.querySelector('.nums')) { const n = el.querySelector('.nums'); if (n._h !== nums) { n._h = nums; n.innerHTML = nums; } paintButtons(); return paintRaw(); }
       el._side = side;
-      el.innerHTML = `<div class="num">${num}</div>` + side;
+      el.innerHTML = `<div class="nums">${nums}</div>` + side;
+      el.querySelector('.nums')._h = nums;
       const cb = $('#connBtn');
       if (cb) cb.onclick = () => serialStart(true);
       if ($('#reconBtn')) $('#reconBtn').onclick = () => serialStart(false);
