@@ -78,7 +78,7 @@
   // ---------------------------------------------------------------- the scale (Web Serial)
   const CONN_DEF = { baud: 9600, bits: 8, parity: 'none', stop: 1, fmt: 'auto', stableMs: 1500 };
   const conn = () => Object.assign({}, CONN_DEF, getJ('sc_conn', {}));
-  const SER = { port: null, reader: null, on: false, buf: '', raw: '', last: 0, err: '', st: CORE.Stable(conn().stableMs) };
+  const SER = { port: null, lastPort: null, reader: null, on: false, buf: '', raw: '', last: 0, bytes: 0, lastByte: 0, since: 0, err: '', finding: '', st: CORE.Stable(conn().stableMs) };
   const SIM = { on: false, target: 0, kg: 0, timer: 0 };
   let MANUAL = null;                             // { kg, reason } typed by an Admin, used for the next weigh only
   const hasSerial = () => 'serial' in navigator;
@@ -86,12 +86,13 @@
   async function serialStart(ask) {
     if (!hasSerial()) { SER.err = t('កម្មវិធីនេះមិនអាចភ្ជាប់ជញ្ជីងបានទេ។ សូមបើកក្នុង Chrome ឬ Edge លើកុំព្យូទ័រជញ្ជីង។', 'This browser cannot reach the scale. Open the app in Chrome or Edge on the scale PC.'); paintLcd(); return; }
     try {
-      const port = ask ? await navigator.serial.requestPort() : (await navigator.serial.getPorts())[0];
+      const ports = ask ? [] : await navigator.serial.getPorts();
+      const port = ask ? await navigator.serial.requestPort() : (ports.indexOf(SER.lastPort) >= 0 ? SER.lastPort : ports[0]);
       if (!port) { paintLcd(); return; }
       await serialStop();
       const c = conn();
       await port.open({ baudRate: +c.baud, dataBits: +c.bits, parity: c.parity, stopBits: +c.stop, bufferSize: 4096 });
-      SER.port = port; SER.on = true; SER.err = ''; SER.buf = ''; SER.st.setMs(+c.stableMs || 1500); SER.st.reset();
+      SER.port = port; SER.lastPort = port; SER.on = true; SER.err = ''; SER.buf = ''; SER.since = Date.now(); SER.bytes = 0; SER.st.setMs(+c.stableMs || 1500); SER.st.reset();
       readLoop(port);
     } catch (e) {
       SER.err = /already open/i.test(e.message) ? t('ច្រកនេះកំពុងប្រើដោយកម្មវិធីផ្សេង (កម្មវិធីចាស់?)។ សូមបិទវាសិន។', 'The port is used by another program (the old scale software?). Close it first.')
@@ -121,6 +122,7 @@
     let s = '';
     for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
     SER.raw = (SER.raw + s).slice(-300);
+    SER.bytes += u8.length; SER.lastByte = Date.now();
     SER.buf += s;
     const r = CORE.parse(SER.buf, conn().fmt);
     SER.buf = r.rest;
@@ -497,17 +499,63 @@
       const state = MANUAL ? ['manual', '✍ ' + t('វាយដោយដៃ', 'TYPED')] : !w.live ? ['off', SER.on ? t('គ្មានសញ្ញា', 'NO SIGNAL') : t('មិនទាន់ភ្ជាប់', 'NOT CONNECTED')]
         : w.stable ? ['ok', 'STABLE'] : ['move', t('កំពុងរំកិល', 'MOVING')];
       el.className = 'lcd ' + state[0];
-      el.innerHTML = `<div class="num">${w.kg != null ? kg(w.kg) : '-----'}<span>kg</span></div>
-        <div class="side"><span class="st">${state[1]}</span>
+      const num = `${w.kg != null ? kg(w.kg) : '-----'}<span>kg</span>`;
+      const side = `<div class="side"><span class="st">${state[1]}</span>
           <span>${SIM.on ? '🧪 ' + t('ម៉ាស៊ីនសាកល្បង', 'Simulator') : SER.on ? '🔌 ' + t('ភ្ជាប់ជញ្ជីង', 'Scale connected') + ' · ' + conn().baud : ''}</span>
+          ${SER.finding ? `<span class="err">🔍 ${esc(SER.finding)}</span>` : SER.on && !w.live && !SIM.on && Date.now() - SER.since > 3000 ? `<span class="err">${esc(noSignalWhy())}</span>` : ''}
+          <div class="lcdbtns">
           ${!SER.on && !SIM.on && !MANUAL ? `<button type="button" class="btn conn" id="connBtn">🔌 ${t('ភ្ជាប់ជញ្ជីង', 'Connect scale')}</button>` : ''}
+          ${!SER.on && !SIM.on && SER.lastPort ? `<button type="button" class="btn conn2" id="reconBtn">🔄 ${t('ភ្ជាប់ឡើងវិញ', 'Reconnect')}</button>` : ''}
+          ${SER.on && !SER.finding ? `<button type="button" class="btn conn2" id="reconBtn">🔄 ${t('ភ្ជាប់ឡើងវិញ', 'Reconnect')}</button><button type="button" class="btn conn2" id="offBtn">⏏ ${t('ផ្តាច់', 'Disconnect')}</button>` : ''}
+          ${SER.on && !w.live && !SIM.on && !SER.finding && Date.now() - SER.since > 3000 ? `<button type="button" class="btn conn" id="findBtn">🔍 ${t('រកការកំណត់ដោយខ្លួនឯង', 'Find settings')}</button>` : ''}
+          </div>
           ${SER.err ? `<span class="err">${esc(SER.err)}</span>` : ''}</div>`;
+      // only the number changes many times a second; the buttons are drawn again only when they change, so clicks are not lost
+      if (el._side === side && el.querySelector('.num')) { el.querySelector('.num').innerHTML = num; paintButtons(); return paintRaw(); }
+      el._side = side;
+      el.innerHTML = `<div class="num">${num}</div>` + side;
       const cb = $('#connBtn');
       if (cb) cb.onclick = () => serialStart(true);
+      if ($('#reconBtn')) $('#reconBtn').onclick = () => serialStart(false);
+      if ($('#offBtn')) $('#offBtn').onclick = () => serialStop().then(paintLcd);
+      if ($('#findBtn')) $('#findBtn').onclick = findSettings;
     }
     paintButtons();
+    paintRaw();
+  }
+  function paintRaw() {
     const raw = $('#rawBox');
     if (raw) { raw.textContent = SER.raw.replace(/[\x00-\x1f]/g, c => c === '\n' ? '⏎\n' : c === '\r' ? '' : '[' + c.charCodeAt(0).toString(16).padStart(2, '0') + ']') || '—'; const pw = $('#rawKg'); if (pw) pw.textContent = SER.st.kg == null ? '—' : kg(SER.st.kg) + ' kg' + (SER.st.isStable() ? ' · STABLE' : ''); }
+  }
+  /** Why there is no weight: nothing arrives, or something arrives that can't be read. */
+  function noSignalWhy() {
+    if (!SER.bytes || Date.now() - SER.lastByte > 3000) return t('គ្មានទិន្នន័យពីជញ្ជីងទេ។ ពិនិត្យខ្សែ ច្រក COM ឬការកំណត់ផ្ញើទិន្នន័យលើក្បាលជញ្ជីង។', 'Nothing is coming from the scale. Check the cable, the COM port, or the indicator\'s output setting.');
+    return t('មានទិន្នន័យមក តែអានមិនបាន។ ចុច "រកការកំណត់"។', 'Data is coming but can\'t be read. Press "Find settings".');
+  }
+  /** Tries the usual Keli settings one by one until a weight is read (about 2.5 s each). */
+  async function findSettings() {
+    const tries = [];
+    [9600, 4800, 2400, 1200, 19200].forEach(b => { tries.push({ baud: b, bits: 8, parity: 'none', stop: 1 }); });
+    [9600, 4800, 2400, 1200].forEach(b => { tries.push({ baud: b, bits: 7, parity: 'even', stop: 1 }); });
+    const keep = conn();
+    for (let i = 0; i < tries.length; i++) {
+      const c = Object.assign({}, keep, tries[i], { fmt: 'auto' });
+      SER.finding = t('កំពុងសាក', 'Trying') + ' ' + c.baud + ' ' + c.bits + (c.parity === 'none' ? 'N' : 'E') + '1 (' + (i + 1) + '/' + tries.length + ')';
+      set('sc_conn', JSON.stringify(c));
+      await serialStart(false);
+      const t0 = Date.now();
+      while (Date.now() - t0 < 2500 && !(SER.last > t0)) await new Promise(r => setTimeout(r, 200));
+      if (SER.last > t0) {
+        SER.finding = '';
+        toast('✅ ' + t('រកឃើញ', 'Found') + ': ' + c.baud + ' ' + c.bits + (c.parity === 'none' ? 'N' : 'E') + '1');
+        paintLcd(); if (/^#\/?set\/scale/.test(location.hash)) setScale();
+        return;
+      }
+    }
+    SER.finding = '';
+    set('sc_conn', JSON.stringify(keep));
+    await serialStart(false);
+    toast(t('រកមិនឃើញ។ សូមផ្ញើរូបប្រអប់ "ទិន្នន័យពីជញ្ជីង" ក្នុង ការកំណត់ › ការភ្ជាប់ជញ្ជីង មក Claude។', 'Not found. Send Claude a screenshot of "Data from the scale" in Settings › Scale connection.'));
   }
   function paintButtons() {
     const w = cur();
