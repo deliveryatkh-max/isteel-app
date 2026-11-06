@@ -970,6 +970,8 @@
     box.dataset.paper = pp;
     await docx.renderAsync(await zip.generateAsync({ type: 'blob' }), box, null,
       { inWrapper: false, breakPages: true, renderHeaders: true, renderFooters: true, experimental: true, ignoreLastRenderedPageBreak: true, useBase64URL: true });
+    // A Word table row's "alignment" moves the row, not its text; docx-preview centres the text instead, so undo that.
+    box.querySelectorAll('tr').forEach(r => { r.style.textAlign = ''; });
     return box;
   }
   /** PDF of the drawn Word file: the first page as a picture, like the built-in ticket. */
