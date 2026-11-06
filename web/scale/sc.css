@@ -140,9 +140,10 @@ input[type=range] { flex: 1; min-width: 180px; }
 h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 
 /* ticket page: print preview instead of the details list */
-.tprev { background: #e9eef5; border-radius: 12px; padding: 12px; overflow: auto; min-height: 120px; }
-.tprev .tplbox section.docx { margin: 0 auto !important; box-shadow: 0 2px 10px rgba(1, 30, 65, .18); }
+.tprev { background: #fff; border: 1px solid var(--line, #d4e1f5); border-radius: 12px; padding: 12px; overflow: auto; min-height: 120px; }
+.tprev .tplbox, .tprev .tplbox section.docx { background: #fff !important; }
+.tprev .tplbox section.docx { margin: 0 auto !important; box-shadow: none; }
 .tprev .tplbox section.docx + section.docx { display: none; }
-.tprev .tprevimg { display: block; width: 100%; max-width: 760px; margin: 0 auto; box-shadow: 0 2px 10px rgba(1, 30, 65, .18); background: #fff; }
+.tprev .tprevimg { display: block; width: 100%; max-width: 760px; margin: 0 auto; background: #fff; }
 /* all bottom tabs on one row (Weigh, Tickets, Turnaround, Settings) */
 .tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }
