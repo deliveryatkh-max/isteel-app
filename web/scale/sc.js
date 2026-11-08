@@ -286,6 +286,7 @@
   barH(); window.addEventListener('resize', barH);
 
   // ---------------------------------------------------------------- pickers (search, "+ Add new", like the Fuel app)
+  const destsOf = s => String(s || '').split(/\s*,\s*/).filter(Boolean);
   function picker(input, opts) {
     const box = document.createElement('div');
     box.className = 'sugg'; box.hidden = true;
@@ -398,7 +399,9 @@
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${t('រើសពីបញ្ជី', 'Pick from the list')}" value="${esc(F.dest)}"></div></div>` : ''}
+        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (បានច្រើន)', 'Destination (one or more)')}</label>
+          ${destsOf(F.dest).length ? `<div class="dnbox destbox">${destsOf(F.dest).map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dst="${i}" aria-label="Remove">×</button></span>`).join('')}</div>` : ''}
+          <div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${destsOf(F.dest).length ? t('➕ បន្ថែមគោលដៅទៀត', '➕ Add another destination') : t('រើសពីបញ្ជី', 'Pick from the list')}" value=""></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
@@ -426,7 +429,12 @@
     picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     // Item and Destination are asked at the 2nd weigh only (Kim, 8 Nov 2026)
     if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
-    if ($('#fDest')) picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: false, onPick: v => upd('dest', v) });
+    // More than one destination can be picked (Kim, 8 Nov 2026); they are kept as one text "A, B".
+    if ($('#fDest')) {
+      picker($('#fDest'), { list: () => ((B && B.dests) || []).filter(v => destsOf(F.dest).indexOf(v) < 0).map(v => ({ v })), addNew: false,
+        onPick: v => { const a = destsOf(F.dest); if (v && a.indexOf(v) < 0) a.push(v); upd('dest', a.join(', ')); paintForm(); } });
+      document.querySelectorAll('[data-dst]').forEach(b => { b.onclick = () => { const a = destsOf(F.dest); a.splice(+b.dataset.dst, 1); upd('dest', a.join(', ')); paintForm(); }; });
+    }
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
