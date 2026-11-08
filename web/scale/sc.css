@@ -201,3 +201,8 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 
 /* Picked destinations above the dropdown (Kim, 8 Nov 2026) */
 .destbox { min-height: 0; margin-bottom: 6px; cursor: default; border-style: dashed; }
+
+/* Destination list with tick boxes (Kim, 8 Nov 2026) */
+.sugg.msel .mopt { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
+.sugg.msel .mopt input { width: 20px; height: 20px; accent-color: #1b6b2f; }
+.sugg.msel .mopt.on { background: #e2f6e6; font-weight: 700; }
