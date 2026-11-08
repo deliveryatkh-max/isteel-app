@@ -397,7 +397,17 @@
     const h = f.getBoundingClientRect().bottom - tb.getBoundingClientRect().top - (hint ? hint.offsetHeight + 10 : 0) - 25;
     tb.style.maxHeight = Math.max(220, Math.round(h)) + 'px';
   }
-  window.addEventListener('resize', () => fitSite());
+  window.addEventListener('resize', () => { fitSite(); fitTables(); });
+  // Table headers and filter bars always stay frozen (Kim, 8 Nov 2026): a long table scrolls inside its own box,
+  // which ends at the bottom of the window, so the filters above it and its header row never move away.
+  function fitTables() {
+    $$('.tbl.fit').forEach(tb => {
+      const top = tb.getBoundingClientRect().top + window.scrollY;
+      tb.style.maxHeight = Math.max(280, Math.round(window.innerHeight - top - 20)) + 'px';
+    });
+  }
+  let fitQ = 0;
+  new MutationObserver(() => { cancelAnimationFrame(fitQ); fitQ = requestAnimationFrame(fitTables); }).observe($('#view'), { childList: true, subtree: true });
 
   function paintForm() {
     const card = $('#formCard');
@@ -412,7 +422,7 @@
         ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
       <div class="fgrid toprow">
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
-        <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load goods'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload goods']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
+        <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Tarpaulin')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       </div>
@@ -708,7 +718,7 @@
     }
   }
   function ticketTable(list) {
-    return `<div class="tbl"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('អតិថិជន', 'Customer')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ចូល/ចេញ', 'In/Out')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
+    return `<div class="tbl fit"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('អតិថិជន', 'Customer')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ចូល/ចេញ', 'In/Out')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
       ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}${x.status === 'Void' ? ` <span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : ''}${x.status === 'Open' ? ` <span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.customer || '')}</td><td>${esc(x.item || '')}</td><td>${esc(typeName(typeOf(x)))}</td>
         <td>${dmy(x.t1) === dmy(new Date().toISOString()) ? '' : dmy(x.t1) + ' '}${hm(x.t1)}${x.t2 ? '–' + hm(x.t2) : ''}</td><td class="r mono">${kg(x.gross)}</td><td class="r mono">${kg(x.tare)}</td><td class="r mono"><b>${kg(x.net)}</b></td>
         <td class="nw">${x.warn ? '<span title="' + esc(warnTxt(x.warn)) + '">⚠️</span>' : ''}${[x.s1, x.s2].some(s => s === 'Manual') ? '<span title="Manual">✍</span>' : ''}${[x.s1, x.s2].some(s => s === 'Simulator') ? '<span title="Simulator">🧪</span>' : ''}${x.err ? '<span title="' + esc(x.err) + '">❗</span>' : Q.indexOf(x.cid) >= 0 ? '<span title="' + t('រង់ចាំផ្ញើ', 'Waiting to send') + '">⏳</span>' : ''}</td></tr>`).join('')}</table></div>`;
@@ -1029,7 +1039,7 @@
       ${dncTotals(M)}
       ${dncReadTable()}` : `<p class="hint mt">${t('ផ្ទុក Debit Note (PDF ឬរូបថត) ដើម្បីប្រៀបធៀបជាមួយប័ណ្ណថ្លឹងក្នុងតារាងនេះ៖ លេខឡាន ថ្ងៃ ទម្ងន់សុទ្ធ តម្លៃ និងក្រុមហ៊ុនឡាន។', 'Upload the Debit Note (PDF or photo) to compare it with the weigh tickets in this table: truck, date, net weight, unit price and truck company.')}</p>`;
     $('#dBody').innerHTML = `<section class="card">${cards}${tabs}
-      ${body ? `<div class="tbl"><table class="tt dnct"><tr><th>${t('ពិនិត្យ', 'Check')}</th><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>DN</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('កន្លែងផ្ទុក', 'Loading place')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th>${t('ភាពខុសគ្នា', 'Difference')}</th></tr>${body}</table></div>`
+      ${body ? `<div class="tbl dncfit"><table class="tt dnct"><tr><th>${t('ពិនិត្យ', 'Check')}</th><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>DN</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('កន្លែងផ្ទុក', 'Loading place')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th>${t('ភាពខុសគ្នា', 'Difference')}</th></tr>${body}</table></div>`
         : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`}
       ${diffList}</section>`;
     $$('[data-tab]').forEach(b => { b.onclick = () => { DNC.tab = b.dataset.tab; paintDnc(); }; });
@@ -1528,7 +1538,7 @@
       <p class="hint">${o.note}</p>
       <div id="mForm"></div>
       <input type="search" class="in" id="mQ" data-live-ok placeholder="${t('ស្វែងរក', 'Search')}" value="${esc(setQ)}">
-      <div class="tbl mt"><table><tr>${o.cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr>
+      <div class="tbl fit mt"><table><tr>${o.cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr>
         ${rows.slice(0, 500).map((r, i) => `<tr class="pick" data-row="${o.rows.indexOf(r)}">${o.cols.map(c => `<td class="${c[2] || ''}">${esc(c[2] === 'r' ? kg(r[c[1]]) : r[c[1]])}</td>`).join('')}</tr>`).join('')}</table></div>`;
     $('#mQ').oninput = e => { setQ = e.target.value; masterTable(o); $('#mQ').focus(); $('#mQ').setSelectionRange(setQ.length, setQ.length); };
     const openForm = r => {
