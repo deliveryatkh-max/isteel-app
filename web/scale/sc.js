@@ -374,7 +374,7 @@
         <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f">${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>` : ''}
+        ${sel ? `<div class="field"><label class="f">${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${t('រើសពីបញ្ជី', 'Pick from the list')}" value="${esc(F.dest)}"></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
@@ -400,7 +400,7 @@
     picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     // Item and Destination are asked at the 2nd weigh only (Kim, 8 Nov 2026)
     if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
-    if ($('#fDest')) picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: v => upd('dest', v) });
+    if ($('#fDest')) picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: false, onPick: v => upd('dest', v) });
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
