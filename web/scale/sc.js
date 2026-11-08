@@ -400,8 +400,8 @@
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
         ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (បានច្រើន)', 'Destination (one or more)')}</label>
-          ${destsOf(F.dest).length ? `<div class="dnbox destbox">${destsOf(F.dest).map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dst="${i}" aria-label="Remove">×</button></span>`).join('')}</div>` : ''}
-          <div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${destsOf(F.dest).length ? t('➕ បន្ថែមគោលដៅទៀត', '➕ Add another destination') : t('រើសពីបញ្ជី', 'Pick from the list')}" value=""></div></div>` : ''}
+          <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
+          <div class="search"><input class="in ddl" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
@@ -431,9 +431,30 @@
     if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
     // More than one destination can be picked (Kim, 8 Nov 2026); they are kept as one text "A, B".
     if ($('#fDest')) {
-      picker($('#fDest'), { list: () => ((B && B.dests) || []).filter(v => destsOf(F.dest).indexOf(v) < 0).map(v => ({ v })), addNew: false,
-        onPick: v => { const a = destsOf(F.dest); if (v && a.indexOf(v) < 0) a.push(v); upd('dest', a.join(', ')); paintForm(); } });
-      document.querySelectorAll('[data-dst]').forEach(b => { b.onclick = () => { const a = destsOf(F.dest); a.splice(+b.dataset.dst, 1); upd('dest', a.join(', ')); paintForm(); }; });
+      // Tick several destinations straight in the list; it stays open until you click outside (Kim, 8 Nov 2026).
+      const di = $('#fDest'), db = $('#destBox'), tags = $('#destTags');
+      const setD = a => { upd('dest', a.join(', ')); paintTags(); };
+      const paintTags = () => {
+        const a = destsOf(F.dest);
+        tags.hidden = !a.length;
+        tags.innerHTML = a.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dst="${i}" aria-label="Remove">×</button></span>`).join('');
+        di.placeholder = a.length ? t('➕ ធីកគោលដៅទៀត', '➕ Tick another destination') : t('ធីកពីបញ្ជី (បានច្រើន)', 'Tick from the list (one or more)');
+        if (!db.hidden) paintBox();
+      };
+      const paintBox = () => {
+        const q = di.value.trim().toLowerCase(), a = destsOf(F.dest);
+        const l = ((B && B.dests) || []).filter(v => !q || v.toLowerCase().indexOf(q) >= 0);
+        db.innerHTML = l.map(v => `<label class="opt mopt${a.indexOf(v) >= 0 ? ' on' : ''}"><input type="checkbox" value="${esc(v)}"${a.indexOf(v) >= 0 ? ' checked' : ''}> <span>${esc(v)}</span></label>`).join('')
+          || `<div class="opt none">${t('រកមិនឃើញ', 'No match')}</div>`;
+        db.hidden = false;
+      };
+      di.onfocus = paintBox; di.onclick = paintBox; di.oninput = paintBox;
+      di.onkeydown = e => { if (e.key === 'Escape') db.hidden = true; };
+      db.onmousedown = e => e.preventDefault();          // keep the box open while ticking
+      db.onchange = e => { const v = e.target.value, a = destsOf(F.dest), i = a.indexOf(v); if (e.target.checked && i < 0) a.push(v); if (!e.target.checked && i >= 0) a.splice(i, 1); setD(a); };
+      di.onblur = () => setTimeout(() => { db.hidden = true; di.value = ''; }, 150);
+      tags.onclick = e => { const x = e.target.closest('[data-dst]'); if (x) { const a = destsOf(F.dest); a.splice(+x.dataset.dst, 1); setD(a); } };
+      paintTags();
     }
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
