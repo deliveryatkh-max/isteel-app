@@ -373,11 +373,7 @@
           <input type="search" class="in sitesearch" id="siteQ" data-live-ok autocomplete="off" placeholder="🔍 ${t('ស្វែងរកលេខឡាន', 'Search truck number')}" value="${esc(SITEQ)}">
           <div id="site"></div>
         </section>
-      </div>
-      <section class="card">
-        <div class="head2"><h2>📋 ${t('ថ្ងៃនេះ', 'Today')} <span class="cnt" id="todayCnt"></span></h2><a class="btn" href="#/list">${t('មើលទាំងអស់', 'All tickets')}</a></div>
-        <div id="todayList"></div>
-      </section>`;
+      </div>`;   // the "Today" card was removed from this page (Kim, 8 Nov 2026): today's tickets are under Tickets
     $('#siteQ').oninput = e => { SITEQ = e.target.value; paintLists(); };
     paintForm(); paintLcd(); paintLists();
     // The waiting list ends level with the form and scrolls by itself (Kim, 8 Nov 2026)
