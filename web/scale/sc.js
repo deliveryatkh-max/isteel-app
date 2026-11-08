@@ -256,6 +256,9 @@
     return renderHome();
   }
   window.addEventListener('hashchange', route);
+  // the frozen scale display and filters sit right under the banner, whatever its height
+  const barH = () => { const b = $('.bar'); if (b) document.documentElement.style.setProperty('--barh', b.offsetHeight + 'px'); };
+  barH(); window.addEventListener('resize', barH);
 
   // ---------------------------------------------------------------- pickers (search, "+ Add new", like the Fuel app)
   function picker(input, opts) {
