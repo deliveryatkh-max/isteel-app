@@ -687,6 +687,12 @@
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
           <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}${sel.s1 && sel.s1 !== 'Scale' ? ' · ' + esc(sel.s1) : ''}</div></div>
           <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
+        // Over weight or not, against the truck's Max. Gross Weight (Kim, 8 Nov 2026): red when over.
+        const trk = truckOf(F.plate || sel.plate), mx = trk && trk.max !== '' && trk.max != null ? Number(trk.max) : 0;
+        const gross = has ? Math.max(w.kg, w1) : w1;
+        if (!mx) nums += `<div class="cell ow none"><div class="lab">${t('លើសទម្ងន់?', 'Over weight?')}</div><div class="owv">—</div><div class="sub">${t('មិនទាន់មានទម្ងន់សរុបអតិបរមា', 'No Max. Gross Weight')}</div></div>`;
+        else if (gross > mx) nums += `<div class="cell ow over"><div class="lab">⚠️ ${t('លើសទម្ងន់', 'OVER WEIGHT')}</div><div class="owv">+${kg(gross - mx)} kg</div><div class="sub">${t('អតិបរមា', 'Max')} ${kg(mx)} kg</div></div>`;
+        else nums += `<div class="cell ow ok"><div class="lab">✅ ${t('មិនលើសទម្ងន់', 'Not over weight')}</div><div class="owv">${kg(mx - gross)} kg</div><div class="sub">${t('នៅសល់ · អតិបរមា', 'left · Max')} ${kg(mx)} kg</div></div>`;
       }
       const side = `<div class="side"><span class="st">${state[1]}</span>
           <span>${SIM.on ? '🧪 ' + t('ម៉ាស៊ីនសាកល្បង', 'Simulator') : SER.on ? '🔌 ' + t('ភ្ជាប់ជញ្ជីង', 'Scale connected') + ' · ' + conn().baud : ''}</span>
