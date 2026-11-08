@@ -39,7 +39,8 @@
   const dirOf = (w1, w2) => (w1 === '' || w1 == null || w2 === '' || w2 == null ? '' : Number(w1) > Number(w2) ? 'In' : 'Out');
   const typeOf = x => dirOf(x.w1, x.w2);
   /** At the 2nd weigh: is a DN needed? Yes unless the scale now reads lighter than the 1st weigh (truck came in loaded). */
-  const dnNeed = sel => { if (!sel) return false; if ((F.type || sel.type) === 'In') return false; const w = cur(); return !(w.kg != null && w.kg !== '' && dirOf(sel.w1, w.kg) === 'In'); };
+  // DN is required when the truck came to load goods, and not when it came to unload (Kim, 8 Nov 2026): only the tick decides.
+  const dnNeed = sel => !!sel && (F.type || sel.type || 'Out') !== 'In';
 
   // ---------------------------------------------------------------- Apps Script
   const msgOf = e => { const s = String(e || 'Error'); const m = s.match(/^([A-Z_]+):\s*([\s\S]*)$/); const txt = m ? m[2] : s; const p = txt.split(' || '); return { code: m ? m[1] : '', text: t(p[1] || p[0], p[0]) }; };
