@@ -4,8 +4,10 @@
  * the sign-in and the helpers there. The web page reads the Keli XK3118K8 indicator itself (Web Serial) and sends here.
  *
  * One source for every master list (Kim, 6 Nov 2026):
- *   Trucks, drivers, truck companies  -> Fuel Refill sheet, tab "Driver & Truck" (USERS_SHEET_ID). The scale adds
- *                                        3 columns there: Truck Type, Empty Weight (kg), Max Gross (kg).
+ *   Trucks and truck companies        -> Fuel Refill sheet (USERS_SHEET_ID), tab "Truck": one row per plate with
+ *                                        Truck Type, Empty Weight (kg), Max Gross (kg), Odometer Broken? (Kim, 8 Nov 2026).
+ *   Drivers                           -> same sheet, tab "Driver & Truck": one row per driver, CODE = usual truck.
+ *                                        Any driver can take any truck.
  *   Customers                         -> SSK-DELIVERY-DATA, tab "Customer" (Customer ID, Customer Name).
  *   Destinations                      -> this sheet, tab "Price List" (Destination column), shared with the Debit Note.
  *   Items                             -> this sheet, tab "Item List" (there was no item list before).
@@ -18,7 +20,8 @@ const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'I
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
-const SC_DT_NEW = ['Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'];   // added to the Fuel "Driver & Truck" tab
+const SC_DT_NEW = ['Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'];   // columns of the Fuel "Truck" tab
+const SC_TRUCK_COLS = ['CODE', 'ក្រុមហ៊ុន'].concat(SC_DT_NEW, ['Odometer Broken?']);
 const SC_DELIVERY_ID = '1vHhgWrdMLKkmo3qhlITTX2jOmWwgSDz0IjEguQ7cZ44';    // SSK-DELIVERY-DATA (Script property DELIVERY_SHEET_ID wins)
 const SC_SETTINGS = [
   ['SCALE_TARE_PCT', '5', 'Warn when the empty weight differs from the truck\'s Empty Weight (kg) by more than this %'],
@@ -56,46 +59,83 @@ function scaleSetup_() {
   const set = sheet_(SH.SET, SET_COLS);
   const have = set.getLastRow() > 1 ? set.getRange(2, 1, set.getLastRow() - 1, 1).getDisplayValues().map(r => r[0]) : [];
   SC_SETTINGS.forEach(r => { if (have.indexOf(r[0]) < 0) set.appendRow(r); });
-  scTruckSheet_();   // adds the 3 columns to Driver & Truck
+  scTruckSheet_();   // makes the Truck tab when missing
 }
 
 // ---------------------------------------------------------------- master lists (one source each)
 function scFuel_() { return SpreadsheetApp.openById(prop_('USERS_SHEET_ID') || fail_('SETUP', 'USERS_SHEET_ID is missing.')); }
-/** The Fuel "Driver & Truck" tab with the scale's 3 columns added at the end when missing. Returns { sh, head }. */
+/**
+ * The Fuel "Truck" tab: one row per plate (Kim, 8 Nov 2026). Made on first use from the old "Driver & Truck" rows
+ * (first value per plate), so nothing is lost. Returns { sh, head }.
+ */
 function scTruckSheet_() {
-  const sh = scFuel_().getSheetByName('Driver & Truck') || fail_('SETUP', 'The Fuel Refill sheet has no "Driver & Truck" tab.');
-  let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim());
-  const missing = SC_DT_NEW.filter(h => head.indexOf(h) < 0);
+  const ss = scFuel_();
+  let sh = ss.getSheetByName('Truck');
+  if (!sh) {
+    sh = ss.insertSheet('Truck');
+    sh.getRange(1, 1, 1, SC_TRUCK_COLS.length).setValues([SC_TRUCK_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.getRange('A:A').setNumberFormat('@');
+    const old = scOldTrucks_(ss);
+    if (old.length) sh.getRange(2, 1, old.length, SC_TRUCK_COLS.length).setValues(old);
+  }
+  let head = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getDisplayValues()[0].map(h => String(h).trim());
+  const missing = SC_TRUCK_COLS.filter(h => head.indexOf(h) < 0);
   if (missing.length) {
     sh.getRange(1, head.length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
     head = head.concat(missing);
   }
   return { sh, head };
 }
+/** Rows for a new Truck tab from the old Driver & Truck tab: one per plate, first non-empty value of each column. */
+function scOldTrucks_(ss) {
+  const dt = ss.getSheetByName('Driver & Truck');
+  if (!dt || dt.getLastRow() < 2) return [];
+  const v = dt.getRange(1, 1, dt.getLastRow(), dt.getLastColumn()).getDisplayValues();
+  const head = v[0].map(h => String(h).trim()), cols = SC_TRUCK_COLS.map(h => head.indexOf(h));
+  const map = {}, out = [];
+  v.slice(1).forEach(r => {
+    const plate = cols[0] >= 0 ? String(r[cols[0]]).trim() : '';
+    if (!plate) return;
+    const k = scNorm_(plate);
+    let row = map[k];
+    if (!row) { row = map[k] = SC_TRUCK_COLS.map(() => ''); row[0] = plate; out.push(row); }
+    cols.forEach((c, i) => { if (i && c >= 0 && row[i] === '' && String(r[c]).trim()) row[i] = String(r[c]).trim(); });
+    if (cols[5] >= 0 && /^(y|yes|true|ខូច)$/i.test(String(r[cols[5]]).trim())) row[5] = 'Yes';
+  });
+  out.forEach(r => { if (!r[5]) r[5] = 'No'; });
+  return out;
+}
 const scNorm_ = s => String(s || '').trim().toUpperCase().replace(/\s+/g, '');
 
-/** One entry per plate: company, drivers, type, empty and max weight (first non-empty value across that plate's rows). */
+/** One entry per plate from the Truck tab, with the drivers whose usual truck (CODE in Driver & Truck) it is. */
 function scTrucks_() {
   const { sh, head } = scTruckSheet_();
   const c = n => head.indexOf(n);
-  const cP = c('CODE'), cCo = c('ក្រុមហ៊ុន'), cD = c('ឈ្មោះតៃកុង'), cT = c(SC_DT_NEW[0]), cE = c(SC_DT_NEW[1]), cM = c(SC_DT_NEW[2]);
-  if (cP < 0) fail_('SETUP', 'CODE column not found in Driver & Truck.');
+  const cP = c('CODE'), cCo = c('ក្រុមហ៊ុន'), cT = c(SC_DT_NEW[0]), cE = c(SC_DT_NEW[1]), cM = c(SC_DT_NEW[2]);
   const n = sh.getLastRow() - 1;
   const v = n > 0 ? sh.getRange(2, 1, n, head.length).getDisplayValues() : [];
   const map = {}, out = [];
   v.forEach(r => {
     const plate = String(r[cP]).trim();
-    if (!plate) return;
-    const k = scNorm_(plate);
-    let t = map[k];
-    if (!t) { t = map[k] = { plate: plate, company: '', drivers: [], type: '', empty: '', max: '' }; out.push(t); }
-    if (!t.company && cCo >= 0) t.company = String(r[cCo]).trim();
-    const d = cD >= 0 ? String(r[cD]).trim() : '';
-    if (d && t.drivers.indexOf(d) < 0) t.drivers.push(d);
-    if (!t.type && cT >= 0) t.type = String(r[cT]).trim();
-    if (t.empty === '' && cE >= 0) t.empty = num_(r[cE]);
-    if (t.max === '' && cM >= 0) t.max = num_(r[cM]);
+    if (!plate || map[scNorm_(plate)]) return;
+    const t = map[scNorm_(plate)] = { plate: plate, company: cCo >= 0 ? String(r[cCo]).trim() : '', drivers: [], type: cT >= 0 ? String(r[cT]).trim() : '',
+      empty: cE >= 0 ? num_(r[cE]) : '', max: cM >= 0 ? num_(r[cM]) : '' };
+    out.push(t);
   });
+  // Drivers: each driver row names a usual truck in CODE. A plate only there (not yet in Truck) still shows.
+  const dt = scFuel_().getSheetByName('Driver & Truck');
+  if (dt && dt.getLastRow() > 1) {
+    const dv = dt.getRange(1, 1, dt.getLastRow(), dt.getLastColumn()).getDisplayValues();
+    const dh = dv[0].map(h => String(h).trim()), dP = dh.indexOf('CODE'), dD = dh.indexOf('ឈ្មោះតៃកុង'), dC = dh.indexOf('ក្រុមហ៊ុន');
+    dv.slice(1).forEach(r => {
+      const plate = dP >= 0 ? String(r[dP]).trim() : '', d = dD >= 0 ? String(r[dD]).trim() : '';
+      if (!plate) return;
+      let t = map[scNorm_(plate)];
+      if (!t) { t = map[scNorm_(plate)] = { plate: plate, company: dC >= 0 ? String(r[dC]).trim() : '', drivers: [], type: '', empty: '', max: '' }; out.push(t); }
+      if (d && t.drivers.indexOf(d) < 0) t.drivers.push(d);
+    });
+  }
   out.sort((a, b) => a.plate.localeCompare(b.plate));
   return out;
 }
@@ -490,7 +530,7 @@ function scAddTruck_(t, user) {
   sh.getRange(r, cp).setNumberFormat('@').setValue(t.plate);
   scLog_(user, 'Truck ' + t.plate, 'New truck', '', '', JSON.stringify(t), '');
 }
-/** Sets company / type / empty / max on every Driver & Truck row of that plate (one plate can have several drivers). */
+/** Sets company / type / empty / max on the plate's row of the Truck tab. */
 function scSetTruck_(t, user, reason) {
   const { sh, head } = scTruckSheet_();
   const cp = head.indexOf('CODE');

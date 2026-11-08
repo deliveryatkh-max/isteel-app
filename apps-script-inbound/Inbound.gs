@@ -273,13 +273,16 @@ function plates_() {
   if (hit) return JSON.parse(hit);
   const out = [];
   try {
-    const sh = SpreadsheetApp.openById(prop_('USERS_SHEET_ID')).getSheetByName('Driver & Truck');
-    if (sh && sh.getLastRow() > 1) {
+    // Plates from the "Truck" tab (one row per plate, Kim 8 Nov 2026), plus any usual truck still only in "Driver & Truck".
+    const ss = SpreadsheetApp.openById(prop_('USERS_SHEET_ID'));
+    ['Truck', 'Driver & Truck'].forEach(name => {
+      const sh = ss.getSheetByName(name);
+      if (!sh || sh.getLastRow() < 2) return;
       const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       const ip = v[0].map(h => String(h).trim()).indexOf('CODE');
       if (ip >= 0) v.slice(1).forEach(r => { const p = String(r[ip]).trim(); if (p && p !== '0' && out.indexOf(p) < 0) out.push(p); });
-      out.sort();
-    }
+    });
+    out.sort();
   } catch (e) { /* no Driver & Truck tab: plates are typed */ }
   try { cache.put('ib_plates', JSON.stringify(out), 600); } catch (e) { /* too big */ }
   return out;

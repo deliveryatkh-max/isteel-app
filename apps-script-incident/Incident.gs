@@ -329,7 +329,14 @@ function driverTruck_() {
   if (hit) return JSON.parse(hit);
   const out = { plates: [], drivers: [] };
   try {
-    const sh = SpreadsheetApp.openById(prop_('USERS_SHEET_ID')).getSheetByName('Driver & Truck');
+    const ss = SpreadsheetApp.openById(prop_('USERS_SHEET_ID'));
+    // Plates from the "Truck" tab (one row per plate, Kim 8 Nov 2026); drivers from "Driver & Truck" (CODE = usual truck).
+    const tk = ss.getSheetByName('Truck');
+    if (tk && tk.getLastRow() > 1) {
+      const ip = tk.getRange(1, 1, 1, tk.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim()).indexOf('CODE');
+      if (ip >= 0) tk.getRange(2, ip + 1, tk.getLastRow() - 1, 1).getDisplayValues().forEach(r => { const p = String(r[0]).trim(); if (p && p !== '0' && out.plates.indexOf(p) < 0) out.plates.push(p); });
+    }
+    const sh = ss.getSheetByName('Driver & Truck');
     if (sh && sh.getLastRow() > 1) {
       const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       const head = v[0].map(h => String(h).trim());

@@ -274,15 +274,12 @@ function prices_() {
     .map(r => [String(r[0]).trim(), String(r[1]).trim(), String(r[2]).trim(), Number(r[3]), String(r[4]).trim()]);
 }
 
-/** Plate → company from the Fuel Refill sheet, tab "Driver & Truck": column G (ផ្លាកលេខឡាន) and column E (ក្រុមហ៊ុន). */
+/** Plate → company from the Fuel Refill sheet, tab "Truck" (one row per plate, Kim 8 Nov 2026; Scale.gs reads it). */
 function trucks_() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get('de_trucks');
   if (hit) return JSON.parse(hit);
-  const sh = SpreadsheetApp.openById(prop_('USERS_SHEET_ID')).getSheetByName('Driver & Truck');
-  if (!sh || sh.getLastRow() < 2) return [];
-  const v = sh.getRange(2, 5, sh.getLastRow() - 1, 3).getDisplayValues();   // E:G
-  const out = v.filter(r => String(r[2]).trim()).map(r => [String(r[2]).trim(), String(r[0]).trim()]);
+  const out = scTrucks_().map(t => [t.plate, t.company || '']);
   try { cache.put('de_trucks', JSON.stringify(out), 300); } catch (e) { /* too big */ }
   return out;
 }
