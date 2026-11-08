@@ -94,11 +94,15 @@
     if (!hasSerial()) { SER.err = t('កម្មវិធីនេះមិនអាចភ្ជាប់ជញ្ជីងបានទេ។ សូមបើកក្នុង Chrome ឬ Edge លើកុំព្យូទ័រជញ្ជីង។', 'This browser cannot reach the scale. Open the app in Chrome or Edge on the scale PC.'); paintLcd(); return; }
     try {
       const ports = ask ? [] : await navigator.serial.getPorts();
-      const port = ask ? await navigator.serial.requestPort() : (ports.indexOf(SER.lastPort) >= 0 ? SER.lastPort : ports[0]);
+      // Auto mode: the port used last time, else the USB cable with the same ids as last time, else the only one allowed.
+      const id = getJ('sc_port', null), same = p => { try { const i = p.getInfo(); return id && i.usbVendorId === id.v && i.usbProductId === id.p; } catch (e) { return false; } };
+      const port = ask ? await navigator.serial.requestPort() : (ports.indexOf(SER.lastPort) >= 0 ? SER.lastPort : ports.filter(same)[0] || ports[0]);
+      SER.off = false;
       if (!port) { paintLcd(); return; }
       await serialStop();
       const c = conn();
       await port.open({ baudRate: +c.baud, dataBits: +c.bits, parity: c.parity, stopBits: +c.stop, bufferSize: 65536 });
+      try { const i = port.getInfo(); set('sc_port', JSON.stringify({ v: i.usbVendorId, p: i.usbProductId })); } catch (e) { /* no USB ids */ }
       SER.port = port; SER.lastPort = port; SER.on = true; SER.err = ''; SER.buf = ''; SER.since = Date.now(); SER.bytes = 0; SER.st.setMs(+c.stableMs || 1500); SER.st.reset();
       readLoop(port);
     } catch (e) {
@@ -141,6 +145,20 @@
     r.weights.forEach(w => { if (!SIM.on) SER.st.push(w.kg, w.stable); });
     if (r.weights.length) SER.last = Date.now();
     lcdSoon();
+  }
+  // Keep the scale connected without pressing anything (Kim, 8 Nov 2026): when the app opens, when the cable is
+  // plugged back in, when the PC wakes up, and every 5 s while it is lost. Only "Disconnect" stops it.
+  let autoBusy = false;
+  async function autoConnect() {
+    if (!hasSerial() || SER.on || SER.off || SIM.on || SER.finding || autoBusy) return;
+    autoBusy = true;
+    try { if ((await navigator.serial.getPorts()).length) await serialStart(false); } catch (e) { /* try again later */ }
+    autoBusy = false;
+  }
+  if (hasSerial()) {
+    navigator.serial.addEventListener('connect', () => setTimeout(autoConnect, 1000));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) autoConnect(); });
+    setInterval(autoConnect, 5000);
   }
   if (hasSerial()) navigator.serial.addEventListener('disconnect', e => { if (e.target === SER.port) { serialStop(); SER.err = t('ខ្សែជញ្ជីងត្រូវបានដក។', 'The scale cable was unplugged.'); paintLcd(); } });
 
@@ -562,7 +580,7 @@
       const cb = $('#connBtn');
       if (cb) cb.onclick = () => serialStart(true);
       if ($('#reconBtn')) $('#reconBtn').onclick = () => serialStart(false);
-      if ($('#offBtn')) $('#offBtn').onclick = () => serialStop().then(paintLcd);
+      if ($('#offBtn')) $('#offBtn').onclick = () => { SER.off = true; serialStop().then(paintLcd); };
       if ($('#findBtn')) $('#findBtn').onclick = findSettings;
     }
     paintButtons();
@@ -1560,7 +1578,7 @@
       <div class="btns"><label class="chip${SIM.on ? ' on' : ''}"><input type="checkbox" id="simOn"${SIM.on ? ' checked' : ''}> ${t('បើក', 'On')}</label>
         <input type="range" id="simKg" min="0" max="50000" step="10" value="${SIM.target}" ${SIM.on ? '' : 'disabled'}><b id="simV">${kg(SIM.target)} kg</b></div>`;
     $('#sConn').onclick = () => serialStart(true).then(setScale);
-    if ($('#sOff')) $('#sOff').onclick = () => serialStop().then(setScale);
+    if ($('#sOff')) $('#sOff').onclick = () => { SER.off = true; serialStop().then(setScale); };
     $('#sSave').onclick = () => {
       set('sc_conn', JSON.stringify({ baud: +$('#sBaud').value, bits: +$('#sBits').value, parity: $('#sPar').value, stop: +$('#sStop').value, fmt: $('#sFmt').value, stableMs: +$('#sMs').value }));
       SER.st.setMs(+$('#sMs').value);
@@ -1677,7 +1695,7 @@
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { if (B) paintTabs(); route(); refresh().then(flush).then(() => tplLoad()).catch(() => {}); }
   if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true).then(flush), busy: () => /^#\/?set/.test(location.hash) });
-  serialStart(false);                            // reconnects to the port picked last time (no prompt)
+  autoConnect();                                 // reconnects to the port picked last time (no prompt)
   setInterval(() => { if (SER.on || SIM.on) lcdSoon(); if ($('#site')) paintLists(); }, 30000);
   setInterval(() => { if (SER.on && Date.now() - SER.last > 3000) lcdSoon(); }, 1000);
 
