@@ -228,3 +228,10 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
   body.freeze #site { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   body.freeze #site .tbl { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
+
+/* Load / Unload (and Covered / Not covered) stay on one row (Kim, 8 Nov 2026): the first row sizes to its chips */
+#formCard .fgrid.toprow { grid-template-columns: auto auto; justify-content: start; gap: 0 18px; }
+#formCard .jobchips { flex-wrap: nowrap; gap: 5px; }
+#formCard .jobchips .chip { white-space: nowrap; padding: 5px 9px; flex: 0 0 auto; font-size: 13.5px; }
+#formCard .jobchips .chip input { margin: 0 3px 0 0; }
+@media (max-width: 560px) { #formCard .fgrid.toprow { grid-template-columns: 1fr; } }
