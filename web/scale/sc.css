@@ -235,3 +235,10 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 #formCard .jobchips .chip { white-space: nowrap; padding: 5px 9px; flex: 0 0 auto; font-size: 13.5px; }
 #formCard .jobchips .chip input { margin: 0 3px 0 0; }
 @media (max-width: 560px) { #formCard .fgrid.toprow { grid-template-columns: 1fr; } }
+
+/* Frozen headers everywhere (Kim, 8 Nov 2026): every table header row sticks to the top of its scroll box,
+   long tables scroll inside a box that ends at the window bottom, filter bars stay on top */
+.tbl th { position: sticky; top: 0; background: var(--card); z-index: 2; box-shadow: inset 0 -1px 0 var(--line); }
+.tbl.fit, .tbl.dncfit { overflow: auto; }
+.tbl.dncfit { max-height: calc(100vh - var(--barh, 58px) - 230px); min-height: 280px; }
+.card > .filters { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); padding-top: 4px; }
