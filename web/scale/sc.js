@@ -380,7 +380,18 @@
       </section>`;
     $('#siteQ').oninput = e => { SITEQ = e.target.value; paintLists(); };
     paintForm(); paintLcd(); paintLists();
+    // The waiting list ends level with the form and scrolls by itself (Kim, 8 Nov 2026)
+    if (window.ResizeObserver) new ResizeObserver(fitSite).observe($('#formCard'));
   }
+  function fitSite() {
+    const f = $('#formCard'), tb = $('#site .tbl');
+    if (!f || !tb) return;
+    if (window.innerWidth <= 980) { tb.style.maxHeight = ''; return; }
+    const hint = $('#site .hint');
+    const h = f.getBoundingClientRect().bottom - tb.getBoundingClientRect().top - (hint ? hint.offsetHeight + 10 : 0) - 25;
+    tb.style.maxHeight = Math.max(220, Math.round(h)) + 'px';
+  }
+  window.addEventListener('resize', () => fitSite());
 
   function paintForm() {
     const card = $('#formCard');
@@ -678,6 +689,7 @@
         ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
+      fitSite();
       $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {

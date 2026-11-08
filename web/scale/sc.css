@@ -206,3 +206,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .sugg.msel .mopt { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
 .sugg.msel .mopt input { width: 20px; height: 20px; accent-color: #1b6b2f; }
 .sugg.msel .mopt.on { background: #e2f6e6; font-weight: 700; }
+
+/* Waiting list scrolls inside its card; the header row stays on top (Kim, 8 Nov 2026) */
+#site .tbl { overflow-y: auto; }
+#site .tbl th { position: sticky; top: 0; background: var(--card); z-index: 1; }
