@@ -427,30 +427,22 @@
     return Math.round((dt - t0) / 86400000);
   }
   function truckInfoHtml(tr) {
+    // Four lines only (Kim, 8 Nov 2026): company; vehicle weight, max load, max gross; axles; loading rules.
     const i = tr.info || {}, src = photoSrc(tr.photo);
-    const kgv = v => { const n = Number(String(v).replace(/[^0-9.]/g, '')); return v !== '' && v != null && isFinite(n) && n > 0 ? kg(Math.round(n)) + ' kg' : ''; };
-    const m1 = v => { const n = Number(String(v).replace(/[^0-9.]/g, '')); return v && isFinite(n) ? String(+n.toFixed(2)) : ''; };
-    const size = [m1(i.len), m1(i.wid), m1(i.hei)];
-    const dd = i.exp ? daysTo(i.exp) : null;
-    const expCls = dd == null ? '' : dd < 0 ? ' bad' : dd <= 30 ? ' warn' : '';
-    const rows = [
-      [t('ក្រុមហ៊ុន', 'Company'), [tr.company, i.loc].filter(Boolean).join(' · ')],
-      [t('ប្រភេទ', 'Type'), [i.vtype || tr.type, t('km', 'en') === 'km' ? i.vtypeKh : ''].filter(Boolean).join(' · ')],
-      [t('ម៉ាក', 'Make'), [i.mark, i.colour, i.year].filter(Boolean).join(' · ')],
-      [t('ទម្ងន់ឡាន', 'Vehicle weight'), kgv(tr.empty)],
-      [t('ផ្ទុកអតិបរមា', 'Max load'), kgv(i.load)],
-      [t('ទម្ងន់សរុបអតិបរមា', 'Max gross'), kgv(tr.max)],
-      [t('ទំហំ (ប×ទ×ក)', 'Size (L×W×H)'), size.some(Boolean) ? size.map(x => x || '?').join(' × ') + ' m' : ''],
-      [t('អ័ក្ស', 'Axles'), i.axles ? String(+String(i.axles).replace(/[^0-9.]/g, '') || i.axles) : ''],
-      [t('តៃកុង', 'Drivers'), (tr.drivers || []).join(', ')],
-    ].filter(r => r[1]);
-    const exp = i.exp ? `<div class="ti-row${expCls}"><span>${t('ផុតកំណត់ត្រួតពិនិត្យ', 'Inspection expires')}</span><b>${esc(i.exp)}${dd != null && dd < 0 ? ' · ' + t('ផុតកំណត់ហើយ', 'expired') : dd != null && dd <= 30 ? ' · ' + t('នៅ', 'in') + ' ' + dd + ' ' + t('ថ្ងៃ', 'days') : ''}</b></div>` : '';
+    const kgv = v => { const n = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return v !== '' && v != null && isFinite(n) && n > 0 ? kg(Math.round(n)) : '—'; };
+    const ax = i.axles ? String(+String(i.axles).replace(/[^0-9.]/g, '') || i.axles) : '—';
     const rules = [i.r1, i.r2, i.r3].filter(Boolean);
     return `<div class="tinfo" id="tInfo">
       <div class="ti-info">
         <div class="ti-head">🚚 <b class="mono">${esc(tr.plate)}</b></div>
-        ${rows.map(r => `<div class="ti-row"><span>${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')}${exp}
-        ${rules.length ? `<div class="ti-rules"><b>📏 ${t('ច្បាប់ផ្ទុកទំនិញ', 'Loading rules')}</b><ul>${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
+        <div class="ti-row"><span>${t('ក្រុមហ៊ុន', 'Company')}</span><b>${esc(tr.company || '—')}</b></div>
+        <div class="ti-w3">
+          <div><span>${t('ទម្ងន់ឡាន (kg)', 'Vehicle Weight (kg)')}</span><b>${kgv(tr.empty)}</b></div>
+          <div><span>${t('ផ្ទុកអតិបរមា (kg)', 'Max. Load (kg)')}</span><b>${kgv(i.load)}</b></div>
+          <div><span>${t('ទម្ងន់សរុបអតិបរមា (kg)', 'Max. Gross Weight (kg)')}</span><b>${kgv(tr.max)}</b></div>
+        </div>
+        <div class="ti-row"><span>${t('ចំនួនអ័ក្ស', 'Number of Axles')}</span><b>${esc(ax)}</b></div>
+        <div class="ti-rules${rules.length ? '' : ' none'}"><b>📏 ${t('ច្បាប់ផ្ទុកទំនិញ', 'Loading Rule')}</b>${rules.length ? `<ul>${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ` —`}</div>
       </div>
       <div class="ti-photo">
         ${src ? `<img src="${esc(src)}" alt="${esc(tr.plate)}" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ''}
