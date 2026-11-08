@@ -15,7 +15,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 const SC_DT_NEW = ['Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'];   // added to the Fuel "Driver & Truck" tab
@@ -141,7 +141,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   delete o.dn; delete o.dnCount;
@@ -256,13 +256,14 @@ function scSave_(ops, user) {
       clip_(p.driver, 80), clip_(p.dest, 80), clip_(p.note, 300),
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
-      p.load === undefined && old ? old[28] : clip_(p.load, 80)];
+      p.load === undefined && old ? old[28] : clip_(p.load, 80),
+      p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : '')];   // tarpaulin covered at the 2nd weigh
     let row;
     if (old) {
       row = idx + 2;
       const log = [];
       SC_TK_COLS.forEach((h, i) => {
-        if (i >= 22 && i !== 28) return;   // PDF, operator, times: not logged
+        if (i >= 22 && i < 28) return;   // PDF, operator, times: not logged
         const a = old[i] instanceof Date ? fmt_(old[i], 'yyyy-MM-dd HH:mm:ss') : String(old[i]);
         const b = vals[i] instanceof Date ? fmt_(vals[i], 'yyyy-MM-dd HH:mm:ss') : String(vals[i]);
         if (a !== b) log.push([h, a, b]);
@@ -442,7 +443,7 @@ function scTicketVals_(x) {
   const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
   const dns = Array.isArray(x.dns) ? x.dns : s(x.dns).split(/[,\s]+/).filter(Boolean);
   return {
-    TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest),
+    TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest), Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '',
     DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
     Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',
