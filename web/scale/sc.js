@@ -27,6 +27,8 @@
   const kg = n => (n === '' || n == null || isNaN(n) ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }));
   const hm = s => (s ? String(s).slice(11, 16) : '');
   const dmy = s => (s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '');
+  // Khmer digits ០១២៣៤៥៦៧៨៩ (a barcode scanner with the Khmer keyboard on) become 0-9 (Kim, 8 Nov 2026)
+  const khNum = s => String(s || '').replace(/[\u17E0-\u17E9]/g, c => String(c.charCodeAt(0) - 0x17E0));
   const normP = s => String(s || '').toUpperCase().replace(/[\s\-.]/g, '');
   let toastTimer = 0;
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3500); }
@@ -408,11 +410,12 @@
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
-      String(raw || '').split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
+      khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
       keepForm(); paintForm(); setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);
     };
     const dn = $('#fDn');
     if (dn) {
+    dn.oninput = () => { const v = khNum(dn.value); if (v !== dn.value) dn.value = v; };   // a scanner on the Khmer keyboard types ០-៩
     dn.onkeydown = e => {
       if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab' || e.key === ' ') { if (dn.value.trim()) { e.preventDefault(); addDn(dn.value); } }
       else if (e.key === 'Backspace' && !dn.value && F.dns.length) { F.dns.pop(); keepForm(); paintForm(); setTimeout(() => $('#fDn').focus(), 0); }
@@ -1042,7 +1045,7 @@
     picker($('#eLoad'), { list: places, addNew: true, onPick: () => {} });
     $('#eSave').onclick = () => {
       const v = id => $(id).value.trim();
-      const nx = Object.assign({}, x, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: v('#eDn').split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), load: v('#eLoad'), note: v('#eNote'), reason: v('#eWhy') });
+      const nx = Object.assign({}, x, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: khNum(v('#eDn')).split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), load: v('#eLoad'), note: v('#eNote'), reason: v('#eWhy') });
       putTicket(nx);
       toast(t('បានរក្សាទុក', 'Saved'));
       renderTicket(key);
