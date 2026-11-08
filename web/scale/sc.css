@@ -177,3 +177,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 /* The scale display stays on top while the page scrolls (Kim, 8 Nov 2026) */
 .lcd { position: sticky; top: var(--barh, 58px); z-index: 4; box-shadow: 0 6px 16px rgba(1, 30, 65, .18); }
 .dncf { top: var(--barh, 58px); }
+
+.jobchips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.jobchips .chip input { margin-right: 4px; }

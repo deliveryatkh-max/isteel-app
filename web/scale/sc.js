@@ -37,7 +37,7 @@
   const dirOf = (w1, w2) => (w1 === '' || w1 == null || w2 === '' || w2 == null ? '' : Number(w1) > Number(w2) ? 'In' : 'Out');
   const typeOf = x => dirOf(x.w1, x.w2);
   /** At the 2nd weigh: is a DN needed? Yes unless the scale now reads lighter than the 1st weigh (truck came in loaded). */
-  const dnNeed = sel => { if (!sel) return false; const w = cur(); return !(w.kg != null && w.kg !== '' && dirOf(sel.w1, w.kg) === 'In'); };
+  const dnNeed = sel => { if (!sel) return false; if ((F.type || sel.type) === 'In') return false; const w = cur(); return !(w.kg != null && w.kg !== '' && dirOf(sel.w1, w.kg) === 'In'); };
 
   // ---------------------------------------------------------------- Apps Script
   const msgOf = e => { const s = String(e || 'Error'); const m = s.match(/^([A-Z_]+):\s*([\s\S]*)$/); const txt = m ? m[2] : s; const p = txt.split(' || '); return { code: m ? m[1] : '', text: t(p[1] || p[0], p[0]) }; };
@@ -313,7 +313,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: '', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || '' });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || '' });
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
   const places = () => { const s = []; [get('sc_load')].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
   /** Truck plates written one way (Kim, 6 Nov 2026): 3A1234 or 3ab1234 becomes 3A-1234 / 3AB-1234. */
@@ -364,6 +364,8 @@
     card.innerHTML = `
       <h2>${sel ? '⚖️ ' + t('ថ្លឹងលើកទី២', '2nd weigh') + ' · <span class="mono">' + esc(sel.no) + '</span>' : '🆕 ' + t('ថ្លឹងថ្មី (លើកទី១)', 'New weighing (1st weigh)')}
         ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
+      <div class="field"><span class="f">${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
+        <div class="chips jobchips">${[['Out', 'ឡើងទំនិញ', 'Load goods'], ['In', 'ទំលាក់ទំនិញ', 'Unload goods']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
       <div class="fgrid">
         <div class="field"><label class="f">${t('លេខឡាន', 'Truck No')} ${req}</label><div><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"></div>
           ${tr ? `<div class="hint">${tr.type ? esc(tr.type) + ' · ' : ''}${t('ទម្ងន់ទទេ', 'Empty')} ${tr.empty !== '' ? kg(tr.empty) + ' kg' : '—'} · ${t('កំណត់អតិបរមា', 'Max')} ${tr.max !== '' ? kg(tr.max) + ' kg' : '—'}${lastT ? ' · ' + t('ចុងក្រោយ', 'Last') + ' ' + kg(lastT) + ' kg' : ''}</div>`
@@ -388,6 +390,8 @@
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
+    // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
+    document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
     picker($('#fPlate'), {
       list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true, fix: fixPlate,
       onPick: v => { const was = F.plate; upd('plate', v ? fixPlate(v) : ''); const tr2 = truckOf(v); if (tr2 && was !== F.plate) { F.company = tr2.company || F.company; if (tr2.drivers.length === 1) F.driver = tr2.drivers[0]; keepForm(); } paintForm(); },
