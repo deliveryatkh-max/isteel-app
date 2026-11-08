@@ -313,9 +313,10 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || '' });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF });
+  const LOAD_DEF = 'ISI Steel';   // loading place when this PC has none set (Kim, 8 Nov 2026)
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
-  const places = () => { const s = []; [get('sc_load')].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
+  const places = () => { const s = []; [get('sc_load'), LOAD_DEF].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
   /** Truck plates written one way (Kim, 6 Nov 2026): 3A1234 or 3ab1234 becomes 3A-1234 / 3AB-1234. */
   function fixPlate(v) {
     const s = String(v || '').toUpperCase().replace(/[\s\-.]/g, '');
@@ -1609,7 +1610,7 @@
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
         'Empty = the A4 template shrunk to A5 by itself. Press "A5 copy" to download it, change it in Word, then put it in Drive.')}</p>
       <div class="field mt"><label class="f" for="rLoad">${t('កន្លែងផ្ទុកលំនាំដើម (កុំព្យូទ័រនេះ)', 'Default loading place (this PC)')}</label>
-        <input class="in" id="rLoad" autocomplete="off" placeholder="KMH1" value="${esc(get('sc_load') || '')}"></div>
+        <input class="in" id="rLoad" autocomplete="off" placeholder="${LOAD_DEF}" value="${esc(get('sc_load') || '')}"></div>
       <div class="field mt"><span class="f">${t('ក្រដាសរបស់ម៉ាស៊ីនបោះពុម្ព (កុំព្យូទ័រនេះ)', 'Printer paper (this PC)')}</span>
         <div class="chips" style="display:flex;gap:8px;flex-wrap:wrap"><label class="chip"><input type="radio" name="rPaper" value="A4"${paper() === 'A4' ? ' checked' : ''}> A4</label>
         <label class="chip"><input type="radio" name="rPaper" value="A5"${paper() === 'A5' ? ' checked' : ''}> A5</label></div></div>
