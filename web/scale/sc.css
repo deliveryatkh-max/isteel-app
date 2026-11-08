@@ -173,3 +173,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
   .dcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dncf { position: static; }
 }
+
+/* The scale display stays on top while the page scrolls (Kim, 8 Nov 2026) */
+.lcd { position: sticky; top: var(--barh, 58px); z-index: 4; box-shadow: 0 6px 16px rgba(1, 30, 65, .18); }
+.dncf { top: var(--barh, 58px); }
