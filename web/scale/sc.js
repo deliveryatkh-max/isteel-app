@@ -181,7 +181,13 @@
     const w = live ? SER.st.kg : null;
     const stable = live && SER.st.isStable();
     const min = Number(S().SCALE_MIN_KG) || 200;
-    return { kg: w, stable, src: SIM.on ? 'Simulator' : 'Scale', ok: stable && w != null && w >= min, live };
+    return { kg: w, stable, src: SIM.on ? 'Simulator' : 'Scale', ok: stable && w != null && w >= min, live, min };
+  }
+  /** Says exactly why a weight can't be saved: no data, still moving, or under the minimum (Kim, 8 Nov 2026). */
+  function whyNot(w) {
+    if (!w.live || w.kg == null) return t('មិនទាន់មានទម្ងន់ពីជញ្ជីង', 'No weight from the scale yet');
+    if (!w.stable) return t('សូមរង់ចាំទម្ងន់ឈប់ (STABLE)', 'Wait until the weight is STABLE');
+    return t('ទម្ងន់ ' + kg(w.kg) + ' kg តិចជាងអប្បបរមា ' + kg(w.min) + ' kg។ Admin ប្តូរបាននៅ ការកំណត់ › ការព្រមាន & ប័ណ្ណ។', 'The weight ' + kg(w.kg) + ' kg is below the minimum ' + kg(w.min) + ' kg. An Admin can change it in Settings › Warnings & ticket.');
   }
 
   // ---------------------------------------------------------------- offline queue
@@ -510,7 +516,7 @@
   function weigh1() {
     if (!formOk(false)) return;
     const w = cur();
-    if (!w.ok) { toast(w.live ? t('សូមរង់ចាំទម្ងន់ឈប់ (STABLE)', 'Wait until the weight is STABLE') : t('មិនទាន់មានទម្ងន់ពីជញ្ជីង', 'No weight from the scale yet')); return; }
+    if (!w.ok) { toast(whyNot(w)); return; }
     if (openTickets().some(x => normP(x.plate) === normP(F.plate))) { toast(t('ឡាននេះកំពុងរង់ចាំថ្លឹងលើកទី២ហើយ។ សូមរើសពីបញ្ជីខាងស្តាំ។', 'This truck is already waiting for its 2nd weigh. Pick it from the list on the right.')); return; }
     const known = tickets().map(x => x.no);
     const tk = Object.assign(fromForm(), { cid: uid(), no: CORE.nextNo(S().SCALE_PREFIX || 'WB', new Date(), known), status: 'Open',
@@ -534,7 +540,7 @@
     const sel = ticketBy(F.cid);
     if (!sel || !formOk(true)) return;
     const w = cur();
-    if (!w.ok) { toast(w.live ? t('សូមរង់ចាំទម្ងន់ឈប់ (STABLE)', 'Wait until the weight is STABLE') : t('មិនទាន់មានទម្ងន់ពីជញ្ជីង', 'No weight from the scale yet')); return; }
+    if (!w.ok) { toast(whyNot(w)); return; }
     const f = CORE.finish(Number(sel.w1), w.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
     if (f.warn.length && !force) { PENDING = { kg: w.kg, src: w.src, warn: f.warn }; paintWarn(); return; }
     const use = force && PENDING ? PENDING : { kg: w.kg, src: w.src, warn: f.warn };
