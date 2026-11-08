@@ -276,6 +276,7 @@
   // ---------------------------------------------------------------- router
   let screen = () => {};
   function route() {
+    document.body.classList.remove('freeze'); $('#view').style.height = '';
     const h = location.hash.replace(/^#\/?/, '');
     const top = h.split('/')[0] || 'home';
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 't' && a.dataset.r === 'list')));
@@ -361,7 +362,7 @@
 
   function renderHome() {
     screen = renderHome;
-    document.body.classList.add('wide');
+    document.body.classList.add('wide', 'freeze');
     const sel = F.cid ? ticketBy(F.cid) : null;
     if (F.cid && (!sel || sel.status !== 'Open')) { F = EMPTY_F(); keepForm(); }
     $('#view').innerHTML = `
@@ -379,7 +380,16 @@
     // The waiting list ends level with the form and scrolls by itself (Kim, 8 Nov 2026)
     if (window.ResizeObserver) new ResizeObserver(fitSite).observe($('#formCard'));
   }
+  /** The whole weigh screen stays still on the scale PC (Kim, 8 Nov 2026): the page fits the window, only the lists scroll. */
+  function fitFreeze() {
+    const v = $('#view');
+    if (!document.body.classList.contains('freeze') || window.innerWidth <= 980) { v.style.height = ''; return false; }
+    window.scrollTo(0, 0);
+    v.style.height = Math.max(520, window.innerHeight - v.getBoundingClientRect().top - 8) + 'px';
+    return true;
+  }
   function fitSite() {
+    if (fitFreeze()) { const tb0 = $('#site .tbl'); if (tb0) tb0.style.maxHeight = ''; return; }
     const f = $('#formCard'), tb = $('#site .tbl');
     if (!f || !tb) return;
     if (window.innerWidth <= 980) { tb.style.maxHeight = ''; return; }
