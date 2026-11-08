@@ -374,7 +374,6 @@
         <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        <div class="field"><label class="f">${t('កន្លែងផ្ទុក', 'Loading place')}</label><div><input class="in" id="fLoad" autocomplete="off" value="${esc(F.load || '')}"></div></div>
         ${sel ? `<div class="field"><label class="f">${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in" id="fDest" autocomplete="off" value="${esc(F.dest)}"></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
@@ -402,7 +401,7 @@
     // Item and Destination are asked at the 2nd weigh only (Kim, 8 Nov 2026)
     if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
     if ($('#fDest')) picker($('#fDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: v => upd('dest', v) });
-    picker($('#fLoad'), { list: places, addNew: true, onPick: v => upd('load', v) });
+    // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
       String(raw || '').split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
@@ -448,7 +447,7 @@
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
   }
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF });
 
   function weigh1() {
     if (!formOk(false)) return;
