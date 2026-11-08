@@ -118,8 +118,10 @@ function scItems_() {
     .filter(r => String(r[0]).trim()).map(r => [String(r[0]).trim(), String(r[1]).trim(), String(r[2]).trim() || 'Yes']);
 }
 function scDests_() {
-  const out = [];
-  prices_().forEach(r => { if (r[1] && out.indexOf(r[1]) < 0) out.push(r[1]); });
+  // Every name in the Destination column, even rows with no 3PL company or price yet (Kim, 8 Nov 2026).
+  const sh = sheet_(SH.PRICE, PRICE_COLS), out = [];
+  if (sh.getLastRow() < 2) return out;
+  sh.getRange(2, 2, sh.getLastRow() - 1, 1).getDisplayValues().forEach(r => { const v = String(r[0]).trim(); if (v && out.indexOf(v) < 0) out.push(v); });
   return out.sort();
 }
 function scSettingsMap_() {
