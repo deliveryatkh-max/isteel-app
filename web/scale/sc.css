@@ -210,3 +210,9 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 /* Waiting list scrolls inside its card; the header row stays on top (Kim, 8 Nov 2026) */
 #site .tbl { overflow-y: auto; }
 #site .tbl th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+
+/* Ticket list: quick date chips, smaller search box (Kim, 8 Nov 2026) */
+.filters .qchips { display: flex; gap: 6px; flex-wrap: wrap; align-self: flex-end; padding-bottom: 2px; }
+.filters .qchips .chip { min-height: 40px; padding: 6px 14px; font-weight: 600; cursor: pointer; }
+.filters .qchips .chip.on { background: var(--soft); color: var(--brand); border-color: var(--accent); }
+.filters input.in.lq { width: 240px; flex: 0 1 240px; min-width: 160px; }

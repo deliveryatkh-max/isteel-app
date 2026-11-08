@@ -707,6 +707,15 @@
 
   // ---------------------------------------------------------------- ticket list, search, Excel
   let LIST = { from: today(), to: today(), q: '', rows: null };
+  const QRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['d7', '៧ ថ្ងៃចុងក្រោយ', 'Last 7 days'], ['month', 'ខែនេះ', 'This month']];
+  function rangeOf(k) {
+    const d = new Date();
+    if (k === 'd7') { const a = new Date(d); a.setDate(d.getDate() - 6); return [ymd(a), ymd(d)]; }
+    if (k === 'month') return [ymd(new Date(d.getFullYear(), d.getMonth(), 1)), ymd(d)];
+    return [ymd(d), ymd(d)];
+  }
+  const rangeIs = k => { const r = rangeOf(k); return LIST.from === r[0] && LIST.to === r[1]; };
+  const paintRanges = () => $$('[data-rg]').forEach(b => b.classList.toggle('on', rangeIs(b.dataset.rg)));
   function renderList() {
     screen = renderList;
     document.body.classList.add('wide');
@@ -715,12 +724,15 @@
         <label>${t('ពី', 'From')}<input type="date" class="in" id="lFrom" value="${LIST.from}"></label>
         <label>${t('ដល់', 'To')}<input type="date" class="in" id="lTo" value="${LIST.to}"></label>
         <button type="button" class="btn ok" id="lGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
-        <input type="search" class="in grow" id="lQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...')}" value="${esc(LIST.q)}">
+        <div class="qchips">${QRANGES.map(r => `<button type="button" class="chip${rangeIs(r[0]) ? ' on' : ''}" data-rg="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
+        <input type="search" class="in lq" id="lQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...')}" value="${esc(LIST.q)}">
         <button type="button" class="btn" id="lXls">⬇ Excel</button>
       </div>
       <div id="lSum" class="sumline"></div>
       <div id="lBody"><div class="spinner"></div></div></section>`;
-    $('#lGo').onclick = () => { LIST.from = $('#lFrom').value; LIST.to = $('#lTo').value; loadList(); };
+    $('#lGo').onclick = () => { LIST.from = $('#lFrom').value; LIST.to = $('#lTo').value; loadList(); paintRanges(); };
+    // Quick dates: Today, Last 7 days, This month (Kim, 8 Nov 2026)
+    $$('[data-rg]').forEach(b => { b.onclick = () => { const r = rangeOf(b.dataset.rg); LIST.from = r[0]; LIST.to = r[1]; $('#lFrom').value = r[0]; $('#lTo').value = r[1]; paintRanges(); loadList(); }; });
     $('#lQ').oninput = e => { LIST.q = e.target.value; paintListBody(); };
     $('#lXls').onclick = exportXls;
     loadList();
