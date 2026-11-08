@@ -186,7 +186,7 @@
   /** Says exactly why a weight can't be saved: no data, still moving, or under the minimum (Kim, 8 Nov 2026). */
   function whyNot(w) {
     if (!w.live || w.kg == null) return t('មិនទាន់មានទម្ងន់ពីជញ្ជីង', 'No weight from the scale yet');
-    if (!w.stable) return t('សូមរង់ចាំទម្ងន់ឈប់ (STABLE)', 'Wait until the weight is STABLE');
+    if (!w.stable) return t('សូមរង់ចាំទម្ងន់មានលំនឹង', 'Wait until the weight is STABLE');
     return t('ទម្ងន់ ' + kg(w.kg) + ' kg តិចជាងអប្បបរមា ' + kg(w.min) + ' kg។ Admin ប្តូរបាននៅ ការកំណត់ › ការព្រមាន & ប័ណ្ណ។', 'The weight ' + kg(w.kg) + ' kg is below the minimum ' + kg(w.min) + ' kg. An Admin can change it in Settings › Warnings & ticket.');
   }
 
@@ -486,7 +486,7 @@
     const req = '<span class="req">*</span>';
     card.innerHTML = `
       <h2>${sel ? '⚖️ ' + t('ថ្លឹងលើកទី២', '2nd weigh') + ' · <span class="mono">' + esc(sel.no) + '</span>' : '🆕 ' + t('ថ្លឹងថ្មី (លើកទី១)', 'New weighing (1st weigh)')}
-        ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
+        ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ថ្លឹងឡានថ្មី', 'New truck')}</button>` : ''}</h2>
       <div class="fgrid toprow">
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
@@ -681,7 +681,7 @@
     if (el) {
       const w = cur();
       const state = MANUAL ? ['manual', '✍ ' + t('វាយដោយដៃ', 'TYPED')] : !w.live ? ['off', SER.on ? t('គ្មានសញ្ញា', 'NO SIGNAL') : t('មិនទាន់ភ្ជាប់', 'NOT CONNECTED')]
-        : w.stable ? ['ok', 'STABLE'] : ['move', t('កំពុងរំកិល', 'MOVING')];
+        : w.stable ? ['ok', t('មានលំនឹង', 'STABLE')] : ['move', t('កំពុងរំកិល', 'MOVING')];
       el.className = 'lcd ' + state[0];
       const num = `${w.kg != null ? kg(w.kg) : '-----'}<span>kg</span>`;
       // At the 2nd weigh (a waiting truck is picked): live weight, 1st weight and net side by side (Kim's option C).
