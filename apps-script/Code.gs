@@ -7,7 +7,8 @@
 const SHEETS = {
   REFILL: 'Fuel Refill',
   TYPES: 'Type of Refill',
-  DRIVER_TRUCK: 'Driver & Truck',
+  DRIVER_TRUCK: 'Driver & Truck',   // one row per driver; CODE = the driver's usual truck
+  TRUCK: 'Truck',                   // one row per plate: company, type, weights, Odometer Broken? (Kim, 8 Nov 2026)
   EQUIPMENT: 'Equipment',
   USERS: 'Users',
   SETTINGS: 'Settings',
@@ -1516,7 +1517,7 @@ function dashboardSave_(p, user) {
 
 /**
  * Dashboard Settings › Plates › Good / Odometer Broken: writes Yes (broken) or No (good) in the
- * "Odometer Broken?" column of Driver & Truck for every row with that plate. Only that column changes.
+ * "Odometer Broken?" column of the Truck tab (Driver & Truck when there is no Truck tab yet). Only that column changes.
  */
 function setOdometer_(odo) {
   const plates = Object.keys(odo).map(k => String(k).trim().toUpperCase()).filter(Boolean);
@@ -1526,11 +1527,12 @@ function setOdometer_(odo) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.DRIVER_TRUCK);
+    const ss = SpreadsheetApp.getActive();
+    const sheet = ss.getSheetByName(SHEETS.TRUCK) || ss.getSheetByName(SHEETS.DRIVER_TRUCK);
     const lastCol = sheet.getLastColumn();
     const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
     const codeCol = header.indexOf(DT_PLATE);
-    if (codeCol < 0) throw new Error('CODE column not found in Driver & Truck.');
+    if (codeCol < 0) throw new Error('CODE column not found in ' + sheet.getName() + '.');
     let col = header.findIndex(h => DT_BROKEN.test(h));
     if (col < 0) { col = lastCol; sheet.getRange(1, col + 1).setValue('Odometer Broken?'); }
     const n = sheet.getLastRow() - 1;
@@ -1547,7 +1549,7 @@ function setOdometer_(odo) {
       if (String(vals[i][0]).trim() !== want[code]) { vals[i][0] = want[code]; updated++; }
     });
     if (updated) cells.setValues(vals);
-    delete tableCache_[SHEETS.DRIVER_TRUCK];
+    delete tableCache_[SHEETS.DRIVER_TRUCK]; delete tableCache_[SHEETS.TRUCK];
     return { updated: updated, missing: plates.filter(x => !found[x]) };
   } finally {
     lock.releaseLock();
@@ -2184,7 +2186,7 @@ function validate_(p, editingId, entryTime) {
   const plate = String(p.plate || '').trim();
   if (!plate) throw new Error(meter === 'km' ? 'Plate number is required.' : 'Equipment / purpose is required.');
   if (meter === 'km' && lists.plates.indexOf(plate) < 0) {
-    throw new Error('Plate "' + plate + '" is not in the CODE column of the Driver & Truck sheet.');
+    throw new Error('Plate "' + plate + '" is not in the Truck sheet.');
   }
   const equipList = equipmentByType_()[type.name];
   if (meter !== 'km' && equipList && equipList.indexOf(plate) < 0) {
@@ -2308,15 +2310,23 @@ function addNewNames_(p) {
   }
 
   if (!row[DT_PLATE] && !row[DT_DRIVER]) return;
-  const sheet = SpreadsheetApp.getActive().getSheetByName(SHEETS.DRIVER_TRUCK);
-  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
-  const rowNum = sheet.getLastRow() + 1;
-  if (rowNum > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
-  const at = {};
-  header.forEach((h, i) => { at[h] = i; });
-  keepText_(sheet, rowNum, at, [DT_PLATE, DT_DRIVER]);
-  sheet.getRange(rowNum, 1, 1, header.length).setValues([header.map(h => row[h] === undefined ? '' : row[h])]);
-  delete tableCache_[SHEETS.DRIVER_TRUCK];
+  const ss = SpreadsheetApp.getActive();
+  const append = (sheet, data) => {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const rowNum = sheet.getLastRow() + 1;
+    if (rowNum > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+    const at = {};
+    header.forEach((h, i) => { at[h] = i; });
+    keepText_(sheet, rowNum, at, [DT_PLATE, DT_DRIVER]);
+    sheet.getRange(rowNum, 1, 1, header.length).setValues([header.map(h => data[h] === undefined ? '' : data[h])]);
+  };
+  // A new truck goes to the Truck tab (one row per plate); a new driver goes to Driver & Truck with it as usual truck.
+  const truckTab = ss.getSheetByName(SHEETS.TRUCK);
+  if (truckTab && wantPlate && row[DT_PLATE] && !lists.plates.some(x => x.toUpperCase() === String(row[DT_PLATE]).toUpperCase())) {
+    append(truckTab, { CODE: row[DT_PLATE], 'ក្រុមហ៊ុន': row['ក្រុមហ៊ុន'] || 'ISI Steel', 'Odometer Broken?': 'No' });
+  }
+  if (row[DT_DRIVER] || !truckTab) append(ss.getSheetByName(SHEETS.DRIVER_TRUCK), row);
+  delete tableCache_[SHEETS.DRIVER_TRUCK]; delete tableCache_[SHEETS.TRUCK];
 }
 
 /** "3f 8691" or "3F8691" → "3F-8691", the way plates are written in the CODE column. */
@@ -2326,10 +2336,15 @@ function cleanPlate_(v) {
   return m ? m[1] + '-' + m[2] : s;
 }
 
-/** Dropdown lists from the "Driver & Truck" sheet: unique plates (CODE) and drivers with their plate. */
+/**
+ * Dropdown lists (Kim, 8 Nov 2026): plates from the "Truck" tab (one row per plate) plus any usual truck still only
+ * in "Driver & Truck"; drivers from "Driver & Truck" with their usual truck. Any driver can take any truck.
+ */
 function driverTruck_() {
   const rows = readTable_(SHEETS.DRIVER_TRUCK);
+  const trucks = readTable_(SHEETS.TRUCK);
   const plates = [], drivers = [];
+  trucks.forEach(r => { const code = String(r[DT_PLATE] || '').trim(); if (code && plates.indexOf(code) < 0) plates.push(code); });
   rows.forEach(r => {
     const name = String(r[DT_DRIVER] || '').trim();
     const code = String(r[DT_PLATE] || '').trim();
@@ -2337,7 +2352,7 @@ function driverTruck_() {
     if (name && !drivers.some(d => d.name === name)) drivers.push({ name: name, plate: code });
   });
   plates.sort();
-  return { plates: plates, drivers: drivers, brokenPlates: brokenPlates_(rows) };
+  return { plates: plates, drivers: drivers, brokenPlates: brokenPlates_(trucks.length ? trucks : rows) };
 }
 
 /** Plates whose "Odometer Broken?" cell says Yes (also accepts Y, True, ខូច). */

@@ -321,7 +321,19 @@ function fuelTrucks_() {
     if (!by[plate]) { by[plate] = []; order.push(plate); }
     if (text_(r[iName])) by[plate].push(text_(r[iName]));
   });
-  return { plates: order.map(p => ({ plate: p, type: by[p].join(', ') })), drivers: drivers };
+  // Trucks are kept once in the "Truck" tab (Kim, 8 Nov 2026): its ISI plates count too, with their Truck Type.
+  const types = {};
+  const tk = SpreadsheetApp.openById(id).getSheetByName('Truck');
+  if (tk) {
+    const tt = tableOf_(tk), jP = tt.head.indexOf('CODE'), jC = tt.head.indexOf('ក្រុមហ៊ុន'), jT = tt.head.indexOf('Truck Type');
+    if (jP >= 0) tt.rows.forEach(r => {
+      const plate = normPlate(r[jP]), co = jC < 0 ? '' : text_(r[jC]);
+      if (!plate || plate === '0' || (co && !/isi/i.test(co))) return;
+      if (!by[plate]) { by[plate] = []; order.push(plate); }
+      if (jT >= 0 && text_(r[jT])) types[plate] = text_(r[jT]);
+    });
+  }
+  return { plates: order.map(p => ({ plate: p, type: types[p] || by[p].join(', ') })), drivers: drivers };
 }
 
 /** Delivery Plan rows by DN: plate, driver, round, customer, SO, weight. */

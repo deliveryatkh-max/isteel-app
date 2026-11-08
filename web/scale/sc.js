@@ -1545,8 +1545,8 @@
   function setTrucks() {
     masterTable({
       kind: 'truck', title: '🚚 ' + t('បញ្ជីឡាន', 'Truck list'),
-      note: t('បញ្ជីតែមួយ៖ ផ្ទាំង "Driver & Truck" ក្នុង Fuel Refill។ កម្មវិធីបន្ថែមជួរឈរ Truck Type, Empty Weight (kg), Max Gross (kg)។ ទម្ងន់ទទេបំពេញដោយខ្លួនឯងពីការថ្លឹងលើកដំបូង។',
-        'One list: the "Driver & Truck" tab of the Fuel Refill sheet. The scale added the columns Truck Type, Empty Weight (kg) and Max Gross (kg). An empty Empty Weight fills itself from the truck\'s first weigh.'),
+      note: t('បញ្ជីតែមួយ៖ ផ្ទាំង "Truck" ក្នុង Fuel Refill (មួយជួរ មួយឡាន)។ តៃកុងនៅផ្ទាំង "Driver & Truck" (CODE = ឡានធម្មតា)។ ទម្ងន់ទទេបំពេញដោយខ្លួនឯងពីការថ្លឹងលើកដំបូង។',
+        'One list: the "Truck" tab of the Fuel Refill sheet, one row per plate. Drivers are in the "Driver & Truck" tab (CODE = usual truck); any driver can take any truck. An empty Empty Weight fills itself from the truck\'s first weigh.'),
       cols: [[t('លេខឡាន', 'Plate'), 'plate'], [t('ក្រុមហ៊ុន', 'Company'), 'company'], [t('ប្រភេទ', 'Truck type'), 'type'], [t('ទម្ងន់ទទេ (kg)', 'Empty (kg)'), 'empty', 'r'], [t('អតិបរមា (kg)', 'Max gross (kg)'), 'max', 'r'], [t('អ្នកបើកបរ', 'Drivers'), 'dr']],
       rows: trucks().map(x => Object.assign({}, x, { dr: x.drivers.join(', ') })),
       tmpl: ['Plate', 'Company', 'Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'],

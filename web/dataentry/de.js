@@ -432,7 +432,7 @@
   function paintCompanyHint() {
     const h = $('#h_company'); if (!h) return;
     const v = $('#f_vehicle').value.trim(), auto = companyOf(v), c = $('#f_company').value.trim();
-    h.textContent = !v ? '' : auto ? (c === auto ? '✓ ' + t('ពីតារាង Driver & Truck', 'From the Driver & Truck list') : '') : '⚠️ ' + t('រកមិនឃើញក្នុង Driver & Truck · វាយបញ្ចូលដោយដៃ', 'Not in the Driver & Truck list · type it');
+    h.textContent = !v ? '' : auto ? (c === auto ? '✓ ' + t('ពីតារាងឡាន (Truck)', 'From the Truck list') : '') : '⚠️ ' + t('រកមិនឃើញក្នុងតារាងឡាន (Truck) · វាយបញ្ចូលដោយដៃ', 'Not in the Truck list · type it');
   }
   function grab() {
     const f = formTarget(); if (!f || !$('#form')) return;
