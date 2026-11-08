@@ -409,6 +409,73 @@
   let fitQ = 0;
   new MutationObserver(() => { cancelAnimationFrame(fitQ); fitQ = requestAnimationFrame(fitTables); }).observe($('#view'), { childList: true, subtree: true });
 
+  // ---------------------------------------------------------------- truck info + photo (Kim, 8 Nov 2026)
+  /** A Drive link becomes an image address the page can show; any other https link is used as it is. */
+  function photoSrc(u) {
+    u = String(u || '').trim();
+    const m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=|thumbnail\?id=)([\w-]{20,})/);
+    if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w800';
+    return /^(https:\/\/|data:image\/)/.test(u) ? u : '';
+  }
+  /** dd-mm-yyyy or yyyy-mm-dd → days from today (negative = past), or null. */
+  function daysTo(d) {
+    let m = String(d || '').match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/), dt = null;
+    if (m) dt = new Date(+m[3], +m[2] - 1, +m[1]);
+    else if ((m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/))) dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!dt) return null;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    return Math.round((dt - t0) / 86400000);
+  }
+  function truckInfoHtml(tr) {
+    const i = tr.info || {}, src = photoSrc(tr.photo);
+    const kgv = v => { const n = Number(String(v).replace(/[^0-9.]/g, '')); return v !== '' && v != null && isFinite(n) && n > 0 ? kg(Math.round(n)) + ' kg' : ''; };
+    const m1 = v => { const n = Number(String(v).replace(/[^0-9.]/g, '')); return v && isFinite(n) ? String(+n.toFixed(2)) : ''; };
+    const size = [m1(i.len), m1(i.wid), m1(i.hei)];
+    const dd = i.exp ? daysTo(i.exp) : null;
+    const expCls = dd == null ? '' : dd < 0 ? ' bad' : dd <= 30 ? ' warn' : '';
+    const rows = [
+      [t('ក្រុមហ៊ុន', 'Company'), [tr.company, i.loc].filter(Boolean).join(' · ')],
+      [t('ប្រភេទ', 'Type'), [i.vtype || tr.type, t('km', 'en') === 'km' ? i.vtypeKh : ''].filter(Boolean).join(' · ')],
+      [t('ម៉ាក', 'Make'), [i.mark, i.colour, i.year].filter(Boolean).join(' · ')],
+      [t('ទម្ងន់ឡាន', 'Vehicle weight'), kgv(tr.empty)],
+      [t('ផ្ទុកអតិបរមា', 'Max load'), kgv(i.load)],
+      [t('ទម្ងន់សរុបអតិបរមា', 'Max gross'), kgv(tr.max)],
+      [t('ទំហំ (ប×ទ×ក)', 'Size (L×W×H)'), size.some(Boolean) ? size.map(x => x || '?').join(' × ') + ' m' : ''],
+      [t('អ័ក្ស', 'Axles'), i.axles ? String(+String(i.axles).replace(/[^0-9.]/g, '') || i.axles) : ''],
+      [t('តៃកុង', 'Drivers'), (tr.drivers || []).join(', ')],
+    ].filter(r => r[1]);
+    const exp = i.exp ? `<div class="ti-row${expCls}"><span>${t('ផុតកំណត់ត្រួតពិនិត្យ', 'Inspection expires')}</span><b>${esc(i.exp)}${dd != null && dd < 0 ? ' · ' + t('ផុតកំណត់ហើយ', 'expired') : dd != null && dd <= 30 ? ' · ' + t('នៅ', 'in') + ' ' + dd + ' ' + t('ថ្ងៃ', 'days') : ''}</b></div>` : '';
+    const rules = [i.r1, i.r2, i.r3].filter(Boolean);
+    return `<div class="tinfo" id="tInfo">
+      <div class="ti-info">
+        <div class="ti-head">🚚 <b class="mono">${esc(tr.plate)}</b></div>
+        ${rows.map(r => `<div class="ti-row"><span>${r[0]}</span><b>${esc(r[1])}</b></div>`).join('')}${exp}
+        ${rules.length ? `<div class="ti-rules"><b>📏 ${t('ច្បាប់ផ្ទុកទំនិញ', 'Loading rules')}</b><ul>${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
+      </div>
+      <div class="ti-photo">
+        ${src ? `<img src="${esc(src)}" alt="${esc(tr.plate)}" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ''}
+        <div class="ti-nophoto"${src ? ' hidden' : ''}>📷<br>${t('មិនទាន់មានរូបថត', 'No photo yet')}</div>
+        ${isAdmin() ? `<label class="btn ti-add">📷 ${src ? t('ប្តូររូបថត', 'Change photo') : t('បន្ថែមរូបថត', 'Add photo')}<input type="file" id="tiPhotoIn" accept="image/*" hidden></label>` : ''}
+      </div>
+    </div>`;
+  }
+  /** Shrinks the photo to 1280 px JPEG on this PC, then saves it to the truck (Admin). */
+  async function truckPhoto(plate, file) {
+    const lab = $('.ti-add');
+    if (lab) lab.classList.add('busy');
+    try {
+      const url = await new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(file); });
+      const img = await new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = url; });
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const r = await api('scTruckPhoto', { plate, img: cv.toDataURL('image/jpeg', 0.82) });
+      B.trucks = r.trucks; set('sc_boot', JSON.stringify(B));
+      toast('✅ ' + t('បានរក្សាទុករូបថត', 'Photo saved'));
+    } catch (e) { toast(e.message || t('មិនអាចបើករូបថត', 'Could not open the photo')); }
+    paintForm();
+  }
+
   function paintForm() {
     const card = $('#formCard');
     if (!card) return;
@@ -448,9 +515,11 @@
       </div>
       ${isAdmin() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
         : `<button type="button" class="link" id="manOn">✍ ${t('វាយទម្ងន់ដោយដៃ (Admin)', 'Type a weight (Admin)')}</button>`}<div id="manBox"></div></div>` : ''}
+      ${tr ? truckInfoHtml(tr) : ''}
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
+    if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
@@ -1779,7 +1848,8 @@
   async function demoApi(action, p) {
     await new Promise(r => setTimeout(r, 200));
     const db = getJ('sc_demo', null) || {
-      trucks: [{ plate: '3B-5956', company: 'ISI Steel', drivers: ['02.កាំង វណ្ណា'], type: 'Crane truck', empty: 11300, max: 25000 },
+      trucks: [{ plate: '3B-5956', company: 'ISI Steel', drivers: ['02.កាំង វណ្ណា'], type: 'Crane Truck', empty: 11300, max: 25000, photo: '',
+        info: { loc: 'ISI Steel KMH1', mark: 'HINO', vtype: 'Crane Truck', vtypeKh: 'ដឹកទំនិញធុនធ្ងន់', colour: 'ខៀវ', year: '2019', load: '12,750.0', len: '9.7', wid: '2.5', hei: '3.6', axles: '3.0', insp: '18-08-2026', exp: '18-08-2027', r1: 'Pipes: max 12 m long, tie every 3 m', r2: 'No load over the cab' } },
         { plate: '3C-4266', company: 'ISI Steel', drivers: ['01.ទូច អេ'], type: 'Crane truck', empty: 10400, max: 24000 },
         { plate: '3F-8691', company: '3PL #1', drivers: [], type: '10-wheel', empty: '', max: '' }],
       customers: [['6100000002', '000002-Hun Bonita'], ['6100000005', '000005-ក្រុមហ៊ុន ហ្វូស៊ីន ស្ទីល ប៊ីលឌីង ឯ.ក']],
@@ -1815,6 +1885,7 @@
       keep();
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
+    if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
     if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }

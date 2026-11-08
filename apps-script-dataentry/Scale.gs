@@ -5,7 +5,7 @@
  *
  * One source for every master list (Kim, 6 Nov 2026):
  *   Trucks and truck companies        -> Fuel Refill sheet (USERS_SHEET_ID), tab "Truck": one row per plate with
- *                                        Truck Type, Empty Weight (kg), Max Gross (kg), Odometer Broken? (Kim, 8 Nov 2026).
+ *                                        Truck Type, Vehicle Weight (kg), Max. Gross Weight (kg), Odometer Broken?, Photo, and Kim's other truck details.
  *   Drivers                           -> same sheet, tab "Driver & Truck": one row per driver, CODE = usual truck.
  *                                        Any driver can take any truck.
  *   Customers                         -> SSK-DELIVERY-DATA, tab "Customer" (Customer ID, Customer Name).
@@ -20,8 +20,15 @@ const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'I
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
-const SC_DT_NEW = ['Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'];   // columns of the Fuel "Truck" tab
-const SC_TRUCK_COLS = ['CODE', 'ក្រុមហ៊ុន'].concat(SC_DT_NEW, ['Odometer Broken?']);
+// Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
+// "Max. Gross Weight (kg)"; the older names are still read when the new ones are empty.
+const SC_DT_NEW = ['Truck Type', 'Vehicle Weight (kg)', 'Max. Gross Weight (kg)'];
+const SC_DT_OLD = ['', 'Empty Weight (kg)', 'Max Gross (kg)'];
+const SC_TRUCK_COLS = ['CODE', 'ក្រុមហ៊ុន'].concat(SC_DT_NEW, ['Odometer Broken?', 'Photo']);
+// Shown in the truck info box on the weigh screen (Kim, 8 Nov 2026): [key, column]
+const SC_TRUCK_INFO = [['loc', 'Vehicle Location'], ['mark', 'Mark'], ['vtype', 'Vehicle Type EN'], ['vtypeKh', 'Vehicle Type KH'],
+  ['colour', 'Colour'], ['year', 'Year Made'], ['load', 'Max. Load (kg)'], ['len', 'Length (m)'], ['wid', 'Width (m)'], ['hei', 'Height (m)'],
+  ['axles', 'Number of Axles'], ['insp', 'Inspection Date'], ['exp', 'Expiry Date'], ['r1', 'Loading Rule 1'], ['r2', 'Loading Rule 2'], ['r3', 'Loading Rule 3']];
 const SC_DELIVERY_ID = '1vHhgWrdMLKkmo3qhlITTX2jOmWwgSDz0IjEguQ7cZ44';    // SSK-DELIVERY-DATA (Script property DELIVERY_SHEET_ID wins)
 const SC_SETTINGS = [
   ['SCALE_TARE_PCT', '5', 'Warn when the empty weight differs from the truck\'s Empty Weight (kg) by more than this %'],
@@ -44,6 +51,7 @@ function scaleRoute_(action, p, user) {
     case 'scSettings': return scSettings_(p, user);
     case 'scTicketPdf': return scTicketPdf_(p, user);
     case 'scTemplate': return scTemplate_(p);
+    case 'scTruckPhoto': return withLock_(() => scTruckPhoto_(p, user));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -112,15 +120,20 @@ const scNorm_ = s => String(s || '').trim().toUpperCase().replace(/\s+/g, '');
 function scTrucks_() {
   const { sh, head } = scTruckSheet_();
   const c = n => head.indexOf(n);
-  const cP = c('CODE'), cCo = c('ក្រុមហ៊ុន'), cT = c(SC_DT_NEW[0]), cE = c(SC_DT_NEW[1]), cM = c(SC_DT_NEW[2]);
+  const cP = c('CODE'), cCo = c('ក្រុមហ៊ុន'), cT = c(SC_DT_NEW[0]), cPh = c('Photo');
   const n = sh.getLastRow() - 1;
   const v = n > 0 ? sh.getRange(2, 1, n, head.length).getDisplayValues() : [];
+  const cell = (r, h) => { const i = c(h); return i >= 0 ? String(r[i]).trim() : ''; };
+  const weight = (r, k) => { const a = num_(cell(r, SC_DT_NEW[k])); return a !== '' ? a : num_(cell(r, SC_DT_OLD[k])); };
   const map = {}, out = [];
   v.forEach(r => {
     const plate = String(r[cP]).trim();
     if (!plate || map[scNorm_(plate)]) return;
-    const t = map[scNorm_(plate)] = { plate: plate, company: cCo >= 0 ? String(r[cCo]).trim() : '', drivers: [], type: cT >= 0 ? String(r[cT]).trim() : '',
-      empty: cE >= 0 ? num_(r[cE]) : '', max: cM >= 0 ? num_(r[cM]) : '' };
+    const info = {};
+    SC_TRUCK_INFO.forEach(f => { const x = cell(r, f[1]); if (x && x !== '-') info[f[0]] = x; });
+    const t = map[scNorm_(plate)] = { plate: plate, company: cCo >= 0 ? String(r[cCo]).trim() : '', drivers: [],
+      type: (cT >= 0 ? String(r[cT]).trim() : '') || info.vtype || '', empty: weight(r, 1), max: weight(r, 2),
+      photo: cPh >= 0 ? String(r[cPh]).trim() : '', info: info };
     out.push(t);
   });
   // Drivers: each driver row names a usual truck in CODE. A plate only there (not yet in Truck) still shows.
@@ -529,6 +542,31 @@ function scAddTruck_(t, user) {
   const r = sh.getLastRow(), cp = head.indexOf('CODE') + 1;
   sh.getRange(r, cp).setNumberFormat('@').setValue(t.plate);
   scLog_(user, 'Truck ' + t.plate, 'New truck', '', '', JSON.stringify(t), '');
+}
+/** Admin adds or replaces a truck's photo (Kim, 8 Nov 2026): saved in Drive, link in the Truck tab's Photo column. */
+function scTruckPhoto_(p, user) {
+  if (!user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
+  const plate = String(p.plate || '').trim();
+  const m = String(p.img || '').match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
+  if (!plate || !m) fail_('BAD', 'Pick a photo.', 'សូមជ្រើសរូបថត។');
+  const bytes = Utilities.base64Decode(m[2]);
+  if (bytes.length > MAX_IMG_BYTES) fail_('BAD', 'Photo is too big.', 'រូបថតធំពេក។');
+  const { sh, head } = scTruckSheet_();
+  const cp = head.indexOf('CODE'), cph = head.indexOf('Photo');
+  const n = sh.getLastRow() - 1;
+  const plates = n > 0 ? sh.getRange(2, cp + 1, n, 1).getDisplayValues().map(r => scNorm_(r[0])) : [];
+  const at = plates.indexOf(scNorm_(plate));
+  if (at < 0) fail_('BAD', 'This truck is not in the Truck list.', 'ឡាននេះមិនទាន់មានក្នុងបញ្ជីឡាន។');
+  const name = 'Truck_' + plate.replace(/[^0-9A-Za-z\-]/g, '') + (m[1] === 'image/png' ? '.png' : '.jpg');
+  const f = folder_();
+  const old = f.getFilesByName(name);
+  while (old.hasNext()) old.next().setTrashed(true);
+  const file = f.createFile(Utilities.newBlob(bytes, m[1], name));
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}   // so the app can show it
+  const cellR = sh.getRange(at + 2, cph + 1), before = cellR.getDisplayValue();
+  cellR.setValue(file.getUrl());
+  scLog_(user, 'Truck ' + plate, 'Truck photo', 'Photo', before, file.getUrl(), '');
+  return { trucks: scTrucks_() };
 }
 /** Sets company / type / empty / max on the plate's row of the Truck tab. */
 function scSetTruck_(t, user, reason) {
