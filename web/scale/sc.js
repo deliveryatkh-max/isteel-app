@@ -367,22 +367,24 @@
     card.innerHTML = `
       <h2>${sel ? '⚖️ ' + t('ថ្លឹងលើកទី២', '2nd weigh') + ' · <span class="mono">' + esc(sel.no) + '</span>' : '🆕 ' + t('ថ្លឹងថ្មី (លើកទី១)', 'New weighing (1st weigh)')}
         ${sel ? `<button type="button" class="btn newtruck" id="newBtn">➕ ${t('ឡានថ្មី', 'New truck')}</button>` : ''}</h2>
-      <div class="field"><span class="f">${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
-        <div class="chips jobchips">${[['Out', 'ឡើងទំនិញ', 'Load goods'], ['In', 'ទំលាក់ទំនិញ', 'Unload goods']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
-      ${sel ? `<div class="field"><span class="f">${t('តង់', 'Tarpaulin')} ${req}</span>
-        <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', 'គ្របតង់', 'Covered'], ['No', 'មិនគ្របតង់', 'Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       <div class="fgrid">
-        <div class="field"><label class="f">${t('លេខឡាន', 'Truck No')} ${req}</label><div><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"></div>
+      <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
+        <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load goods'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload goods']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
+      ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Tarpaulin')} ${req}</span>
+        <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+      </div>
+      <div class="fgrid">
+        <div class="field"><label class="f lc-navy">🚚 ${t('លេខឡាន', 'Truck No')} ${req}</label><div><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"></div>
           ${tr ? `<div class="hint">${tr.type ? esc(tr.type) + ' · ' : ''}${t('ទម្ងន់ទទេ', 'Empty')} ${tr.empty !== '' ? kg(tr.empty) + ' kg' : '—'} · ${t('កំណត់អតិបរមា', 'Max')} ${tr.max !== '' ? kg(tr.max) + ' kg' : '—'}${lastT ? ' · ' + t('ចុងក្រោយ', 'Last') + ' ' + kg(lastT) + ' kg' : ''}</div>`
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
-        <div class="field"><label class="f">${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
+        <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
-        ${sel ? `<div class="field"><label class="f">${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f">${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${t('រើសពីបញ្ជី', 'Pick from the list')}" value="${esc(F.dest)}"></div></div>` : ''}
-        ${sel ? `<div class="field span2"><label class="f">${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
+        ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
+        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (កន្លែងទម្លាក់)', 'Destination (unloading place)')}</label><div><input class="in ddl" id="fDest" autocomplete="off" placeholder="${t('រើសពីបញ្ជី', 'Pick from the list')}" value="${esc(F.dest)}"></div></div>` : ''}
+        ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
-        <div class="field span2"><label class="f">${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
+        <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
       <div id="warnBox"></div>
       <div class="btns">
