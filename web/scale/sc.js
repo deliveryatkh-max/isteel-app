@@ -96,7 +96,7 @@
       if (!port) { paintLcd(); return; }
       await serialStop();
       const c = conn();
-      await port.open({ baudRate: +c.baud, dataBits: +c.bits, parity: c.parity, stopBits: +c.stop, bufferSize: 4096 });
+      await port.open({ baudRate: +c.baud, dataBits: +c.bits, parity: c.parity, stopBits: +c.stop, bufferSize: 65536 });
       SER.port = port; SER.lastPort = port; SER.on = true; SER.err = ''; SER.buf = ''; SER.since = Date.now(); SER.bytes = 0; SER.st.setMs(+c.stableMs || 1500); SER.st.reset();
       readLoop(port);
     } catch (e) {
@@ -110,8 +110,13 @@
       const reader = port.readable.getReader();
       SER.reader = reader;
       try {
-        for (;;) { const r = await reader.read(); if (r.done) break; onBytes(r.value); }
-      } catch (e) { SER.err = e.message; }
+        for (;;) { const r = await reader.read(); if (r.done) break; if (SER.err && /overrun|break|framing|parity/i.test(SER.errRaw || '')) { SER.err = ''; SER.errRaw = ''; } onBytes(r.value); }
+      } catch (e) {
+        // Buffer overrun = the scale sent faster than the page read (busy PC, tab in the background): some readings
+        // were dropped, the loop opens a new reader and goes on. Not worth a red message (Kim, 8 Nov 2026).
+        if (/overrun/i.test(e.name + ' ' + e.message)) { SER.buf = ''; continue; }
+        SER.err = e.message; SER.errRaw = e.name + ' ' + e.message;
+      }
       finally { try { reader.releaseLock(); } catch (e) { /* closed */ } }
       if (!SER.on) break;
     }
