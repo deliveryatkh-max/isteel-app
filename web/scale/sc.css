@@ -184,3 +184,17 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 /* a picker that only takes values from its list looks like a dropdown */
 .in.ddl { padding-right: 34px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size: 6px 6px; background-repeat: no-repeat; cursor: pointer; }
 .jobchips.need .chip { border-color: var(--bad, #b3261e); background: var(--bad-soft, #fdecea); }
+
+/* Weigh form: every label has an emoji and its own colour, easy to find at a glance (Kim, 8 Nov 2026) */
+#formCard .f { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+#formCard .f.lc-blue { background: #e3f0ff; color: #0b4f9c; }
+#formCard .f.lc-teal { background: #dff6f3; color: #0b6b60; }
+#formCard .f.lc-navy { background: #e6ebf5; color: #011e41; }
+#formCard .f.lc-purple { background: #efe6fb; color: #5b2a9c; }
+#formCard .f.lc-orange { background: #fff0dc; color: #9a4b00; }
+#formCard .f.lc-green { background: #e2f6e6; color: #1b6b2f; }
+#formCard .f.lc-pink { background: #fde6ef; color: #9c1f55; }
+#formCard .f.lc-grey { background: #eef1f4; color: #3c4a5a; }
+:root[data-theme="dark"] #formCard .f { filter: brightness(.85) saturate(1.2); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #formCard .f { filter: brightness(.85) saturate(1.2); } }
+#formCard .f .req { color: #c62828; }
