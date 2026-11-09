@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Check Weighs', 'Left At', 'Park Overnight'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -38,7 +38,6 @@ const SC_SETTINGS = [
   ['SCALE_COMPANY', 'ISI STEEL', 'Name printed on the ticket'],
   ['SCALE_TEMPLATE_LINK', '', 'Drive link to the ticket template: a Word file, a Google Doc or a folder (newest file used). Empty = built-in ticket.'],
   ['SCALE_DNC_USERS', '', 'Emails that can see the Debit Note check menu (comma separated). Admins always see it.'],
-  ['SCALE_CHECK_KG', '20', 'Check weigh (truck parked overnight): a difference up to this many kg counts as the same'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
@@ -197,36 +196,11 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'checks', 'left', 'park']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
-  o.checks = scChecks_(o.checks);
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   delete o.dn; delete o.dnCount;
   return o;
-}
-
-/**
- * Check weighs (Kim, 9 Nov 2026): a loaded truck parked overnight is weighed again before it leaves, as many times as
- * needed. Kept in one cell, one line each: "yyyy-MM-dd HH:mm:ss | kg | diff | by | source".
- */
-function scChecks_(v) {
-  if (Array.isArray(v)) return v;
-  return String(v || '').split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a.length >= 3 && a[0] && num_(a[1]) !== '')
-    .map(a => ({ t: a[0].replace(' ', 'T'), kg: num_(a[1]), diff: num_(a[2]) === '' ? 0 : num_(a[2]), by: a[3] || '', src: a[4] || 'Scale' }));
-}
-function scChecksText_(oldCell, list, user) {
-  const have = scChecks_(oldCell), seen = {};
-  have.forEach(c => { seen[c.t] = 1; });
-  (Array.isArray(list) ? list.slice(0, 50) : []).forEach(c => {
-    const kgv = num_(c && c.kg), tt = String((c && c.t) || '').slice(0, 19);
-    if (kgv === '' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(tt) || seen[tt]) return;
-    const src = SC_WEIGHT_SRC.indexOf(c.src) >= 0 ? c.src : 'Scale';
-    if (src === 'Manual' && !user.admin) return;   // typed weights stay Admin only
-    seen[tt] = 1;
-    have.push({ t: tt, kg: Math.round(kgv), diff: Math.round(num_(c.diff) || 0), by: clip_(c.by || user.name, 60), src: src });
-  });
-  have.sort((a, b) => String(a.t).localeCompare(String(b.t)));
-  return have.map(c => [String(c.t).replace('T', ' '), c.kg, (c.diff > 0 ? '+' : '') + c.diff, c.by, c.src].join(' | ')).join('\n');
 }
 
 function scBoot_(user) {
@@ -310,24 +284,6 @@ function scSave_(ops, user) {
         if (Number(before) !== w(x[0])) fail_('DENIED', 'Only an Admin can type a weight, with a reason.', 'មានតែ Admin ទេដែលអាចវាយទម្ងន់ ដោយមានមូលហេតុ។');
       }
     });
-    // Check weighs on a finished ticket can be added by any weigher (Kim, 9 Nov 2026); nothing else on it changes.
-    if (old && old[1] === 'Done' && (Array.isArray(p.checks) || p.left) && !(user.admin || user.reviewer)) {
-      const txt = scChecksText_(old[30], p.checks, user);
-      if (txt !== String(old[30] || '')) {
-        sh.getRange(idx + 2, 31).setValue(txt);
-        scLog_(user, String(old[0]), 'Check weigh', 'Check Weighs', String(old[30] || ''), txt, '');
-        old[30] = txt;
-      }
-      // "Truck leaves" after the check weighs (Kim, 9 Nov 2026): time and weigher, set once
-      if (p.left && !String(old[31] || '')) {
-        const lv = clip_(p.left, 80);
-        sh.getRange(idx + 2, 32).setNumberFormat('@').setValue(lv);
-        scLog_(user, String(old[0]), 'Truck left', 'Left At', '', lv, '');
-        old[31] = lv;
-      }
-      out.push({ cid: cid, no: String(old[0]), row: idx + 2, pdf: old[22] });
-      return;
-    }
     if (old) {
       // A finished ticket can be changed by a Reviewer or Admin only; Void needs an Admin.
       if (old[1] !== 'Open' && !(user.admin || user.reviewer)) fail_('DENIED', 'Ticket ' + old[0] + ' is finished. Only a Reviewer or Admin can change it.',
@@ -356,10 +312,7 @@ function scSave_(ops, user) {
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
-      p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),   // tarpaulin covered at the 2nd weigh
-      scChecksText_(old ? old[30] : '', p.checks, user),
-      (old && String(old[31] || '')) || clip_(p.left, 80),
-      p.park === undefined && old ? old[32] : (p.park === 'Yes' ? 'Yes' : '')];   // Park overnight tick (Kim, 9 Nov 2026)
+      p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : '')];   // tarpaulin covered at the 2nd weigh
     let row;
     if (old) {
       row = idx + 2;
@@ -549,12 +502,6 @@ function scTicketVals_(x) {
     DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
     Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',
-    // check weigh before leaving (Kim, 9 Nov 2026): the last check, how many, and when the truck left
-    CheckWeight: (() => { const c = scChecks_(x.checks); return c.length ? num(c[c.length - 1].kg) : ''; })(),
-    CheckTime: (() => { const c = scChecks_(x.checks); return c.length ? when(c[c.length - 1].t) : ''; })(),
-    CheckDiff: (() => { const c = scChecks_(x.checks); if (!c.length) return ''; const d = Number(c[c.length - 1].diff) || 0; return (d > 0 ? '+' : '') + num(d); })(),
-    CheckCount: (() => { const c = scChecks_(x.checks); return c.length ? String(c.length) : ''; })(),
-    LeftAt: s(x.left),
     Operator: s(x.op), Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
     Printed: fmt_(new Date(), 'dd/MM/yyyy HH:mm'), CompanyName: s(setting_('SCALE_COMPANY') || 'ISI STEEL'),
   };
