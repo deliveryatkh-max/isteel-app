@@ -558,6 +558,8 @@
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
+      if (document.querySelector('.popwrap')) return;   // a message is open: the input's blur must not open a 2nd one
+      if ($('#fDn')) $('#fDn').value = '';   // else repainting the form blurs the box and adds the same text again
       const used = [];
       khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => {
         const u = dnUsedBy(d);
