@@ -1854,6 +1854,7 @@
       <div class="fgrid">
         ${inp('rPct', t('ព្រមានពេលទម្ងន់ទទេខុសពីបញ្ជីឡានលើស (%)', 'Warn when the empty weight differs from the truck list by more than (%)'), s.SCALE_TARE_PCT, 'inputmode="numeric"')}
         ${inp('rMin', t('ទម្ងន់តិចជាងនេះ មិនយក (kg)', 'Ignore weights below (kg)'), s.SCALE_MIN_KG, 'inputmode="numeric"')}
+        ${inp('rChk', t('ថ្លឹងពិនិត្យ (ចតយប់): ខុសគ្នាមិនលើសនេះ ចាត់ទុកថាដូចមុន (± kg)', 'Check weigh (parked overnight): a difference up to this counts as the same (± kg)'), s.SCALE_CHECK_KG || '20', 'inputmode="numeric"')}
         ${inp('rPre', t('ផ្នែកដំបូងនៃលេខប័ណ្ណ', 'Ticket number prefix'), s.SCALE_PREFIX)}
         ${inp('rCo', t('ឈ្មោះលើប័ណ្ណ', 'Name on the ticket'), s.SCALE_COMPANY)}
         ${inp('rSign', t('ប្រអប់ហត្ថលេខា (ក្បៀស)', 'Signature boxes (comma separated)'), s.SCALE_SIGN)}
@@ -1891,7 +1892,7 @@
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busy(b, true);
       try {
-        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim() });
+        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_CHECK_KG: String($('#rChk').value).replace(/[^0-9]/g, '') || '20', SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim() });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
         if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { ['A4', 'A5'].forEach(z => { TPL[z] = null; tplCache(z, null); }); }
         setRules();
@@ -1945,7 +1946,7 @@
       customers: [['6100000002', '000002-Hun Bonita'], ['6100000005', '000005-ក្រុមហ៊ុន ហ្វូស៊ីន ស្ទីល ប៊ីលឌីង ឯ.ក']],
       items: [['Steel pipe', 'kg', 'Yes'], ['Steel coil', 'kg', 'Yes'], ['Scrap', 'kg', 'Yes']],
       dests: ['KPC Branch', 'Kampong Cham', 'Siem Reap'], tickets: [],
-      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '', SCALE_DNC_USERS: '' },
+      settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '', SCALE_DNC_USERS: '', SCALE_CHECK_KG: '20' },
       prices: [['CHROEK KIMHENG', 'KPC Branch', 'Per t', 8.5, 't'], ['3PL #1', 'Kampong Cham', 'Per t', 9, 't']],
     };
     const keep = () => set('sc_demo', JSON.stringify(db));
@@ -1976,7 +1977,7 @@
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
     if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
-    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
+    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_CHECK_KG'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }
 })();
