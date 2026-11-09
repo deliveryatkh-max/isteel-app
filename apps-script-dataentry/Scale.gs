@@ -203,6 +203,21 @@ function scObj_(r) {
   return o;
 }
 
+/**
+ * DN numbers already used (Kim, 9 Nov 2026): one DN can be on one ticket only. Map DN -> [first date yyyy-MM-dd, ticket no, client id].
+ * Cancelled (Void) tickets don't count.
+ */
+function scDnIndex_(rows) {
+  const out = {};
+  rows.forEach(r => {
+    if (!r[0] || r[1] === 'Void' || !r[7]) return;
+    const d = [r[16], r[13], r[24]].find(x => x instanceof Date);
+    const day = d ? fmt_(d, 'yyyy-MM-dd') : '';
+    String(r[7]).split(/[,\s]+/).filter(Boolean).forEach(dn => { if (!out[dn]) out[dn] = [day, String(r[0]), String(r[27] || '')]; });
+  });
+  return out;
+}
+
 function scBoot_(user) {
   const { rows } = scRows_();
   const since = new Date(Date.now() - 3 * 86400000);
@@ -218,6 +233,7 @@ function scBoot_(user) {
   rows.forEach(r => { if (r[1] === 'Done' && r[2] && r[19] !== '') last[scNorm_(r[2])] = Number(r[19]); });
   const dnc = scCanDnc_(user);
   return {
+    dnUsed: scDnIndex_(rows),   // every DN already on a ticket, so the scale PC can stop a second use (Kim, 9 Nov 2026)
     user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer, dnc: dnc },
     prices: dnc && typeof prices_ === 'function' ? prices_() : [],   // vendor prices: only for people who see the Debit Note check
     people: user.admin ? usersCached_().filter(u => u.okScale).map(u => ({ email: u.email, name: u.name, admin: u.admin })) : [],
@@ -266,6 +282,7 @@ function scSave_(ops, user) {
   trucks.forEach(t => { known[scNorm_(t.plate)] = t; });
   const custs = scCustomers_().map(c => c[1].toLowerCase()), items = scItems_().map(i => i[0].toLowerCase());
   const out = [];
+  let dnIdx = null;
   ops.forEach(p => {
     const cid = clip_(p.cid, 40);
     if (!cid) fail_('BAD', 'Missing client id.');
@@ -305,6 +322,16 @@ function scSave_(ops, user) {
     const gross = both ? Math.max(w1, w2) : '', tare = both ? Math.min(w1, w2) : '', net = both ? gross - tare : '';
     const dns = (Array.isArray(p.dns) ? p.dns : String(p.dns || '').split(/[,\s]+/)).map(s => clip_(s, 30).replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean);
     const uniq = dns.filter((d, i) => dns.indexOf(d) === i).slice(0, 30);
+    // A DN already on another ticket can't be used again (Kim, 9 Nov 2026)
+    if (status !== 'Void') {
+      if (!dnIdx) dnIdx = scDnIndex_(rows);
+      const had = old ? String(old[7] || '').split(/[,\s]+/) : [];
+      uniq.forEach(d => {
+        const u = dnIdx[d];
+        if (u && u[2] !== cid && had.indexOf(d) < 0) fail_('DUP', 'DN ' + d + ' was used already since ' + u[0] + ' (ticket ' + u[1] + ').',
+          'DN ' + d + ' បានប្រើរួចហើយ តាំងពី ' + u[0] + ' (ប័ណ្ណ ' + u[1] + ')។');
+      });
+    }
     const pdf = p.pdf ? scPdf_(p.pdf, no, plate) : (old ? old[22] : '');
     const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), both ? (w1 > w2 ? 'In' : 'Out') : (['In', 'Out'].indexOf(p.type) >= 0 ? p.type : ''),   // before the 2nd weigh: what was ticked (load = Out, unload = In)
       uniq.join(', '), uniq.length,
