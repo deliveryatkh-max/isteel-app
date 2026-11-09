@@ -306,3 +306,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .alert.parkhint .btn { width: auto; min-height: 36px; padding: 4px 12px; }
 .lcd .cell.ow.light { background: #8a5a00; color: #fff; }
 .lcd .cell.ow.light .lab, .lcd .cell.ow.light .sub { color: #ffe3b3; font-weight: 700; }
+
+.chkb.wait { background: #e3f0ff; color: #0b4f9c; }
+.chkb.park { background: #efe6fb; color: #5b2a9c; }
+.sidetabs .stab { flex: 1 1 0; min-width: 0; font-size: 13.5px; padding: 8px 10px; }
