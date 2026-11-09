@@ -289,3 +289,10 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .lcd .nums:has(.ow) .cell .num.n1 { font-size: clamp(26px, 3.1vw, 46px); }
 .lcd .nums:has(.ow) .cell .num.nn { font-size: clamp(28px, 3.5vw, 54px); }
 .lcd .cell.ow .owv { font-size: clamp(24px, 2.8vw, 42px); }
+
+/* DN used before: message box (Kim, 9 Nov 2026) */
+.popwrap { position: fixed; inset: 0; background: #011e4199; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+.popbox { background: #fff; color: #0d1b2a; border-radius: 16px; padding: 18px 20px; max-width: 460px; width: 100%; border-top: 6px solid #b3261e; box-shadow: 0 12px 40px #0006; font-size: 16px; }
+.popbox p { margin: 0 0 10px; line-height: 1.5; }
+.popbox .btns { margin-top: 8px; }
+.popbox .mono { white-space: nowrap; }

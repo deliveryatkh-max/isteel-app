@@ -556,8 +556,15 @@
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
     $('#fNote').oninput = e => upd('note', e.target.value);
     const addDn = raw => {
-      khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => { if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d); });
-      keepForm(); paintForm(); setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);
+      const used = [];
+      khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => {
+        const u = dnUsedBy(d);
+        if (u) { used.push([d, u]); return; }   // one DN, one ticket (Kim, 9 Nov 2026)
+        if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d);
+      });
+      keepForm(); paintForm();
+      if (used.length) popup(used.map(x => `<p>⚠️ <b class="mono">${esc(x[0])}</b><br>${t('DN នេះបានប្រើរួចហើយ តាំងពី', 'This DN was used already since')} <b>${esc(x[1].date)}</b>${x[1].no ? ` · ${t('ប័ណ្ណ', 'ticket')} <span class="mono">${esc(x[1].no)}</span>` : ''}.</p>`).join(''), () => $('#fDn') && $('#fDn').focus());
+      else setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);
     };
     const dn = $('#fDn');
     if (dn) {
@@ -589,6 +596,27 @@
     paintButtons();
   }
 
+  /** The ticket a DN is already on (another ticket, not cancelled), from this PC's tickets and the server's list of every DN used. */
+  function dnUsedBy(d) {
+    const x = tickets().filter(x => x.cid !== F.cid && x.status !== 'Void' && (x.dns || []).indexOf(d) >= 0)
+      .sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)))[0];
+    if (x) return { date: dmy(x.t2 || x.t1), no: x.no || '' };
+    const u = B && B.dnUsed && B.dnUsed[d];
+    if (u && u[2] !== F.cid && !(LOC[u[2]] && LOC[u[2]].status === 'Void')) return { date: u[0] ? dmy(u[0]) : '', no: u[1] || '' };
+    return null;
+  }
+  /** A message box with one OK button. */
+  function popup(html, done) {
+    const o = document.createElement('div');
+    o.className = 'popwrap';
+    o.innerHTML = `<div class="popbox" role="alertdialog">${html}<div class="btns"><button type="button" class="btn ok big" id="popOk">OK</button></div></div>`;
+    document.body.appendChild(o);
+    const close = () => { o.remove(); document.removeEventListener('keydown', key, true); if (done) done(); };
+    const key = e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    o.querySelector('#popOk').onclick = close;
+    setTimeout(() => document.addEventListener('keydown', key, true), 300);   // a scanner's own Enter must not close it at once
+    o.querySelector('#popOk').focus();
+  }
   function formOk(second) {
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
