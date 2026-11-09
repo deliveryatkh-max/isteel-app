@@ -492,9 +492,9 @@
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (បានច្រើន)', 'Destination (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
+        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (បានច្រើន)', 'Destination (one or more)')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
-          <div class="search"><input class="in ddl${dnNeed(sel) && !destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
+          <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
@@ -531,7 +531,7 @@
     if ($('#fDest')) {
       // Tick several destinations straight in the list; it stays open until you click outside (Kim, 8 Nov 2026).
       const di = $('#fDest'), db = $('#destBox'), tags = $('#destTags');
-      const setD = a => { upd('dest', a.join(', ')); di.classList.toggle('need', dnNeed(ticketBy(F.cid)) && !a.length); paintTags(); };
+      const setD = a => { upd('dest', a.join(', ')); di.classList.toggle('need', !a.length); paintTags(); };
       const paintTags = () => {
         const a = destsOf(F.dest);
         tags.hidden = !a.length;
@@ -623,7 +623,7 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (second && !F.item) miss.push('#fItem');
-    if (second && !destsOf(F.dest).length && dnNeed(ticketBy(F.cid))) miss.push('#fDest');   // Destination required for a loading truck (Kim, 9 Nov 2026)
+    if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
     if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
       if (dnNeed(ticketBy(F.cid)) || !ticketBy(F.cid)) miss.push('#dnBox');
