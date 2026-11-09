@@ -364,7 +364,7 @@
   let CHECKMSG = '';
   const checkTol = () => Math.max(0, Number(S().SCALE_CHECK_KG) || 20);
   const PARK_H = 36;   // a truck weighed out in the last 36 hours can be check-weighed from the Parked list
-  const parked = () => tickets().filter(x => x.status === 'Done' && x.w2 !== '' && x.w2 != null && typeOf(x) === 'Out' && x.t2 && Date.now() - new Date(x.t2) < PARK_H * 3600000)
+  const parked = () => tickets().filter(x => x.status === 'Done' && !x.left && x.w2 !== '' && x.w2 != null && typeOf(x) === 'Out' && x.t2 && Date.now() - new Date(x.t2) < PARK_H * 3600000)
     .sort((a, b) => String(b.t2).localeCompare(String(a.t2)));
   const lastCheck = x => (x.checks && x.checks.length ? x.checks[x.checks.length - 1] : null);
   const checkCls = d => (Math.abs(d) <= checkTol() ? 'same' : d > 0 ? 'heavy' : 'light');
@@ -374,7 +374,7 @@
     const x = ticketBy(cid);
     if (!x) return;
     F = Object.assign(EMPTY_F(), { check: x.cid, plate: x.plate, company: x.company || '' });
-    keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = ''; MANUAL = null;
+    keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = ''; MANUAL = null; LEAVEASK = false;
     if (SIDE === 'wait') { SIDE = 'park'; set('sc_side', 'park'); renderHome(); return; }
     paintForm(); paintLists(); paintLcd();
   }
@@ -391,6 +391,8 @@
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     const diff = Math.round(w.kg - Number(x.w2));
+    const lc = lastCheck(x);
+    if (lc && Date.now() - new Date(lc.t) < 60000 && Math.abs(Number(lc.kg) - w.kg) <= checkTol()) { toast(t('បានរក្សាទុករួចហើយ', 'Already saved')); return; }   // one tap = one check
     const c = { t: iso(new Date()), kg: w.kg, diff: diff, by: me().name || '', src: w.src };
     putTicket(Object.assign({}, x, { checks: (x.checks || []).concat(c) }));
     MANUAL = null;
@@ -398,6 +400,21 @@
     CHECKMSG = `<div class="chkres ${cls}">${cls === 'same' ? '✅' : cls === 'heavy' ? '⚠️' : '⬇️'} <b>${checkTxt(diff)}</b> · ${kg(w.kg)} kg · ${sgn(diff)} kg ${t('ធៀបលើកទី២', 'vs 2nd weigh')}</div>`;
     toast((cls === 'same' ? '✅ ' : '⚠️ ') + checkTxt(diff) + ' · ' + sgn(diff) + ' kg');
     paintForm(); paintLists(); paintLcd();
+  }
+  /** The truck leaves after its check weighs (Kim, 9 Nov 2026): it is closed and goes off the Parked list. */
+  let LEAVEASK = false;
+  function truckLeaves(force) {
+    const x = ticketBy(F.check);
+    if (!x) return;
+    const lc = lastCheck(x);
+    if (!force && (!lc || checkCls(Number(lc.diff) || 0) === 'heavy')) { LEAVEASK = true; paintForm(); return; }
+    putTicket(Object.assign({}, x, { left: iso(new Date()).replace('T', ' ') + ' · ' + (me().name || '') }));
+    toast('🚪 ' + x.plate + ' · ' + t('បានចេញ', 'left the factory'));
+    LEAVEASK = false; CHECKMSG = '';
+    F = EMPTY_F(); keepForm();
+    LASTDONE = x.cid;   // Print / PDF of the finished ticket under the form (Kim, 9 Nov 2026)
+    paintForm(); paintLists(); paintLcd();
+    if (get('sc_autoprint') === '1') printTicket(ticketBy(x.cid));
   }
   function checksTable(x) {
     const l = x.checks || [];
@@ -419,8 +436,16 @@
         ${kv(t('ថ្លឹងលើកទី២ (ផ្ទុករួច)', '2nd weigh (loaded)'), kg(x.w2) + ' kg · ' + dmy(x.t2) + ' ' + hm(x.t2))}
       </div>
       ${checksTable(x)}
-      <div class="btns mt"><button type="button" class="btn ok big" id="chkBtn">🔁 ${t('ថ្លឹងពិនិត្យ + រក្សាទុក', 'Check weigh + Save')}</button></div>
+      <div class="btns mt"><button type="button" class="btn ok big" id="chkBtn">🔁 ${t('ថ្លឹងពិនិត្យ + រក្សាទុក', 'Check weigh + Save')}</button>
+        <button type="button" class="btn big leavebtn" id="leaveBtn">🚪 ${t('ឡានចេញ (បញ្ចប់)', 'Truck leaves (finish)')}</button></div>
+      ${LEAVEASK ? (() => { const lc = lastCheck(x); return `<div class="alert warn big">${!lc ? '⚠️ ' + t('ឡាននេះមិនទាន់ថ្លឹងពិនិត្យទេ។', 'This truck has no check weigh yet.') : '⚠️ ' + t('ការថ្លឹងពិនិត្យចុងក្រោយ ធ្ងន់ជាងមុន', 'The last check weigh is heavier by') + ' ' + sgn(Number(lc.diff) || 0) + ' kg.'} ${t('ឲ្យចេញដដែល?', 'Let it leave anyway?')}
+        <div class="btns"><button type="button" class="btn" id="leaveNo">${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn warnbtn" id="leaveYes">🚪 ${t('ឲ្យចេញដដែល', 'Leave anyway')}</button></div></div>`; })() : ''}
+      <div class="btns mt"><button type="button" class="btn" data-print="${esc(x.cid)}">🖨 ${t('បោះពុម្ពប័ណ្ណ', 'Print ticket')}</button><button type="button" class="btn" data-pdf="${esc(x.cid)}">📄 PDF</button></div>
       <div id="doneBox">${CHECKMSG}</div>`;
+    bindDone();
+    $('#leaveBtn').onclick = () => truckLeaves(false);
+    if ($('#leaveNo')) $('#leaveNo').onclick = () => { LEAVEASK = false; paintForm(); };
+    if ($('#leaveYes')) $('#leaveYes').onclick = () => truckLeaves(true);
     $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); CHECKMSG = ''; paintForm(); paintLists(); paintLcd(); };
     $('#chkBtn').onclick = checkWeigh;
   }
@@ -1292,6 +1317,7 @@
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.checks && x.checks.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងពិនិត្យ (ចតយប់)', 'Check weighs (parked overnight)')}</h3>${checksTable(x)}` : ''}
+      ${x.left ? `<div class="hint">🚪 ${t('ឡានចេញ', 'Truck left')}: ${esc(x.left)}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
       <div class="btns mt">
@@ -1556,6 +1582,10 @@
       DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
+      // check weigh before leaving (Kim, 9 Nov 2026)
+      CheckWeight: lastCheck(x) ? kg(lastCheck(x).kg) : '', CheckTime: lastCheck(x) ? when(lastCheck(x).t) : '',
+      CheckDiff: lastCheck(x) ? ((Number(lastCheck(x).diff) || 0) > 0 ? '+' : '') + kg(Number(lastCheck(x).diff) || 0) : '',
+      CheckCount: x.checks && x.checks.length ? String(x.checks.length) : '', LeftAt: x.left || '',
       Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
       Printed: dmy(iso(new Date())) + ' ' + hm(iso(new Date())), CompanyName: S().SCALE_COMPANY || 'ISI STEEL',
     };
