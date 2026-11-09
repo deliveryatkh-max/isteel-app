@@ -359,6 +359,64 @@
   let PENDING = null;                            // 2nd weigh waiting for "Save anyway" after a warning
   let LASTDONE = '';                             // cid of the ticket just finished, shown under the buttons
   const keepForm = () => set('sc_form', JSON.stringify(F));
+  // Check weigh (Kim, 9 Nov 2026): a loaded truck parked overnight is weighed again before it leaves, as often as needed.
+  let SIDE = get('sc_side') === 'park' ? 'park' : 'wait';   // right card: waiting for 2nd weigh, or parked (check weigh)
+  let CHECKMSG = '';
+  const checkTol = () => Math.max(0, Number(S().SCALE_CHECK_KG) || 20);
+  const PARK_H = 36;   // a truck weighed out in the last 36 hours can be check-weighed from the Parked list
+  const parked = () => tickets().filter(x => x.status === 'Done' && x.w2 !== '' && x.w2 != null && typeOf(x) === 'Out' && x.t2 && Date.now() - new Date(x.t2) < PARK_H * 3600000)
+    .sort((a, b) => String(b.t2).localeCompare(String(a.t2)));
+  const lastCheck = x => (x.checks && x.checks.length ? x.checks[x.checks.length - 1] : null);
+  const checkCls = d => (Math.abs(d) <= checkTol() ? 'same' : d > 0 ? 'heavy' : 'light');
+  const checkTxt = d => (Math.abs(d) <= checkTol() ? t('ដូចមុន', 'Same') : d > 0 ? t('ធ្ងន់ជាងមុន', 'Heavier') : t('ស្រាលជាងមុន', 'Lighter'));
+  const sgn = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + kg(Math.abs(d));
+  function openCheck(cid) {
+    const x = ticketBy(cid);
+    if (!x) return;
+    F = Object.assign(EMPTY_F(), { check: x.cid, plate: x.plate, company: x.company || '' });
+    keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = ''; MANUAL = null;
+    if (SIDE !== 'park') { SIDE = 'park'; set('sc_side', 'park'); renderHome(); return; }
+    paintForm(); paintLists(); paintLcd();
+  }
+  function checkWeigh() {
+    const x = ticketBy(F.check);
+    if (!x) return;
+    const w = cur();
+    if (!w.ok) { toast(whyNot(w)); return; }
+    const diff = Math.round(w.kg - Number(x.w2));
+    const c = { t: iso(new Date()), kg: w.kg, diff: diff, by: me().name || '', src: w.src };
+    putTicket(Object.assign({}, x, { checks: (x.checks || []).concat(c) }));
+    MANUAL = null;
+    const cls = checkCls(diff);
+    CHECKMSG = `<div class="chkres ${cls}">${cls === 'same' ? '✅' : cls === 'heavy' ? '⚠️' : '⬇️'} <b>${checkTxt(diff)}</b> · ${kg(w.kg)} kg · ${sgn(diff)} kg ${t('ធៀបលើកទី២', 'vs 2nd weigh')}</div>`;
+    toast((cls === 'same' ? '✅ ' : '⚠️ ') + checkTxt(diff) + ' · ' + sgn(diff) + ' kg');
+    paintForm(); paintLists(); paintLcd();
+  }
+  function checksTable(x) {
+    const l = x.checks || [];
+    if (!l.length) return '';
+    return `<div class="tbl mt"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th class="r">${t('ខុសគ្នា', 'Difference')}</th><th>${t('លទ្ធផល', 'Result')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>
+      ${l.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td><span class="chkb ${checkCls(Number(c.diff) || 0)}">${checkTxt(Number(c.diff) || 0)}</span></td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>`;
+  }
+  function paintCheckForm(card) {
+    const x = ticketBy(F.check);
+    if (!x) { F = EMPTY_F(); keepForm(); return paintForm(); }
+    const kv = (a, b) => `<div class="kv"><span>${a}</span><b>${b || '—'}</b></div>`;
+    card.innerHTML = `
+      <h2>🔁 ${t('ថ្លឹងពិនិត្យ', 'Check weigh')} · <span class="mono">${esc(x.no)}</span>
+        <button type="button" class="btn newtruck" id="newBtn">➕ ${t('ថ្លឹងឡានថ្មី', 'New truck')}</button></h2>
+      <p class="hint">${t('ឡានដែលចតយប់ ត្រូវថ្លឹងម្តងទៀតមុនចេញ ដើម្បីប្រាកដថាមិនបានផ្ទុកទំនិញបន្ថែម។ ថ្លឹងបានច្រើនដង។ ខុសគ្នាមិនលើស ±', 'A truck parked overnight is weighed again before it leaves, to make sure no goods were added. Weigh as many times as needed. Up to ±')}${checkTol()} kg ${t('ចាត់ទុកថាដូចមុន។', 'counts as the same.')}</p>
+      <div class="emp">
+        ${kv(t('លេខឡាន', 'Truck No'), '<b class="mono">' + esc(x.plate) + '</b>')}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}
+        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv('DN No', esc((x.dns || []).join(', ')))}
+        ${kv(t('ថ្លឹងលើកទី២ (ផ្ទុករួច)', '2nd weigh (loaded)'), kg(x.w2) + ' kg · ' + dmy(x.t2) + ' ' + hm(x.t2))}
+      </div>
+      ${checksTable(x)}
+      <div class="btns mt"><button type="button" class="btn ok big" id="chkBtn">🔁 ${t('ថ្លឹងពិនិត្យ + រក្សាទុក', 'Check weigh + Save')}</button></div>
+      <div id="doneBox">${CHECKMSG}</div>`;
+    $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); CHECKMSG = ''; paintForm(); paintLists(); paintLcd(); };
+    $('#chkBtn').onclick = checkWeigh;
+  }
 
   function renderHome() {
     screen = renderHome;
@@ -370,12 +428,16 @@
       <div class="grid2">
         <section class="card" id="formCard"></section>
         <section class="card">
-          <h2>🚚 ${t('ឡានកំពុងរង់ចាំថ្លឹងលើកទី២', 'On site, waiting for 2nd weigh')} <span class="cnt" id="siteCnt"></span></h2>
+          <div class="sidetabs">
+            <button type="button" class="stab${SIDE === 'wait' ? ' on' : ''}" data-side="wait">🚚 ${t('រង់ចាំថ្លឹងលើកទី២', 'Waiting for 2nd weigh')} <span class="cnt" id="siteCnt"></span></button>
+            <button type="button" class="stab${SIDE === 'park' ? ' on' : ''}" data-side="park">🅿️ ${t('ចតយប់ · ថ្លឹងពិនិត្យ', 'Parked · check weigh')} <span class="cnt" id="parkCnt"></span></button>
+          </div>
           <input type="search" class="in sitesearch" id="siteQ" data-live-ok autocomplete="off" placeholder="🔍 ${t('ស្វែងរកលេខឡាន', 'Search truck number')}" value="${esc(SITEQ)}">
           <div id="site"></div>
         </section>
       </div>`;   // the "Today" card was removed from this page (Kim, 8 Nov 2026): today's tickets are under Tickets
     $('#siteQ').oninput = e => { SITEQ = e.target.value; paintLists(); };
+    $$('[data-side]').forEach(b => { b.onclick = () => { SIDE = b.dataset.side; set('sc_side', SIDE); $$('[data-side]').forEach(x => x.classList.toggle('on', x === b)); paintLists(); }; });
     paintForm(); paintLcd(); paintLists();
     // The waiting list ends level with the form and scrolls by itself (Kim, 8 Nov 2026)
     if (window.ResizeObserver) new ResizeObserver(fitSite).observe($('#formCard'));
@@ -471,6 +533,7 @@
   function paintForm() {
     const card = $('#formCard');
     if (!card) return;
+    if (F.check) return paintCheckForm(card);
     const sel = F.cid ? ticketBy(F.cid) : null;
     const tr = truckOf(F.plate);
     const lastT = B && B.lastTare && F.plate ? B.lastTare[normP(F.plate)] : null;
@@ -500,6 +563,7 @@
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
+      ${!sel && F.plate ? (() => { const pk = parked().find(x => normP(x.plate) === normP(F.plate)); return pk ? `<div class="alert parkhint">🅿️ ${t('ឡាននេះបានថ្លឹងចេញ (ផ្ទុករួច)', 'This truck was weighed out loaded')} ${dmy(pk.t2).slice(0, 5)} ${hm(pk.t2)} · ${esc(pk.no)}. ${t('បើវាចតយប់ ហើយកំពុងចេញ សូមថ្លឹងពិនិត្យ', 'If it parked overnight and is leaving now, do a check weigh')} <button type="button" class="btn" data-chk="${esc(pk.cid)}">🔁 ${t('ថ្លឹងពិនិត្យ', 'Check weigh')}</button></div>` : ''; })() : ''}
       <div id="warnBox"></div>
       <div class="btns">
         ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងលើកទី២ + រក្សាទុក', 'Weigh 2nd + Save')}</button>`
@@ -511,6 +575,7 @@
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
+    $$('#formCard [data-chk]').forEach(b => { b.onclick = () => openCheck(b.dataset.chk); });
     if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
@@ -681,7 +746,14 @@
       // At the 2nd weigh (a waiting truck is picked): live weight, 1st weight and net side by side (Kim's option C).
       const sel = ticketBy(F.cid);
       let nums = `<div class="num">${num}</div>`;
-      if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
+      const chk = F.check ? ticketBy(F.check) : null;
+      if (chk && chk.w2 !== '' && chk.w2 != null) {
+        // Check weigh: live weight against the 2nd weigh (loaded), red when heavier (Kim, 9 Nov 2026)
+        const ref = Number(chk.w2), has = w.kg != null, d = has ? Math.round(w.kg - ref) : 0, cls = has ? checkCls(d) : '';
+        nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (ពិនិត្យ)', 'Now (check)')}</div><div class="num">${num}</div><div class="sub">${esc(chk.plate)}</div></div>
+          <div class="cell"><div class="lab">${t('ថ្លឹងលើកទី២ (ផ្ទុករួច)', '2nd weigh (loaded)')}</div><div class="num n1">${kg(ref)}</div><div class="sub">${dmy(chk.t2).slice(0, 5)} ${hm(chk.t2)}</div></div>
+          <div class="cell ow ${!has ? 'none' : cls === 'same' ? 'ok' : cls === 'heavy' ? 'over' : 'light'}"><div class="lab">${!has ? t('ខុសគ្នា', 'Difference') : (cls === 'same' ? '✅ ' : cls === 'heavy' ? '⚠️ ' : '⬇️ ') + checkTxt(d)}</div><div class="owv">${has ? sgn(d) + ' kg' : '—'}</div><div class="sub">${t('អនុញ្ញាត', 'Allowed')} ±${checkTol()} kg</div></div>`;
+      } else if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
         const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
         const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
@@ -765,7 +837,24 @@
   }
 
   function paintLists() {
-    if ($('#site')) {
+    if ($('#site') && $('#parkCnt')) {
+      const pk = parked();
+      $('#parkCnt').textContent = pk.length ? '(' + pk.length + ')' : '';
+    }
+    if ($('#site') && SIDE === 'park') {
+      const all = parked();
+      const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
+      const l = q ? all.filter(x => [x.plate, x.company, x.no].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
+      const oc = openTickets().length;
+      $('#siteCnt').textContent = oc ? '(' + oc + ')' : '';
+      $('#site').innerHTML = l.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ថ្លឹងចេញ', 'Weighed out')}</th><th class="r">${t('លើកទី២', '2nd')}</th><th>${t('ពិនិត្យ', 'Checks')}</th></tr>
+        ${l.map(x => { const c = lastCheck(x); return `<tr class="pick${x.cid === F.check ? ' on' : ''}" data-chk="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${dmy(x.t2) === dmy(iso(new Date())) ? '' : dmy(x.t2).slice(0, 5) + ' '}${hm(x.t2)}</td><td class="r mono">${kg(x.w2)}</td>
+          <td>${c ? `<span class="chkb ${checkCls(Number(c.diff) || 0)}">${x.checks.length}× · ${sgn(Number(c.diff) || 0)}</span>` : `<span class="muted">—</span>`}</td></tr>`; }).join('')}</table></div>
+        <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងពិនិត្យមុនចេញ', 'Tap a truck to check-weigh it before it leaves')}</p>`
+        : `<div class="empty">${q && all.length ? t('រកមិនឃើញ', 'No match') : t('គ្មានឡានចតយប់ (ថ្លឹងចេញក្នុង ៣៦ ម៉ោង)', 'No loaded truck weighed out in the last 36 hours')}</div>`;
+      fitSite();
+      $$('#site [data-chk]').forEach(r => { r.onclick = () => openCheck(r.dataset.chk); });
+    } else if ($('#site')) {
       const all = openTickets();
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
@@ -1176,6 +1265,7 @@
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
+      ${x.checks && x.checks.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងពិនិត្យ (ចតយប់)', 'Check weighs (parked overnight)')}</h3>${checksTable(x)}` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
       <div class="btns mt">
