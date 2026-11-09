@@ -341,3 +341,9 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 /* Truck number locked at the 2nd weigh (Kim, 9 Nov 2026) */
 #formCard .in.locked { background: rgba(1, 30, 65, .04); font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: not-allowed; }
 #formCard .clrwrap .lockic { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 15px; opacity: .7; pointer-events: none; }
+
+/* Admin edit / delete on the waiting list (Kim, 9 Nov 2026) */
+#site .rowacts { text-align: right; }
+#site .rowic { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 3px 7px; margin-left: 4px; cursor: pointer; font-size: 14px; line-height: 1.2; }
+#site .rowic:hover { border-color: var(--accent); }
+#site .rowic.del:hover { border-color: #b3261e; background: #fdecea; }
