@@ -296,3 +296,21 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .popbox p { margin: 0 0 10px; line-height: 1.5; }
 .popbox .btns { margin-top: 8px; }
 .popbox .mono { white-space: nowrap; }
+
+/* Scale again (Kim's option A, 9 Nov 2026) */
+.btn.againbtn { background: #fff; border: 2px solid #7a3fc4; color: #5b2a9c; font-weight: 700; }
+.btn.againbtn.wait { opacity: .55; }
+.agrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; padding: 8px 12px; border: 1.5px solid #cdb6ee; background: #f6f0fd; border-radius: 10px; color: #4a2380; font-size: 14px; }
+.agrow b.mono { font-size: 16px; }
+.agrow .agnow { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.agd { border-radius: 99px; padding: 2px 10px; font-weight: 700; font-size: 13px; background: #eef2f7; color: #334; }
+.agd.same { background: #e2f6e6; color: #1b6b2f; } .agd.heavy { background: #fdecea; color: #b3261e; } .agd.light { background: #fff4e0; color: #8a5300; }
+.agpill { display: inline-block; border-radius: 99px; padding: 1px 8px; font-size: 12px; font-weight: 700; background: #efe6fb; color: #5b2a9c; white-space: nowrap; }
+.lcd .cell.ag { background: #2a1a4a; border-radius: 10px; padding: 6px 12px; margin-left: 8px; }
+.lcd .cell.ag .lab, .lcd .cell.ag .sub { color: #d9c6f5; }
+.lcd .cell.ow.light { background: #3a2a10; } .lcd .cell.ow.light .lab { color: #ffd38a; font-weight: 700; } .lcd .cell.ow.light .owv { color: #ffc46b; }
+.lcd .nums:has(.ag) .cell .num { font-size: clamp(26px, 3.2vw, 50px); }
+.lcd .nums:has(.ag) .cell .num.n1 { font-size: clamp(22px, 2.6vw, 38px); }
+.lcd .nums:has(.ag) .cell .num.nn { font-size: clamp(24px, 2.9vw, 44px); }
+.lcd .nums:has(.ag) .owv { font-size: clamp(22px, 2.4vw, 34px); }
+.lcd .nums:has(.ag) .cell { padding-left: 10px; padding-right: 10px; }
