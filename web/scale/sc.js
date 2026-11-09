@@ -502,7 +502,7 @@
       </div>
       <div id="warnBox"></div>
       <div class="btns">
-        ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងលើកទី២ + រក្សាទុក', 'Weigh 2nd + Save')}</button>`
+        ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងបញ្ចប់ + រក្សាទុក', 'Finish weigh + Save')}</button>`
               : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
       </div>
       ${isAdmin() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
