@@ -489,13 +489,13 @@
         <div class="field"><label class="f lc-navy">🚚 ${t('លេខឡាន', 'Truck No')} ${req}</label><div class="clrwrap"><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956">${F.plate ? `<button type="button" class="clr" id="fPlateClr" aria-label="Clear" title="${t('សម្អាត', 'Clear')}">✕</button>` : ''}</div>
           ${tr ? `<div class="hint">${tr.type ? esc(tr.type) + ' · ' : ''}${t('ទម្ងន់ទទេ', 'Empty')} ${tr.empty !== '' ? kg(tr.empty) + ' kg' : '—'} · ${t('កំណត់អតិបរមា', 'Max')} ${tr.max !== '' ? kg(tr.max) + ' kg' : '—'}${lastT ? ' · ' + t('ចុងក្រោយ', 'Last') + ' ' + kg(lastT) + ' kg' : ''}</div>`
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
-        <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន (3PL)', 'Truck company (3PL)')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
+        <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div>
           <div class="hint">${t('ក្រុមហ៊ុនថ្មី: អក្សរអង់គ្លេសធំប៉ុណ្ណោះ', 'New company: English capital letters only')}</div></div>
         ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ (បានច្រើន)', 'Destination (one or more)')} ${req}</label>
+        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
           <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
-        ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN (បានច្រើន)', 'DN No (one or more)')}${dnNeed(sel) ? ' ' + req : ''}</label>
+        ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN', 'DN No')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>

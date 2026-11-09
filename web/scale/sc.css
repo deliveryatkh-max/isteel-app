@@ -314,3 +314,27 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .lcd .nums:has(.ag) .cell .num.nn { font-size: clamp(24px, 2.9vw, 44px); }
 .lcd .nums:has(.ag) .owv { font-size: clamp(22px, 2.4vw, 34px); }
 .lcd .nums:has(.ag) .cell { padding-left: 10px; padding-right: 10px; }
+
+/* Weigh form as one list, label on the left (Kim's option C, 9 Nov 2026) */
+#formCard .fgrid, #formCard .fgrid.toprow { display: block; border: 1px solid var(--line); border-radius: 12px; margin: 0; }
+#formCard .fgrid.toprow { border-bottom: 0; border-radius: 12px 12px 0 0; }
+#formCard .fgrid.toprow + .fgrid { border-radius: 0 0 12px 12px; }
+#formCard .fgrid .field { display: grid; grid-template-columns: 150px minmax(0, 1fr); margin: 0; border-bottom: 1px solid var(--line); min-height: 52px; align-items: center; }
+#formCard .fgrid .field:last-child { border-bottom: 0; }
+#formCard .fgrid .field > .f { grid-column: 1; grid-row: 1 / span 8; align-self: stretch; margin: 0; padding: 8px 12px; border-radius: 0; background: rgba(1, 30, 65, .045); color: var(--text); font-size: 14.5px; font-weight: 700; filter: none; display: flex; align-items: center; gap: 6px; }
+#formCard .fgrid .field > :not(.f) { grid-column: 2; margin: 0; padding: 5px 10px; min-width: 0; }
+#formCard .fgrid .field > .hint { padding-top: 0; font-size: 12.5px; }
+#formCard .fgrid .field .in { min-height: 42px; }
+#formCard .fgrid .field .jobchips { flex-wrap: wrap; }
+#formCard .fgrid .field:has(.need) > .f { background: #fdecea; color: #b3261e; }
+#formCard .fgrid.toprow .field:first-child > .f { border-top-left-radius: 11px; }
+#formCard .fgrid.toprow + .fgrid .field:last-child > .f { border-bottom-left-radius: 11px; }
+:root[data-theme="dark"] #formCard .fgrid .field > .f { background: rgba(255, 255, 255, .05); filter: none; }
+:root[data-theme="dark"] #formCard .fgrid .field:has(.need) > .f { background: rgba(179, 38, 30, .28); color: #ff9a92; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #formCard .fgrid .field > .f { background: rgba(255, 255, 255, .05); filter: none; }
+  :root:not([data-theme="light"]) #formCard .fgrid .field:has(.need) > .f { background: rgba(179, 38, 30, .28); color: #ff9a92; }
+}
+@media (max-width: 560px) { #formCard .fgrid .field { grid-template-columns: 112px minmax(0, 1fr); } #formCard .fgrid .field > .f { font-size: 13.5px; padding: 8px; } }
+#formCard .fgrid .field > input.in, #formCard .fgrid .field > .dnbox { margin: 5px 10px; width: auto; padding: 8px 12px; }
+#formCard .fgrid + #warnBox + .btns, #formCard .fgrid ~ .btns { margin-top: 12px; }
