@@ -284,7 +284,7 @@
     if (top === 'list') return renderList();
     if (top === 'tat') return renderTat();
     if (top === 'dnc') return renderDnc();
-    if (top === 't') return renderTicket(decodeURIComponent(h.slice(2)));
+    if (top === 't') return renderTicket(decodeURIComponent(h.slice(2).split('?')[0]));
     if (top === 'set') return isAdmin() ? renderSettings(h.split('/')[1] || 'trucks') : (location.hash = '#/');
     return renderHome();
   }
@@ -841,11 +841,14 @@
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
       $('#siteCnt').textContent = all.length ? '(' + (q ? open.length + ' / ' : '') + all.length + ')' : '';
-      $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th></tr>
-        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b>${lastAgain(x) ? ` <span class="agpill">🔁 ${kg(lastAgain(x).kg)}${x.again.length > 1 ? ' · ' + x.again.length + '×' : ''}</span>` : ''}</td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
+      $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th>${isAdmin() ? '<th></th>' : ''}</tr>
+        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b>${lastAgain(x) ? ` <span class="agpill">🔁 ${kg(lastAgain(x).kg)}${x.again.length > 1 ? ' · ' + x.again.length + '×' : ''}</span>` : ''}</td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td>${isAdmin() ? `<td class="nw rowacts"><button type="button" class="rowic" data-tedit="${esc(x.cid)}" title="${t('កែ', 'Edit')}" aria-label="Edit">✏️</button><button type="button" class="rowic del" data-tdel="${esc(x.cid)}" title="${t('លុប', 'Delete')}" aria-label="Delete">🗑</button></td>` : ''}</tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
       fitSite();
+      // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
+      $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
+      $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
       $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
@@ -1253,8 +1256,8 @@
       <div class="btns mt">
         <a class="btn" href="#/list">← ${t('ត្រឡប់', 'Back')}</a>
         ${x.status !== 'Open' ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
-        ${canEdit() && x.status === 'Done' && x.cid ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
-        ${isAdmin() && x.status === 'Done' && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
+        ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
+        ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
         ${x.err && x.cid && LOC[x.cid] ? `<button type="button" class="btn" id="tRetry">↻ ${t('ផ្ញើម្តងទៀត', 'Send again')}</button>` : ''}
       </div>
       <div id="tMore"></div></section>`;
@@ -1267,11 +1270,12 @@
     };
     if ($('#tEdit')) $('#tEdit').onclick = () => editTicket(x, key);
     if (editing && $('#tEdit')) editTicket(x, key);
+    if (location.hash.indexOf('?void') > 0 && $('#tVoid')) { $('#tVoid').click(); setTimeout(() => $('#vWhy') && $('#vWhy').focus(), 0); }
   }
   function editTicket(x, key) {
     const f = (id, label, v) => `<div class="field"><label class="f">${label}</label><div><input class="in" id="${id}" autocomplete="off" value="${esc(v || '')}"></div></div>`;
     $('#tMore').innerHTML = `<div class="card soft mt"><div class="fgrid">
-      ${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
+      ${x.status === 'Open' && isAdmin() ? f('ePlate', t('លេខឡាន', 'Truck No'), x.plate) : ''}${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
       ${f('eDn', 'DN No (, )', (x.dns || []).join(', '))}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eLoad', t('កន្លែងផ្ទុក', 'Loading place'), x.load || '')}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
       ${f('eNote', t('កំណត់ចំណាំ', 'Note'), x.note)}${f('eWhy', t('មូលហេតុនៃការកែ', 'Reason for the change'), '')}</div>
       <div class="hint">${t('ទម្ងន់មិនអាចកែបានទេ។ ការកែទាំងអស់ត្រូវកត់ត្រាក្នុង Scale Log។', 'Weights cannot be changed here. Every change is written to the Scale Log.')}</div>
@@ -1282,7 +1286,7 @@
     picker($('#eLoad'), { list: places, addNew: true, onPick: () => {} });
     $('#eSave').onclick = () => {
       const v = id => $(id).value.trim();
-      const nx = Object.assign({}, x, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: khNum(v('#eDn')).split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), load: v('#eLoad'), note: v('#eNote'), reason: v('#eWhy') });
+      const nx = Object.assign({}, x, $('#ePlate') && v('#ePlate') ? { plate: fixPlate(v('#ePlate')) } : {}, { company: v('#eCompany'), customer: v('#eCustomer'), item: v('#eItem'), dns: khNum(v('#eDn')).split(/[\s,;]+/).filter(Boolean), driver: v('#eDriver'), dest: v('#eDest'), load: v('#eLoad'), note: v('#eNote'), reason: v('#eWhy') });
       putTicket(nx);
       toast(t('បានរក្សាទុក', 'Saved'));
       renderTicket(key);
