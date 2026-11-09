@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Check Weighs', 'Left At'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Check Weighs', 'Left At', 'Park Overnight'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -197,7 +197,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'checks', 'left']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'checks', 'left', 'park']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.checks = scChecks_(o.checks);
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
@@ -358,7 +358,8 @@ function scSave_(ops, user) {
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),   // tarpaulin covered at the 2nd weigh
       scChecksText_(old ? old[30] : '', p.checks, user),
-      (old && String(old[31] || '')) || clip_(p.left, 80)];
+      (old && String(old[31] || '')) || clip_(p.left, 80),
+      p.park === undefined && old ? old[32] : (p.park === 'Yes' ? 'Yes' : '')];   // Park overnight tick (Kim, 9 Nov 2026)
     let row;
     if (old) {
       row = idx + 2;
