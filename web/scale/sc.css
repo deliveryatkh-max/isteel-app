@@ -338,3 +338,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 @media (max-width: 560px) { #formCard .fgrid .field { grid-template-columns: 112px minmax(0, 1fr); } #formCard .fgrid .field > .f { font-size: 13.5px; padding: 8px; } }
 #formCard .fgrid .field > input.in, #formCard .fgrid .field > .dnbox { margin: 5px 10px; width: auto; padding: 8px 12px; }
 #formCard .fgrid + #warnBox + .btns, #formCard .fgrid ~ .btns { margin-top: 12px; }
+/* Truck number locked at the 2nd weigh (Kim, 9 Nov 2026) */
+#formCard .in.locked { background: rgba(1, 30, 65, .04); font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: not-allowed; }
+#formCard .clrwrap .lockic { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 15px; opacity: .7; pointer-events: none; }
