@@ -312,3 +312,20 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .sidetabs .stab { flex: 1 1 0; min-width: 0; font-size: 13.5px; padding: 8px 10px; }
 
 .btn.leavebtn { background: #fff; border: 2px solid #0b4ea2; color: #0b4ea2; font-weight: 700; flex: 0 1 auto; min-width: 200px; }
+
+/* Park overnight (Kim, 9 Nov 2026) */
+#formCard .fgrid.toprow .parkchip { white-space: nowrap; }
+.lcd .nums:has(.pk) .cell .num { font-size: clamp(26px, 3.2vw, 50px); }
+.lcd .nums:has(.pk) .cell .num.n1 { font-size: clamp(22px, 2.6vw, 38px); }
+.lcd .nums:has(.pk) .cell .num.nn { font-size: clamp(24px, 2.9vw, 44px); }
+.lcd .nums:has(.pk) .owv { font-size: clamp(22px, 2.4vw, 34px); }
+.lcd .nums:has(.pk) .cell { padding-left: 10px; padding-right: 10px; }
+.chip.parkchip.on { background: #efe6fb; border-color: #7a3fc4; color: #5b2a9c; }
+.btn.parkbtn { background: #fff; border: 2px solid #7a3fc4; color: #5b2a9c; font-weight: 700; }
+.btn.parkbtn.wait { opacity: .55; }
+.btn.parkbtn2 { background: #fff; border: 1.5px solid #b89be0; color: #5b2a9c; flex: 0 1 auto; }
+.parkrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; padding: 9px 12px; border: 1.5px solid #cdb6ee; background: #f6f0fd; border-radius: 10px; color: #4a2380; font-size: 14px; }
+.parkrow b.mono { font-size: 17px; }
+.parkrow .pknow { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.lcd .cell.pk { background: #2a1a4a; border-radius: 10px; padding: 6px 12px; }
+.lcd .cell.pk .lab, .lcd .cell.pk .sub { color: #d9c6f5; }

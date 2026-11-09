@@ -342,7 +342,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF, park: '' });
   const LOAD_DEF = 'ISI Steel';   // loading place when this PC has none set (Kim, 8 Nov 2026)
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
   const places = () => { const s = []; [get('sc_load'), LOAD_DEF].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
@@ -364,8 +364,13 @@
   let CHECKMSG = '';
   const checkTol = () => Math.max(0, Number(S().SCALE_CHECK_KG) || 20);
   const PARK_H = 36;   // a truck weighed out in the last 36 hours can be check-weighed from the Parked list
-  const parked = () => tickets().filter(x => x.status === 'Done' && !x.left && x.w2 !== '' && x.w2 != null && typeOf(x) === 'Out' && x.t2 && Date.now() - new Date(x.t2) < PARK_H * 3600000)
-    .sort((a, b) => String(b.t2).localeCompare(String(a.t2)));
+  // Park overnight (Kim, 9 Nov 2026): ticked at the 1st or 2nd weigh. The evening weigh is kept as a 🅿️ row and the
+  // ticket stays open; the normal 2nd weigh in the morning finishes it.
+  const isParked = x => !!x && x.status === 'Open' && x.park === 'Yes' && !!(x.checks && x.checks.length);
+  const parked = () => openTickets().filter(isParked).sort((a, b) => String(lastCheck(b).t).localeCompare(String(lastCheck(a).t)));
+  const waiting = () => openTickets().filter(x => !isParked(x));
+  const parkWarn = (sel, kgv) => { const lc = isParked(sel) ? lastCheck(sel) : null, d = lc ? Math.round(kgv - Number(lc.kg)) : 0;
+    return lc && d > checkTol() ? [{ km: 'ធ្ងន់ជាងពេលចតយប់ ' + sgn(d) + ' kg', en: 'Heavier than the parked weigh by ' + sgn(d) + ' kg' }] : []; };
   const lastCheck = x => (x.checks && x.checks.length ? x.checks[x.checks.length - 1] : null);
   const checkCls = d => (Math.abs(d) <= checkTol() ? 'same' : d > 0 ? 'heavy' : 'light');
   const checkTxt = d => (Math.abs(d) <= checkTol() ? t('ដូចមុន', 'Same') : d > 0 ? t('ធ្ងន់ជាងមុន', 'Heavier') : t('ស្រាលជាងមុន', 'Lighter'));
@@ -381,7 +386,7 @@
   function openWait(cid) {
     const x = ticketBy(cid);
     if (!x) return;
-    F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' };
+    F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '', park: x.park || '' };
     keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = '';
     paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0);
   }
@@ -566,7 +571,7 @@
   function paintForm() {
     const card = $('#formCard');
     if (!card) return;
-    if (F.check) return paintCheckForm(card);
+    if (F.check) { F = EMPTY_F(); keepForm(); }   // the check weigh after the 2nd weigh is replaced by Park overnight (Kim, 9 Nov 2026)
     const sel = F.cid ? ticketBy(F.cid) : null;
     const tr = truckOf(F.plate);
     const lastT = B && B.lastTare && F.plate ? B.lastTare[normP(F.plate)] : null;
@@ -580,6 +585,8 @@
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+      ${F.type !== 'In' || F.park === 'Yes' ? `<div class="field"><span class="f lc-purple">🅿️ ${t('ចតយប់', 'Park overnight')}</span>
+        <div class="chips jobchips"><label class="chip parkchip${F.park === 'Yes' ? ' on' : ''}"><input type="checkbox" id="fPark"${F.park === 'Yes' ? ' checked' : ''}${isParked(sel) ? ' disabled' : ''}> 🅿️ ${t('ចតយប់ ចេញថ្ងៃស្អែក', 'Park overnight, leaves tomorrow')}</label></div></div>` : ''}
       </div>
       <div class="fgrid">
         <div class="field"><label class="f lc-navy">🚚 ${t('លេខឡាន', 'Truck No')} ${req}</label><div class="clrwrap"><input class="in${need(F.plate)}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956">${F.plate ? `<button type="button" class="clr" id="fPlateClr" aria-label="Clear" title="${t('សម្អាត', 'Clear')}">✕</button>` : ''}</div>
@@ -596,10 +603,12 @@
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
-      ${!sel && F.plate ? (() => { const pk = parked().find(x => normP(x.plate) === normP(F.plate)); return pk ? `<div class="alert parkhint">🅿️ ${t('ឡាននេះបានថ្លឹងចេញ (ផ្ទុករួច)', 'This truck was weighed out loaded')} ${dmy(pk.t2).slice(0, 5)} ${hm(pk.t2)} · ${esc(pk.no)}. ${t('បើវាចតយប់ ហើយកំពុងចេញ សូមថ្លឹងពិនិត្យ', 'If it parked overnight and is leaving now, do a check weigh')} <button type="button" class="btn" data-chk="${esc(pk.cid)}">🔁 ${t('ថ្លឹងពិនិត្យ', 'Check weigh')}</button></div>` : ''; })() : ''}
+      ${!sel && F.plate ? (() => { const pk = parked().find(x => normP(x.plate) === normP(F.plate)); return pk ? `<div class="alert parkhint">🅿️ ${t('ឡាននេះកំពុងចតយប់', 'This truck is parked overnight')} · ${esc(pk.no)} · ${kg(lastCheck(pk).kg)} kg · ${dmy(lastCheck(pk).t).slice(0, 5)} ${hm(lastCheck(pk).t)} <button type="button" class="btn" data-pick="${esc(pk.cid)}">⚖️ ${t('ថ្លឹងចេញ', 'Weigh out')}</button></div>` : ''; })() : ''}
+      ${isParked(sel) ? parkRowHtml(sel) : ''}
       <div id="warnBox"></div>
       <div class="btns">
-        ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងលើកទី២ + រក្សាទុក', 'Weigh 2nd + Save')}</button>`
+        ${sel && F.park === 'Yes' && !isParked(sel) ? `<button type="button" class="btn big parkbtn" id="pkBtn">🅿️ ${t('ចតយប់ + រក្សាទុកទម្ងន់ (ចេញថ្ងៃស្អែក)', 'Park overnight + Save weight (leaves tomorrow)')}</button>`
+        : sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងលើកទី២ + រក្សាទុក', 'Weigh 2nd + Save')}</button>${isParked(sel) ? `<button type="button" class="btn parkbtn2" id="pkBtn">🅿️ ${t('ចតមួយយប់ទៀត', 'Park another night')}</button>` : ''}`
               : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
       </div>
       ${isAdmin() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
@@ -608,7 +617,8 @@
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
-    $$('#formCard [data-chk]').forEach(b => { b.onclick = () => openCheck(b.dataset.chk); });
+    $$('#formCard [data-pick]').forEach(b => { b.onclick = () => openWait(b.dataset.pick); });
+    if ($('#fPark')) $('#fPark').onchange = e => { upd('park', e.target.checked ? 'Yes' : ''); paintForm(); };
     if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
@@ -671,6 +681,7 @@
     if ($('#newBtn')) $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); PENDING = null; paintForm(); paintLcd(); };
     if ($('#w1Btn')) $('#w1Btn').onclick = weigh1;
     if ($('#w2Btn')) $('#w2Btn').onclick = () => weigh2(false);
+    if ($('#pkBtn')) $('#pkBtn').onclick = parkWeigh;
     if ($('#saveOpen')) $('#saveOpen').onclick = saveOpen;
     if ($('#manOn')) $('#manOn').onclick = () => {
       $('#manBox').innerHTML = `<div class="manform"><input class="in" id="manKg" inputmode="numeric" placeholder="kg"><input class="in" id="manWhy" placeholder="${t('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}"><button type="button" class="btn ok" id="manUse">${t('ប្រើ', 'Use')}</button></div>`;
@@ -699,7 +710,7 @@
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
   }
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', park: F.park || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
@@ -716,6 +727,25 @@
     paintForm(); paintLists(); paintLcd();
   }
 
+  /** Park overnight (Kim, 9 Nov 2026): the loaded weight is kept as a 🅿️ row and the ticket stays open for the morning 2nd weigh. */
+  function parkWeigh() {
+    const sel = ticketBy(F.cid);
+    if (!sel || !formOk(false)) return;
+    const w = cur();
+    if (!w.ok) { toast(whyNot(w)); return; }
+    const lc = lastCheck(sel);
+    if (lc && Date.now() - new Date(lc.t) < 60000 && Math.abs(Number(lc.kg) - w.kg) <= checkTol()) { toast(t('បានរក្សាទុករួចហើយ', 'Already saved')); return; }   // one tap = one row
+    const c = { t: iso(new Date()), kg: w.kg, diff: Math.round(w.kg - (lc ? Number(lc.kg) : Number(sel.w1))), by: me().name || '', src: w.src };
+    putTicket(Object.assign({}, sel, fromForm(), { park: 'Yes', checks: (sel.checks || []).concat(c) }));
+    MANUAL = null; PENDING = null; LASTDONE = '';
+    F = EMPTY_F(); keepForm();
+    toast('🅿️ ' + sel.plate + ' · ' + kg(w.kg) + ' kg · ' + t('ចតយប់', 'parked overnight'));
+    paintForm(); paintLists(); paintLcd();
+  }
+  function parkRowHtml(x) {
+    const l = x.checks || [];
+    return l.map((c, i) => `<div class="parkrow">🅿️ <span>${t('ចតយប់ ថ្លឹងពេលល្ងាច', 'Parked, evening weigh')}</span> <b class="mono">${kg(c.kg)} kg</b> <span class="muted">· ${dmy(c.t).slice(0, 5)} ${hm(c.t)}${c.by ? ' · ' + esc(c.by) : ''}</span>${i === l.length - 1 ? `<span class="pknow">${t('ឥឡូវ', 'Now')} <b id="pkNow" class="chkb">—</b></span>` : ''}</div>`).join('');
+  }
   function saveOpen() {
     const sel = ticketBy(F.cid);
     if (!sel || !formOk(false)) return;
@@ -730,9 +760,11 @@
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     const f = CORE.finish(Number(sel.w1), w.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
+    f.warn = f.warn.concat(parkWarn(sel, w.kg));   // heavier than the evening weigh of a parked truck (Kim, 9 Nov 2026)
     if (f.warn.length && !force) { PENDING = { kg: w.kg, src: w.src, warn: f.warn }; paintWarn(); return; }
     const use = force && PENDING ? PENDING : { kg: w.kg, src: w.src, warn: f.warn };
     const g = CORE.finish(Number(sel.w1), use.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
+    g.warn = g.warn.concat(parkWarn(sel, use.kg));
     const reason = [sel.reason, use.src === 'Manual' && MANUAL ? MANUAL.reason : ''].filter(Boolean).join(' · ');
     const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
       warn: g.warn.map(x => x.en).join(' | '), reason: reason });
@@ -786,6 +818,14 @@
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (ពិនិត្យ)', 'Now (check)')}</div><div class="num">${num}</div><div class="sub">${esc(chk.plate)}</div></div>
           <div class="cell"><div class="lab">${t('ថ្លឹងលើកទី២ (ផ្ទុករួច)', '2nd weigh (loaded)')}</div><div class="num n1">${kg(ref)}</div><div class="sub">${dmy(chk.t2).slice(0, 5)} ${hm(chk.t2)}</div></div>
           <div class="cell ow ${!has ? 'none' : cls === 'same' ? 'ok' : cls === 'heavy' ? 'over' : 'light'}"><div class="lab">${!has ? t('ខុសគ្នា', 'Difference') : (cls === 'same' ? '✅ ' : cls === 'heavy' ? '⚠️ ' : '⬇️ ') + checkTxt(d)}</div><div class="owv">${has ? sgn(d) + ' kg' : '—'}</div><div class="sub">${t('អនុញ្ញាត', 'Allowed')} ±${checkTol()} kg</div></div>`;
+      } else if (isParked(sel) && sel.w1 !== '' && sel.w1 != null) {
+        // Morning weigh-out of a truck parked overnight (Kim's option A, 9 Nov 2026): 1st weigh, evening weigh, change since then, net.
+        const w1 = Number(sel.w1), lc = lastCheck(sel), ref = Number(lc.kg), has = w.kg != null, d = has ? Math.round(w.kg - ref) : 0, cls = has ? checkCls(d) : '';
+        nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (ចេញ)', 'Now (weigh out)')}</div><div class="num">${num}</div><div class="sub">${!has || w.kg >= w1 ? 'Gross' : 'Tare'}</div></div>
+          <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${dmy(sel.t1).slice(0, 5)} ${hm(sel.t1)}</div></div>
+          <div class="cell pk"><div class="lab">🅿️ ${t('ចតយប់ (ល្ងាច)', 'Parked (evening)')}</div><div class="num n1">${kg(ref)}</div><div class="sub">${dmy(lc.t).slice(0, 5)} ${hm(lc.t)}</div></div>
+          <div class="cell ow ${!has ? 'none' : cls === 'same' ? 'ok' : cls === 'heavy' ? 'over' : 'light'}"><div class="lab">${!has ? t('ខុសពីពេលល្ងាច', 'vs evening') : (cls === 'same' ? '✅ ' : cls === 'heavy' ? '⚠️ ' : '⬇️ ') + (cls === 'same' ? t('ដូចពេលល្ងាច', 'Same as evening') : cls === 'heavy' ? t('ធ្ងន់ជាងល្ងាច', 'Heavier than evening') : t('ស្រាលជាងល្ងាច', 'Lighter than evening'))}</div><div class="owv">${has ? sgn(d) + ' kg' : '—'}</div><div class="sub">${t('អនុញ្ញាត', 'Allowed')} ±${checkTol()} kg</div></div>
+          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
       } else if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
         const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
         const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
@@ -862,16 +902,24 @@
     const b1 = $('#w1Btn'), b2 = $('#w2Btn');
     if (b1) b1.classList.toggle('wait', !w.ok);
     if (b2) b2.classList.toggle('wait', !w.ok);
+    if ($('#pkBtn')) $('#pkBtn').classList.toggle('wait', !w.ok);
     const sel = F.cid ? ticketBy(F.cid) : null;
     if (sel && $('#w2now')) {
       $('#w2now').textContent = w.kg != null ? kg(w.kg) : '—';
       $('#netNow').textContent = w.kg != null ? kg(Math.abs(w.kg - Number(sel.w1))) : '—';
     }
+    const pn = $('#pkNow'), plc = sel ? lastCheck(sel) : null;
+    if (pn && plc) { const d = w.kg != null ? Math.round(w.kg - Number(plc.kg)) : null; pn.textContent = d == null ? '—' : sgn(d) + ' kg'; pn.className = 'chkb' + (d == null ? '' : ' ' + checkCls(d)); }
   }
 
+  /** One parked-overnight row in the right card (Kim, 9 Nov 2026): tap it to weigh the truck out. */
+  function parkTr(x) {
+    const c = lastCheck(x), h = Math.max(0, Math.round((Date.now() - new Date(c.t)) / 3600000));
+    return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td><span class="chkb park">🅿️ ${t('ចតយប់', 'Parked')}</span></td><td>${dmy(c.t) === dmy(iso(new Date())) ? '' : dmy(c.t).slice(0, 5) + ' '}${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td><span class="badge follow">${h} h${x.checks.length > 1 ? ' · ' + x.checks.length + '×' : ''}</span></td></tr>`;
+  }
   function paintLists() {
     if ($('#site') && $('#parkCnt')) {
-      const pk = parked(), op = openTickets().length;
+      const pk = parked(), op = waiting().length;
       $('#parkCnt').textContent = pk.length ? '(' + pk.length + ')' : '';
       if ($('#allCnt')) $('#allCnt').textContent = pk.length + op ? '(' + (pk.length + op) + ')' : '';
     }
@@ -879,14 +927,13 @@
       // Every truck on site: waiting for the 2nd weigh, and parked after it (Kim, 9 Nov 2026)
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const hit = x => !q || [x.plate, x.company, x.no].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0;
-      const op = openTickets(), pk = parked();
+      const op = waiting(), pk = parked();
       $('#siteCnt').textContent = op.length ? '(' + op.length + ')' : '';
       const rows = op.filter(hit).map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000);
         return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td><span class="chkb wait">⏳ ${t('រង់ចាំលើកទី២', 'Waiting')}</span></td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; })
-        .concat(pk.filter(hit).map(x => { const c = lastCheck(x);
-        return `<tr class="pick${x.cid === F.check ? ' on' : ''}" data-chk="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td><span class="chkb park">🅿️ ${t('ចតយប់', 'Parked')}</span></td><td>${dmy(x.t2) === dmy(iso(new Date())) ? '' : dmy(x.t2).slice(0, 5) + ' '}${hm(x.t2)}</td><td class="r mono">${kg(x.w2)}</td><td>${c ? `<span class="chkb ${checkCls(Number(c.diff) || 0)}">${x.checks.length}× · ${sgn(Number(c.diff) || 0)}</span>` : '<span class="muted">—</span>'}</td></tr>`; }));
+        .concat(pk.filter(hit).map(parkTr));
       $('#site').innerHTML = rows.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ស្ថានភាព', 'Status')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th>${t('រង់ចាំ / ពិនិត្យ', 'Wait / Checks')}</th></tr>${rows.join('')}</table></div>
-        <p class="hint">${t('ចុច ⏳ ដើម្បីថ្លឹងលើកទី២ · ចុច 🅿️ ដើម្បីថ្លឹងពិនិត្យ', 'Tap ⏳ for the 2nd weigh · tap 🅿️ for a check weigh')}</p>`
+        <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២ · 🅿️ = ចតយប់ ថ្លឹងចេញពេលព្រឹក', 'Tap a truck for its 2nd weigh · 🅿️ = parked overnight, weigh out in the morning')}</p>`
         : `<div class="empty">${q && op.length + pk.length ? t('រកមិនឃើញ', 'No match') : t('គ្មានឡាននៅលើទីតាំង', 'No truck on site')}</div>`;
       fitSite();
       $$('#site [data-chk]').forEach(r => { r.onclick = () => openCheck(r.dataset.chk); });
@@ -896,17 +943,15 @@
       const all = parked();
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const l = q ? all.filter(x => [x.plate, x.company, x.no].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
-      const oc = openTickets().length;
+      const oc = waiting().length;
       $('#siteCnt').textContent = oc ? '(' + oc + ')' : '';
-      $('#site').innerHTML = l.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ថ្លឹងចេញ', 'Weighed out')}</th><th class="r">${t('លើកទី២', '2nd')}</th><th>${t('ពិនិត្យ', 'Checks')}</th></tr>
-        ${l.map(x => { const c = lastCheck(x); return `<tr class="pick${x.cid === F.check ? ' on' : ''}" data-chk="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${dmy(x.t2) === dmy(iso(new Date())) ? '' : dmy(x.t2).slice(0, 5) + ' '}${hm(x.t2)}</td><td class="r mono">${kg(x.w2)}</td>
-          <td>${c ? `<span class="chkb ${checkCls(Number(c.diff) || 0)}">${x.checks.length}× · ${sgn(Number(c.diff) || 0)}</span>` : `<span class="muted">—</span>`}</td></tr>`; }).join('')}</table></div>
-        <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងពិនិត្យមុនចេញ', 'Tap a truck to check-weigh it before it leaves')}</p>`
-        : `<div class="empty">${q && all.length ? t('រកមិនឃើញ', 'No match') : t('គ្មានឡានចតយប់ (ថ្លឹងចេញក្នុង ៣៦ ម៉ោង)', 'No loaded truck weighed out in the last 36 hours')}</div>`;
+      $('#site').innerHTML = l.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ស្ថានភាព', 'Status')}</th><th>${t('ម៉ោងចត', 'Parked at')}</th><th class="r">kg</th><th>${t('ចតបាន', 'Parked for')}</th></tr>${l.map(parkTr).join('')}</table></div>
+        <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងចេញ (លើកទី២)', 'Tap a truck to weigh it out (2nd weigh)')}</p>`
+        : `<div class="empty">${q && all.length ? t('រកមិនឃើញ', 'No match') : t('គ្មានឡានចតយប់', 'No truck parked overnight')}</div>`;
       fitSite();
-      $$('#site [data-chk]').forEach(r => { r.onclick = () => openCheck(r.dataset.chk); });
+      $$('#site [data-open]').forEach(r => { r.onclick = () => openWait(r.dataset.open); });
     } else if ($('#site')) {
-      const all = openTickets();
+      const all = waiting();
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
       $('#siteCnt').textContent = all.length ? '(' + (q ? open.length + ' / ' : '') + all.length + ')' : '';
