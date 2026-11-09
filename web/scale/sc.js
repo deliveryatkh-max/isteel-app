@@ -500,9 +500,10 @@
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
+      ${sel ? againRows(sel) : ''}
       <div id="warnBox"></div>
       <div class="btns">
-        ${sel ? `<button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងបញ្ចប់ + រក្សាទុក', 'Finish weigh + Save')}</button>`
+        ${sel ? `<button type="button" class="btn big againbtn" id="agBtn">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</button><button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងបញ្ចប់ + រក្សាទុក', 'Finish weigh + Save')}</button>`
               : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
       </div>
       ${isAdmin() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
@@ -580,6 +581,7 @@
     if ($('#newBtn')) $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); PENDING = null; paintForm(); paintLcd(); };
     if ($('#w1Btn')) $('#w1Btn').onclick = weigh1;
     if ($('#w2Btn')) $('#w2Btn').onclick = () => weigh2(false);
+    if ($('#agBtn')) $('#agBtn').onclick = scaleAgain;
     if ($('#saveOpen')) $('#saveOpen').onclick = saveOpen;
     if ($('#manOn')) $('#manOn').onclick = () => {
       $('#manBox').innerHTML = `<div class="manform"><input class="in" id="manKg" inputmode="numeric" placeholder="kg"><input class="in" id="manWhy" placeholder="${t('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}"><button type="button" class="btn ok" id="manUse">${t('ប្រើ', 'Use')}</button></div>`;
@@ -646,6 +648,32 @@
     paintForm(); paintLists(); paintLcd();
   }
 
+  // "Scale again" (Kim's option A, 9 Nov 2026): a truck parked overnight is weighed again, as often as needed, before its 2nd weigh.
+  const againTol = () => Math.max(0, Number(S().SCALE_AGAIN_KG) || 20);
+  const lastAgain = x => (x && x.again && x.again.length ? x.again[x.again.length - 1] : null);
+  const agCls = d => (Math.abs(d) <= againTol() ? 'same' : d > 0 ? 'heavy' : 'light');
+  const agTxt = d => (Math.abs(d) <= againTol() ? t('ដូចមុន', 'Same as before') : d > 0 ? t('ធ្ងន់ជាងមុន', 'Heavier than before') : t('ស្រាលជាងមុន', 'Lighter than before'));
+  const sgn = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + kg(Math.abs(d));
+  const againWarn = (sel, kgv) => { const a = lastAgain(sel), d = a ? Math.round(kgv - Number(a.kg)) : 0;
+    return a && d > againTol() ? [{ km: 'ធ្ងន់ជាងការថ្លឹងម្តងទៀតចុងក្រោយ ' + sgn(d) + ' kg', en: 'Heavier than the last scale-again weight by ' + sgn(d) + ' kg' }] : []; };
+  function scaleAgain() {
+    const sel = ticketBy(F.cid);
+    if (!sel || !formOk(false)) return;
+    const w = cur();
+    if (!w.ok) { toast(whyNot(w)); return; }
+    const a = lastAgain(sel);
+    if (a && Date.now() - new Date(a.t) < 60000 && Math.abs(Number(a.kg) - w.kg) <= againTol()) { toast(t('បានរក្សាទុករួចហើយ', 'Already saved')); return; }   // one tap = one row
+    const c = { t: iso(new Date()), kg: w.kg, diff: Math.round(w.kg - (a ? Number(a.kg) : Number(sel.w1))), by: me().name || '', src: w.src };
+    putTicket(Object.assign({}, sel, fromForm(), { again: (sel.again || []).concat(c) }));
+    MANUAL = null; PENDING = null; LASTDONE = '';
+    F = EMPTY_F(); keepForm();
+    toast('🔁 ' + sel.plate + ' · ' + kg(w.kg) + ' kg · ' + t('រក្សាទុកហើយ (មិនទាន់ចេញ)', 'saved, still on site'));
+    paintForm(); paintLists(); paintLcd();
+  }
+  function againRows(x) {
+    const l = x.again || [];
+    return l.map((c, i) => `<div class="agrow">🔁 <span>${t('ថ្លឹងម្តងទៀត', 'Scale again')} #${i + 1}</span> <b class="mono">${kg(c.kg)} kg</b> <span class="muted">· ${dmy(c.t).slice(0, 5)} ${hm(c.t)}${c.by ? ' · ' + esc(c.by) : ''}</span>${i === l.length - 1 ? `<span class="agnow">${t('ឥឡូវ', 'Now')} <b id="agNow" class="agd">—</b></span>` : ''}</div>`).join('');
+  }
   function saveOpen() {
     const sel = ticketBy(F.cid);
     if (!sel || !formOk(false)) return;
@@ -660,9 +688,11 @@
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     const f = CORE.finish(Number(sel.w1), w.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
+    f.warn = f.warn.concat(againWarn(sel, w.kg));   // heavier than the last "Scale again" (Kim, 9 Nov 2026)
     if (f.warn.length && !force) { PENDING = { kg: w.kg, src: w.src, warn: f.warn }; paintWarn(); return; }
     const use = force && PENDING ? PENDING : { kg: w.kg, src: w.src, warn: f.warn };
     const g = CORE.finish(Number(sel.w1), use.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
+    g.warn = g.warn.concat(againWarn(sel, use.kg));
     const reason = [sel.reason, use.src === 'Manual' && MANUAL ? MANUAL.reason : ''].filter(Boolean).join(' · ');
     const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
       warn: g.warn.map(x => x.en).join(' | '), reason: reason });
@@ -709,7 +739,15 @@
       // At the 2nd weigh (a waiting truck is picked): live weight, 1st weight and net side by side (Kim's option C).
       const sel = ticketBy(F.cid);
       let nums = `<div class="num">${num}</div>`;
-      if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
+      if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null && lastAgain(sel)) {
+        // After "Scale again" (Kim's option A, 9 Nov 2026): 1st weigh, last scale-again weight, change since then, net.
+        const w1 = Number(sel.w1), a = lastAgain(sel), ref = Number(a.kg), has = w.kg != null, d = has ? Math.round(w.kg - ref) : 0, cls = has ? agCls(d) : '';
+        nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${!has || w.kg >= w1 ? 'Gross' : 'Tare'}</div></div>
+          <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${dmy(sel.t1).slice(0, 5)} ${hm(sel.t1)}</div></div>
+          <div class="cell ag"><div class="lab">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</div><div class="num n1">${kg(ref)}</div><div class="sub">${dmy(a.t).slice(0, 5)} ${hm(a.t)}</div></div>
+          <div class="cell ow ${!has ? 'none' : cls === 'same' ? 'ok' : cls === 'heavy' ? 'over' : 'light'}"><div class="lab">${!has ? t('ខុសពីមុន', 'Change') : (cls === 'same' ? '✅ ' : cls === 'heavy' ? '⚠️ ' : '⬇️ ') + agTxt(d)}</div><div class="owv">${has ? sgn(d) + ' kg' : '—'}</div><div class="sub">${t('អនុញ្ញាត', 'Allowed')} ±${againTol()} kg</div></div>
+          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
+      } else if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
         const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
         const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
@@ -785,11 +823,14 @@
     const b1 = $('#w1Btn'), b2 = $('#w2Btn');
     if (b1) b1.classList.toggle('wait', !w.ok);
     if (b2) b2.classList.toggle('wait', !w.ok);
+    if ($('#agBtn')) $('#agBtn').classList.toggle('wait', !w.ok);
     const sel = F.cid ? ticketBy(F.cid) : null;
     if (sel && $('#w2now')) {
       $('#w2now').textContent = w.kg != null ? kg(w.kg) : '—';
       $('#netNow').textContent = w.kg != null ? kg(Math.abs(w.kg - Number(sel.w1))) : '—';
     }
+    const an = $('#agNow'), la = sel ? lastAgain(sel) : null;
+    if (an && la) { const d = w.kg != null ? Math.round(w.kg - Number(la.kg)) : null; an.textContent = d == null ? '—' : sgn(d) + ' kg'; an.className = 'agd' + (d == null ? '' : ' ' + agCls(d)); }
   }
 
   function paintLists() {
@@ -799,7 +840,7 @@
       const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
       $('#siteCnt').textContent = all.length ? '(' + (q ? open.length + ' / ' : '') + all.length + ')' : '';
       $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th></tr>
-        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
+        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b>${lastAgain(x) ? ` <span class="agpill">🔁 ${kg(lastAgain(x).kg)}${x.again.length > 1 ? ' · ' + x.again.length + '×' : ''}</span>` : ''}</td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
       fitSite();
@@ -1203,6 +1244,7 @@
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
+      ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>

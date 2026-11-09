@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -38,6 +38,7 @@ const SC_SETTINGS = [
   ['SCALE_COMPANY', 'ISI STEEL', 'Name printed on the ticket'],
   ['SCALE_TEMPLATE_LINK', '', 'Drive link to the ticket template: a Word file, a Google Doc or a folder (newest file used). Empty = built-in ticket.'],
   ['SCALE_DNC_USERS', '', 'Emails that can see the Debit Note check menu (comma separated). Admins always see it.'],
+  ['SCALE_AGAIN_KG', '20', '"Scale again": a change up to this many kg counts as the same weight'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
@@ -196,9 +197,10 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
+  o.again = scAgain_(o.again);
   delete o.dn; delete o.dnCount;
   return o;
 }
@@ -216,6 +218,30 @@ function scDnIndex_(rows) {
     String(r[7]).split(/[,\s]+/).filter(Boolean).forEach(dn => { if (!out[dn]) out[dn] = [day, String(r[0]), String(r[27] || '')]; });
   });
   return out;
+}
+
+/**
+ * "Scale again" (Kim, 9 Nov 2026): a truck parked overnight is weighed again before its 2nd weigh, as often as needed.
+ * One cell, one line each: "yyyy-MM-dd HH:mm:ss | kg | change | by | source". Lines already saved are never lost.
+ */
+function scAgain_(v) {
+  if (Array.isArray(v)) return v;
+  return String(v || '').split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a.length >= 3 && a[0] && num_(a[1]) !== '')
+    .map(a => ({ t: a[0].replace(' ', 'T'), kg: num_(a[1]), diff: num_(a[2]) === '' ? 0 : num_(a[2]), by: a[3] || '', src: a[4] || 'Scale' }));
+}
+function scAgainText_(oldCell, list, user) {
+  const have = scAgain_(oldCell), seen = {};
+  have.forEach(c => { seen[String(c.t).slice(0, 19)] = 1; });
+  (Array.isArray(list) ? list.slice(0, 50) : []).forEach(c => {
+    const kgv = num_(c && c.kg), tt = String((c && c.t) || '').slice(0, 19);
+    if (kgv === '' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(tt) || seen[tt]) return;
+    const src = SC_WEIGHT_SRC.indexOf(c.src) >= 0 ? c.src : 'Scale';
+    if (src === 'Manual' && !user.admin) return;   // typed weights stay Admin only
+    seen[tt] = 1;
+    have.push({ t: tt, kg: Math.round(kgv), diff: Math.round(num_(c.diff) || 0), by: clip_(c.by || user.name, 60), src: src });
+  });
+  have.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+  return have.map(c => [String(c.t).replace('T', ' '), c.kg, (c.diff > 0 ? '+' : '') + c.diff, c.by, c.src].join(' | ')).join('\n');
 }
 
 function scBoot_(user) {
@@ -339,7 +365,8 @@ function scSave_(ops, user) {
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
-      p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : '')];   // tarpaulin covered at the 2nd weigh
+      p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
+      scAgainText_(old ? old[30] : '', p.again, user)];   // tarpaulin covered at the 2nd weigh
     let row;
     if (old) {
       row = idx + 2;
