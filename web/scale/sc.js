@@ -360,7 +360,7 @@
   let LASTDONE = '';                             // cid of the ticket just finished, shown under the buttons
   const keepForm = () => set('sc_form', JSON.stringify(F));
   // Check weigh (Kim, 9 Nov 2026): a loaded truck parked overnight is weighed again before it leaves, as often as needed.
-  let SIDE = get('sc_side') === 'park' ? 'park' : 'wait';   // right card: waiting for 2nd weigh, or parked (check weigh)
+  let SIDE = 'all';   // right card opens on "All" every time (Kim, 9 Nov 2026); also "wait" or "park"   // right card: waiting for 2nd weigh, or parked (check weigh)
   let CHECKMSG = '';
   const checkTol = () => Math.max(0, Number(S().SCALE_CHECK_KG) || 20);
   const PARK_H = 36;   // a truck weighed out in the last 36 hours can be check-weighed from the Parked list
@@ -375,8 +375,15 @@
     if (!x) return;
     F = Object.assign(EMPTY_F(), { check: x.cid, plate: x.plate, company: x.company || '' });
     keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = ''; MANUAL = null;
-    if (SIDE !== 'park') { SIDE = 'park'; set('sc_side', 'park'); renderHome(); return; }
+    if (SIDE === 'wait') { SIDE = 'park'; set('sc_side', 'park'); renderHome(); return; }
     paintForm(); paintLists(); paintLcd();
+  }
+  function openWait(cid) {
+    const x = ticketBy(cid);
+    if (!x) return;
+    F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' };
+    keepForm(); PENDING = null; LASTDONE = ''; CHECKMSG = '';
+    paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0);
   }
   function checkWeigh() {
     const x = ticketBy(F.check);
@@ -429,8 +436,9 @@
         <section class="card" id="formCard"></section>
         <section class="card">
           <div class="sidetabs">
-            <button type="button" class="stab${SIDE === 'wait' ? ' on' : ''}" data-side="wait">🚚 ${t('រង់ចាំថ្លឹងលើកទី២', 'Waiting for 2nd weigh')} <span class="cnt" id="siteCnt"></span></button>
-            <button type="button" class="stab${SIDE === 'park' ? ' on' : ''}" data-side="park">🅿️ ${t('ចតយប់ · ថ្លឹងពិនិត្យ', 'Parked · check weigh')} <span class="cnt" id="parkCnt"></span></button>
+            <button type="button" class="stab${SIDE === 'all' ? ' on' : ''}" data-side="all">📋 ${t('ទាំងអស់', 'All')} <span class="cnt" id="allCnt"></span></button>
+            <button type="button" class="stab${SIDE === 'wait' ? ' on' : ''}" data-side="wait">⏳ ${t('រង់ចាំលើកទី២', 'Waiting 2nd weigh')} <span class="cnt" id="siteCnt"></span></button>
+            <button type="button" class="stab${SIDE === 'park' ? ' on' : ''}" data-side="park">🅿️ ${t('ចតយប់', 'Parked')} <span class="cnt" id="parkCnt"></span></button>
           </div>
           <input type="search" class="in sitesearch" id="siteQ" data-live-ok autocomplete="off" placeholder="🔍 ${t('ស្វែងរកលេខឡាន', 'Search truck number')}" value="${esc(SITEQ)}">
           <div id="site"></div>
@@ -838,9 +846,27 @@
 
   function paintLists() {
     if ($('#site') && $('#parkCnt')) {
-      const pk = parked();
+      const pk = parked(), op = openTickets().length;
       $('#parkCnt').textContent = pk.length ? '(' + pk.length + ')' : '';
+      if ($('#allCnt')) $('#allCnt').textContent = pk.length + op ? '(' + (pk.length + op) + ')' : '';
     }
+    if ($('#site') && SIDE === 'all') {
+      // Every truck on site: waiting for the 2nd weigh, and parked after it (Kim, 9 Nov 2026)
+      const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
+      const hit = x => !q || [x.plate, x.company, x.no].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0;
+      const op = openTickets(), pk = parked();
+      $('#siteCnt').textContent = op.length ? '(' + op.length + ')' : '';
+      const rows = op.filter(hit).map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000);
+        return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td><span class="chkb wait">⏳ ${t('រង់ចាំលើកទី២', 'Waiting')}</span></td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td></tr>`; })
+        .concat(pk.filter(hit).map(x => { const c = lastCheck(x);
+        return `<tr class="pick${x.cid === F.check ? ' on' : ''}" data-chk="${esc(x.cid)}"><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td><span class="chkb park">🅿️ ${t('ចតយប់', 'Parked')}</span></td><td>${dmy(x.t2) === dmy(iso(new Date())) ? '' : dmy(x.t2).slice(0, 5) + ' '}${hm(x.t2)}</td><td class="r mono">${kg(x.w2)}</td><td>${c ? `<span class="chkb ${checkCls(Number(c.diff) || 0)}">${x.checks.length}× · ${sgn(Number(c.diff) || 0)}</span>` : '<span class="muted">—</span>'}</td></tr>`; }));
+      $('#site').innerHTML = rows.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ស្ថានភាព', 'Status')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th>${t('រង់ចាំ / ពិនិត្យ', 'Wait / Checks')}</th></tr>${rows.join('')}</table></div>
+        <p class="hint">${t('ចុច ⏳ ដើម្បីថ្លឹងលើកទី២ · ចុច 🅿️ ដើម្បីថ្លឹងពិនិត្យ', 'Tap ⏳ for the 2nd weigh · tap 🅿️ for a check weigh')}</p>`
+        : `<div class="empty">${q && op.length + pk.length ? t('រកមិនឃើញ', 'No match') : t('គ្មានឡាននៅលើទីតាំង', 'No truck on site')}</div>`;
+      fitSite();
+      $$('#site [data-chk]').forEach(r => { r.onclick = () => openCheck(r.dataset.chk); });
+      $$('#site [data-open]').forEach(r => { r.onclick = () => openWait(r.dataset.open); });
+    } else
     if ($('#site') && SIDE === 'park') {
       const all = parked();
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
@@ -864,7 +890,7 @@
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
       fitSite();
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => openWait(r.dataset.open); });
     }
     if ($('#todayList')) {
       const td = today();
