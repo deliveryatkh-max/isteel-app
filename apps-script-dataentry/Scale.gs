@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Check Weighs'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Check Weighs', 'Left At'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -197,7 +197,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'checks']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'checks', 'left']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.checks = scChecks_(o.checks);
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
@@ -311,12 +311,19 @@ function scSave_(ops, user) {
       }
     });
     // Check weighs on a finished ticket can be added by any weigher (Kim, 9 Nov 2026); nothing else on it changes.
-    if (old && old[1] === 'Done' && Array.isArray(p.checks) && !(user.admin || user.reviewer)) {
+    if (old && old[1] === 'Done' && (Array.isArray(p.checks) || p.left) && !(user.admin || user.reviewer)) {
       const txt = scChecksText_(old[30], p.checks, user);
       if (txt !== String(old[30] || '')) {
         sh.getRange(idx + 2, 31).setValue(txt);
         scLog_(user, String(old[0]), 'Check weigh', 'Check Weighs', String(old[30] || ''), txt, '');
         old[30] = txt;
+      }
+      // "Truck leaves" after the check weighs (Kim, 9 Nov 2026): time and weigher, set once
+      if (p.left && !String(old[31] || '')) {
+        const lv = clip_(p.left, 80);
+        sh.getRange(idx + 2, 32).setNumberFormat('@').setValue(lv);
+        scLog_(user, String(old[0]), 'Truck left', 'Left At', '', lv, '');
+        old[31] = lv;
       }
       out.push({ cid: cid, no: String(old[0]), row: idx + 2, pdf: old[22] });
       return;
@@ -350,7 +357,8 @@ function scSave_(ops, user) {
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),   // tarpaulin covered at the 2nd weigh
-      scChecksText_(old ? old[30] : '', p.checks, user)];
+      scChecksText_(old ? old[30] : '', p.checks, user),
+      (old && String(old[31] || '')) || clip_(p.left, 80)];
     let row;
     if (old) {
       row = idx + 2;
@@ -540,6 +548,12 @@ function scTicketVals_(x) {
     DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
     Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',
+    // check weigh before leaving (Kim, 9 Nov 2026): the last check, how many, and when the truck left
+    CheckWeight: (() => { const c = scChecks_(x.checks); return c.length ? num(c[c.length - 1].kg) : ''; })(),
+    CheckTime: (() => { const c = scChecks_(x.checks); return c.length ? when(c[c.length - 1].t) : ''; })(),
+    CheckDiff: (() => { const c = scChecks_(x.checks); if (!c.length) return ''; const d = Number(c[c.length - 1].diff) || 0; return (d > 0 ? '+' : '') + num(d); })(),
+    CheckCount: (() => { const c = scChecks_(x.checks); return c.length ? String(c.length) : ''; })(),
+    LeftAt: s(x.left),
     Operator: s(x.op), Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
     Printed: fmt_(new Date(), 'dd/MM/yyyy HH:mm'), CompanyName: s(setting_('SCALE_COMPANY') || 'ISI STEEL'),
   };
