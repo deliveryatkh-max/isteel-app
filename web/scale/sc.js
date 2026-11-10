@@ -295,6 +295,9 @@
 
   // ---------------------------------------------------------------- pickers (search, "+ Add new", like the Fuel app)
   const destsOf = s => String(s || '').split(/\s*,\s*/).filter(Boolean);
+  // Phnom Penh is the usual destination: ticked by default and first in the list (Kim, 10 Nov 2026)
+  const homeDest = () => { const l = (B && B.dests) || []; return l.find(v => /^12\s*PNH\b/i.test(v)) || l.find(v => v.indexOf('ភ្នំពេញ') >= 0) || ''; };
+  const destList = () => { const l = (B && B.dests) || [], h = homeDest(); return h ? [h].concat(l.filter(v => v !== h)) : l; };
   function picker(input, opts) {
     const box = document.createElement('div');
     box.className = 'sugg'; box.hidden = true;
@@ -542,7 +545,7 @@
       };
       const paintBox = () => {
         const q = di.value.trim().toLowerCase(), a = destsOf(F.dest);
-        const l = ((B && B.dests) || []).filter(v => !q || v.toLowerCase().indexOf(q) >= 0);
+        const l = destList().filter(v => !q || v.toLowerCase().indexOf(q) >= 0);
         db.innerHTML = l.map(v => `<label class="opt mopt${a.indexOf(v) >= 0 ? ' on' : ''}"><input type="checkbox" value="${esc(v)}"${a.indexOf(v) >= 0 ? ' checked' : ''}> <span>${esc(v)}</span></label>`).join('')
           || `<div class="opt none">${t('រកមិនឃើញ', 'No match')}</div>`;
         db.hidden = false;
@@ -862,7 +865,7 @@
       // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
       $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
       $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || homeDest(), note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
@@ -1303,7 +1306,7 @@
       <div class="btns mt"><button type="button" class="btn ok" id="eSave">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
     picker($('#eCustomer'), { list: () => ((B && B.customers) || []).map(c => ({ v: c[1], sub: c[0] })), addNew: true, onPick: () => {} });
     picker($('#eItem'), { list: () => ((B && B.items) || []).map(i => ({ v: i[0] })), addNew: true, onPick: () => {} });
-    picker($('#eDest'), { list: () => ((B && B.dests) || []).map(v => ({ v })), addNew: true, onPick: () => {} });
+    picker($('#eDest'), { list: () => destList().map(v => ({ v })), addNew: true, onPick: () => {} });
     picker($('#eLoad'), { list: places, addNew: true, onPick: () => {} });
     $('#eSave').onclick = () => {
       const v = id => $(id).value.trim();
@@ -1952,7 +1955,7 @@
         { plate: '3F-8691', company: '3PL #1', drivers: [], type: '10-wheel', empty: '', max: '' }],
       customers: [['6100000002', '000002-Hun Bonita'], ['6100000005', '000005-ក្រុមហ៊ុន ហ្វូស៊ីន ស្ទីល ប៊ីលឌីង ឯ.ក']],
       items: [['Steel pipe', 'kg', 'Yes'], ['Steel coil', 'kg', 'Yes'], ['Scrap', 'kg', 'Yes']],
-      dests: ['KPC Branch', 'Kampong Cham', 'Siem Reap'], tickets: [],
+      dests: ['KPC Branch', 'Kampong Cham', '12 PNH រាជធានីភ្នំពេញ', 'Siem Reap'], tickets: [],
       settings: { SCALE_TARE_PCT: '5', SCALE_MIN_KG: '200', SCALE_PREFIX: 'WB', SCALE_SIGN: 'Weigher, Driver, Security', SCALE_COMPANY: 'ISI STEEL', SCALE_TEMPLATE_LINK: '', SCALE_DNC_USERS: '' },
       prices: [['CHROEK KIMHENG', 'KPC Branch', 'Per t', 8.5, 't'], ['3PL #1', 'Kampong Cham', 'Per t', 9, 't']],
     };
