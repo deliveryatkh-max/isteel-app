@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -199,7 +199,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   o.again = scAgain_(o.again);
@@ -384,13 +384,14 @@ function scSave_(ops, user) {
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
-      scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar];   // tarpaulin covered at the 2nd weigh
+      scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar,
+      p.ph1img ? scPhoto_(p.ph1img, no, plate, 1) || (old ? old[34] : '') : (old ? old[34] : ''), p.ph2img ? scPhoto_(p.ph2img, no, plate, 2) || (old ? old[35] : '') : (old ? old[35] : '')];   // webcam photos (Kim, 10 Nov 2026)   // tarpaulin covered at the 2nd weigh
     let row;
     if (old) {
       row = idx + 2;
       const log = [];
       SC_TK_COLS.forEach((h, i) => {
-        if (i >= 22 && i < 28) return;   // PDF, operator, times: not logged
+        if ((i >= 22 && i < 28) || i >= 34) return;   // PDF, operator, times: not logged
         const a = old[i] instanceof Date ? fmt_(old[i], 'yyyy-MM-dd HH:mm:ss') : String(old[i]);
         const b = vals[i] instanceof Date ? fmt_(vals[i], 'yyyy-MM-dd HH:mm:ss') : String(vals[i]);
         if (a !== b) log.push([h, a, b]);
@@ -413,7 +414,7 @@ function scSave_(ops, user) {
     // A new customer or item typed on the scale joins its one list too (Customer tab of SSK-DELIVERY-DATA, Item List).
     if (vals[4] && custs.indexOf(vals[4].toLowerCase()) < 0) { scMasterAdd_('customer', { id: '', name: vals[4] }, user); custs.push(vals[4].toLowerCase()); }
     if (vals[5] && items.indexOf(vals[5].toLowerCase()) < 0) { scMasterAdd_('item', { name: vals[5], unit: 'kg', active: 'Yes' }, user); items.push(vals[5].toLowerCase()); }
-    out.push({ cid: cid, no: no, row: row, pdf: pdf });
+    out.push({ cid: cid, no: no, row: row, pdf: pdf, ph1: vals[34], ph2: vals[35] });
   });
   return { saved: out };
 }
@@ -425,6 +426,23 @@ function scPdfFolder_() {
   const f = DriveApp.createFolder('Scale Tickets PDF');
   props.setProperty('SC_PDF_FOLDER_ID', f.getId());
   return f;
+}
+/** Webcam photo of the truck at the 1st (n = 1) or 2nd (n = 2) weigh (Kim, 10 Nov 2026): Drive folder "Scale Truck Photos". */
+function scPhoto_(dataUrl, no, plate, n) {
+  const m = String(dataUrl || '').match(/^data:image\/jpeg;base64,(.+)$/);
+  if (!m) return '';
+  const bytes = Utilities.base64Decode(m[1]);
+  if (!bytes.length || bytes.length > MAX_IMG_BYTES) return '';
+  const props = PropertiesService.getScriptProperties();
+  let f = null, id = props.getProperty('SC_PHOTO_FOLDER_ID');
+  if (id) { try { f = DriveApp.getFolderById(id); } catch (e) { f = null; } }
+  if (!f) { f = DriveApp.createFolder('Scale Truck Photos'); props.setProperty('SC_PHOTO_FOLDER_ID', f.getId()); }
+  const name = no + '_' + plate.replace(/[^A-Z0-9\-]/g, '') + '_' + (n === 1 ? '1st' : '2nd') + '.jpg';
+  const old = f.getFilesByName(name);
+  while (old.hasNext()) old.next().setTrashed(true);
+  const file = f.createFile(Utilities.newBlob(bytes, 'image/jpeg', name));
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}   // so the app can show it
+  return file.getUrl();
 }
 function scPdf_(b64, no, plate) {
   const bytes = Utilities.base64Decode(String(b64).replace(/^data:application\/pdf;base64,/, ''));
