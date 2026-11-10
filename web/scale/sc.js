@@ -883,7 +883,9 @@
 
   // ---------------------------------------------------------------- ticket list, search, Excel
   const ALL_FROM = '2020-01-01';   // "All" = every ticket (Kim, 10 Nov 2026: the default)
-  let LIST = { from: ALL_FROM, to: today(), q: '', rows: null, more: false };
+  let LIST = { from: ALL_FROM, to: today(), q: '', rows: null, more: false, st: '' };
+  // Status filter (Kim, 10 Nov 2026): '' = all, 'Done' = Complete, 'Open' = still on site
+  const QSTATUS = [['', 'ស្ថានភាពទាំងអស់', 'All status'], ['Done', 'រួចរាល់', 'Complete'], ['Open', 'មិនទាន់រួច', 'Open']];
   const QRANGES = [['all', 'ទាំងអស់', 'All'], ['today', 'ថ្ងៃនេះ', 'Today'], ['month', 'ខែនេះ', 'This month']];
   function rangeOf(k) {
     const d = new Date();
@@ -903,6 +905,7 @@
         <label>${t('ដល់', 'To')}<input type="date" class="in" id="lTo" value="${LIST.to}"></label>
         <button type="button" class="btn ok" id="lGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
         <div class="qchips">${QRANGES.map(r => `<button type="button" class="chip${rangeIs(r[0]) ? ' on' : ''}" data-rg="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
+        <div class="qchips">${QSTATUS.map(r => `<button type="button" class="chip${LIST.st === r[0] ? ' on' : ''}" data-st="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <input type="search" class="in lq" id="lQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...')}" value="${esc(LIST.q)}">
         <button type="button" class="btn" id="lXls">⬇ Excel</button>
       </div>
@@ -912,6 +915,7 @@
     // Quick dates: Today, Last 7 days, This month (Kim, 8 Nov 2026)
     $$('[data-rg]').forEach(b => { b.onclick = () => { const r = rangeOf(b.dataset.rg); LIST.from = r[0]; LIST.to = r[1]; $('#lFrom').value = r[0]; $('#lTo').value = r[1]; paintRanges(); loadList(); }; });
     $('#lQ').oninput = e => { LIST.q = e.target.value; paintListBody(); };
+    $$('[data-st]').forEach(b => { b.onclick = () => { LIST.st = b.dataset.st; $$('[data-st]').forEach(c => c.classList.toggle('on', c.dataset.st === LIST.st)); paintListBody(); }; });
     $('#lXls').onclick = exportXls;
     loadList();
   }
@@ -931,14 +935,14 @@
   }
   const listRows = () => {
     const q = LIST.q.trim().toLowerCase();
-    return (LIST.rows || []).filter(x => !q || [x.no, x.plate, x.company, x.customer, x.item, x.driver, x.dest, x.note, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0)
+    return (LIST.rows || []).filter(x => !LIST.st || x.status === LIST.st).filter(x => !q || [x.no, x.plate, x.company, x.customer, x.item, x.driver, x.dest, x.note, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0)
       .sort((a, b) => String(b.t1).localeCompare(String(a.t1)));
   };
   function paintListBody() {
     if (!$('#lSum')) return;   // the list was left before the server answered
     const rows = listRows();
     const done = rows.filter(x => x.status === 'Done');
-    $('#lSum').innerHTML = `<b>${done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}${LIST.more ? ` <span class="badge pending">${t('បង្ហាញតែ ៥០០០ ប័ណ្ណចុងក្រោយ', 'Showing the newest 5,000 tickets')}</span>` : ''}`;
+    $('#lSum').innerHTML = `<b>${LIST.st === 'Open' ? rows.length : done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}${LIST.more ? ` <span class="badge pending">${t('បង្ហាញតែ ៥០០០ ប័ណ្ណចុងក្រោយ', 'Showing the newest 5,000 tickets')}</span>` : ''}`;
     $('#lBody').innerHTML = rows.length ? ticketTable(rows) : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`;
     bindTable();
   }
