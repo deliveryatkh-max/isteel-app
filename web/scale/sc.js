@@ -502,7 +502,7 @@
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
             <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div>
           ${F.dns.length ? `<div class="dnkg" id="dnKg"><table><tr><th>🧾 DN</th><th class="r">${t('ទម្ងន់លើ DN (kg)', 'Kg on the DN')} ${req}</th></tr>
-            ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
+            ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono${dnKgOf(F, d) ? '' : ' need'}" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
             <tr class="tot"><td>${t('សរុប DN', 'DN total')}</td><td class="r mono" id="dnTot">—</td></tr></table><div id="dnCmp"></div></div>` : ''}</div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
@@ -594,7 +594,7 @@
         F.dnkg = F.dnkg || {};
         const d = F.dns[+k.dataset.dk];
         if (v) F.dnkg[d] = Number(v); else delete F.dnkg[d];
-        k.classList.remove('need'); keepForm(); paintDnCmp();
+        k.classList.toggle('need', !v); keepForm(); paintDnCmp();   // red until filled, like the other required boxes
       };
       k.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const n = $('[data-dk="' + (+k.dataset.dk + 1) + '"]') || $('#fDn'); if (n) n.focus(); } };
     });

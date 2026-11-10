@@ -355,7 +355,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .dnkg td{padding:4px 6px;border-bottom:1px solid #eef1f5}
 .dnkg .r{text-align:right}
 .dnkg .dkin{width:150px;text-align:right;padding:6px 10px;font-size:17px}
-.dnkg .dkin.need{border-color:#dc2626;background:#fef2f2}
 .dnkg tr.tot td{font-weight:700;border-bottom:0;padding-top:8px}
 .dncmp{margin-top:10px;max-width:720px;border-radius:12px;padding:10px 12px;display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
 .dncmp.wait{background:#f1f5f9;color:#475569;font-size:14px}
