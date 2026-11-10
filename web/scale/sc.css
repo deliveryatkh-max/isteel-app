@@ -389,3 +389,37 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .campop{display:block;max-width:min(88vw,960px);max-height:70vh;border-radius:10px;margin:0 auto 6px}
 .popbox:has(.campop){max-width:min(92vw,1000px)}
 @media (min-width: 981px) { body.freeze .grid2 > .card:has(> #camBox:not([hidden])) { overflow-y: auto; } body.freeze .grid2 > .card:has(> #camBox:not([hidden])) #site .tbl { min-height: 180px; } }
+/* Phone (Kim, 10 Nov 2026): the frozen weight bar is small and the page fits the screen width */
+@media (max-width: 640px) {
+  .grid2 > * { min-width: 0; }
+  nav.tabs { max-width: 100vw; box-sizing: border-box; overflow-x: auto; }
+  #formCard .jobchips { flex-wrap: wrap; }
+  .dnkg .dkin { width: 100%; max-width: 120px; min-width: 70px; font-size: 16px; }
+  .dnkg th, .dnkg td { padding: 4px 3px; }
+  .dnkg th { white-space: normal; }
+  .lcd { padding: 8px 10px; gap: 6px; border-radius: 12px; }
+  .lcd .nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; width: 100%; flex: 1 1 100%; }
+  .lcd .nums > .num { grid-column: 1 / -1; font-size: 44px; }
+  .lcd .cell, .lcd .cell.net, .lcd .cell.ow, .lcd .cell.ag { padding: 4px 6px; margin: 0; border-right: 0; border-radius: 8px; min-width: 0; }
+  .lcd .cell:first-child { padding-left: 6px; }
+  .lcd .cell .lab, .lcd .cell .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lcd .cell .lab { font-size: 11px; }
+  .lcd .cell .sub { font-size: 10.5px; margin-top: 0; }
+  .lcd .nums .cell .num, .lcd .nums .cell .num.n1, .lcd .nums .cell .num.nn { font-size: 20px; }
+  .lcd .nums:has(.ow) .cell .num, .lcd .nums:has(.ag) .cell .num, .lcd .nums:has(.ow) .cell .num.n1, .lcd .nums:has(.ow) .cell .num.nn { font-size: 20px; }
+  .lcd .cell.ow .owv { font-size: 18px; }
+  .lcd .cell .num span { font-size: .5em; margin-left: 3px; }
+  .lcd .side { display: flex; flex-wrap: wrap; align-items: center; justify-items: start; text-align: left; gap: 6px; width: 100%; font-size: 12px; }
+  .lcd .st { font-size: 12px; padding: 3px 10px; }
+  .lcd .lcdbtns { justify-content: flex-start; gap: 6px; }
+  .lcd .btn.conn, .lcd .btn.conn2 { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+}
+/* Phones and tablets have the menu bar at the bottom: the frozen buttons sit just above it, side by side */
+@media (max-width: 899px) {
+  #formCard > .btns { bottom: 63px; padding-bottom: 10px; flex-wrap: nowrap; }
+  #formCard > .btns .btn.big { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; }
+}
+@media (max-width: 640px) {
+  #formCard > .btns .btn.big { font-size: 15px; min-height: 48px; }
+  .lcd .cell .sub { display: none; }
+}
