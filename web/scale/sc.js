@@ -345,7 +345,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], dnkg: {}, driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF });
   const LOAD_DEF = 'ISI Steel';   // loading place when this PC has none set (Kim, 8 Nov 2026)
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
   const places = () => { const s = []; [get('sc_load'), LOAD_DEF].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
@@ -500,7 +500,10 @@
           <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
         ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN', 'DN No')}${dnNeed(sel) ? ' ' + req : ''}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
-            <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div></div>` : ''}
+            <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div>
+          ${F.dns.length ? `<div class="dnkg" id="dnKg"><table><tr><th>🧾 DN</th><th class="r">${t('ទម្ងន់លើ DN (kg)', 'Kg on the DN')} ${req}</th></tr>
+            ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
+            <tr class="tot"><td>${t('សរុប DN', 'DN total')}</td><td class="r mono" id="dnTot">—</td></tr></table><div id="dnCmp"></div></div>` : ''}</div>` : ''}
         <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
       </div>
       ${sel ? againRows(sel) : ''}
@@ -563,15 +566,16 @@
     const addDn = raw => {
       if (document.querySelector('.popwrap')) return;   // a message is open: the input's blur must not open a 2nd one
       if ($('#fDn')) $('#fDn').value = '';   // else repainting the form blurs the box and adds the same text again
-      const used = [];
+      const used = [], before = F.dns.length;
       khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => {
         const u = dnUsedBy(d);
         if (u) { used.push([d, u]); return; }   // one DN, one ticket (Kim, 9 Nov 2026)
         if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d);
       });
+      const added = F.dns.length > before;
       keepForm(); paintForm();
       if (used.length) popup(used.map(x => `<p>⚠️ <b class="mono">${esc(x[0])}</b><br>${t('DN នេះបានប្រើរួចហើយ តាំងពី', 'This DN was used already since')} <b>${esc(x[1].date)}</b>${x[1].no ? ` · ${t('ប័ណ្ណ', 'ticket')} <span class="mono">${esc(x[1].no)}</span>` : ''}.</p>`).join(''), () => $('#fDn') && $('#fDn').focus());
-      else setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);
+      else setTimeout(() => { const k = added ? $('[data-dk="' + (F.dns.length - 1) + '"]') : null, e = k || $('#fDn'); if (e) e.focus(); }, 0);   // scan a DN, then type its kg
     };
     const dn = $('#fDn');
     if (dn) {
@@ -584,6 +588,18 @@
     dn.addEventListener('paste', e => { const s = (e.clipboardData || window.clipboardData).getData('text'); if (/[\s,;]/.test(s.trim())) { e.preventDefault(); addDn(s); } });
     $('#dnBox').onclick = e => { const x = e.target.closest('[data-dn]'); if (x) { F.dns.splice(+x.dataset.dn, 1); keepForm(); paintForm(); } else dn.focus(); };
     }
+    $$('[data-dk]').forEach(k => {
+      k.oninput = () => {
+        const v = khNum(k.value).replace(/[^0-9]/g, '');
+        if (v !== k.value) k.value = v;
+        F.dnkg = F.dnkg || {};
+        const d = F.dns[+k.dataset.dk];
+        if (v) F.dnkg[d] = Number(v); else delete F.dnkg[d];
+        k.classList.remove('need'); keepForm(); paintDnCmp();
+      };
+      k.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const n = $('[data-dk="' + (+k.dataset.dk + 1) + '"]') || $('#fDn'); if (n) n.focus(); } };
+    });
+    paintDnCmp();
     if ($('#newBtn')) $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); PENDING = null; paintForm(); paintLcd(); };
     if ($('#w1Btn')) $('#w1Btn').onclick = weigh1;
     if ($('#w2Btn')) $('#w2Btn').onclick = () => weigh2(false);
@@ -634,6 +650,10 @@
     if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
       if (dnNeed(ticketBy(F.cid)) || !ticketBy(F.cid)) miss.push('#dnBox');
     }
+    if (second && F.dns.length) {   // the kg written on every DN (Kim, 10 Nov 2026)
+      const e = $$('[data-dk]').filter(k => !dnKgOf(F, F.dns[+k.dataset.dk]));
+      if (e.length) { e.forEach(k => k.classList.add('need')); miss.push('#dnKgMiss'); }
+    }
     miss.forEach(s => $(s) && $(s).classList.add('need'));
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
@@ -641,7 +661,7 @@
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
   const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
   const canType = () => isAdmin() || manAll();
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
@@ -673,6 +693,32 @@
   const sgn = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + kg(Math.abs(d));
   const againWarn = (sel, kgv) => { const a = lastAgain(sel), d = a ? Math.round(kgv - Number(a.kg)) : 0;
     return a && d > againTol() ? [{ km: 'ធ្ងន់ជាងការថ្លឹងម្តងទៀតចុងក្រោយ ' + sgn(d) + ' kg', en: 'Heavier than the last scale-again weight by ' + sgn(d) + ' kg' }] : []; };
+  // DN kg check (Kim's option A, 10 Nov 2026): the weigher types the kg written on each DN; the DN total must match the
+  // scale net within ± SCALE_DN_VAR_KG (120 kg unless an Admin changes it in Settings).
+  const dnTol = () => { const v = S().SCALE_DN_VAR_KG; return v === '' || v == null || isNaN(Number(v)) ? 120 : Math.max(0, Number(v)); };
+  const dnKgOf = (x, d) => { const v = x && x.dnkg ? Number(x.dnkg[d]) : 0; return v > 0 ? v : 0; };
+  const dnSum = x => { const l = x.dns || []; return !l.length || l.some(d => !dnKgOf(x, d)) ? null : l.reduce((a, d) => a + dnKgOf(x, d), 0); };
+  const dnCheck = x => { const s = dnSum(x); if (s == null || x.net === '' || x.net == null) return null; const d = Math.round(Number(x.net) - s); return { sum: s, d, ok: Math.abs(d) <= dnTol() }; };
+  const dnList = x => (x.dns || []).map(d => (dnKgOf(x, d) ? d + ' (' + kg(dnKgOf(x, d)) + ' kg)' : d)).join(', ');
+  const dnWarn = (sel, kgv) => { const s = dnSum(F); if (s == null) return []; const d = Math.round(Math.abs(kgv - Number(sel.w1)) - s);
+    return Math.abs(d) > dnTol() ? [{ km: 'ទម្ងន់ DN សរុប ' + kg(s) + ' kg ខុសពីទម្ងន់សុទ្ធ ' + sgn(d) + ' kg (អនុញ្ញាត ±' + dnTol() + ' kg)', en: 'DN total ' + kg(s) + ' kg differs from the scale net by ' + sgn(d) + ' kg (allowed ±' + dnTol() + ' kg)' }] : []; };
+  function paintDnCmp() {
+    const box = $('#dnCmp');
+    if (!box) return;
+    const sel = ticketBy(F.cid), l = F.dns, ks = l.map(d => dnKgOf(F, d)), got = ks.filter(Boolean).length, sum = ks.reduce((a, b) => a + b, 0);
+    const tot = got ? kg(sum) + ' kg' : '—';
+    if ($('#dnTot') && $('#dnTot').textContent !== tot) $('#dnTot').textContent = tot;
+    const w = cur(), net = sel && w.kg != null && sel.w1 !== '' && sel.w1 != null ? Math.abs(w.kg - Number(sel.w1)) : null;
+    let h;
+    if (got < l.length) h = `<div class="dncmp wait">🧮 ${t('វាយ kg ដែលសរសេរលើ DN នីមួយៗ', 'Type the kg written on each DN')} (${got}/${l.length})</div>`;
+    else if (net == null) h = `<div class="dncmp wait">⚖️ ${t('រង់ចាំទម្ងន់ពីជញ្ជីង', 'Waiting for the scale weight')}</div>`;
+    else {
+      const d = Math.round(net - sum), ok = Math.abs(d) <= dnTol();
+      h = `<div class="dncmp ${ok ? 'ok' : 'bad'}"><div><small>${t('សរុប DN', 'DN total')}</small><b>${kg(sum)}</b></div><div><small>${t('ទម្ងន់សុទ្ធជញ្ជីង', 'Scale net')}</small><b>${kg(net)}</b></div>
+        <div><small>${t('ខុសគ្នា', 'Difference')}</small><b>${sgn(d)}</b></div><div class="vd"><b>${ok ? '✅ ' + t('ត្រូវគ្នា', 'Match') : '❌ ' + t('ខុសគ្នា', 'Variance')}</b><small>${t('អនុញ្ញាត', 'Allowed')} ±${kg(dnTol())} kg</small></div></div>`;
+    }
+    if (box._h !== h) { box._h = h; box.innerHTML = h; }
+  }
   function scaleAgain() {
     const sel = ticketBy(F.cid);
     if (!sel || !formOk(false)) return;
@@ -706,14 +752,15 @@
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     const f = CORE.finish(Number(sel.w1), w.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
-    f.warn = f.warn.concat(againWarn(sel, w.kg));   // heavier than the last "Scale again" (Kim, 9 Nov 2026)
+    f.warn = f.warn.concat(againWarn(sel, w.kg), dnWarn(sel, w.kg));   // heavier than the last "Scale again" (Kim, 9 Nov 2026)
     if (f.warn.length && !force) { PENDING = { kg: w.kg, src: w.src, warn: f.warn }; paintWarn(); return; }
     const use = force && PENDING ? PENDING : { kg: w.kg, src: w.src, warn: f.warn };
     const g = CORE.finish(Number(sel.w1), use.kg, truckOf(F.plate), S().SCALE_TARE_PCT);
-    g.warn = g.warn.concat(againWarn(sel, use.kg));
+    g.warn = g.warn.concat(againWarn(sel, use.kg), dnWarn(sel, use.kg));
+    const ds = dnSum(F);
     const reason = [sel.reason, use.src === 'Manual' && MANUAL ? MANUAL.reason : ''].filter(Boolean).join(' · ');
     const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
-      warn: g.warn.map(x => x.en).join(' | '), reason: reason });
+      warn: g.warn.map(x => x.en).join(' | '), reason: reason, dnTot: ds == null ? '' : ds, dnVar: ds == null ? '' : g.net - ds });
     PENDING = null; MANUAL = null;
     putTicket(tk);
     LASTDONE = tk.cid;
@@ -750,6 +797,7 @@
   let lcdRaf = 0;
   const lcdSoon = () => { if (!lcdRaf) lcdRaf = requestAnimationFrame(() => { lcdRaf = 0; paintLcd(); }); };
   function paintLcd() {
+    paintDnCmp();
     const el = $('#lcd');
     if (el) {
       const w = cur();
@@ -868,7 +916,7 @@
       // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
       $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
       $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), dnkg: Object.assign({}, x.dnkg || {}), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
@@ -956,11 +1004,11 @@
   function exportXls() {
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
-    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
-    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
+    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
+    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
       String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
-    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
+    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Scale Tickets');
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
@@ -1270,12 +1318,13 @@
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
-        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc((x.dns || []).join(', ')))}
+        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
         ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
+      ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(x.net)} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
       ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
@@ -1408,9 +1457,12 @@
     pairs.forEach(pr => { cellAt(M, pr[0][0], pr[0][1], pr[0][2], half); if (pr[1]) cellAt(M + half + 20, pr[1][0], pr[1][1], pr[1][2], half - 20); y += 80; rule(); });
     font(24, 400); g.fillStyle = GREY; g.fillText('DN No', M, y + 30); font(21, 400); g.fillText('លេខ DN (' + (x.dns || []).length + ')', M, y + 58);
     font(30, 700); g.fillStyle = NAVY;
-    const dl = wrap((x.dns || []).join(', '), W - 2 * M - LW).slice(0, 3);
+    const dl = wrap(dnList(x), W - 2 * M - LW).slice(0, 3);
     dl.forEach((l, i) => g.fillText(l, M + LW, y + 44 + i * 38));
-    y += Math.max(80, 26 + dl.length * 38); rule();
+    let dh = Math.max(80, 26 + dl.length * 38);
+    const dc = dnCheck(x);   // DN kg vs scale net (Kim, 10 Nov 2026)
+    if (dc) { font(24, 700); g.fillStyle = dc.ok ? '#15803d' : '#b91c1c'; g.fillText((dc.ok ? '✓ MATCH' : '✗ VARIANCE') + '   DN total ' + kg(dc.sum) + ' kg  ·  Net ' + kg(x.net) + ' kg  ·  Diff ' + sgn(dc.d) + ' kg (±' + dnTol() + ')', M + LW, y + dh + 2); dh += 36; }
+    y += dh; rule();
     y += 50;
 
     // weights
@@ -1541,7 +1593,7 @@
     const dns = x.dns || [];
     return {
       TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '',
-      DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
+      DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
       Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
@@ -1868,6 +1920,7 @@
       <div class="fgrid">
         ${inp('rPct', t('ព្រមានពេលទម្ងន់ទទេខុសពីបញ្ជីឡានលើស (%)', 'Warn when the empty weight differs from the truck list by more than (%)'), s.SCALE_TARE_PCT, 'inputmode="numeric"')}
         ${inp('rMin', t('ទម្ងន់តិចជាងនេះ មិនយក (kg)', 'Ignore weights below (kg)'), s.SCALE_MIN_KG, 'inputmode="numeric"')}
+        ${inp('rDnVar', t('ពិនិត្យ kg លើ DN: ខុសពីទម្ងន់សុទ្ធបាន (± kg)', 'DN kg check: allowed difference from the net (± kg)'), dnTol(), 'inputmode="numeric"')}
         ${inp('rPre', t('ផ្នែកដំបូងនៃលេខប័ណ្ណ', 'Ticket number prefix'), s.SCALE_PREFIX)}
         ${inp('rCo', t('ឈ្មោះលើប័ណ្ណ', 'Name on the ticket'), s.SCALE_COMPANY)}
         ${inp('rSign', t('ប្រអប់ហត្ថលេខា (ក្បៀស)', 'Signature boxes (comma separated)'), s.SCALE_SIGN)}
@@ -1880,7 +1933,7 @@
         'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
-        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
       <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
@@ -1907,7 +1960,7 @@
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busy(b, true);
       try {
-        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim(), SCALE_MANUAL_ALL: $('#rMan').checked ? 'Yes' : 'No' });
+        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim(), SCALE_MANUAL_ALL: $('#rMan').checked ? 'Yes' : 'No', SCALE_DN_VAR_KG: $('#rDnVar').value.replace(/[^0-9]/g, '') || '120' });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
         if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { ['A4', 'A5'].forEach(z => { TPL[z] = null; tplCache(z, null); }); }
         setRules();
@@ -1992,7 +2045,7 @@
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
     if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
-    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_MANUAL_ALL'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
+    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_MANUAL_ALL', 'SCALE_DN_VAR_KG'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }
 })();

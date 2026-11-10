@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
@@ -41,6 +41,7 @@ const SC_SETTINGS = [
   ['SCALE_AGAIN_KG', '20', '"Scale again": a change up to this many kg counts as the same weight'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
+  ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -198,10 +199,11 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   o.again = scAgain_(o.again);
+  o.dnkg = scDnKg_(o.dnkgTxt); delete o.dnkgTxt;
   delete o.dn; delete o.dnCount;
   return o;
 }
@@ -229,6 +231,12 @@ function scAgain_(v) {
   if (Array.isArray(v)) return v;
   return String(v || '').split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a.length >= 3 && a[0] && num_(a[1]) !== '')
     .map(a => ({ t: a[0].replace(' ', 'T'), kg: num_(a[1]), diff: num_(a[2]) === '' ? 0 : num_(a[2]), by: a[3] || '', src: a[4] || 'Scale' }));
+}
+/** DN kg (Kim, 10 Nov 2026): one cell "DN: kg, DN: kg" -> { DN: kg }. */
+function scDnKg_(v) {
+  const o = {};
+  String(v || '').split(',').forEach(x => { const a = x.split(':'); if (a.length !== 2) return; const k = a[0].trim(), n = Number(String(a[1]).replace(/[^0-9.]/g, '')); if (k && n > 0) o[k] = n; });
+  return o;
 }
 function scAgainText_(oldCell, list, user) {
   const have = scAgain_(oldCell), seen = {};
@@ -364,6 +372,11 @@ function scSave_(ops, user) {
       });
     }
     const pdf = p.pdf ? scPdf_(p.pdf, no, plate) : (old ? old[22] : '');
+    // The kg written on each DN, the DN total and the variance against the net (Kim, 10 Nov 2026)
+    const dk = p.dnkg && typeof p.dnkg === 'object' ? p.dnkg : null;
+    const dkText = dk ? uniq.filter(d => Number(dk[d]) > 0).map(d => d + ': ' + Math.round(Number(dk[d]))).join(', ') : (old ? String(old[31] || '') : '');
+    const dkMap = scDnKg_(dkText), dkAll = uniq.length > 0 && uniq.every(d => dkMap[d] > 0);
+    const dkTot = dkAll ? uniq.reduce((a, d) => a + dkMap[d], 0) : '', dkVar = dkAll && net !== '' ? net - dkTot : '';
     const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), both ? (w1 > w2 ? 'In' : 'Out') : (['In', 'Out'].indexOf(p.type) >= 0 ? p.type : ''),   // before the 2nd weigh: what was ticked (load = Out, unload = In)
       uniq.join(', '), uniq.length,
       clip_(p.driver, 80), clip_(p.dest, 300), clip_(p.note, 300),
@@ -371,7 +384,7 @@ function scSave_(ops, user) {
       clip_(p.warn, 300), pdf, old ? old[23] : (clip_(p.op, 80) || user.name), old ? old[24] : new Date(), user.name, new Date(), cid,
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
-      scAgainText_(old ? old[30] : '', p.again, user)];   // tarpaulin covered at the 2nd weigh
+      scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar];   // tarpaulin covered at the 2nd weigh
     let row;
     if (old) {
       row = idx + 2;
