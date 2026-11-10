@@ -509,8 +509,8 @@
         ${sel ? `<button type="button" class="btn big againbtn" id="agBtn">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</button><button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងបញ្ចប់ + រក្សាទុក', 'Finish weigh + Save')}</button>`
               : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
       </div>
-      ${isAdmin() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
-        : `<button type="button" class="link" id="manOn">✍ ${t('វាយទម្ងន់ដោយដៃ (Admin)', 'Type a weight (Admin)')}</button>`}<div id="manBox"></div></div>` : ''}
+      ${canType() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
+        : `<button type="button" class="link" id="manOn">✍ ${manAll() ? t('វាយទម្ងន់ដោយដៃ', 'Type a weight') : t('វាយទម្ងន់ដោយដៃ (Admin)', 'Type a weight (Admin)')}</button>`}<div id="manBox"></div></div>` : ''}
       ${tr && !sel ? truckInfoHtml(tr) : ''}
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
@@ -638,6 +638,9 @@
     if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
     return true;
   }
+  // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
+  const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
+  const canType = () => isAdmin() || manAll();
   const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '' });
 
   function weigh1() {
@@ -1889,6 +1892,8 @@
         <label class="chip"><input type="radio" name="rPaper" value="A5"${paper() === 'A5' ? ' checked' : ''}> A5</label></div></div>
       ${s.SCALE_TEMPLATE_LINK ? `<div class="btns mt"><button type="button" class="btn" id="rA5">📄 ${t('ទាញយកច្បាប់ចម្លង A5 (Word)', 'Download an A5 copy (Word)')}</button>
         <button type="button" class="btn" id="rTest">🧪 ${t('សាកល្បងគំរូ (PDF)', 'Test the template (PDF)')}</button></div>` : ''}
+      <div class="mt"></div><label class="chip mt"><input type="checkbox" id="rMan"${manAll() ? ' checked' : ''}> ✍ ${t('អនុញ្ញាតអ្នកថ្លឹងទាំងអស់ វាយទម្ងន់ (kg) ដោយដៃ (ត្រូវមានមូលហេតុ)', 'Allow every weigher to type the weight (kg) by hand (reason required)')}</label>
+      <p class="hint">${t('មិនធីក = មានតែ Admin ទេដែលអាចវាយបាន។ ទម្ងន់វាយដោយដៃ មានសញ្ញា ✍ និងកត់ត្រាមូលហេតុ។', 'Not ticked = only Admins can type a weight. Typed weights are marked ✍ and the reason is logged.')} ${t('ចុច រក្សាទុក ខាងក្រោម។', 'Press Save below.')}</p>
       <div class="mt"></div><label class="chip mt"><input type="checkbox" id="rAuto"${get('sc_autoprint') === '1' ? ' checked' : ''}> ${t('បោះពុម្ពដោយខ្លួនឯង ក្រោយថ្លឹងលើកទី២ (កុំព្យូទ័រនេះ)', 'Print by itself after the 2nd weigh (this PC)')}</label>
       <div class="btns mt"><button type="button" class="btn ok" id="rSave">💾 ${t('រក្សាទុក', 'Save')}</button></div>`;
     $('#rAuto').onchange = e => set('sc_autoprint', e.target.checked ? '1' : null);
@@ -1902,7 +1907,7 @@
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busy(b, true);
       try {
-        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim() });
+        const r = await api('scSettings', { SCALE_TARE_PCT: $('#rPct').value, SCALE_MIN_KG: $('#rMin').value, SCALE_PREFIX: $('#rPre').value.replace(/[^0-9A-Za-z]/g, '') || 'WB', SCALE_COMPANY: $('#rCo').value, SCALE_SIGN: $('#rSign').value, SCALE_TEMPLATE_LINK: $('#rTpl').value.trim(), SCALE_TEMPLATE_A5_LINK: $('#rTpl5').value.trim(), SCALE_MANUAL_ALL: $('#rMan').checked ? 'Yes' : 'No' });
         B.settings = r.settings; set('sc_boot', JSON.stringify(B)); toast(t('បានរក្សាទុក', 'Saved'));
         if (tplOn()) tplLoad(true).catch(e => toast(e.message)); else { ['A4', 'A5'].forEach(z => { TPL[z] = null; tplCache(z, null); }); }
         setRules();
@@ -1987,7 +1992,7 @@
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
     if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
-    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
+    if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_MANUAL_ALL'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
   }
 })();
