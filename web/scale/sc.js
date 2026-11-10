@@ -566,22 +566,21 @@
     const addDn = raw => {
       if (document.querySelector('.popwrap')) return;   // a message is open: the input's blur must not open a 2nd one
       if ($('#fDn')) $('#fDn').value = '';   // else repainting the form blurs the box and adds the same text again
-      const used = [], before = F.dns.length;
+      const used = [];
       khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => {
         const u = dnUsedBy(d);
         if (u) { used.push([d, u]); return; }   // one DN, one ticket (Kim, 9 Nov 2026)
         if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d);
       });
-      const added = F.dns.length > before;
       keepForm(); paintForm();
       if (used.length) popup(used.map(x => `<p>⚠️ <b class="mono">${esc(x[0])}</b><br>${t('DN នេះបានប្រើរួចហើយ តាំងពី', 'This DN was used already since')} <b>${esc(x[1].date)}</b>${x[1].no ? ` · ${t('ប័ណ្ណ', 'ticket')} <span class="mono">${esc(x[1].no)}</span>` : ''}.</p>`).join(''), () => $('#fDn') && $('#fDn').focus());
-      else setTimeout(() => { const k = added ? $('[data-dk="' + (F.dns.length - 1) + '"]') : null, e = k || $('#fDn'); if (e) e.focus(); }, 0);   // scan a DN, then type its kg
+      else setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);   // scan every DN first, type the kg after (Kim, 10 Nov 2026)
     };
     const dn = $('#fDn');
     if (dn) {
     dn.oninput = () => { const v = khNum(dn.value); if (v !== dn.value) dn.value = v; };   // a scanner on the Khmer keyboard types ០-៩
     dn.onkeydown = e => {
-      if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab' || e.key === ' ') { if (dn.value.trim()) { e.preventDefault(); addDn(dn.value); } }
+      if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab' || e.key === ' ') { if (dn.value.trim()) { e.preventDefault(); addDn(dn.value); } else if (e.key === 'Enter') { const k = $$('[data-dk]').find(k => !k.value); if (k) { e.preventDefault(); k.focus(); } } }   // Enter on an empty box: to the first empty kg
       else if (e.key === 'Backspace' && !dn.value && F.dns.length) { F.dns.pop(); keepForm(); paintForm(); setTimeout(() => $('#fDn').focus(), 0); }
     };
     dn.onblur = () => { if (dn.value.trim()) addDn(dn.value); };
