@@ -884,7 +884,7 @@
   // ---------------------------------------------------------------- ticket list, search, Excel
   const ALL_FROM = '2020-01-01';   // "All" = every ticket (Kim, 10 Nov 2026: the default)
   let LIST = { from: ALL_FROM, to: today(), q: '', rows: null, more: false };
-  const QRANGES = [['all', 'ទាំងអស់', 'All'], ['today', 'ថ្ងៃនេះ', 'Today'], ['d7', '៧ ថ្ងៃចុងក្រោយ', 'Last 7 days'], ['month', 'ខែនេះ', 'This month']];
+  const QRANGES = [['all', 'ទាំងអស់', 'All'], ['today', 'ថ្ងៃនេះ', 'Today'], ['month', 'ខែនេះ', 'This month']];
   function rangeOf(k) {
     const d = new Date();
     if (k === 'all') return [ALL_FROM, ymd(d)];
