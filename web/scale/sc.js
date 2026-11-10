@@ -942,7 +942,8 @@
     if (!$('#lSum')) return;   // the list was left before the server answered
     const rows = listRows();
     const done = rows.filter(x => x.status === 'Done');
-    $('#lSum').innerHTML = `<b>${LIST.st === 'Open' ? rows.length : done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}${LIST.more ? ` <span class="badge pending">${t('បង្ហាញតែ ៥០០០ ប័ណ្ណចុងក្រោយ', 'Showing the newest 5,000 tickets')}</span>` : ''}`;
+    const open = rows.filter(x => x.status === 'Open').length, voids = rows.length - done.length - open;   // count every ticket shown (Kim, 10 Nov 2026)
+    $('#lSum').innerHTML = `<b>${rows.length}</b> ${t('ប័ណ្ណ', 'tickets')} (${done.length} ${t('រួចរាល់', 'complete')} · ${open} ${t('មិនទាន់រួច', 'open')}${voids ? ' · ' + voids + ' ' + t('បានលុប', 'cancelled') : ''}) · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}${LIST.more ? ` <span class="badge pending">${t('បង្ហាញតែ ៥០០០ ប័ណ្ណចុងក្រោយ', 'Showing the newest 5,000 tickets')}</span>` : ''}`;
     $('#lBody').innerHTML = rows.length ? ticketTable(rows) : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`;
     bindTable();
   }
