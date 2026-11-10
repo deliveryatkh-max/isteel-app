@@ -285,6 +285,8 @@ function scList_(p) {
     const d = r[13] instanceof Date ? r[13] : (r[24] instanceof Date ? r[24] : null);
     if (r[0] && d && d >= from && d <= to) out.push(scObj_(r));
   });
+  // "All" (Kim, 10 Nov 2026): send the newest 5000 instead of an error
+  if (out.length > 5000 && p.all) return { tickets: out.slice(-5000).reverse(), more: true };
   if (out.length > 5000) fail_('BAD', 'Too many tickets. Pick fewer days.', 'ប័ណ្ណច្រើនពេក។ សូមរើសថ្ងៃតិចជាងនេះ។');
   return { tickets: out.reverse() };
 }

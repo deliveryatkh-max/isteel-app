@@ -871,10 +871,12 @@
   function bindTable() { $$('[data-tk]').forEach(r => { r.onclick = () => { location.hash = '#/t/' + encodeURIComponent(r.dataset.tk); }; }); }
 
   // ---------------------------------------------------------------- ticket list, search, Excel
-  let LIST = { from: today(), to: today(), q: '', rows: null };
-  const QRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['d7', '៧ ថ្ងៃចុងក្រោយ', 'Last 7 days'], ['month', 'ខែនេះ', 'This month']];
+  const ALL_FROM = '2020-01-01';   // "All" = every ticket (Kim, 10 Nov 2026: the default)
+  let LIST = { from: ALL_FROM, to: today(), q: '', rows: null, more: false };
+  const QRANGES = [['all', 'ទាំងអស់', 'All'], ['today', 'ថ្ងៃនេះ', 'Today'], ['d7', '៧ ថ្ងៃចុងក្រោយ', 'Last 7 days'], ['month', 'ខែនេះ', 'This month']];
   function rangeOf(k) {
     const d = new Date();
+    if (k === 'all') return [ALL_FROM, ymd(d)];
     if (k === 'd7') { const a = new Date(d); a.setDate(d.getDate() - 6); return [ymd(a), ymd(d)]; }
     if (k === 'month') return [ymd(new Date(d.getFullYear(), d.getMonth(), 1)), ymd(d)];
     return [ymd(d), ymd(d)];
@@ -907,7 +909,8 @@
     LIST.rows = local; paintListBody();
     if (DEMO) return;
     try {
-      const r = await api('scList', { from: LIST.from, to: LIST.to });
+      const r = await api('scList', { from: LIST.from, to: LIST.to, all: LIST.from === ALL_FROM ? 1 : '' });
+      LIST.more = !!r.more;
       const map = {};
       r.tickets.forEach(x => { map[x.cid || x.no] = x; });
       local.forEach(x => { if (LOC[x.cid]) map[x.cid] = x; });
@@ -924,7 +927,7 @@
     if (!$('#lSum')) return;   // the list was left before the server answered
     const rows = listRows();
     const done = rows.filter(x => x.status === 'Done');
-    $('#lSum').innerHTML = `<b>${done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}`;
+    $('#lSum').innerHTML = `<b>${done.length}</b> ${t('ប័ណ្ណ', 'tickets')} · <b>${kg(done.reduce((s, x) => s + Number(x.net || 0), 0) / 1000)} t</b> ${t('សុទ្ធ', 'net')}${LIST.more ? ` <span class="badge pending">${t('បង្ហាញតែ ៥០០០ ប័ណ្ណចុងក្រោយ', 'Showing the newest 5,000 tickets')}</span>` : ''}`;
     $('#lBody').innerHTML = rows.length ? ticketTable(rows) : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`;
     bindTable();
   }
