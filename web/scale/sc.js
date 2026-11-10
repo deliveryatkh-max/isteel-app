@@ -295,7 +295,7 @@
 
   // ---------------------------------------------------------------- pickers (search, "+ Add new", like the Fuel app)
   const destsOf = s => String(s || '').split(/\s*,\s*/).filter(Boolean);
-  // Phnom Penh is the usual destination: ticked by default and first in the list (Kim, 10 Nov 2026)
+  // Phnom Penh is first in the Destination list (Kim, 10 Nov 2026; not ticked by default)
   const homeDest = () => { const l = (B && B.dests) || []; return l.find(v => /^12\s*PNH\b/i.test(v)) || l.find(v => v.indexOf('ភ្នំពេញ') >= 0) || ''; };
   const destList = () => { const l = (B && B.dests) || [], h = homeDest(); return h ? [h].concat(l.filter(v => v !== h)) : l; };
   function picker(input, opts) {
@@ -865,7 +865,7 @@
       // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
       $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
       $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || homeDest(), note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
