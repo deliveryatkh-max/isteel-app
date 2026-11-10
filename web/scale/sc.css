@@ -366,3 +366,5 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .dncmp.ok .vd b{color:#15803d}
 .dncmp.bad{background:#fee2e2;border:2px solid #dc2626}
 .dncmp.bad .vd b{color:#b91c1c}
+/* Scale again + Finish buttons stay in view while the form scrolls (Kim, 10 Nov 2026) */
+#formCard > .btns { position: sticky; bottom: -16px; z-index: 3; background: var(--card); margin: 12px -4px 0; padding: 10px 4px 26px; box-shadow: 0 -8px 12px -8px rgba(1, 30, 65, .25); }
