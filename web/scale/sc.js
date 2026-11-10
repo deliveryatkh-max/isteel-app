@@ -655,6 +655,13 @@
   // "Scale again" (Kim's option A, 9 Nov 2026): a truck parked overnight is weighed again, as often as needed, before its 2nd weigh.
   const againTol = () => Math.max(0, Number(S().SCALE_AGAIN_KG) || 20);
   const lastAgain = x => (x && x.again && x.again.length ? x.again[x.again.length - 1] : null);
+  /** A ticket still on site, printed with its last "Scale again" weight as the 2nd weight (Kim, 10 Nov 2026). Finished tickets print as they are. */
+  function forPrint(x) {
+    const c = x && x.status === 'Open' ? lastAgain(x) : null;
+    if (!c) return x;
+    const g = CORE.finish(Number(x.w1), Number(c.kg), truckOf(x.plate), S().SCALE_TARE_PCT);
+    return Object.assign({}, x, { w2: c.kg, t2: c.t, s2: c.src || 'Scale', gross: g.gross, tare: g.tare, net: g.net, type: dirOf(x.w1, c.kg), agn: x.again.length });
+  }
   const agCls = d => (Math.abs(d) <= againTol() ? 'same' : d > 0 ? 'heavy' : 'light');
   const agTxt = d => (Math.abs(d) <= againTol() ? t('ដូចមុន', 'Same as before') : d > 0 ? t('ធ្ងន់ជាងមុន', 'Heavier than before') : t('ស្រាលជាងមុន', 'Lighter than before'));
   const sgn = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + kg(Math.abs(d));
@@ -669,8 +676,9 @@
     if (a && Date.now() - new Date(a.t) < 60000 && Math.abs(Number(a.kg) - w.kg) <= againTol()) { toast(t('បានរក្សាទុករួចហើយ', 'Already saved')); return; }   // one tap = one row
     const c = { t: iso(new Date()), kg: w.kg, diff: Math.round(w.kg - (a ? Number(a.kg) : Number(sel.w1))), by: me().name || '', src: w.src };
     putTicket(Object.assign({}, sel, fromForm(), { again: (sel.again || []).concat(c) }));
-    MANUAL = null; PENDING = null; LASTDONE = '';
+    MANUAL = null; PENDING = null; LASTDONE = sel.cid;   // Print / PDF under the buttons, as after the 2nd weigh
     F = EMPTY_F(); keepForm();
+    if (get('sc_autoprint') === '1') printTicket(forPrint(ticketBy(sel.cid)));
     toast('🔁 ' + sel.plate + ' · ' + kg(w.kg) + ' kg · ' + t('រក្សាទុកហើយ (មិនទាន់ចេញ)', 'saved, still on site'));
     paintForm(); paintLists(); paintLcd();
   }
@@ -722,12 +730,15 @@
 
   function doneHtml(tk) {
     if (!tk) return '';
+    tk = forPrint(tk);
+    if (tk.agn) return `<div class="donebox"><div><b>🔁 ${esc(tk.no)}</b> · ${esc(tk.plate)} · ${t('ថ្លឹងម្តងទៀត', 'Scale again')} <b>${kg(tk.w2)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(tk.net)} kg</b> <span class="badge follow">${t('មិនទាន់ចេញ', 'Still on site')}</span></div>
+      <div class="btns"><button type="button" class="btn ok" data-print="${esc(tk.cid)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(tk.cid)}">📄 PDF</button></div></div>`;
     return `<div class="donebox"><div><b>✅ ${esc(tk.no)}</b> · ${esc(tk.plate)} · ${t('សុទ្ធ', 'Net')} <b>${kg(tk.net)} kg</b>${tk.warn ? ` <span class="badge pending">⚠️ ${t('មានការព្រមាន', 'Warning')}</span>` : ''}</div>
       <div class="btns"><button type="button" class="btn ok" data-print="${esc(tk.cid)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(tk.cid)}">📄 PDF</button></div></div>`;
   }
   function bindDone() {
-    $$('[data-print]').forEach(b => { b.onclick = () => { const tk = ticketBy(b.dataset.print); if (tk) printTicket(tk); }; });
-    $$('[data-pdf]').forEach(b => { b.onclick = async () => { const tk = ticketBy(b.dataset.pdf); if (!tk) return; busy(b, true); try { await downloadPdf(tk); } catch (e) { toast(e.message); } busy(b, false); }; });
+    $$('[data-print]').forEach(b => { b.onclick = () => { const tk = ticketBy(b.dataset.print); if (tk) printTicket(forPrint(tk)); }; });
+    $$('[data-pdf]').forEach(b => { b.onclick = async () => { const tk = ticketBy(b.dataset.pdf); if (!tk) return; busy(b, true); try { await downloadPdf(forPrint(tk)); } catch (e) { toast(e.message); } busy(b, false); }; });
   }
 
   let lcdRaf = 0;
@@ -1260,7 +1271,7 @@
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
       <div class="btns mt">
         <a class="btn" href="#/list">← ${t('ត្រឡប់', 'Back')}</a>
-        ${x.status !== 'Open' ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
+        ${x.status !== 'Open' || lastAgain(x) ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
         ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
         ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
         ${x.err && x.cid && LOC[x.cid] ? `<button type="button" class="btn" id="tRetry">↻ ${t('ផ្ញើម្តងទៀត', 'Send again')}</button>` : ''}
@@ -1426,6 +1437,7 @@
     font(22, 400); g.fillStyle = '#777';
     g.fillText('Weighed by ' + (x.op || '') + ' · weight read from the scale indicator (Keli XK3118K8)', M, H - M - 40);
     g.fillText('iSteel · Truck Scale · ' + ticketUrl(x).replace(/^https?:\/\//, ''), M, H - M - 8);
+    if (x.agn) { font(26, 700); g.fillStyle = '#6b3fa0'; g.fillText('SCALE AGAIN #' + x.agn + ' · truck still on site, not the final ticket', M, sy - 40); }
     if (x.status === 'Void' || [x.s1, x.s2].indexOf('Simulator') >= 0) {
       g.save(); g.translate(W / 2, H / 2); g.rotate(-Math.PI / 6); font(150, 700); g.fillStyle = 'rgba(179,38,30,.22)'; g.textAlign = 'center';
       g.fillText(x.status === 'Void' ? 'CANCELLED' : 'TEST', 0, 0); g.restore();
@@ -1521,7 +1533,7 @@
       DN: dns.join(', '), DNCount: String(dns.length), Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
-      Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
+      Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
       Printed: dmy(iso(new Date())) + ' ' + hm(iso(new Date())), CompanyName: S().SCALE_COMPANY || 'ISI STEEL',
     };
   }
