@@ -40,6 +40,7 @@ const SC_SETTINGS = [
   ['SCALE_DNC_USERS', '', 'Emails that can see the Debit Note check menu (comma separated). Admins always see it.'],
   ['SCALE_AGAIN_KG', '20', '"Scale again": a change up to this many kg counts as the same weight'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
+  ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -324,9 +325,11 @@ function scSave_(ops, user) {
     const w = k => { const v = num_(p[k]); return v === '' ? '' : Math.round(v); };
     const src = k => (SC_WEIGHT_SRC.indexOf(p[k]) >= 0 ? p[k] : '');
     [['w1', 's1'], ['w2', 's2']].forEach(x => {
-      if (w(x[0]) !== '' && src(x[1]) === 'Manual' && !(user.admin && reason)) {
+      // Everyone may type when an Admin set SCALE_MANUAL_ALL = Yes (Kim, 10 Nov 2026); a reason is still needed.
+      const may = user.admin || String(setting_('SCALE_MANUAL_ALL') || '').toLowerCase() === 'yes';
+      if (w(x[0]) !== '' && src(x[1]) === 'Manual' && !(may && reason)) {
         const before = old ? old[x[0] === 'w1' ? 12 : 15] : '';
-        if (Number(before) !== w(x[0])) fail_('DENIED', 'Only an Admin can type a weight, with a reason.', 'មានតែ Admin ទេដែលអាចវាយទម្ងន់ ដោយមានមូលហេតុ។');
+        if (Number(before) !== w(x[0])) fail_('DENIED', may ? 'A typed weight needs a reason.' : 'Only an Admin can type a weight, with a reason.', may ? 'ទម្ងន់វាយដោយដៃ ត្រូវមានមូលហេតុ។' : 'មានតែ Admin ទេដែលអាចវាយទម្ងន់ ដោយមានមូលហេតុ។');
       }
     });
     if (old) {
