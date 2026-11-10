@@ -205,11 +205,12 @@
         delete op.err; delete op.synced; delete op.pdf;   // pdf here is the Drive link; the file itself is sent only once
         const pdf = get('sc_pdf_' + cid);
         if (pdf) op.pdf = pdf;
+        [1, 2].forEach(n => { const ph = get(phKey(cid, n)); delete op['ph' + n]; if (ph && !tk['ph' + n]) op['ph' + n + 'img'] = ph; });   // each photo goes up once
         try {
           const r = await api('scSave', { ops: [op] });
           const s = ((r && r.saved) || [])[0] || {};   // an older server copy may answer without the list; the ticket is saved all the same
           const now = LOC[cid];
-          if (now) { now.no = s.no || now.no; if (s.pdf) now.pdf = s.pdf; now.synced = Date.now(); }
+          if (now) { now.no = s.no || now.no; if (s.pdf) now.pdf = s.pdf; if (s.ph1) now.ph1 = s.ph1; if (s.ph2) now.ph2 = s.ph2; now.synced = Date.now(); }
           // a newer change made while sending stays queued
           if (!now || now.v === op.v) Q = Q.filter(c => c !== cid);
           if (pdf && get('sc_pdf_' + cid) === pdf) set('sc_pdf_' + cid, null);
@@ -373,13 +374,14 @@
       <div class="grid2">
         <section class="card" id="formCard"></section>
         <section class="card">
+          <div class="cambox" id="camBox" hidden></div>
           <h2>🚚 ${t('ឡានកំពុងរង់ចាំថ្លឹងលើកទី២', 'On site, waiting for 2nd weigh')} <span class="cnt" id="siteCnt"></span></h2>
           <input type="search" class="in sitesearch" id="siteQ" data-live-ok autocomplete="off" placeholder="🔍 ${t('ស្វែងរកលេខឡាន', 'Search truck number')}" value="${esc(SITEQ)}">
           <div id="site"></div>
         </section>
       </div>`;   // the "Today" card was removed from this page (Kim, 8 Nov 2026): today's tickets are under Tickets
     $('#siteQ').oninput = e => { SITEQ = e.target.value; paintLists(); };
-    paintForm(); paintLcd(); paintLists();
+    paintForm(); paintLcd(); paintLists(); paintCam(); camStart(); prunePhotos();
     // The waiting list ends level with the form and scrolls by itself (Kim, 8 Nov 2026)
     if (window.ResizeObserver) new ResizeObserver(fitSite).observe($('#formCard'));
   }
@@ -419,6 +421,106 @@
     const m = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=|thumbnail\?id=)([\w-]{20,})/);
     if (m) return 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w800';
     return /^(https:\/\/|data:image\/)/.test(u) ? u : '';
+  }
+
+  // ---------------------------------------------------------------- weighbridge webcam (Kim's option B, 10 Nov 2026)
+  // A webcam on the scale PC (ticked in Settings › Scale connection) shows the truck live above the waiting list.
+  // A photo is taken by itself at the 1st and 2nd weigh (or the one taken with "Take photo" just before), kept on
+  // this PC for printing, and sent to Drive with the ticket (columns Photo 1st / Photo 2nd).
+  const CAM = { on: get('sc_cam') === '1', dev: get('sc_cam_dev') || '', stream: null, video: null, err: '', shot: null, starting: false, retry: 0 };
+  async function camStart() {
+    if (!CAM.on || CAM.stream || CAM.starting) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { CAM.err = t('កម្មវិធីរុករកនេះប្រើកាមេរ៉ាមិនបាន', 'This browser cannot use a camera'); paintCam(); return; }
+    CAM.starting = true;
+    try {
+      const v = { width: { ideal: 1280 }, height: { ideal: 720 } };
+      if (CAM.dev) v.deviceId = { exact: CAM.dev };
+      let st;
+      try { st = await navigator.mediaDevices.getUserMedia({ video: v, audio: false }); }
+      catch (e) { if (CAM.dev && e && e.name === 'OverconstrainedError') { delete v.deviceId; st = await navigator.mediaDevices.getUserMedia({ video: v, audio: false }); } else throw e; }
+      if (!CAM.on) { st.getTracks().forEach(x => x.stop()); return; }
+      CAM.stream = st;
+      if (!CAM.video) { CAM.video = document.createElement('video'); CAM.video.muted = true; CAM.video.playsInline = true; CAM.video.autoplay = true; CAM.video.className = 'camvid'; }
+      CAM.video.srcObject = st;
+      CAM.video.play().catch(() => {});
+      CAM.err = ''; CAM.retry = 0;
+      st.getVideoTracks().forEach(tr => { tr.onended = () => { CAM.stream = null; CAM.err = t('កាមេរ៉ាដាច់ · កំពុងភ្ជាប់ឡើងវិញ…', 'Camera unplugged · trying again…'); paintCam(); setTimeout(camStart, 3000); }; });
+    } catch (e) {
+      CAM.stream = null;
+      CAM.err = e && e.name === 'NotAllowedError' ? t('កាមេរ៉ាត្រូវបានបិទ: ចុចរូបកាមេរ៉ាលើរបារអាសយដ្ឋាន ហើយអនុញ្ញាត', 'Camera blocked: click the camera sign in the address bar and allow it')
+        : t('រកមិនឃើញកាមេរ៉ា: ដោតកាមេរ៉ា USB', 'No camera found: plug in the USB webcam') + (e && e.name && e.name !== 'NotFoundError' ? ' (' + e.name + ')' : '');
+      if (CAM.on && e && e.name !== 'NotAllowedError') setTimeout(camStart, Math.min(60000, 5000 * ++CAM.retry));   // plugged in later: it starts by itself
+    } finally { CAM.starting = false; }
+    paintCam();
+  }
+  function camStop() { if (CAM.stream) CAM.stream.getTracks().forEach(x => x.stop()); CAM.stream = null; }
+  /** A JPEG of the camera now (at most 960 px wide) with the date, time and words stamped on it, or '' with no picture. */
+  function camGrab(label) {
+    const v = CAM.video;
+    if (!CAM.stream || !v || !v.videoWidth) return '';
+    const w = Math.min(960, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    g.drawImage(v, 0, 0, w, h);
+    const now = new Date();
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, h - 34, w, 34);
+    g.fillStyle = '#fff'; g.font = '600 20px sans-serif';
+    g.fillText(dmy(iso(now)) + ' ' + hm(iso(now)) + ':' + pad(now.getSeconds()) + (label ? '  ·  ' + label : ''), 10, h - 11);
+    return c.toDataURL('image/jpeg', 0.72);
+  }
+  const phKey = (cid, n) => 'sc_ph' + n + '_' + cid;
+  const phLocal = (x, n) => (x && x.cid ? get(phKey(x.cid, n)) || '' : '');
+  const phSrc = (x, n) => phLocal(x, n) || photoSrc(x && x['ph' + n]);
+  /** Keeps the photo for the 1st (n = 1) or 2nd (n = 2) weigh: the one just taken with "Take photo", else one taken now. */
+  function keepPhoto(cid, n, label) {
+    if (!CAM.on) return false;
+    const s = CAM.shot && CAM.shot.cid === F.cid && Date.now() - CAM.shot.at < 300000 ? CAM.shot.img : camGrab(label);
+    CAM.shot = null;
+    if (!s || !set(phKey(cid, n), s)) return false;
+    const ix = getJ('sc_phs', {}); ix[cid] = Date.now(); set('sc_phs', JSON.stringify(ix));
+    return true;
+  }
+  /** Photos stay on this PC 3 days after the truck left (for printing again), then only in Drive. */
+  function prunePhotos() {
+    const ix = getJ('sc_phs', {}), old = Date.now() - 3 * 864e5;
+    let ch = false;
+    Object.keys(ix).forEach(cid => {
+      const x = ticketBy(cid);
+      if (ix[cid] > old || (x && x.status === 'Open') || Q.indexOf(cid) >= 0) return;
+      set(phKey(cid, 1), null); set(phKey(cid, 2), null); delete ix[cid]; ch = true;
+    });
+    if (ch) set('sc_phs', JSON.stringify(ix));
+  }
+  function camThumb(src, cap, empty) {
+    return src ? `<figure class="camth" data-big="${esc(src)}"><img src="${esc(src)}" alt=""><figcaption>${cap}</figcaption></figure>`
+      : `<figure class="camth none"><div>${empty}</div></figure>`;
+  }
+  function paintCam() {
+    const box = $('#camBox');
+    if (!box) return;
+    if (!CAM.on) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    if (CAM.shot && CAM.shot.cid !== F.cid) CAM.shot = null;
+    const sel = ticketBy(F.cid), p1 = sel ? phSrc(sel, 1) : '', shot = CAM.shot ? CAM.shot.img : '';
+    const th = sel
+      ? camThumb(p1, `📷 ${t('លើកទី១', '1st')} · ${hm(sel.t1)} · ${kg(sel.w1)} kg`, t('លើកទី១: គ្មានរូប', '1st weigh: no photo'))
+        + camThumb(shot, `📸 ${t('លើកទី២ (ថតហើយ)', '2nd (taken)')}`, `📷 ${t('លើកទី២: ថតពេលចុច "ថ្លឹងបញ្ចប់"', '2nd: taken at Finish')}`)
+      : camThumb(shot, `📸 ${t('ថតហើយ', 'Taken')}`, `📷 ${t('លើកទី១: ថតពេលចុច "ថ្លឹងលើកទី១"', '1st: taken at Weigh 1st')}`);
+    box.innerHTML = `<div class="camhead"><b>📷 ${t('កាមេរ៉ាស្ពានថ្លឹង', 'Weighbridge camera')}</b><span class="campill ${CAM.stream ? 'on' : 'off'}">${CAM.stream ? '● LIVE' : t('គ្មានរូប', 'No picture')}</span></div>
+      <div class="camview" id="camView">${CAM.stream ? '' : `<div class="camerr">${esc(CAM.err || t('កំពុងបើកកាមេរ៉ា…', 'Starting the camera…'))}</div>`}
+        <button type="button" class="camcap" id="camShot"${CAM.stream ? '' : ' disabled'}>📸 ${t('ថតរូប', 'Take photo')}</button></div>
+      <div class="camths">${th}</div>`;
+    if (CAM.stream && CAM.video) { $('#camView').prepend(CAM.video); CAM.video.play().catch(() => {}); }
+    $('#camShot').onclick = () => {
+      const img = camGrab(F.plate || '');
+      if (!img) { toast(t('គ្មានរូបពីកាមេរ៉ា', 'No picture from the camera')); return; }
+      CAM.shot = { img: img, at: Date.now(), cid: F.cid };
+      toast('📸 ' + t('ថតហើយ · រក្សាទុកពេលថ្លឹង', 'Taken · saved with the weigh'));
+      paintCam();
+    };
+    box.querySelectorAll('[data-big]').forEach(f => { f.onclick = () => popup(`<img class="campop" src="${esc(f.dataset.big)}" alt="">`); });
+    fitSite();
   }
   /** dd-mm-yyyy or yyyy-mm-dd → days from today (negative = past), or null. */
   function daysTo(d) {
@@ -617,6 +719,7 @@
     bindDone();
     paintWarn();
     paintButtons();
+    paintCam();
   }
 
   /** The ticket a DN is already on (another ticket, not cancelled), from this PC's tickets and the server's list of every DN used. */
@@ -670,6 +773,7 @@
     const known = tickets().map(x => x.no);
     const tk = Object.assign(fromForm(), { cid: uid(), no: CORE.nextNo(S().SCALE_PREFIX || 'WB', new Date(), known), status: 'Open',
       w1: w.kg, t1: iso(new Date()), s1: w.src, w2: '', t2: '', s2: '', warn: '', op: me().name || '', reason: w.src === 'Manual' ? MANUAL.reason : '' });
+    keepPhoto(tk.cid, 1, tk.plate + ' · 1st ' + kg(tk.w1) + ' kg');   // webcam photo (Kim, 10 Nov 2026)
     putTicket(tk);
     MANUAL = null; LASTDONE = '';
     F = EMPTY_F(); keepForm();
@@ -761,6 +865,7 @@
     const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
       warn: g.warn.map(x => x.en).join(' | '), reason: reason, dnTot: ds == null ? '' : ds, dnVar: ds == null ? '' : g.net - ds });
     PENDING = null; MANUAL = null;
+    keepPhoto(tk.cid, 2, tk.plate + ' · 2nd ' + kg(tk.w2) + ' kg · Net ' + kg(tk.net) + ' kg');
     putTicket(tk);
     LASTDONE = tk.cid;
     F = EMPTY_F(); keepForm();
@@ -1003,11 +1108,11 @@
   function exportXls() {
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
-    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator'];
+    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd'];
     const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
-      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '']);
+      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
-    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14][i] }));
+    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14, 30, 30][i] }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Scale Tickets');
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
@@ -1324,6 +1429,7 @@
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
       ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(x.net)} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
+      ${phSrc(x, 1) || phSrc(x, 2) ? `<div class="camths mt">${camThumb(phSrc(x, 1), '📷 ' + t('លើកទី១', '1st weigh') + ' · ' + hm(x.t1), t('គ្មានរូប', 'No photo'))}${camThumb(phSrc(x, 2), '📷 ' + t('លើកទី២', '2nd weigh') + (x.t2 ? ' · ' + hm(x.t2) : ''), t('គ្មានរូប', 'No photo'))}</div>` : ''}
       ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
@@ -1487,9 +1593,25 @@
     y += 150;
     if (x.warn) { font(22, 600); g.fillStyle = '#8a5a00'; wrap('Warning: ' + x.warn, W - 2 * M).slice(0, 3).forEach(l => { g.fillText(l, M, y); y += 30; }); }
 
+    // webcam photos of the truck (Kim, 10 Nov 2026), small, side by side, when this PC has them and they fit
+    let sgap = 110;
+    const phs = [[phLocal(x, 1), '1st weigh'], [phLocal(x, 2), '2nd weigh']].filter(a => a[0]);
+    if (phs.length && y - 20 + 130 + 45 + 40 <= H - M - 60) {
+      const ph = 130, pw = Math.round(ph * 16 / 9), py = y - 20;
+      for (let i = 0; i < phs.length; i++) {
+        const im = await new Promise(res => { const m = new Image(); m.onload = () => res(m); m.onerror = () => res(null); m.src = phs[i][0]; });
+        if (!im) continue;
+        const px = M + i * (pw + 24), r = Math.max(pw / im.width, ph / im.height), sw0 = pw / r, sh0 = ph / r;
+        g.drawImage(im, (im.width - sw0) / 2, (im.height - sh0) / 2, sw0, sh0, px, py, pw, ph);
+        g.strokeStyle = '#d0d7e2'; g.strokeRect(px, py, pw, ph);
+        font(18, 600); g.fillStyle = 'rgba(1,30,65,.8)'; g.fillRect(px, py, 112, 26); g.fillStyle = '#fff'; g.fillText(phs[i][1], px + 8, py + 19);
+      }
+      y = py + ph; sgap = 45;
+    }
+
     // signatures
     const names = String(S().SCALE_SIGN || 'Weigher, Driver, Security').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
-    const sy = Math.max(y + 110, H - M - 150), sw = (W - 2 * M - (names.length - 1) * 50) / names.length;
+    const sy = Math.max(y + sgap, H - M - 150), sw = (W - 2 * M - (names.length - 1) * 50) / names.length;
     names.forEach((n, i) => {
       const sx = M + i * (sw + 50);
       g.strokeStyle = '#777'; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + sw, sy); g.stroke();
@@ -1613,24 +1735,27 @@
     const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
     const xml = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     let qrTarget = '';
+    const picT = {};   // alt text -> picture file in the .docx (QR, PHOTO1, PHOTO2)
     for (const n of Object.keys(zip.files)) {
       if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(n)) continue;
       let d = await zip.file(n).async('string');
       d = d.replace(re, (all, k) => { k = k.replace(/<[^>]*>/g, ''); return Object.prototype.hasOwnProperty.call(vals, k) ? xml(vals[k]) : all; });
       zip.file(n, d);
       if (n === 'word/document.xml') {
-        const at = d.search(/<wp:docPr\b[^>]*(?:descr|title|name)="QR"/i);
-        const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
-        const rf = zip.file('word/_rels/document.xml.rels');
-        if (emb && rf) {
-          const rel = (await rf.async('string')).match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
+        const rf = zip.file('word/_rels/document.xml.rels'), rels = rf ? await rf.async('string') : '';
+        for (const key of ['QR', 'PHOTO1', 'PHOTO2']) {
+          const at = d.search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
+          const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
+          const rel = emb && rels.match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
           const tg = rel && rel[0].match(/Target="([^"]+)"/);
-          if (tg) qrTarget = 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '');
+          if (tg) picT[key] = 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '');
         }
+        qrTarget = picT.QR || '';
       }
     }
     const qr = qrPng(x);
     if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
+    [1, 2].forEach(k => { const ph = phLocal(x, k), tg = picT['PHOTO' + k]; if (ph && tg && zip.file(tg)) zip.file(tg, ph.split(',')[1], { base64: true }); });
     const box = document.createElement('div');
     box.className = 'tplbox';
     box.dataset.paper = pp;
@@ -1873,6 +1998,12 @@
       <div class="rawkg">${t('អានបាន', 'Read')}: <b id="rawKg">—</b></div>
       <pre class="raw" id="rawBox">—</pre>
       <p class="hint">${t('បើលេខខុស សូមប្តូរ Baud rate ឬទម្រង់ ហើយមើលម្តងទៀត។ ផ្ញើរូបប្រអប់នេះមក Claude ប្រសិនបើមិនទាន់ត្រូវ។', 'If the number is wrong, change the baud rate or format and look again. Send a screenshot of this box to Claude if it is still wrong.')}</p>
+      <h3 class="mt">📷 ${t('កាមេរ៉ាស្ពានថ្លឹង (កុំព្យូទ័រនេះ)', 'Weighbridge camera (this PC)')}</h3>
+      <p class="hint">${t('ដោតកាមេរ៉ា USB (webcam) ហើយធីក "បើក"។ រូបឡានបង្ហាញផ្ទាល់លើបញ្ជីឡានរង់ចាំ ហើយថតដោយខ្លួនឯងពេលថ្លឹងលើកទី១ និងទី២ (រក្សាទុកក្នុង Drive ជាមួយប័ណ្ណ)។',
+        'Plug in the USB webcam and tick On. The truck shows live above the waiting list, and a photo is taken by itself at the 1st and 2nd weigh (saved in Drive with the ticket).')}</p>
+      <div class="btns"><label class="chip${CAM.on ? ' on' : ''}"><input type="checkbox" id="camOn"${CAM.on ? ' checked' : ''}> ${t('បើក', 'On')}</label>
+        <select class="in" id="camDev" style="max-width:340px"${CAM.on ? '' : ' disabled'}><option value="">${t('កាមេរ៉ាលំនាំដើម', 'Default camera')}</option></select></div>
+      <div class="camview small mt" id="camTest"${CAM.on ? '' : ' hidden'}><div class="camerr">${esc(CAM.err || t('កំពុងបើកកាមេរ៉ា…', 'Starting the camera…'))}</div></div>
       <h3 class="mt">🧪 ${t('ម៉ាស៊ីនសាកល្បង (បណ្តុះបណ្តាល)', 'Simulator (training)')}</h3>
       <p class="hint">${t('សាកល្បងដោយគ្មានជញ្ជីង។ ប័ណ្ណមានសញ្ញា TEST។', 'Try the app without the scale. Tickets are marked TEST.')}</p>
       <div class="btns"><label class="chip${SIM.on ? ' on' : ''}"><input type="checkbox" id="simOn"${SIM.on ? ' checked' : ''}> ${t('បើក', 'On')}</label>
@@ -1886,6 +2017,16 @@
       if (SER.on) serialStart(false).then(setScale);
     };
     $('#simOn').onchange = e => { if (e.target.checked) simStart(); else simStop(); setScale(); };
+    const camTest = () => { const b = $('#camTest'); if (!b) return; if (CAM.stream && CAM.video) { b.innerHTML = ''; b.appendChild(CAM.video); CAM.video.play().catch(() => {}); } else b.innerHTML = `<div class="camerr">${esc(CAM.err || t('កំពុងបើកកាមេរ៉ា…', 'Starting the camera…'))}</div>`; };
+    const camList = async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      const l = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const sel = $('#camDev'); if (!sel) return;
+      sel.innerHTML = `<option value="">${t('កាមេរ៉ាលំនាំដើម', 'Default camera')}</option>` + l.map((d, i) => `<option value="${esc(d.deviceId)}"${d.deviceId === CAM.dev ? ' selected' : ''}>${esc(d.label || 'Camera ' + (i + 1))}</option>`).join('');
+    };
+    if (CAM.on) camStart().then(() => { camTest(); camList(); });
+    $('#camOn').onchange = e => { CAM.on = e.target.checked; set('sc_cam', CAM.on ? '1' : null); if (CAM.on) { CAM.err = ''; camStart().then(() => { camTest(); camList(); }); } else camStop(); $('#camDev').disabled = !CAM.on; $('#camTest').hidden = !CAM.on; e.target.parentNode.classList.toggle('on', CAM.on); camTest(); };
+    $('#camDev').onchange = e => { CAM.dev = e.target.value; set('sc_cam_dev', CAM.dev || null); camStop(); camStart().then(camTest); };
     $('#simKg').oninput = e => { SIM.target = +e.target.value; $('#simV').textContent = kg(SIM.target) + ' kg'; };
     paintLcd();
   }
@@ -1932,7 +2073,7 @@
         'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
-        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}}</span></details>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')}</span></details>
       <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
@@ -2022,7 +2163,7 @@
     if (action === 'scSave') {
       const out = [];
       p.ops.forEach(op => {
-        const o = Object.assign({}, op); delete o.pdf; delete o.reason;
+        const o = Object.assign({}, op); delete o.pdf; delete o.reason; delete o.ph1img; delete o.ph2img;
         const i = db.tickets.findIndex(x => x.cid === o.cid);
         if (o.w1 !== '' && o.w2 !== '' && o.w2 != null) { o.gross = Math.max(o.w1, o.w2); o.tare = Math.min(o.w1, o.w2); o.net = o.gross - o.tare; }
         if (i >= 0) db.tickets[i] = o; else db.tickets.push(o);
