@@ -17,7 +17,7 @@
 const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
-  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd'];
+  'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd', 'Empty Truck'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
@@ -201,7 +201,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2', 'empty1']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   o.again = scAgain_(o.again);
@@ -387,7 +387,8 @@ function scSave_(ops, user) {
       p.load === undefined && old ? old[28] : clip_(p.load, 80),
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
       scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar,
-      p.ph1img ? scPhoto_(p.ph1img, no, plate, 1) || (old ? old[34] : '') : (old ? old[34] : ''), p.ph2img ? scPhoto_(p.ph2img, no, plate, 2) || (old ? old[35] : '') : (old ? old[35] : '')];   // webcam photos (Kim, 10 Nov 2026)   // tarpaulin covered at the 2nd weigh
+      p.ph1img ? scPhoto_(p.ph1img, no, plate, 1) || (old ? old[34] : '') : (old ? old[34] : ''), p.ph2img ? scPhoto_(p.ph2img, no, plate, 2) || (old ? old[35] : '') : (old ? old[35] : ''),
+      p.empty1 === undefined && old ? old[36] : (['Yes', 'No'].indexOf(p.empty1) >= 0 ? p.empty1 : '')];   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     let row;
     if (old) {
       row = idx + 2;
@@ -590,7 +591,7 @@ function scTicketVals_(x) {
   const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
   const dns = Array.isArray(x.dns) ? x.dns : s(x.dns).split(/[,\s]+/).filter(Boolean);
   return {
-    TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest), Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '',
+    TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest), Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
     DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
     Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',

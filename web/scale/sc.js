@@ -588,6 +588,8 @@
       <div class="fgrid toprow">
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
+      ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')}</span>
+        <div class="chips jobchips"><label class="chip${F.empty1 === 'Yes' ? ' on' : ''}"><input type="checkbox" id="fEmpty1"${F.empty1 === 'Yes' ? ' checked' : ''}> ${t('ថ្លឹងលើកទី១ ជាឡានទទេ', '1st weigh is the empty truck')}</label></div></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       </div>
@@ -626,6 +628,7 @@
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
+    if ($('#fEmpty1')) $('#fEmpty1').onchange = e => { upd('empty1', e.target.checked ? 'Yes' : 'No'); paintForm(); };   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     // The truck number is fixed after the 1st weigh (Kim, 9 Nov 2026)
     if (!sel) picker($('#fPlate'), {
       list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true, fix: fixPlate,
@@ -764,7 +767,7 @@
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
   const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
   const canType = () => isAdmin() || manAll();
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
@@ -1025,7 +1028,7 @@
       // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
       $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
       $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), dnkg: Object.assign({}, x.dnkg || {}), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), dnkg: Object.assign({}, x.dnkg || {}), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '', empty1: x.empty1 || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
     }
     if ($('#todayList')) {
       const td = today();
@@ -1113,11 +1116,11 @@
   function exportXls() {
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
-    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd'];
+    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd', 'Empty Truck'];
     const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
-      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '']);
+      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '', x.empty1 === 'Yes' ? 'Yes' : x.empty1 === 'No' ? 'No' : '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
-    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14, 30, 30][i] }));
+    ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14, 30, 30, 10][i] }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Scale Tickets');
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
@@ -1428,7 +1431,7 @@
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
-        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
+        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), x.empty1 === 'Yes' ? t('បាទ', 'Yes') : x.empty1 === 'No' ? t('ទេ', 'No') : '')}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
@@ -1740,7 +1743,7 @@
     const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
     const dns = x.dns || [];
     return {
-      TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '',
+      TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
       DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
@@ -2102,7 +2105,7 @@
         'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
-        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')} · ${t('បាកូដលេខឡាន: រូបក្នុង Word ដែលមាន Alt Text "BARCODE"', 'Plate barcode: a picture in Word with alt text "BARCODE"')}</span></details>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{EmptyTruck}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')} · ${t('បាកូដលេខឡាន: រូបក្នុង Word ដែលមាន Alt Text "BARCODE"', 'Plate barcode: a picture in Word with alt text "BARCODE"')}</span></details>
       <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
