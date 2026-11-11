@@ -99,7 +99,8 @@
     const gross = Math.max(w1, w2), tare = Math.min(w1, w2), net = gross - tare;
     const warn = [];
     const pct = Number(tarePct) > 0 ? Number(tarePct) : 5;
-    const empty = truck && Number(truck.empty) > 0 ? Number(truck.empty) : 0;
+    // Actual Vehicle Weight (weighed) first, else Inspected Vehicle Weight (certificate) (Kim, 11 Nov 2026).
+    const empty = truck && Number(truck.empty) > 0 ? Number(truck.empty) : truck && Number(truck.insp) > 0 ? Number(truck.insp) : 0;
     const max = truck && Number(truck.max) > 0 ? Number(truck.max) : 0;
     if (empty) {
       const diff = (tare - empty) / empty * 100;

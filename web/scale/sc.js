@@ -542,7 +542,8 @@
         <div class="ti-head">🚚 <b class="mono">${esc(tr.plate)}</b></div>
         <div class="ti-row"><span>${t('ក្រុមហ៊ុន', 'Company')}</span><b>${esc(tr.company || '—')}</b></div>
         <div class="ti-w3">
-          <div><span>${t('ទម្ងន់ឡាន (kg)', 'Vehicle Weight (kg)')}</span><b>${kgv(tr.empty)}</b></div>
+          <div><span>${t('ទម្ងន់ឡានតាមប័ណ្ណត្រួតពិនិត្យ (kg)', 'Inspected Vehicle Weight (kg)')}</span><b>${kgv(tr.insp)}</b></div>
+          <div><span>${t('ទម្ងន់ឡានជាក់ស្តែង (kg)', 'Actual Vehicle Weight (kg)')}</span><b>${kgv(tr.empty)}</b></div>
           <div><span>${t('ផ្ទុកអតិបរមា (kg)', 'Max. Load (kg)')}</span><b>${kgv(i.load)}</b></div>
           <div><span>${t('ទម្ងន់សរុបអតិបរមា (kg)', 'Max. Gross Weight (kg)')}</span><b>${kgv(tr.max)}</b></div>
         </div>
@@ -1959,10 +1960,10 @@
     masterTable({
       kind: 'truck', title: '🚚 ' + t('បញ្ជីឡាន', 'Truck list'),
       note: t('បញ្ជីតែមួយ៖ ផ្ទាំង "Truck" ក្នុង Fuel Refill (មួយជួរ មួយឡាន)។ តៃកុងនៅផ្ទាំង "Driver & Truck" (CODE = ឡានធម្មតា)។ ទម្ងន់ទទេបំពេញដោយខ្លួនឯងពីការថ្លឹងលើកដំបូង។',
-        'One list: the "Truck" tab of the Fuel Refill sheet, one row per plate. Drivers are in the "Driver & Truck" tab (CODE = usual truck); any driver can take any truck. An empty Empty Weight fills itself from the truck\'s first weigh.'),
+        'One list: the "Truck" tab of the Fuel Refill sheet, one row per plate. Drivers are in the "Driver & Truck" tab (CODE = usual truck); any driver can take any truck. An empty Actual Vehicle Weight fills itself from the truck\'s first weigh.'),
       cols: [[t('លេខឡាន', 'Plate'), 'plate'], [t('ក្រុមហ៊ុន', 'Company'), 'company'], [t('ប្រភេទ', 'Truck type'), 'type'], [t('ទម្ងន់ទទេ (kg)', 'Empty (kg)'), 'empty', 'r'], [t('អតិបរមា (kg)', 'Max gross (kg)'), 'max', 'r'], [t('អ្នកបើកបរ', 'Drivers'), 'dr']],
       rows: trucks().map(x => Object.assign({}, x, { dr: x.drivers.join(', ') })),
-      tmpl: ['Plate', 'Company', 'Truck Type', 'Empty Weight (kg)', 'Max Gross (kg)'],
+      tmpl: ['Plate', 'Company', 'Truck Type', 'Actual Vehicle Weight (kg)', 'Max. Gross Weight (kg)'],
       toRow: r => [r.plate, r.company, r.type, r.empty, r.max],
       fromRow: a => (a[0] ? { plate: a[0].toUpperCase(), company: a[1], type: a[2], empty: a[3], max: a[4] } : null),
       form: r => inp('tPlate', t('លេខឡាន', 'Plate') + ' <span class="req">*</span>', r.plate, r.plate ? 'readonly' : '') + inp('tCo', t('ក្រុមហ៊ុន', 'Company'), r.company) + inp('tType', t('ប្រភេទឡាន', 'Truck type'), r.type) +
@@ -2089,7 +2090,7 @@
         ${inp('rCo', t('ឈ្មោះលើប័ណ្ណ', 'Name on the ticket'), s.SCALE_COMPANY)}
         ${inp('rSign', t('ប្រអប់ហត្ថលេខា (ក្បៀស)', 'Signature boxes (comma separated)'), s.SCALE_SIGN)}
       </div>
-      <p class="hint">${t('ការព្រមានលើសទម្ងន់ ប្រើ Max Gross (kg) ក្នុងបញ្ជីឡាន។', 'The overload warning uses Max Gross (kg) in the truck list.')}</p>
+      <p class="hint">${t('ការព្រមានលើសទម្ងន់ ប្រើ Max. Gross Weight (kg) ក្នុងបញ្ជីឡាន។', 'The overload warning uses Max. Gross Weight (kg) in the truck list.')}</p>
       <h3>📄 ${t('គំរូប័ណ្ណ Word', 'Ticket template (Word)')}</h3>
       <div class="field"><label class="f" for="rTpl">${t('Link Google Drive របស់ឯកសារ Word (ឬ Folder)', 'Google Drive link of the Word file (or its folder)')}</label>
         <input class="in" id="rTpl" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_LINK || '')}"></div>
