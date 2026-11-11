@@ -1707,6 +1707,28 @@
       return c.toDataURL('image/png');
     } catch (e) { return ''; }
   }
+  /** Code 128 (set B) barcode of a short text, e.g. the plate 3B-5956, as a PNG with the text under it. */
+  const C128 = '212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112'.split(' ');
+  function barcodePng(text) {
+    try {
+      const v = String(text || '').replace(/[^\x20-\x7e]/g, '').trim();
+      if (!v) return '';
+      const codes = [104];   // Start B
+      for (const ch of v) codes.push(ch.charCodeAt(0) - 32);
+      let sum = 104; for (let i = 1; i < codes.length; i++) sum += codes[i] * i;
+      codes.push(sum % 103, 106);   // check digit, Stop
+      const bars = codes.map(c => C128[c]).join('');
+      const unit = 4, quiet = 10 * unit, h = 120, txt = 40;
+      const w = [...bars].reduce((a, d) => a + +d, 0) * unit + 2 * quiet;
+      const c = document.createElement('canvas'); c.width = w; c.height = h + txt + 10;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+      let x = quiet;
+      [...bars].forEach((d, i) => { const bw = +d * unit; if (i % 2 === 0) g.fillRect(x, 0, bw, h); x += bw; });
+      g.font = '700 34px monospace'; g.textAlign = 'center'; g.fillText(v, w / 2, h + txt);
+      return c.toDataURL('image/png');
+    } catch (e) { return ''; }
+  }
   /** The words for each {{tag}} in the Word file. */
   function tplVals(x) {
     const when = v => (v ? dmy(v) + ' ' + hm(v) : '');
@@ -1735,7 +1757,7 @@
     const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
     const xml = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     let qrTarget = '';
-    const picT = {};   // alt text -> picture file in the .docx (QR, PHOTO1, PHOTO2)
+    const picT = {};   // alt text -> picture file in the .docx (QR, PHOTO1, PHOTO2, BARCODE)
     for (const n of Object.keys(zip.files)) {
       if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(n)) continue;
       let d = await zip.file(n).async('string');
@@ -1743,7 +1765,7 @@
       zip.file(n, d);
       if (n === 'word/document.xml') {
         const rf = zip.file('word/_rels/document.xml.rels'), rels = rf ? await rf.async('string') : '';
-        for (const key of ['QR', 'PHOTO1', 'PHOTO2']) {
+        for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE']) {
           const at = d.search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
           const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
           const rel = emb && rels.match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
@@ -1755,6 +1777,8 @@
     }
     const qr = qrPng(x);
     if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
+    const bc = picT.BARCODE && barcodePng(x.plate);
+    if (bc && zip.file(picT.BARCODE)) zip.file(picT.BARCODE, bc.split(',')[1], { base64: true });
     [1, 2].forEach(k => { const ph = phLocal(x, k), tg = picT['PHOTO' + k]; if (ph && tg && zip.file(tg)) zip.file(tg, ph.split(',')[1], { base64: true }); });
     const box = document.createElement('div');
     box.className = 'tplbox';
@@ -2073,7 +2097,7 @@
         'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
-        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')}</span></details>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')} · ${t('បាកូដលេខឡាន: រូបក្នុង Word ដែលមាន Alt Text "BARCODE"', 'Plate barcode: a picture in Word with alt text "BARCODE"')}</span></details>
       <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
