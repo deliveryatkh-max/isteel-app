@@ -322,3 +322,6 @@ img[data-zoom] { cursor: zoom-in; }
   .logbar { position: sticky; top: calc(54px + env(safe-area-inset-top)); z-index: 4; background: var(--bg); margin: -16px -16px 4px; padding: 12px 16px 2px; box-shadow: 0 6px 8px -8px rgba(1,30,65,.25); }
   .logbar .range { margin-bottom: 10px; }
 }
+/* one truck, several POs (Kim, 11 Nov 2026) */
+.itbl tr.porow td { background: #011e41; color: #fff; padding: 6px 8px; font-size: 13px; text-align: left; }
+.itbl tr.porow small { opacity: .8; margin-left: 4px; }

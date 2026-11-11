@@ -52,7 +52,7 @@ ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
 const ARR = { po: 'PO5100012725', truck: '3e 2588', dn3pl: 'DN-778', ph: { front: PHOTO, load: PHOTO, doc: PHOTO },
   items: [{ material: '1100000230', arrQty: 20000 }, { material: '1100000231', arrQty: '23,550' }] };
 ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), ph: { front: PHOTO } }) }).error), 'photos required');
-ok(/not on this PO/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
+ok(/not on PO5100012725/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
 ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
 ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: '' }) }).error), '3PL DN required');
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
@@ -294,4 +294,15 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const last = s1.files[s1.files.length - 1].exported, s2 = get({ action: 'grSync', key: 'k-0123456789abcdefghij', since: last }).data;
   ok(s2.files.every(f => f.exported > last) && s1.files.concat(s2.files).some(f => f.replaces) && s1.files.length + s2.files.length === nDone, 'next call: only newer files; the edited one carries the old name to remove');
   eq(get({}).app, 'Inbound', 'plain GET still answers'); }
+// one truck, two POs (Kim, 11 Nov 2026)
+{ const M = Object.assign({}, ARR, { po: '', pos: ['PO5100012725', 'PO5100012751'], dn3pl: 'DN-MULTI', truck: '2A-2233',
+    items: [{ po: 'PO5100012751', material: '1200000101', arrQty: 5000 }, { po: 'PO5100012725', material: '1100000230', arrQty: 100 }] });
+  ok(/PO9 is not in the Incoming Plan/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, M, { pos: ['PO9'] }) }).error), 'unknown PO refused');
+  const m = must(call('sok@x.com', 'start', { receipt: M }));
+  eq([m.po, m.pos, m.supplier, m.items.map(i => i.po)], ['PO5100012725, PO5100012751', ['PO5100012725', 'PO5100012751'], 'Regency, Zinc Co', ['PO5100012725', 'PO5100012751']], 'two POs on one receipt, items in PO order');
+  const f = must(call('sok@x.com', 'finish', { receipt: { id: m.id, owner: 'ISI', manpower: 3, items: [{ po: 'PO5100012725', material: '1100000230', grQty: 100 }, { po: 'PO5100012751', material: '1200000101', grQty: 4900 }] } }));
+  eq(f.items.map(i => i.grQty), [100, 4900], 'GR matched by PO + material');
+  const lg = env.ss.getSheetByName('GR Log').rows.filter(r => r[0] === m.id);
+  eq(lg.map(r => r[2]), ['PO5100012725', 'PO5100012751'], 'log rows keep each item\'s PO');
+  ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012751' }).error), 'second PO counts as received'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

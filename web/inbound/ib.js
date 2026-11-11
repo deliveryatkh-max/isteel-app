@@ -148,9 +148,17 @@
   }
   // the greyed fields copied from the plan
   function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
-  function item(p) { return { material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
+  // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
+  const posOf = r => r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/).filter(Boolean);
+  const itemPo = (i, r) => i.po || posOf(r)[0] || '';
+  const multi = r => posOf(r).length > 1;
+  function headerOf(pos) {
+    const ls = pos.map(po => PLAN.find(x => x.po === po)).filter(Boolean), j = k => Array.from(new Set(ls.map(l => l[k]).filter(Boolean))).join(', ');
+    return { po: pos.join(', '), pos: pos.slice(), inbound: j('inbound'), ref: j('ref'), supplier: j('supplier'), eta: ls.length ? ls[0].eta : '', uom: 'Kg' };
+  }
+  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
-  const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
+  const recvd = (po, mat, skip) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
   // a PO is pending while any of its lines still has kg to receive
   const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
@@ -429,7 +437,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
-      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, +i.dmgQty > 0 ? i.dmgUom || r.uom : '', dmgEn(i.dmgType), isLessItem(i) ? 'Yes' : '', r.uom,
+      itemPo(i, r), i.inbound || r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, +i.dmgQty > 0 ? i.dmgUom || r.uom : '', dmgEn(i.dmgType), isLessItem(i) ? 'Yes' : '', r.uom,
       showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
       r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.warehouse || '', r.remark,
     ].map(q).join(','))));
@@ -449,7 +457,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', site: SITE || '', ph: {} }; }
+  function blank() { return { id: '', po: '', pos: [], inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', site: SITE || '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
   // entrances of one warehouse (Warehouse List tab: Warehouse | Entrance | Description); old tabs have no warehouse = all
   const ents = site => WAREHOUSES.filter(w => !w.site || !site || w.site === site);
@@ -472,8 +480,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   function itemsTable(r, mode) {
     const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0">`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
+    const mp = multi(r); let lastPo = null;
     const rows = r.items.map((i, n) => {
       const less = isLessItem(i), dm = +i.dmgQty > 0;
+      let head = '';
+      if (mp && itemPo(i, r) !== lastPo) {
+        lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
+        head = `<tr class="porow"><td colspan="5"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
+      }
       let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c1">${cell(i, n, 'poQty', false)}</td>
@@ -493,7 +507,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
             <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
           </div></td></tr>`;
       }
-      return out;
+      return head + out;
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl">
@@ -513,20 +527,20 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
-    const pend = r.po ? pendingLines(r.po, r.id) : [];
+    const pend = [].concat.apply([], posOf(r).map(po => pendingLines(po, r.id)));
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
       ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(r.po)}</small></h2>${itemsTable(r, mode)}</section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
-        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('តែ PO មិនទាន់ទទួលគ្រប់', 'pending POs only')}</small></label>
+        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
         ${r.po ? `
         <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey('Ref. No.', r.ref)}</div>
         <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
-        ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
+        ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose the PO (or several POs on one truck) to fill the details from the plan automatically.')}</p>`}
       </section>`}
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
@@ -565,13 +579,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
     $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
   }
-  function pickPO(po) {
+  function pickPOs(list) {
     const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower };
-    const b = blank(); const l = PLAN.find(x => x.po === po);
-    F = Object.assign(b, l ? header(l) : {}, keep);
+    const old = F.items || [], was = F;
+    const b = blank(); const l = PLAN.find(x => x.po === list[0]);
+    F = Object.assign(b, list.length ? headerOf(list) : {}, keep);
     if (l && l.site) F.site = l.site;   // the PO's warehouse from the packing list
-    const pend = pendingLines(po, F.id);
-    if (pend.length === 1) F.items = [item(pend[0])];
+    // items already chosen stay; a PO with one pending line gets it at once
+    list.forEach(po => { const had = old.filter(i => itemPo(i, was) === po), pend = pendingLines(po, F.id); F.items = F.items.concat(had.length ? had : pend.length === 1 ? [item(pend[0])] : []); });
   }
   // photos are shrunk on the phone (long side 1280 px, JPEG) so saving stays fast on 4G
   // photo stamp like the Fuel app (Kim, 2 Nov 2026): navy band under the photo, receipt no. left, ISI STEEL + date/time right
@@ -667,13 +682,15 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     $$('[data-it]').forEach(el => { el.oninput = live; });
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
-    pk('po', () => ({ title: t('លេខ PO (មិនទាន់ទទួលគ្រប់)', 'PO Number (pending only)'), value: F.po,
-      groups: [{ items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }) }],
-      onPick: v => { pickPO(v); re(); } }));
+    const pob = $('#po');
+    if (pob && !pob.classList.contains('off')) pob.onclick = () => { collect(); openMulti({ title: t('លេខ PO (ជ្រើសបានច្រើន)', 'PO Number (one or more)'), value: posOf(F),
+      items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
+      onDone: v => { pickPOs(v); re(); } }); };
     const it = $('#items');
-    if (it) it.onclick = () => { collect(); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(i => i.material),
-      items: pendingLines(F.po, F.id).map(x => ({ value: x.material, label: x.desc, sub: x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })),
-      onDone: mats => { const had = {}; F.items.forEach(i => { had[i.material] = i; }); F.items = mats.map(mt => had[mt] || item(lineOf(F.po, mt))); re(); } }); };
+    if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material; openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
+      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: po + '|' + x.material, label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
+      onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
+        F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
     $$('[data-it]').forEach(el => { el.onchange = re; });
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
@@ -984,7 +1001,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     };
   }
   // File name for the PDF and the email (Kim, 6 Nov 2026): IB-261106-14 PO 5100013709 3A-3057
-  const fileName = r => [r.id, r.po ? 'PO ' + String(r.po).replace(/^PO\s*/i, '') : '', r.truck].filter(String).join(' ').replace(/[\\/:*?"<>|]/g, '-');
+  const fileName = r => [r.id, posOf(r).length ? 'PO ' + posOf(r).map(x => x.replace(/^PO\s*/i, '')).join('+') : '', r.truck].filter(String).join(' ').replace(/[\\/:*?"<>|]/g, '-');
   const mailSubject = r => 'Goods receipt ' + r.id + ': ' + r.po + ' · ' + r.truck + ((r.items || []).some(i => +i.dmgQty > 0) ? ' · DAMAGED' : '') + ((r.items || []).some(isLessItem) ? ' · RECEIVED LESS' : '');
   function savePdf(x) {
     const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
@@ -1074,7 +1091,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), r.site || '', two('ច្រកចូល', 'Entrance'), whName(r.warehouse)]])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
-        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
+        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${multi(r) ? '<br><small>' + esc(itemPo(i, r)) + '</small>' : ''}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
         <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
       <h4>C. ${two('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
         [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
@@ -1182,7 +1199,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   const planKg = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + (+x.kg || 0), 0);
   const poRecvd = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + recvd(x.po, x.material), 0);
   const poHead = po => PLAN.find(x => x.po === po) || {};
-  const hasTrucks = po => DATA.some(r => r.po === po);
+  const hasTrucks = po => DATA.some(r => posOf(r).indexOf(po) >= 0);
   function poStatus(po) {
     const k = planKg(po), r = poRecvd(po);
     if (!r) return `<span class="badge live">🕓 ${t('មិនទាន់មក', 'Not arrived')}</span>`;
