@@ -601,7 +601,7 @@
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
       ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${req}</span>
-        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${[['Yes', '✅ បាទ ឡានទទេ', '✅ Yes, empty'], ['No', '❌ អត់ទេ', '❌ No']].map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${[['Yes', '🚚 បាទ ឡានទទេ', '🚚 Yes, empty'], ['No', '🚚📦 អត់ទេ (មានទំនិញ)', '🚚📦 No (loaded)']].map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       </div>
