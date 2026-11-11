@@ -540,7 +540,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
-        ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose the PO (or several POs on one truck) to fill the details from the plan automatically.')}</p>`}
+        ${r.items.length ? itemsTable(r, mode) : ''}` : ''}
       </section>`}
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
