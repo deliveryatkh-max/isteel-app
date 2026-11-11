@@ -600,8 +600,8 @@
       <div class="fgrid toprow">
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
-      ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')}</span>
-        <div class="chips jobchips"><label class="chip${F.empty1 === 'Yes' ? ' on' : ''}"><input type="checkbox" id="fEmpty1"${F.empty1 === 'Yes' ? ' checked' : ''}> ${t('បាទ ឡានទទេ', 'Yes, empty')}</label></div></div>` : ''}
+      ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${req}</span>
+        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${[['Yes', '✅ បាទ ឡានទទេ', '✅ Yes, empty'], ['No', '❌ អត់ទេ', '❌ No']].map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       </div>
@@ -640,7 +640,7 @@
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
-    if ($('#fEmpty1')) $('#fEmpty1').onchange = e => { upd('empty1', e.target.checked ? 'Yes' : 'No'); paintForm(); };   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
+    document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     // The truck number is fixed after the 1st weigh (Kim, 9 Nov 2026)
     if (!sel) picker($('#fPlate'), {
       list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true, fix: fixPlate,
@@ -762,6 +762,7 @@
   function formOk(second) {
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
+    if (!second && !F.empty1) miss.push('#emptyBox');   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     if (second && !F.item) miss.push('#fItem');
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
