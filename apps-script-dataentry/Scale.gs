@@ -20,10 +20,12 @@ const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'I
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd'];
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
-// Columns of the Fuel "Truck" tab. Kim's full truck master (8 Nov 2026) names the weights "Vehicle Weight (kg)" and
-// "Max. Gross Weight (kg)"; the older names are still read when the new ones are empty.
-const SC_DT_NEW = ['Truck Type', 'Vehicle Weight (kg)', 'Max. Gross Weight (kg)'];
-const SC_DT_OLD = ['', 'Empty Weight (kg)', 'Max Gross (kg)'];
+// Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
+// scale (the app fills and updates it); "Inspected Vehicle Weight (kg)" is from the inspection certificate (typed by Kim).
+// The older names are still read when the new ones are empty.
+const SC_DT_NEW = ['Truck Type', 'Actual Vehicle Weight (kg)', 'Max. Gross Weight (kg)'];
+const SC_DT_OLD = ['', 'Vehicle Weight (kg)', 'Max Gross (kg)'];
+const SC_DT_INSP = 'Inspected Vehicle Weight (kg)';
 const SC_TRUCK_COLS = ['CODE', 'ក្រុមហ៊ុន'].concat(SC_DT_NEW, ['Odometer Broken?', 'Photo']);
 // Shown in the truck info box on the weigh screen (Kim, 8 Nov 2026): [key, column]
 const SC_TRUCK_INFO = [['loc', 'Vehicle Location'], ['mark', 'Mark'], ['vtype', 'Vehicle Type EN'], ['vtypeKh', 'Vehicle Type KH'],
@@ -31,7 +33,7 @@ const SC_TRUCK_INFO = [['loc', 'Vehicle Location'], ['mark', 'Mark'], ['vtype', 
   ['axles', 'Number of Axles'], ['insp', 'Inspection Date'], ['exp', 'Expiry Date'], ['r1', 'Loading Rule 1'], ['r2', 'Loading Rule 2'], ['r3', 'Loading Rule 3']];
 const SC_DELIVERY_ID = '1vHhgWrdMLKkmo3qhlITTX2jOmWwgSDz0IjEguQ7cZ44';    // SSK-DELIVERY-DATA (Script property DELIVERY_SHEET_ID wins)
 const SC_SETTINGS = [
-  ['SCALE_TARE_PCT', '5', 'Warn when the empty weight differs from the truck\'s Empty Weight (kg) by more than this %'],
+  ['SCALE_TARE_PCT', '5', 'Warn when the empty weight differs from the truck\'s Actual (else Inspected) Vehicle Weight by more than this %'],
   ['SCALE_MIN_KG', '200', 'Weights below this are not taken (empty scale)'],
   ['SCALE_PREFIX', 'WB', 'Start of the ticket number, e.g. WB-261106-001'],
   ['SCALE_SIGN', 'Weigher, Driver, Security', 'Signature boxes on the ticket'],
@@ -135,7 +137,7 @@ function scTrucks_() {
     const info = {};
     SC_TRUCK_INFO.forEach(f => { const x = cell(r, f[1]); if (x && x !== '-') info[f[0]] = x; });
     const t = map[scNorm_(plate)] = { plate: plate, company: cCo >= 0 ? String(r[cCo]).trim() : '', drivers: [],
-      type: (cT >= 0 ? String(r[cT]).trim() : '') || info.vtype || '', empty: weight(r, 1), max: weight(r, 2),
+      type: (cT >= 0 ? String(r[cT]).trim() : '') || info.vtype || '', empty: weight(r, 1), insp: num_(cell(r, SC_DT_INSP)), max: weight(r, 2),
       photo: cPh >= 0 ? String(r[cPh]).trim() : '', info: info };
     out.push(t);
   });
@@ -148,7 +150,7 @@ function scTrucks_() {
       const plate = dP >= 0 ? String(r[dP]).trim() : '', d = dD >= 0 ? String(r[dD]).trim() : '';
       if (!plate) return;
       let t = map[scNorm_(plate)];
-      if (!t) { t = map[scNorm_(plate)] = { plate: plate, company: dC >= 0 ? String(r[dC]).trim() : '', drivers: [], type: '', empty: '', max: '' }; out.push(t); }
+      if (!t) { t = map[scNorm_(plate)] = { plate: plate, company: dC >= 0 ? String(r[dC]).trim() : '', drivers: [], type: '', empty: '', insp: '', max: '' }; out.push(t); }
       if (d && t.drivers.indexOf(d) < 0) t.drivers.push(d);
     });
   }
@@ -407,7 +409,7 @@ function scSave_(ops, user) {
       if ([vals[14], vals[17]].indexOf('Manual') >= 0) scLog_(user, no, 'Manual weight', '', '', w1 + ' / ' + w2, reason);
     }
     sh.getRange(row, 1, 1, 12).setNumberFormat('@').setValues([vals.slice(0, 12)]);   // plate and DN stay text
-    // A plate the Fuel list doesn't have yet is added there (one truck list); its first empty weight fills Empty Weight.
+    // A plate the Fuel list doesn't have yet is added there (one truck list); its first empty weight fills Actual Vehicle Weight.
     const t = known[scNorm_(plate)];
     if (!t) { scAddTruck_({ plate: plate, company: vals[3], empty: status === 'Done' ? tare : '' }, user); known[scNorm_(plate)] = { plate: plate, empty: tare }; }
     else if (status === 'Done' && t.empty === '' && tare !== '') { scSetTruck_({ plate: plate, empty: tare }, user, 'Auto from first weigh'); t.empty = tare; }
