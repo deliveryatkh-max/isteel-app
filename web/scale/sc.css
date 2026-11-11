@@ -441,3 +441,9 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
   #formCard .fgrid.toprow, #formCard .frow2 { grid-template-columns: 1fr; }
   #formCard .fgrid.toprow > .field + .field, #formCard .frow2 > .field + .field { border-left: 0; border-top: 1px solid var(--line); }
 }
+
+/* Truck info weights as a table: label | value, 4 rows (Kim, 12 Nov 2026) */
+.ti-tbl { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.ti-tbl th, .ti-tbl td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: middle; }
+.ti-tbl th { text-align: left; font-weight: 600; color: var(--muted, #667); background: rgba(1, 30, 65, .04); line-height: 1.3; }
+.ti-tbl td { text-align: right; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
