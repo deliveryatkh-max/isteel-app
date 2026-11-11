@@ -551,11 +551,23 @@
         <div class="ti-rules${rules.length ? '' : ' none'}"><b>📏 ${t('ច្បាប់ផ្ទុកទំនិញ', 'Loading Rule')}</b>${rules.length ? `<ul>${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ` —`}</div>
       </div>
       <div class="ti-photo">
-        ${src ? `<img src="${esc(src)}" alt="${esc(tr.plate)}" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ''}
+        ${src ? `<img id="tiImg" src="${esc(src)}" alt="${esc(tr.plate)}" title="${t('ចុចដើម្បីបើករូបធំ', 'Click to open the photo')}" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ''}
         <div class="ti-nophoto"${src ? ' hidden' : ''}>📷<br>${t('មិនទាន់មានរូបថត', 'No photo yet')}</div>
         ${isAdmin() ? `<label class="btn ti-add">📷 ${src ? t('ប្តូររូបថត', 'Change photo') : t('បន្ថែមរូបថត', 'Add photo')}<input type="file" id="tiPhotoIn" accept="image/*" hidden></label>` : ''}
       </div>
     </div>`;
+  }
+  /** Shows a photo full screen; click anywhere or press Esc to close. */
+  function openPhoto(src, cap, link) {
+    if (!src) return;
+    const o = document.createElement('div');
+    o.className = 'phbox';
+    o.innerHTML = `<img src="${esc(src)}" alt="${esc(cap || '')}" referrerpolicy="no-referrer"><div class="phbar"><b class="mono">${esc(cap || '')}</b>${/^https:\/\//.test(link || '') ? `<a href="${esc(link)}" target="_blank" rel="noopener">${t('បើកក្នុង Drive', 'Open in Drive')} ↗</a>` : ''}<button type="button" class="btn">✕ ${t('បិទ', 'Close')}</button></div>`;
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc_); };
+    const esc_ = e => { if (e.key === 'Escape') close(); };
+    o.onclick = e => { if (e.target.tagName !== 'A') close(); };
+    document.addEventListener('keydown', esc_);
+    document.body.appendChild(o);
   }
   /** Shrinks the photo to 1280 px JPEG on this PC, then saves it to the truck (Admin). */
   async function truckPhoto(plate, file) {
@@ -622,6 +634,7 @@
       <div id="doneBox">${LASTDONE && !sel ? doneHtml(ticketBy(LASTDONE)) : ''}</div>`;
 
     const upd = (k, v) => { F[k] = v; keepForm(); };
+    if ($('#tiImg')) $('#tiImg').onclick = () => openPhoto(photoSrc(tr.photo).replace(/&sz=w\d+/, '&sz=w2000'), tr.plate, tr.photo);   // click to open big (Kim, 12 Nov 2026)
     if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
