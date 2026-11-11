@@ -927,12 +927,16 @@
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
           <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}${sel.s1 && sel.s1 !== 'Scale' ? ' · ' + esc(sel.s1) : ''}</div></div>
           <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
-        // Over weight or not, against the truck's Max. Gross Weight (Kim, 8 Nov 2026): red when over.
-        const trk = truckOf(F.plate || sel.plate), mx = trk && trk.max !== '' && trk.max != null ? Number(trk.max) : 0;
-        const gross = has ? Math.max(w.kg, w1) : w1;
-        if (!mx) nums += `<div class="cell ow none"><div class="lab">${t('លើសទម្ងន់?', 'Over weight?')}</div><div class="owv">—</div><div class="sub">${t('មិនទាន់មានទម្ងន់សរុបអតិបរមា', 'No Max. Gross Weight')}</div></div>`;
-        else if (gross > mx) nums += `<div class="cell ow over"><div class="lab">⚠️ ${t('លើសទម្ងន់', 'OVER WEIGHT')}</div><div class="owv">+${kg(gross - mx)} kg</div><div class="sub">${t('អតិបរមា', 'Max')} ${kg(mx)} kg</div></div>`;
-        else nums += `<div class="cell ow ok"><div class="lab">✅ ${t('មិនលើសទម្ងន់', 'Not over weight')}</div><div class="owv">${kg(mx - gross)} kg</div><div class="sub">${t('នៅសល់ · អតិបរមា', 'left · Max')} ${kg(mx)} kg</div></div>`;
+        // Over weight (Kim, 12 Nov 2026): goods allowed = Max. Gross Weight − Inspected Vehicle Weight; red when over.
+        // Without an Inspected weight, the gross is checked against Max. Gross Weight (8 Nov 2026).
+        const trk = truckOf(F.plate || sel.plate);
+        const gross = has ? Math.max(w.kg, w1) : w1, net = has ? Math.abs(w.kg - w1) : 0;
+        const ov = CORE.overOf(trk, net, gross);
+        const lim = ov && ov.allow ? `${t('ទំនិញអនុញ្ញាត', 'Goods allowed')} ${kg(ov.allow)} kg` : ov ? `${t('អតិបរមា', 'Max')} ${kg(ov.max)} kg` : '';
+        if (!ov) nums += `<div class="cell ow none"><div class="lab">${t('លើសទម្ងន់?', 'Over weight?')}</div><div class="owv">—</div><div class="sub">${t('មិនទាន់មានទម្ងន់សរុបអតិបរមា', 'No Max. Gross Weight')}</div></div>`;
+        else if (ov.allow && !has) nums += `<div class="cell ow none"><div class="lab">${t('លើសទម្ងន់?', 'Over weight?')}</div><div class="owv">—</div><div class="sub">${lim}</div></div>`;
+        else if (ov.over > 0) nums += `<div class="cell ow over"><div class="lab">⚠️ ${t('លើសទម្ងន់', 'OVER WEIGHT')}</div><div class="owv">+${kg(ov.over)} kg</div><div class="sub">${lim}</div></div>`;
+        else nums += `<div class="cell ow ok"><div class="lab">✅ ${t('មិនលើសទម្ងន់', 'Not over weight')}</div><div class="owv">${kg(-ov.over)} kg</div><div class="sub">${t('នៅសល់', 'left')} · ${lim}</div></div>`;
       }
       const side = `<div class="side"><span class="st">${state[1]}</span>
           <span>${SIM.on ? '🧪 ' + t('ម៉ាស៊ីនសាកល្បង', 'Simulator') : SER.on ? '🔌 ' + t('ភ្ជាប់ជញ្ជីង', 'Scale connected') + ' · ' + conn().baud : ''}</span>
@@ -2090,7 +2094,7 @@
         ${inp('rCo', t('ឈ្មោះលើប័ណ្ណ', 'Name on the ticket'), s.SCALE_COMPANY)}
         ${inp('rSign', t('ប្រអប់ហត្ថលេខា (ក្បៀស)', 'Signature boxes (comma separated)'), s.SCALE_SIGN)}
       </div>
-      <p class="hint">${t('ការព្រមានលើសទម្ងន់ ប្រើ Max. Gross Weight (kg) ក្នុងបញ្ជីឡាន។', 'The overload warning uses Max. Gross Weight (kg) in the truck list.')}</p>
+      <p class="hint">${t('លើសទម្ងន់: ទំនិញអនុញ្ញាត = Max. Gross Weight − Inspected Vehicle Weight ក្នុងបញ្ជីឡាន។', 'Over weight: goods allowed = Max. Gross Weight − Inspected Vehicle Weight in the truck list (gross vs Max. Gross Weight when Inspected is empty).')}</p>
       <h3>📄 ${t('គំរូប័ណ្ណ Word', 'Ticket template (Word)')}</h3>
       <div class="field"><label class="f" for="rTpl">${t('Link Google Drive របស់ឯកសារ Word (ឬ Folder)', 'Google Drive link of the Word file (or its folder)')}</label>
         <input class="in" id="rTpl" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_LINK || '')}"></div>

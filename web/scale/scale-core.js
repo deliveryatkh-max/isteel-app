@@ -107,12 +107,25 @@
       if (Math.abs(diff) > pct) warn.push({ k: 'tare', en: 'Empty weight ' + fmt(tare) + ' kg is ' + Math.abs(Math.round(diff)) + '% ' + (diff > 0 ? 'above' : 'below') + ' the truck list (' + fmt(empty) + ' kg)',
         km: 'ទម្ងន់ឡានទទេ ' + fmt(tare) + ' kg ' + (diff > 0 ? 'លើស' : 'ខ្វះ') + ' ' + Math.abs(Math.round(diff)) + '% ពីបញ្ជីឡាន (' + fmt(empty) + ' kg)' });
     }
-    if (max && gross > max) warn.push({ k: 'over', en: 'Overload: gross ' + fmt(gross) + ' kg is over the limit ' + fmt(max) + ' kg (+' + fmt(gross - max) + ' kg)',
-      km: 'ផ្ទុកលើសទម្ងន់: ' + fmt(gross) + ' kg លើសកំណត់ ' + fmt(max) + ' kg (+' + fmt(gross - max) + ' kg)' });
+    // Over weight (Kim, 12 Nov 2026): goods allowed = Max. Gross Weight − Inspected Vehicle Weight (certificate);
+    // without an Inspected weight, the gross is checked against Max. Gross Weight.
+    const ov = overOf(truck, net, gross);
+    if (ov && ov.over > 0) warn.push(ov.allow
+      ? { k: 'over', en: 'Overload: goods ' + fmt(net) + ' kg is over the allowed ' + fmt(ov.allow) + ' kg (+' + fmt(ov.over) + ' kg)',
+          km: 'ផ្ទុកលើសទម្ងន់: ទំនិញ ' + fmt(net) + ' kg លើសកំណត់ ' + fmt(ov.allow) + ' kg (+' + fmt(ov.over) + ' kg)' }
+      : { k: 'over', en: 'Overload: gross ' + fmt(gross) + ' kg is over the limit ' + fmt(max) + ' kg (+' + fmt(ov.over) + ' kg)',
+          km: 'ផ្ទុកលើសទម្ងន់: ' + fmt(gross) + ' kg លើសកំណត់ ' + fmt(max) + ' kg (+' + fmt(ov.over) + ' kg)' });
     if (net <= 0) warn.push({ k: 'zero', en: 'Net weight is ' + fmt(net) + ' kg', km: 'ទម្ងន់សុទ្ធ ' + fmt(net) + ' kg' });
     return { gross, tare, net, warn };
   }
   const fmt = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  /** Over weight check: {allow, over} with allow = Max. Gross − Inspected (goods limit), or {allow: 0, max, over} on gross. null without a limit. */
+  function overOf(truck, net, gross) {
+    const max = truck && Number(truck.max) > 0 ? Number(truck.max) : 0, insp = truck && Number(truck.insp) > 0 ? Number(truck.insp) : 0;
+    if (!max) return null;
+    if (insp && max > insp) { const allow = max - insp; return { allow, max, insp, over: net - allow }; }
+    return { allow: 0, max, insp: 0, over: gross - max };
+  }
 
   /** A saved ticket keeps its warnings in English ("a | b"); this gives the Khmer words for the Khmer screen. */
   function warnKm(en) {
@@ -121,6 +134,8 @@
       if (m) return 'ទម្ងន់ឡានទទេ ' + m[1] + ' kg ' + (m[3] === 'above' ? 'លើស' : 'ខ្វះ') + ' ' + m[2] + '% ពីបញ្ជីឡាន (' + m[4] + ' kg)';
       m = s.match(/^Overload: gross (.+) kg is over the limit (.+) kg \(\+(.+) kg\)$/);
       if (m) return 'ផ្ទុកលើសទម្ងន់: ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
+      m = s.match(/^Overload: goods (.+) kg is over the allowed (.+) kg \(\+(.+) kg\)$/);
+      if (m) return 'ផ្ទុកលើសទម្ងន់: ទំនិញ ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
       m = s.match(/^Net weight is (.+) kg$/);
       if (m) return 'ទម្ងន់សុទ្ធ ' + m[1] + ' kg';
       return s;
@@ -211,7 +226,7 @@
       .replace(/(<wp:posOffset>)(-?\d+)(<\/wp:posOffset>)/g, (a, x, v, y) => x + (+v < 0 ? '-' + n(-v) : n(v)) + y);
   }
 
-  const api = { parse, Stable, finish, warnKm, nextNo, jpegPdf, paperOf, toA5, fmt };
+  const api = { parse, Stable, finish, overOf, warnKm, nextNo, jpegPdf, paperOf, toA5, fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SCALECORE = api;
 })(typeof window !== 'undefined' ? window : this);
