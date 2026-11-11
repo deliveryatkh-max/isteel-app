@@ -313,11 +313,14 @@ function plan_() {
 
 // ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
 function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'Only a Supervisor or Admin can change the Incoming Plan.', 'មានតែ Supervisor ឬ Admin ទេដែលអាចកែផែនការបាន។'); }
+/** the POs of a receipt: rec.pos, or the "PO1, PO2" text of older ones */
+const posOf_ = r => (Array.isArray(r.pos) && r.pos.length ? r.pos : String(r.po || '').split(',')).map(x => String(x).trim()).filter(Boolean);
+const itemPo_ = (i, r) => i.po || posOf_(r)[0] || '';
 const poOf_ = v => { const s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return s && !/^PO/.test(s) ? 'PO' + s : s; };
 /** kg arrived (still unloading) or received per PO|material */
 function recvdMap_() {
   const m = {};
-  receipts_().forEach(r => (r.items || []).forEach(i => { const k = r.po + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
+  receipts_().forEach(r => (r.items || []).forEach(i => { const k = itemPo_(i, r) + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
   return m;
 }
 /** Rewrites the Incoming Plan tab: rows of other POs stay as they are (all columns). */
@@ -379,7 +382,7 @@ function planDel_(po, user) {
   planner_(user);
   po = poOf_(po);
   if (plan_().some(x => x.po === po && !siteOk_(user, x.site))) fail_('DENIED', 'This PO belongs to another warehouse.', 'PO នេះជារបស់ឃ្លាំងផ្សេង។');
-  if (receipts_().some(r => r.po === po)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
+  if (receipts_().some(r => posOf_(r).indexOf(po) >= 0)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
   planWrite_(planRows_().filter(r => r.po !== po).map(r => r.row), []);
   return plan_().filter(x => siteOk_(user, x.site));
 }
@@ -405,7 +408,7 @@ function boot_(user) {
   const pos = {}; plan.forEach(x => { pos[x.po] = 1; });
   const days = Math.max(1, num_(setting_('DAYS_SHOWN')) || 90);
   const from = fmt_(new Date(Date.now() - days * 86400000), 'yyyy-MM-dd');
-  const recs = receipts_().filter(r => (r.date >= from || pos[r.po]) && siteOk_(user, r.site));
+  const recs = receipts_().filter(r => (r.date >= from || posOf_(r).some(x => pos[x])) && siteOk_(user, r.site));
   const carriers = setting_('THREEPL_COMPANIES').split(',').map(s => s.trim()).filter(Boolean);
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
@@ -549,30 +552,40 @@ function photos_(ids, full) {
 }
 
 // ---------------------------------------------------------------- arrival
+// One truck can bring several POs (Kim, 11 Nov 2026): p.pos lists them, each item says its PO; rec.po = "PO1, PO2" for display.
 function start_(p, user) {
-  const plan = plan_().filter(x => x.po === String(p.po || ''));
-  if (!plan.length) fail_('BAD', 'This PO is not in the Incoming Plan.', 'PO នេះមិនមានក្នុងផែនការទំនិញចូលទេ។');
+  const asked = [];
+  (Array.isArray(p.pos) && p.pos.length ? p.pos : String(p.po || '').split(',')).map(poOf_).forEach(x => { if (x && asked.indexOf(x) < 0) asked.push(x); });
+  const plan = plan_().filter(x => asked.indexOf(x.po) >= 0);
+  const gone = asked.filter(x => !plan.some(l => l.po === x));
+  if (!asked.length || gone.length) fail_('BAD', (gone[0] || 'This PO') + ' is not in the Incoming Plan.', (gone[0] || 'PO នេះ') + ' មិនមានក្នុងផែនការទំនិញចូលទេ។');
+  if (asked.length > 10) fail_('BAD', 'Up to 10 POs per truck.', 'ច្រើនបំផុត 10 PO ក្នុងមួយឡាន។');
   const items = (Array.isArray(p.items) ? p.items : []).slice(0, MAX_ITEMS).map(i => {
-    const line = plan.find(x => x.material === String(i.material || ''));
-    if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on this PO.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ PO នេះទេ។');
+    const ipo = poOf_(i.po) || (asked.length === 1 ? asked[0] : '');
+    const line = plan.find(x => x.po === ipo && x.material === String(i.material || ''));
+    if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on ' + (ipo || 'this PO') + '.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ ' + (ipo || 'PO នេះ') + ' ទេ។');
     const arr = num_(i.arrQty);
     if (!(arr > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
-    return { material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+    return { po: line.po, inbound: line.inbound, material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
   });
   if (!items.length) fail_('BAD', 'Choose the items on this truck.', 'សូមជ្រើសទំនិញលើឡាននេះ។');
+  const pos = asked.filter(x => items.some(i => i.po === x));   // a PO with no item on the truck is left out
+  items.sort((a, b) => pos.indexOf(a.po) - pos.indexOf(b.po));
+  const heads = pos.map(x => plan.find(l => l.po === x));
+  const join = k => heads.map(l => l[k]).filter((v, n, a) => v && a.indexOf(v) === n).join(', ');
   const truck = clip_(p.truck, 20).toUpperCase().replace(/\s+/g, '');
   if (!truck) fail_('BAD', 'Truck number is missing.', 'សូមបញ្ចូលផ្លាកលេខឡាន។');
   const dn = clip_(p.dn3pl, 40);
   if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
   const us = userSites_(user);
-  const site = site_(p.site, user) || plan[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
+  const site = site_(p.site, user) || heads[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
   const wh = warehouse_(p.warehouse, true, site);
   if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
     // the same truck pressed Start twice (slow network, a retry): give back the first record, no second Telegram post
-    const same = recRows_().filter(r => r[1] === STATUS.live && r[4] === truck && r[3] === plan[0].po)
+    const same = recRows_().filter(r => r[1] === STATUS.live && r[4] === truck && r[3] === pos.join(', '))
       .map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).find(x => x && x.dn3pl === dn);
     if (same) return same;
     const res = reserved_(), want = String(p.id || '');
@@ -580,9 +593,9 @@ function start_(p, user) {
     if (res[want]) { delete res[want]; saveReserved_(res); }
     const folder = folder_(id);
     const now = new Date();
-    const l = plan[0];
+    const l = heads[0];
     const rec = {
-      id: id, status: STATUS.live, po: l.po, inbound: l.inbound, ref: l.ref, supplier: l.supplier, eta: l.eta, dn3pl: dn, truck: truck,
+      id: id, status: STATUS.live, po: pos.join(', '), pos: pos, inbound: join('inbound'), ref: join('ref'), supplier: join('supplier'), eta: l.eta, dn3pl: dn, truck: truck,
       site: site, warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
@@ -606,7 +619,7 @@ function update_(p, user, finish) {
     const folder = folder_(rec.id);
     const sent = Array.isArray(p.items) ? p.items : [];
     rec.items.forEach(i => {
-      const s = sent.find(x => String(x.material) === i.material) || {};
+      const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po)) || {};
       const gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);
       const dm = s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
       if (gr !== '' && !(gr >= 0)) fail_('BAD', 'Actual GR Qty must be a number.', 'បរិមាណទទួលត្រូវតែជាលេខ។');
@@ -676,7 +689,7 @@ function store_(rec, row) {
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
   if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Entrance, Voice Note, Damage UoM, Warehouse)
-  const rows = rec.items.map(i => [rec.id, rec.status, rec.po, rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
+  const rows = rec.items.map(i => [rec.id, rec.status, itemPo_(i, rec), i.inbound || rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
     rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || ''].map(x => (x == null ? '' : String(x))));
@@ -737,6 +750,7 @@ function telegramDone_(r) {
   const lines = [(bad ? '⚠️' : '✅') + ' <b>Finished ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + '–' + esc_(r.end) + ' · ' + spent_(r) + ' min' + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.id) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
     '📦 Received ' + kg_(tot_(r, 'grQty')) + ' / ' + kg_(tot_(r, 'arrQty')) + ' ' + esc_(r.uom) + ' · 👷 ' + esc_(r.manpower)];
+  if (posOf_(r).length > 1) posOf_(r).forEach(x => { const its = r.items.filter(i => itemPo_(i, r) === x); lines.push('   • ' + esc_(x) + ': ' + kg_(its.reduce((s, i) => s + (Number(i.grQty) || 0), 0)) + ' ' + esc_(r.uom)); });
   less.forEach(i => lines.push('⬇ Received less: ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
   dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
@@ -1140,7 +1154,7 @@ function itemRows_(body, r) {
   const table = row.getParentTable(), at = table.getChildIndex(row);
   r.items.forEach((i, n) => {
     const nr = table.insertTableRow(at + 1 + n, row.copy());
-    const mat = i.material + ' ' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
+    const mat = i.material + ' ' + i.desc + (posOf_(r).length > 1 ? '\n' + itemPo_(i, r) : '') + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
     [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', dmgQ_(i, r)], ['uom', r.uom]]
       .forEach(x => fill_(nr, '{{item.' + x[0] + '}}', x[1]));
   });
@@ -1247,7 +1261,7 @@ function makePdf_(r, folder, name) {
 
     section_(body, 'B. ' + two_('បរិមាណទំនិញ', 'ITEMS') + ' (' + r.items.length + ')');
     const rows = [['#', two_('សម្ភារៈ', 'Material'), two_('ចំនួន (PO)', 'PO Qty'), two_('ចំនួន (ដល់)', 'Arrival'), two_('ទទួល', 'GR Qty'), two_('ខូច', 'Damaged'), two_('ឯកតា', 'UoM')]];
-    r.items.forEach((i, n) => rows.push([String(n + 1), i.material + '\n' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || '') : ''),
+    r.items.forEach((i, n) => rows.push([String(n + 1), i.material + '\n' + i.desc + (posOf_(r).length > 1 ? '\n' + itemPo_(i, r) : '') + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || '') : ''),
       kg_(i.poQty), kg_(i.arrQty), kg_(i.grQty), dmgQ_(i, r), r.uom]));
     rows.push(['', two_('សរុប', 'Total'), kg_(tot_(r, 'poQty')), kg_(tot_(r, 'arrQty')), kg_(tot_(r, 'grQty')), kg_(tot_(r, 'dmgQty')), r.uom]);
     const t = body.appendTable(rows);
