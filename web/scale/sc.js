@@ -541,12 +541,12 @@
       <div class="ti-info">
         <div class="ti-head">🚚 <b class="mono">${esc(tr.plate)}</b></div>
         <div class="ti-row"><span>${t('ក្រុមហ៊ុន', 'Company')}</span><b>${esc(tr.company || '—')}</b></div>
-        <div class="ti-w3">
-          <div><span>${t('ទម្ងន់ឡានតាមប័ណ្ណត្រួតពិនិត្យ (kg)', 'Inspected Vehicle Weight (kg)')}</span><b>${kgv(tr.insp)}</b></div>
-          <div><span>${t('ទម្ងន់ឡានជាក់ស្តែង (kg)', 'Actual Vehicle Weight (kg)')}</span><b>${kgv(tr.empty)}</b></div>
-          <div><span>${t('ផ្ទុកអតិបរមា (kg)', 'Max. Load (kg)')}</span><b>${kgv(i.load)}</b></div>
-          <div><span>${t('ទម្ងន់សរុបអតិបរមា (kg)', 'Max. Gross Weight (kg)')}</span><b>${kgv(tr.max)}</b></div>
-        </div>
+        <table class="ti-tbl">
+          <tr><th>${t('ទម្ងន់ឡានតាមប័ណ្ណត្រួតពិនិត្យ (kg)', 'Inspected Vehicle Weight (kg)')}</th><td>${kgv(tr.insp)}</td></tr>
+          <tr><th>${t('ទម្ងន់ឡានជាក់ស្តែង (kg)', 'Actual Vehicle Weight (kg)')}</th><td>${kgv(tr.empty)}</td></tr>
+          <tr><th>${t('ផ្ទុកអតិបរមា (kg)', 'Max. Load (kg)')}</th><td>${kgv(i.load)}</td></tr>
+          <tr><th>${t('ទម្ងន់សរុបអតិបរមា (kg)', 'Max. Gross Weight (kg)')}</th><td>${kgv(tr.max)}</td></tr>
+        </table>
         <div class="ti-row"><span>${t('ចំនួនអ័ក្ស', 'Number of Axles')}</span><b>${esc(ax)}</b></div>
         <div class="ti-rules${rules.length ? '' : ' none'}"><b>📏 ${t('ច្បាប់ផ្ទុកទំនិញ', 'Loading Rule')}</b>${rules.length ? `<ul>${rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ` —`}</div>
       </div>
