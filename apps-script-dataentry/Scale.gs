@@ -22,7 +22,7 @@ const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
 // scale (the app fills and updates it); "Inspected Vehicle Weight (kg)" is from the inspection certificate (typed by Kim).
-// The older names are still read when the new ones are empty.
+// The older names are still read when the new ones are empty. Over weight = goods over Max. Gross − Inspected (12 Nov 2026).
 const SC_DT_NEW = ['Truck Type', 'Actual Vehicle Weight (kg)', 'Max. Gross Weight (kg)'];
 const SC_DT_OLD = ['', 'Vehicle Weight (kg)', 'Max Gross (kg)'];
 const SC_DT_INSP = 'Inspected Vehicle Weight (kg)';
