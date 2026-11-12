@@ -762,7 +762,7 @@
   function formOk(second) {
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
-    if (!second && !F.empty1) miss.push('#emptyBox');   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
+    if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
