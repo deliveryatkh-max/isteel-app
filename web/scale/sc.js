@@ -285,6 +285,7 @@
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 't' && a.dataset.r === 'list')));
     if (!B) { $('#view').innerHTML = '<div class="spinner"></div>'; screen = route; return; }
     if (top === 'list') return renderList();
+    if (top === 'rep') return renderReport();
     if (top === 'tat') return renderTat();
     if (top === 'dnc') return renderDnc();
     if (top === 't') return renderTicket(decodeURIComponent(h.slice(2).split('?')[0]));
@@ -1147,6 +1148,115 @@
     XLSX.writeFile(wb, 'Scale_Tickets_' + LIST.from + (LIST.to !== LIST.from ? '_to_' + LIST.to : '') + '.xlsx');
   }
   const num = v => (v === '' || v == null ? '' : Number(v));
+
+  // ---------------------------------------------------------------- Report (Kim, 12 Nov 2026)
+  // One row per DN (a ticket without DN = one row). The ticket's weights are on every row of the ticket;
+  // "Trips" is 1 on the ticket's first row, 0 on the others, so totals count each truck once
+  // (Excel: SUMIFS(Net, Trips, 1)).
+  let REP = { from: today(), to: today(), q: '', st: '', co: '', rows: null };
+  const RRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['week', 'សប្តាហ៍នេះ', 'This week'], ['month', 'ខែនេះ', 'This month'], ['all', 'ទាំងអស់', 'All']];
+  const RSTATUS = [['', 'ទាំងអស់', 'All'], ['Done', 'រួចរាល់', 'Done'], ['Open', 'នៅលើទីតាំង', 'On site'], ['Void', 'បានលុប', 'Cancelled']];
+  function repRange(k) {
+    const d = new Date();
+    if (k === 'week') { const a = new Date(d); a.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return [ymd(a), ymd(d)]; }   // Monday to today
+    return rangeOf(k);
+  }
+  const repRangeIs = k => { const r = repRange(k); return REP.from === r[0] && REP.to === r[1]; };
+  const REP_HEAD = ['Ticket No', 'Status', 'Truck No', 'Company', 'Item', 'DN No', 'DN Kg', 'Loading Place', 'Destination', 'Canvas', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Trips'];
+  const REP_NUM = [6, 11, 13, 14, 15, 16, 17];
+  const stName = s => (s === 'Void' ? t('បានលុប', 'Cancelled') : s === 'Open' ? t('នៅលើទីតាំង', 'On site') : t('រួចរាល់', 'Done'));
+  const tarpName = v => (v === 'Yes' ? 'Covered' : v === 'No' ? 'Not covered' : '');
+  function renderReport() {
+    screen = renderReport;
+    document.body.classList.add('wide');
+    $('#view').innerHTML = `<section class="card">
+      <div class="filters">
+        <label>${t('ពី', 'From')}<input type="date" class="in" id="rFrom" value="${REP.from}"></label>
+        <label>${t('ដល់', 'To')}<input type="date" class="in" id="rTo" value="${REP.to}"></label>
+        <button type="button" class="btn ok" id="rGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
+        <div class="qchips">${RRANGES.map(r => `<button type="button" class="chip${repRangeIs(r[0]) ? ' on' : ''}" data-rr="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
+        <label>${t('ស្ថានភាព', 'Status')}<select class="in" id="rSt">${RSTATUS.map(r => `<option value="${r[0]}"${REP.st === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
+        <label>${t('ក្រុមហ៊ុនដឹក', 'Transporter')}<select class="in" id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option></select></label>
+        <input type="search" class="in lq" id="rQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...')}" value="${esc(REP.q)}">
+        <button type="button" class="btn" id="rXls">⬇ Excel</button>
+      </div>
+      <div id="rSum" class="sumline"></div>
+      <div id="rBody"><div class="spinner"></div></div></section>`;
+    const paint = () => $$('[data-rr]').forEach(b => b.classList.toggle('on', repRangeIs(b.dataset.rr)));
+    $('#rGo').onclick = () => { REP.from = $('#rFrom').value; REP.to = $('#rTo').value; paint(); loadReport(); };
+    $$('[data-rr]').forEach(b => { b.onclick = () => { const r = repRange(b.dataset.rr); REP.from = r[0]; REP.to = r[1]; $('#rFrom').value = r[0]; $('#rTo').value = r[1]; paint(); loadReport(); }; });
+    $('#rSt').onchange = e => { REP.st = e.target.value; paintReport(); };
+    $('#rCo').onchange = e => { REP.co = e.target.value; paintReport(); };
+    $('#rQ').oninput = e => { REP.q = e.target.value; paintReport(); };
+    $('#rXls').onclick = exportReport;
+    loadReport();
+  }
+  async function loadReport() {
+    const local = tickets().filter(x => { const d = String(x.t1 || '').slice(0, 10); return d >= REP.from && d <= REP.to; });
+    REP.rows = local; paintReport();
+    if (DEMO) return;
+    try {
+      const r = await api('scList', { from: REP.from, to: REP.to, all: REP.from === ALL_FROM ? 1 : '' });
+      const map = {};
+      r.tickets.forEach(x => { map[x.cid || x.no] = x; });
+      local.forEach(x => { if (LOC[x.cid]) map[x.cid] = x; });
+      REP.rows = Object.keys(map).map(k => map[k]);
+      paintReport();
+    } catch (e) { if (e.code !== 'NET') toast(e.message); }
+  }
+  const repTickets = () => {
+    const q = REP.q.trim().toLowerCase();
+    return (REP.rows || []).filter(x => !REP.st || x.status === REP.st).filter(x => !REP.co || (x.company || '') === REP.co)
+      .filter(x => !q || [x.no, x.plate, x.company, x.item, x.dest, x.load, x.note, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0)
+      .sort((a, b) => String(b.t1).localeCompare(String(a.t1)));
+  };
+  /** The report rows: [values for REP_HEAD], one per DN. */
+  function repLines(list) {
+    const out = [];
+    list.forEach(x => {
+      const dns = x.dns && x.dns.length ? x.dns : [''];
+      dns.forEach((d, i) => out.push({ x, cells: [x.no, x.status, x.plate, x.company || '', x.item || '', d, d ? dnKgOf(x, d) || '' : '', x.load || '', x.dest || '', x.tarp || '',
+        x.t1 || '', num(x.w1), x.t2 || '', num(x.w2), num(x.gross), num(x.tare), num(x.net), i === 0 ? 1 : 0] }));
+    });
+    return out;
+  }
+  const whenTxt = v => String(v || '').replace('T', ' ').slice(0, 16);
+  function paintReport() {
+    if (!$('#rSum')) return;
+    const co = $('#rCo');
+    if (co) {   // transporters in the chosen dates
+      const names = [...new Set((REP.rows || []).map(x => x.company || '').filter(Boolean))].sort();
+      const h = `<option value="">${t('ទាំងអស់', 'All')}</option>` + names.map(n => `<option${n === REP.co ? ' selected' : ''}>${esc(n)}</option>`).join('');
+      if (co._h !== h) { co._h = h; co.innerHTML = h; }
+    }
+    const list = repTickets(), lines = repLines(list);
+    const done = list.filter(x => x.status === 'Done'), open = list.filter(x => x.status === 'Open').length;
+    const net = done.reduce((s, x) => s + (Number(x.net) || 0), 0), dnKg = lines.reduce((s, l) => s + (Number(l.cells[6]) || 0), 0);
+    $('#rSum').innerHTML = `<b>${lines.length}</b> ${t('ជួរ', 'rows')} · <b>${list.length}</b> ${t('ជើង', 'trips')} (${done.length} ${t('រួចរាល់', 'done')} · ${open} ${t('នៅលើទីតាំង', 'on site')}) · ${t('សុទ្ធ', 'Net')} <b>${kg(net)} kg</b> · ${t('សរុប DN', 'DN total')} <b>${kg(dnKg)} kg</b>`;
+    if (!lines.length) { $('#rBody').innerHTML = `<div class="empty">${t('គ្មានទិន្នន័យ', 'No data')}</div>`; return; }
+    const cell = (c, i) => {
+      if (i === 1) return `<td><span class="badge ${c === 'Void' ? 'rejected' : c === 'Open' ? 'follow' : 'approved'}">${stName(c)}</span></td>`;
+      if (i === 9) return `<td>${c === 'Yes' ? t('គ្របតង់', 'Covered') : c === 'No' ? t('មិនគ្របតង់', 'Not covered') : ''}</td>`;
+      if (i === 10 || i === 12) return `<td class="nw">${whenTxt(c)}</td>`;
+      if (REP_NUM.indexOf(i) >= 0) return `<td class="r mono"${i === 16 ? ' style="font-weight:700"' : ''}>${c === '' ? '' : kg(c)}</td>`;
+      return `<td${i === 0 || i === 5 ? ' class="mono"' : ''}>${esc(c)}</td>`;
+    };
+    $('#rBody').innerHTML = `<div class="tbl fit"><table class="tt rep"><tr>${REP_HEAD.map((h, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r"' : ''}>${h}</th>`).join('')}</tr>
+      ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${l.cells.map(cell).join('')}</tr>`).join('')}</table></div>
+      <div class="hint">${t('មួយជួរ = មួយ DN · ទម្ងន់ប័ណ្ណនៅគ្រប់ជួរ · Trips = 1 នៅជួរទីមួយនៃប័ណ្ណ (Excel: SUMIFS(Net, Trips, 1))', 'One row per DN · ticket weights on every row · Trips = 1 on the first row of each ticket (Excel: SUMIFS(Net, Trips, 1))')}</div>`;
+    bindTable();
+  }
+  function exportReport() {
+    const lines = repLines(repTickets());
+    if (!lines.length || !window.XLSX) { toast(t('គ្មានទិន្នន័យ', 'No data')); return; }
+    const data = lines.map(l => l.cells.map((c, i) => (i === 1 ? (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') : i === 9 ? tarpName(c) : i === 10 || i === 12 ? String(c || '').replace('T', ' ').slice(0, 19) : c)));
+    const ws = XLSX.utils.aoa_to_sheet([REP_HEAD].concat(data));
+    ws['!cols'] = [16, 9, 11, 22, 22, 13, 9, 14, 26, 11, 19, 12, 19, 12, 11, 11, 11, 6].map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: 'A1:R' + (data.length + 1) };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    XLSX.writeFile(wb, 'Scale_Report_' + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx');
+  }
 
   // ---------------------------------------------------------------- turnaround per 3PL (Kim, feature 8)
   // Time on site = 1st weigh (truck arrives on the scale) to 2nd weigh (truck leaves). Per truck company, for
