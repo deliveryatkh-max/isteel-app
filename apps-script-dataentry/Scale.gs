@@ -379,7 +379,7 @@ function scSave_(ops, user) {
     const dkText = dk ? uniq.filter(d => Number(dk[d]) > 0).map(d => d + ': ' + Math.round(Number(dk[d]))).join(', ') : (old ? String(old[31] || '') : '');
     const dkMap = scDnKg_(dkText), dkAll = uniq.length > 0 && uniq.every(d => dkMap[d] > 0);
     const dkTot = dkAll ? uniq.reduce((a, d) => a + dkMap[d], 0) : '', dkVar = dkAll && net !== '' ? net - dkTot : '';
-    const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), both ? (w1 > w2 ? 'In' : 'Out') : (['In', 'Out'].indexOf(p.type) >= 0 ? p.type : ''),   // before the 2nd weigh: what was ticked (load = Out, unload = In)
+    const vals = [no, status, plate, clip_(p.company, 80), clip_(p.customer, 120), clip_(p.item, 80), ['In', 'Out'].indexOf(p.type) >= 0 ? p.type : both ? (w1 > w2 ? 'In' : 'Out') : '',   // what the weigher ticked (load = Out, unload = In); weights only when nothing was ticked (Kim, 12 Nov 2026)
       uniq.join(', '), uniq.length,
       clip_(p.driver, 80), clip_(p.dest, 300), clip_(p.note, 300),
       w1, date_(p.t1), w1 === '' ? '' : src('s1') || 'Scale', w2, date_(p.t2), w2 === '' ? '' : src('s2') || 'Scale', gross, tare, net,
@@ -611,7 +611,7 @@ function scTicketVals_(x) {
   const dns = Array.isArray(x.dns) ? x.dns : s(x.dns).split(/[,\s]+/).filter(Boolean);
   return {
     TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest), Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
-    DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
+    DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: x.type === 'In' ? 'ទំលាក់ទំនិញ' : x.type === 'Out' ? 'ឡើងទំនិញ' : '',
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
     Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'ការព្រមាន: ' + scWarnKm_(s(x.warn)) : '',
     Operator: s(x.op), Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',

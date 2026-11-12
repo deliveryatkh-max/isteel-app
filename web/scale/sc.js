@@ -33,11 +33,13 @@
   let toastTimer = 0;
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3500); }
   const busy = (b, on) => { if (!b) return; b.disabled = on; if (on) { b.dataset.t = b.innerHTML; b.innerHTML = '<span class="sp"></span>'; } else if (b.dataset.t) b.innerHTML = b.dataset.t; };
-  const TYPE = { In: ['ចូល (ទទួល)', 'In (receive)'], Out: ['ចេញ (ដឹក)', 'Out (deliver)'] };
+  // Load / Unload is what the weigher ticks at the 1st weigh; In = 1st weigh (truck comes in), Out = 2nd weigh (truck leaves) (Kim, 12 Nov 2026).
+  // Stored values stay 'Out' (load) and 'In' (unload) so old tickets read the same.
+  const TYPE = { In: ['ទំលាក់ទំនិញ', 'Unload'], Out: ['ឡើងទំនិញ', 'Load'] };
   const typeName = k => (TYPE[k] ? t(TYPE[k][0], TYPE[k][1]) : k || '');
-  // In or Out comes from the weights: heavier at the 1st weigh = came in loaded (In, receive), lighter = left loaded (Out, deliver).
+  // Fallback for tickets with no Load/Unload tick: heavier at the 1st weigh = unloaded here ('In'), lighter = loaded here ('Out').
   const dirOf = (w1, w2) => (w1 === '' || w1 == null || w2 === '' || w2 == null ? '' : Number(w1) > Number(w2) ? 'In' : 'Out');
-  const typeOf = x => dirOf(x.w1, x.w2);
+  const typeOf = x => (x.type === 'In' || x.type === 'Out' ? x.type : dirOf(x.w1, x.w2));
   /** At the 2nd weigh: is a DN needed? Yes unless the scale now reads lighter than the 1st weigh (truck came in loaded). */
   // DN is required when the truck came to load goods, and not when it came to unload (Kim, 8 Nov 2026): only the tick decides.
   const dnNeed = sel => !!sel && (F.type || sel.type || 'Out') !== 'In';
@@ -810,7 +812,7 @@
     const c = x && x.status === 'Open' ? lastAgain(x) : null;
     if (!c) return x;
     const g = CORE.finish(Number(x.w1), Number(c.kg), truckOf(x.plate), S().SCALE_TARE_PCT);
-    return Object.assign({}, x, { w2: c.kg, t2: c.t, s2: c.src || 'Scale', gross: g.gross, tare: g.tare, net: g.net, type: dirOf(x.w1, c.kg), agn: x.again.length });
+    return Object.assign({}, x, { w2: c.kg, t2: c.t, s2: c.src || 'Scale', gross: g.gross, tare: g.tare, net: g.net, agn: x.again.length });
   }
   const agCls = d => (Math.abs(d) <= againTol() ? 'same' : d > 0 ? 'heavy' : 'light');
   const agTxt = d => (Math.abs(d) <= againTol() ? t('ដូចមុន', 'Same as before') : d > 0 ? t('ធ្ងន់ជាងមុន', 'Heavier than before') : t('ស្រាលជាងមុន', 'Lighter than before'));
@@ -883,7 +885,7 @@
     g.warn = g.warn.concat(againWarn(sel, use.kg), dnWarn(sel, use.kg));
     const ds = dnSum(F);
     const reason = [sel.reason, use.src === 'Manual' && MANUAL ? MANUAL.reason : ''].filter(Boolean).join(' · ');
-    const tk = Object.assign({}, sel, fromForm(), { type: dirOf(sel.w1, use.kg), status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
+    const tk = Object.assign({}, sel, fromForm(), { type: F.type || sel.type || 'Out', status: 'Done', w2: use.kg, t2: iso(new Date()), s2: use.src, gross: g.gross, tare: g.tare, net: g.net,
       warn: g.warn.map(x => x.en).join(' | '), reason: reason, dnTot: ds == null ? '' : ds, dnVar: ds == null ? '' : g.net - ds });
     PENDING = null; MANUAL = null;
     keepPhoto(tk.cid, 2, tk.plate + ' · 2nd ' + kg(tk.w2) + ' kg · Net ' + kg(tk.net) + ' kg');
@@ -940,13 +942,13 @@
           <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${dmy(sel.t1).slice(0, 5)} ${hm(sel.t1)}</div></div>
           <div class="cell ag"><div class="lab">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</div><div class="num n1">${kg(ref)}</div><div class="sub">${dmy(a.t).slice(0, 5)} ${hm(a.t)}</div></div>
           <div class="cell ow ${!has ? 'none' : cls === 'same' ? 'ok' : cls === 'heavy' ? 'over' : 'light'}"><div class="lab">${!has ? t('ខុសពីមុន', 'Change') : (cls === 'same' ? '✅ ' : cls === 'heavy' ? '⚠️ ' : '⬇️ ') + agTxt(d)}</div><div class="owv">${has ? sgn(d) + ' kg' : '—'}</div><div class="sub">${t('អនុញ្ញាត', 'Allowed')} ±${againTol()} kg</div></div>
-          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
+          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(F.type || 'Out') : '&nbsp;'}</div></div>`;
       } else if (sel && sel.status === 'Open' && sel.w1 !== '' && sel.w1 != null) {
         const w1 = Number(sel.w1), has = w.kg != null, liveGross = !has || w.kg >= w1;
         const G = t('ទម្ងន់សរុប', 'Gross'), T = t('ឡានទទេ', 'Tare');
         nums = `<div class="cell"><div class="lab">${t('ទម្ងន់ឥឡូវ (លើកទី២)', 'Now (2nd weigh)')}</div><div class="num">${num}</div><div class="sub">${liveGross ? G : T}</div></div>
           <div class="cell"><div class="lab">${t('ទម្ងន់លើកទី១', '1st weigh')}</div><div class="num n1">${kg(w1)}</div><div class="sub">${liveGross ? T : G} · ${hm(sel.t1)}${sel.s1 && sel.s1 !== 'Scale' ? ' · ' + esc(sel.s1) : ''}</div></div>
-          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(dirOf(w1, w.kg)) : '&nbsp;'}</div></div>`;
+          <div class="cell net"><div class="lab">${t('ទម្ងន់សុទ្ធ', 'Net')}</div><div class="num nn">${has ? kg(Math.abs(w.kg - w1)) : '-----'}</div><div class="sub">${has ? typeName(F.type || 'Out') : '&nbsp;'}</div></div>`;
         // Over weight (Kim, 12 Nov 2026): goods allowed = Max. Gross Weight − Inspected Vehicle Weight; red when over.
         // Without an Inspected weight, the gross is checked against Max. Gross Weight (8 Nov 2026).
         const trk = truckOf(F.plate || sel.plate);
@@ -1057,8 +1059,8 @@
     }
   }
   function ticketTable(list) {
-    return `<div class="tbl fit"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('ឡើង / ទំលាក់', 'Load / Unload')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ចូល/ចេញ', 'In/Out')}</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
-      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}${x.status === 'Void' ? ` <span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : ''}${x.status === 'Open' ? ` <span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${x.type === 'In' ? t('⬇️ ទំលាក់ទំនិញ', '⬇️ Unload') : x.type === 'Out' ? t('⬆️ ឡើងទំនិញ', '⬆️ Load') : ''}</td><td>${esc(x.item || '')}</td><td>${esc(typeName(typeOf(x)))}</td>
+    return `<div class="tbl fit"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('ឡើង / ទំលាក់', 'Load / Unload')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ម៉ោងចូល–ចេញ', 'In–Out time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
+      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}${x.status === 'Void' ? ` <span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : ''}${x.status === 'Open' ? ` <span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${typeOf(x) === 'In' ? '⬇️ ' + typeName('In') : typeOf(x) === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td><td>${esc(x.item || '')}</td>
         <td>${dmy(x.t1) === dmy(new Date().toISOString()) ? '' : dmy(x.t1) + ' '}${hm(x.t1)}${x.t2 ? '–' + hm(x.t2) : ''}</td><td class="r mono">${kg(x.gross)}</td><td class="r mono">${kg(x.tare)}</td><td class="r mono"><b>${kg(x.net)}</b></td>
         <td class="nw">${x.warn ? '<span title="' + esc(warnTxt(x.warn)) + '">⚠️</span>' : ''}${[x.s1, x.s2].some(s => s === 'Manual') ? '<span title="Manual">✍</span>' : ''}${[x.s1, x.s2].some(s => s === 'Simulator') ? '<span title="Simulator">🧪</span>' : ''}${x.err ? '<span title="' + esc(x.err) + '">❗</span>' : Q.indexOf(x.cid) >= 0 ? '<span title="' + t('រង់ចាំផ្ញើ', 'Waiting to send') + '">⏳</span>' : ''}</td></tr>`).join('')}</table></div>`;
   }
@@ -1133,8 +1135,8 @@
   function exportXls() {
     const rows = listRows();
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
-    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'In/Out', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd', 'Empty Truck'];
-    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x), (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
+    const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Load/Unload', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd', 'Empty Truck'];
+    const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x) === 'In' ? 'Unload' : typeOf(x) === 'Out' ? 'Load' : '', (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
       String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '', x.empty1 === 'Yes' ? 'Yes' : x.empty1 === 'No' ? 'No' : '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
     ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14, 30, 30, 10][i] }));
@@ -1208,7 +1210,7 @@
     const maxAvg = Math.max.apply(null, [1].concat(L.map(r => r.avg || 0)));
     $('#tBody').innerHTML = `
       <div class="sumline"><b>${all.length}</b> ${t('ជើងឡានចប់', 'finished trips')} · ${t('មធ្យម', 'average')} <b>${dur(avg)}</b> · ${t('យឺត', 'slow')} <b>${all.filter(m => m > TAT.slow).length}</b> · ${t('នៅលើទីតាំងឥឡូវ', 'on site now')} <b>${openTickets().length}</b></div>
-      ${L.length ? `<div class="tbl"><table class="tt"><tr><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th class="r">${t('ជើង', 'Trips')}</th><th class="r">${t('ចេញ/ចូល', 'Out/In')}</th><th>${t('មធ្យម', 'Average')}</th><th class="r">${t('កណ្តាល', 'Median')}</th><th class="r">${t('យូរបំផុត', 'Longest')}</th><th class="r">${t('យឺត', 'Slow')}</th><th class="r">${t('ទម្ងន់សុទ្ធ', 'Net')} (t)</th><th class="r">${t('នៅលើទីតាំងឥឡូវ', 'On site now')}</th></tr>
+      ${L.length ? `<div class="tbl"><table class="tt"><tr><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th class="r">${t('ជើង', 'Trips')}</th><th class="r">${t('ឡើង/ទំលាក់', 'Load/Unload')}</th><th>${t('មធ្យម', 'Average')}</th><th class="r">${t('កណ្តាល', 'Median')}</th><th class="r">${t('យូរបំផុត', 'Longest')}</th><th class="r">${t('យឺត', 'Slow')}</th><th class="r">${t('ទម្ងន់សុទ្ធ', 'Net')} (t)</th><th class="r">${t('នៅលើទីតាំងឥឡូវ', 'On site now')}</th></tr>
         ${L.map(r => `<tr><td><b>${esc(r.co)}</b></td><td class="r">${r.n}</td><td class="r">${r.out}/${r.inn}</td>
           <td><div class="tatbar"><i style="width:${Math.round((r.avg || 0) / maxAvg * 100)}%" class="${r.avg > TAT.slow ? 'bad' : ''}"></i><span>${dur(r.avg)}</span></div></td>
           <td class="r">${dur(r.med)}</td><td class="r">${dur(r.max)}</td><td class="r">${r.slow ? `<span class="badge pending">${r.slow} (${Math.round(r.slow / r.n * 100)}%)</span>` : r.n ? '0' : ''}</td>
@@ -1221,8 +1223,8 @@
   function tatXls() {
     if (!window.XLSX) return;
     const L = tatStats();
-    const a = [['Truck company', 'Trips', 'Out', 'In', 'Average (min)', 'Median (min)', 'Longest (min)', 'Slow (> ' + TAT.slow + ' min)', 'Net (t)', 'On site now']].concat(L.map(r => [r.co, r.n, r.out, r.inn, r.avg, r.med, r.max, r.slow, Math.round(r.net) / 1000, r.onsite]));
-    const b = [['Ticket No', 'Truck No', 'Company', 'In/Out', '1st Time', '2nd Time', 'Minutes']].concat((TAT.rows || []).filter(x => x.status === 'Done').map(x => [x.no, x.plate, x.company, typeOf(x), String(x.t1 || '').replace('T', ' '), String(x.t2 || '').replace('T', ' '), mins(x)]));
+    const a = [['Truck company', 'Trips', 'Load', 'Unload', 'Average (min)', 'Median (min)', 'Longest (min)', 'Slow (> ' + TAT.slow + ' min)', 'Net (t)', 'On site now']].concat(L.map(r => [r.co, r.n, r.out, r.inn, r.avg, r.med, r.max, r.slow, Math.round(r.net) / 1000, r.onsite]));
+    const b = [['Ticket No', 'Truck No', 'Company', 'Load/Unload', '1st Time', '2nd Time', 'Minutes']].concat((TAT.rows || []).filter(x => x.status === 'Done').map(x => [x.no, x.plate, x.company, (typeOf(x) === 'In' ? 'Unload' : 'Load'), String(x.t1 || '').replace('T', ' '), String(x.t2 || '').replace('T', ' '), mins(x)]));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'By company');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(b), 'Trips');
@@ -1454,7 +1456,7 @@
       </div>
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
-        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
+        ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ឡើង / ទំលាក់', 'Load / Unload'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
         ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), x.empty1 === 'Yes' ? t('បាទ', 'Yes') : x.empty1 === 'No' ? t('ទេ', 'No') : '')}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
@@ -1761,7 +1763,7 @@
     const dns = x.dns || [];
     return {
       TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
-      DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
+      DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: TYPE[typeOf(x)] ? TYPE[typeOf(x)][0] : '',
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
       Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
