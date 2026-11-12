@@ -1169,10 +1169,55 @@
     return rangeOf(k);
   }
   const repRangeIs = k => { const r = repRange(k); return REP.from === r[0] && REP.to === r[1]; };
-  const REP_HEAD = ['Ticket No', 'Status', 'Truck No', 'Load/Unload', 'Company', 'DN No', 'DN Kg', 'Loading Place', 'Destination', 'Canvas', 'In Time', 'Out Time', 'Total Time', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Trips'];   // In / Out / Total Time replace 1st/2nd time and weight (Kim, 12 Nov 2026)
-  const REP_NUM = [6, 13, 14, 15, 16];   // Item column removed (Kim, 12 Nov 2026)
+  // Report columns (Kim, 12 Nov 2026): admins add, remove and move columns on the screen (⚙️ Columns, or drag a header).
+  // Saved in DE Settings SCALE_REPORT_COLS for everyone; empty = the default list.
+  // k key · h header · v value · num number column · sum 'all' (every row) or 'first' (first row of the ticket) · w Excel width
   const stName = s => (s === 'Void' ? t('បានលុប', 'Cancelled') : s === 'Open' ? t('នៅលើទីតាំង', 'On site') : t('រួចរាល់', 'Done'));
   const tarpName = v => (v === 'Yes' ? 'Covered' : v === 'No' ? 'Not covered' : '');
+  const RC = (k, h, v, o) => Object.assign({ k, h, v, w: 12 }, o || {});
+  const REP_COLS = [
+    RC('no', 'Ticket No', l => l.x.no, { w: 16, mono: 1 }),
+    RC('status', 'Status', l => l.x.status, { w: 9, td: c => `<td><span class="badge ${c === 'Void' ? 'rejected' : c === 'Open' ? 'follow' : 'approved'}">${stName(c)}</span></td>`, x: c => (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') }),
+    RC('plate', 'Truck No', l => l.x.plate, { w: 11 }),
+    RC('type', 'Load/Unload', l => typeOf(l.x), { w: 10, td: c => `<td>${c === 'In' ? '⬇️ ' + typeName('In') : c === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td>`, x: c => (c === 'In' ? 'Unload' : c === 'Out' ? 'Load' : '') }),
+    RC('company', 'Company', l => l.x.company || '', { w: 22 }),
+    RC('customer', 'Customer', l => l.x.customer || '', { w: 22 }),
+    RC('item', 'Item', l => l.x.item || '', { w: 22 }),
+    RC('dn', 'DN No', l => l.d, { w: 13, mono: 1 }),
+    RC('dnkg', 'DN Kg', l => (l.d ? dnKgOf(l.x, l.d) || '' : ''), { w: 9, num: 1, sum: 'all' }),
+    RC('load', 'Loading Place', l => l.x.load || '', { w: 14 }),
+    RC('dest', 'Destination', l => l.x.dest || '', { w: 26 }),
+    RC('tarp', 'Canvas', l => l.x.tarp || '', { w: 11, td: c => `<td>${c === 'Yes' ? t('គ្របតង់', 'Covered') : c === 'No' ? t('មិនគ្របតង់', 'Not covered') : ''}</td>`, x: tarpName }),
+    RC('driver', 'Driver', l => l.x.driver || '', { w: 18 }),
+    RC('in', 'In Time', l => l.x.t1 || '', { w: 19, time: 1 }),
+    RC('out', 'Out Time', l => l.x.t2 || '', { w: 19, time: 1 }),
+    RC('total', 'Total Time', l => (l.x.t2 ? dur(mins(l.x)) : ''), { w: 11, td: c => `<td class="nw r">${esc(c)}</td>` }),
+    RC('mins', 'Total Time (min)', l => (l.x.t2 && mins(l.x) != null ? mins(l.x) : ''), { w: 10, num: 1 }),
+    RC('w1', '1st Weight (kg)', l => num(l.x.w1), { w: 12, num: 1 }),
+    RC('w2', '2nd Weight (kg)', l => num(l.x.w2), { w: 12, num: 1 }),
+    RC('gross', 'Gross (kg)', l => num(l.x.gross), { w: 11, num: 1, sum: 'first' }),
+    RC('tare', 'Tare (kg)', l => num(l.x.tare), { w: 11, num: 1, sum: 'first' }),
+    RC('net', 'Net (kg)', l => num(l.x.net), { w: 11, num: 1, sum: 'first', bold: 1 }),
+    RC('trips', 'Trips', l => l.first, { w: 6, num: 1, sum: 'first' }),
+    RC('empty1', 'Empty Truck', l => l.x.empty1 || '', { w: 10 }),
+    RC('note', 'Note', l => l.x.note || '', { w: 24 }),
+    RC('warn', 'Warnings', l => l.x.warn || '', { w: 30 }),
+    RC('op', 'Operator', l => l.x.op || '', { w: 16 }),
+  ];
+  REP_COLS.forEach(c => {
+    const td0 = c.td;
+    c.td = l => { const v = c.v(l); if (td0) return td0(v); if (c.time) return `<td class="nw">${whenTxt(v)}</td>`;
+      if (c.num) return `<td class="r mono"${c.bold ? ' style="font-weight:700"' : ''}>${v === '' || v == null ? '' : kg(v)}</td>`;
+      return `<td${c.mono ? ' class="mono"' : ''}>${esc(v)}</td>`; };
+    const x0 = c.x;
+    c.x = l => { const v = c.v(l); return x0 ? x0(v) : c.time ? String(v || '').replace('T', ' ').slice(0, 19) : v; };
+  });
+  const REP_DEF = ['no', 'status', 'plate', 'type', 'company', 'dn', 'dnkg', 'load', 'dest', 'tarp', 'in', 'out', 'total', 'gross', 'tare', 'net', 'trips'];
+  function repCols() {
+    const s = String(S().SCALE_REPORT_COLS || get('sc_repcols') || '').split(',').map(x => x.trim()).filter(Boolean);
+    const out = (s.length ? s : REP_DEF).map(k => REP_COLS.find(c => c.k === k)).filter(Boolean);
+    return out.length ? out : REP_DEF.map(k => REP_COLS.find(c => c.k === k));
+  }
   function renderReport() {
     screen = renderReport;
     document.body.classList.add('wide');
@@ -1188,6 +1233,7 @@
         <input type="search" class="in lq" id="rQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...')}" value="${esc(REP.q)}">
         <button type="button" class="btn" id="rXls">⬇ Excel</button>
         <button type="button" class="btn" id="rDn">🧾 Debit Note</button>
+        ${me().admin ? `<button type="button" class="btn" id="rCols">⚙️ ${t('ជួរឈរ', 'Columns')}</button>` : ''}
       </div>
       <div id="rSum" class="sumline"></div>
       <div id="rBody"><div class="spinner"></div></div></section>`;
@@ -1200,6 +1246,7 @@
     $('#rQ').oninput = e => { REP.q = e.target.value; paintReport(); };
     $('#rXls').onclick = exportReport;
     $('#rDn').onclick = exportDebitNote;
+    if ($('#rCols')) $('#rCols').onclick = repColsDialog;
     loadReport();
   }
   async function loadReport() {
@@ -1221,23 +1268,14 @@
       .filter(x => !q || [x.no, x.plate, x.company, x.item, x.dest, x.load, x.note, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0)
       .sort((a, b) => String(b.t1).localeCompare(String(a.t1)));
   };
-  /** The report rows: [values for REP_HEAD], one per DN. */
+  /** The report rows, one per DN: { x, d (DN or ''), first (1 on the ticket's first row) }. */
   function repLines(list) {
     const out = [];
-    list.forEach(x => {
-      const dns = x.dns && x.dns.length ? x.dns : [''];
-      dns.forEach((d, i) => out.push({ x, cells: [x.no, x.status, x.plate, typeOf(x), x.company || '', d, d ? dnKgOf(x, d) || '' : '', x.load || '', x.dest || '', x.tarp || '',
-        x.t1 || '', x.t2 || '', x.t2 ? dur(mins(x)) : '', num(x.gross), num(x.tare), num(x.net), i === 0 ? 1 : 0] }));
-    });
+    list.forEach(x => { const dns = x.dns && x.dns.length ? x.dns : ['']; dns.forEach((d, i) => out.push({ x, d, first: i === 0 ? 1 : 0 })); });
     return out;
   }
-  /** Grand total of the rows shown (Kim, 12 Nov 2026): DN Kg adds every row; weights and Trips add only the Trips = 1 rows, so each truck counts once. */
-  function repTotal(lines) {
-    const tot = REP_HEAD.map(() => '');
-    REP_NUM.forEach(i => { tot[i] = 0; });
-    lines.forEach(l => REP_NUM.forEach(i => { if (i === 6 || l.cells[16] === 1) tot[i] += Number(l.cells[i]) || 0; }));
-    return tot;
-  }
+  /** Grand total of the rows shown (Kim, 12 Nov 2026): DN Kg adds every row; weights and Trips add only the first row of a ticket, so each truck counts once. */
+  const repTotal = (lines, cols) => cols.map(c => (c.sum ? lines.reduce((s, l) => s + (c.sum === 'all' || l.first ? Number(c.v(l)) || 0 : 0), 0) : ''));
   const whenTxt = v => String(v || '').replace('T', ' ').slice(0, 16);
   function paintReport() {
     if (!$('#rSum')) return;
@@ -1247,34 +1285,83 @@
       const h = `<option value="">${t('ទាំងអស់', 'All')}</option>` + names.map(n => `<option${n === REP.co ? ' selected' : ''}>${esc(n)}</option>`).join('');
       if (co._h !== h) { co._h = h; co.innerHTML = h; }
     }
-    const list = repTickets(), lines = repLines(list);
+    const list = repTickets(), lines = repLines(list), cols = repCols();
     const done = list.filter(x => x.status === 'Done'), open = list.filter(x => x.status === 'Open').length;
-    const net = done.reduce((s, x) => s + (Number(x.net) || 0), 0), dnKg = lines.reduce((s, l) => s + (Number(l.cells[6]) || 0), 0);
+    const net = done.reduce((s, x) => s + (Number(x.net) || 0), 0), dnKg = lines.reduce((s, l) => s + (l.d ? dnKgOf(l.x, l.d) : 0), 0);
     $('#rSum').innerHTML = `<b>${lines.length}</b> ${t('ជួរ', 'rows')} · <b>${list.length}</b> ${t('ជើង', 'trips')} (${done.length} ${t('រួចរាល់', 'done')} · ${open} ${t('នៅលើទីតាំង', 'on site')}) · ${t('សុទ្ធ', 'Net')} <b>${kg(net)} kg</b> · ${t('សរុប DN', 'DN total')} <b>${kg(dnKg)} kg</b>`;
     if (!lines.length) { $('#rBody').innerHTML = `<div class="empty">${t('គ្មានទិន្នន័យ', 'No data')}</div>`; return; }
-    const cell = (c, i) => {
-      if (i === 1) return `<td><span class="badge ${c === 'Void' ? 'rejected' : c === 'Open' ? 'follow' : 'approved'}">${stName(c)}</span></td>`;
-      if (i === 3) return `<td>${c === 'In' ? '⬇️ ' + typeName('In') : c === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td>`;   // Load / Unload (Kim, 12 Nov 2026)
-      if (i === 9) return `<td>${c === 'Yes' ? t('គ្របតង់', 'Covered') : c === 'No' ? t('មិនគ្របតង់', 'Not covered') : ''}</td>`;
-      if (i === 10 || i === 11) return `<td class="nw">${whenTxt(c)}</td>`;
-      if (i === 12) return `<td class="nw r">${esc(c)}</td>`;
-      if (REP_NUM.indexOf(i) >= 0) return `<td class="r mono"${i === 15 ? ' style="font-weight:700"' : ''}>${c === '' ? '' : kg(c)}</td>`;
-      return `<td${i === 0 || i === 5 ? ' class="mono"' : ''}>${esc(c)}</td>`;
-    };
-    $('#rBody').innerHTML = `<div class="tbl fit"><table class="tt rep"><tr>${REP_HEAD.map((h, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r"' : ''}>${h}</th>`).join('')}</tr>
-      ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${l.cells.map(cell).join('')}</tr>`).join('')}
-      <tr class="gtot">${repTotal(lines).map((c, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r mono"' : ''}>${i === 0 ? t('សរុបរួម', 'Grand total') : c === '' ? '' : kg(c)}</th>`).join('')}</tr></table></div>
-      <div class="hint">${t('មួយជួរ = មួយ DN · ទម្ងន់ប័ណ្ណនៅគ្រប់ជួរ · Trips = 1 នៅជួរទីមួយនៃប័ណ្ណ (Excel: SUMIFS(Net, Trips, 1))', 'One row per DN · ticket weights on every row · Trips = 1 on the first row of each ticket (Excel: SUMIFS(Net, Trips, 1))')}</div>`;
+    const adm = !!me().admin;
+    $('#rBody').innerHTML = `<div class="tbl fit"><table class="tt rep"><tr>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="r"' : ''}${adm ? ' draggable="true" title="' + t('អូសដើម្បីរៀបចំជួរឈរ', 'Drag to move the column') + '"' : ''}>${esc(c.h)}</th>`).join('')}</tr>
+      ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${cols.map(c => c.td(l)).join('')}</tr>`).join('')}
+      <tr class="gtot">${repTotal(lines, cols).map((v, i, all) => `<th${cols[i].num ? ' class="r mono"' : ''}>${i === all.indexOf('') ? t('សរុបរួម', 'Grand total') : v === '' ? '' : kg(v)}</th>`).join('')}</tr></table></div>
+      <div class="hint">${t('មួយជួរ = មួយ DN · ទម្ងន់ប័ណ្ណនៅគ្រប់ជួរ · Trips = 1 នៅជួរទីមួយនៃប័ណ្ណ (Excel: SUMIFS(Net, Trips, 1))', 'One row per DN · ticket weights on every row · Trips = 1 on the first row of each ticket (Excel: SUMIFS(Net, Trips, 1))')}${adm ? ' · ' + t('Admin: អូសចំណងជើងជួរឈរដើម្បីប្តូរលំដាប់ ឬចុច ⚙️ ជួរឈរ ដើម្បីបន្ថែម/ដកចេញ', 'Admin: drag a column header to move it, or press ⚙️ Columns to add or remove columns') : ''}</div>`;
     bindTable();
+    if (adm) repDrag();
+  }
+  /** Admin drags a header onto another to move the column there (Kim, 12 Nov 2026). */
+  function repDrag() {
+    let from = '';
+    $$('.rep th[data-ck]').forEach(th => {
+      th.addEventListener('dragstart', e => { from = th.dataset.ck; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } th.classList.add('dragging'); });
+      th.addEventListener('dragend', () => { th.classList.remove('dragging'); $$('.rep th.dropto').forEach(x => x.classList.remove('dropto')); });
+      th.addEventListener('dragover', e => { if (from && from !== th.dataset.ck) { e.preventDefault(); th.classList.add('dropto'); } });
+      th.addEventListener('dragleave', () => th.classList.remove('dropto'));
+      th.addEventListener('drop', e => {
+        e.preventDefault(); th.classList.remove('dropto');
+        const keys = repCols().map(c => c.k), a = keys.indexOf(from), b = keys.indexOf(th.dataset.ck);
+        if (a < 0 || b < 0 || a === b) return;
+        keys.splice(b, 0, keys.splice(a, 1)[0]); from = '';
+        saveRepCols(keys);
+      });
+    });
+  }
+  /** ⚙️ Columns (admins): tick the columns to show, drag or ▲▼ to order them; saved for everyone. */
+  function repColsDialog() {
+    let keys = repCols().map(c => c.k);
+    const back = document.createElement('div');
+    back.className = 'popwrap';
+    const draw = () => {
+      const rest = REP_COLS.filter(c => keys.indexOf(c.k) < 0);
+      back.innerHTML = `<div class="popbox colsdlg" role="dialog" aria-modal="true"><h3>⚙️ ${t('ជួរឈររបាយការណ៍', 'Report columns')}</h3>
+        <p class="hint">${t('ធីក = បង្ហាញ · អូស ឬ ▲▼ ដើម្បីប្តូរលំដាប់ · រក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · drag or ▲▼ to change the order · saved for everyone')}</p>
+        <div class="collist">${keys.map((k, i) => { const c = REP_COLS.find(z => z.k === k); return `<div class="colrow" draggable="true" data-k="${k}"><span class="grip" aria-hidden="true">⠿</span><label><input type="checkbox" checked data-tk2="${k}"> ${esc(c.h)}</label><span class="sp"></span><button type="button" class="btn sm" data-up="${i}" ${i ? '' : 'disabled'}>▲</button><button type="button" class="btn sm" data-dn="${i}" ${i < keys.length - 1 ? '' : 'disabled'}>▼</button></div>`; }).join('')}
+        ${rest.map(c => `<div class="colrow off" data-k="${c.k}"><span class="grip" aria-hidden="true"></span><label><input type="checkbox" data-tk2="${c.k}"> ${esc(c.h)}</label></div>`).join('')}</div>
+        <div class="btns mt"><button type="button" class="btn" id="cdReset">↺ ${t('លំនាំដើម', 'Default')}</button><span class="sp"></span><button type="button" class="btn" id="cdNo">${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="cdOk">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
+      back.querySelectorAll('[data-tk2]').forEach(cb => { cb.onchange = () => { const k = cb.dataset.tk2; keys = cb.checked ? keys.concat(k) : keys.filter(z => z !== k); if (!keys.length) keys = [k]; draw(); }; });
+      back.querySelectorAll('[data-up]').forEach(b => { b.onclick = () => { const i = +b.dataset.up; keys.splice(i - 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      back.querySelectorAll('[data-dn]').forEach(b => { b.onclick = () => { const i = +b.dataset.dn; keys.splice(i + 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      let from = '';
+      back.querySelectorAll('.colrow[draggable]').forEach(r => {
+        r.addEventListener('dragstart', e => { from = r.dataset.k; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } });
+        r.addEventListener('dragover', e => { if (from && from !== r.dataset.k) { e.preventDefault(); r.classList.add('dropto'); } });
+        r.addEventListener('dragleave', () => r.classList.remove('dropto'));
+        r.addEventListener('drop', e => { e.preventDefault(); const a = keys.indexOf(from), b = keys.indexOf(r.dataset.k); if (a >= 0 && b >= 0) { keys.splice(b, 0, keys.splice(a, 1)[0]); draw(); } });
+      });
+      back.querySelector('#cdReset').onclick = () => { keys = REP_DEF.slice(); draw(); };
+      back.querySelector('#cdNo').onclick = () => back.remove();
+      back.querySelector('#cdOk').onclick = () => { back.remove(); saveRepCols(keys); };
+    };
+    draw();
+    back.addEventListener('click', e => { if (e.target === back) back.remove(); });
+    document.body.appendChild(back);
+  }
+  async function saveRepCols(keys) {
+    const v = keys.join(',') === REP_DEF.join(',') ? '' : keys.join(',');
+    set('sc_repcols', v || null);   // this PC at once
+    if (B) { B.settings = Object.assign({}, B.settings, { SCALE_REPORT_COLS: v }); }
+    paintReport();
+    if (DEMO) return;
+    try { const r = await api('scSettings', { SCALE_REPORT_COLS: v }); if (r.settings) B.settings = r.settings; toast(t('បានរក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Saved for everyone')); }
+    catch (e) { toast(t('រក្សាទុកតែលើកុំព្យូទ័រនេះ (Server មិនទាន់ទទួល)', 'Saved on this PC only (server not updated yet)') + ': ' + e.message); }
   }
   function exportReport() {
-    const lines = repLines(repTickets());
+    const lines = repLines(repTickets()), cols = repCols();
     if (!lines.length || !window.XLSX) { toast(t('គ្មានទិន្នន័យ', 'No data')); return; }
-    const data = lines.map(l => l.cells.map((c, i) => (i === 1 ? (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') : i === 3 ? (c === 'In' ? 'Unload' : c === 'Out' ? 'Load' : '') : i === 9 ? tarpName(c) : i === 10 || i === 11 ? String(c || '').replace('T', ' ').slice(0, 19) : c)));
-    const gt = repTotal(lines); gt[0] = 'Grand total';
-    const ws = XLSX.utils.aoa_to_sheet([REP_HEAD].concat(data, [[], gt]));   // a blank row keeps the total out of Excel's filter and sort
-    ws['!cols'] = [16, 9, 11, 10, 22, 13, 9, 14, 26, 11, 19, 19, 11, 11, 11, 11, 6].map(w => ({ wch: w }));
-    ws['!autofilter'] = { ref: 'A1:Q' + (data.length + 1) };
+    const head = cols.map(c => c.h), data = lines.map(l => cols.map(c => c.x(l)));
+    const gt = repTotal(lines, cols); if (gt.indexOf('') >= 0) gt[gt.indexOf('')] = 'Grand total';
+    const ws = XLSX.utils.aoa_to_sheet([head].concat(data, [[], gt]));   // a blank row keeps the total out of Excel's filter and sort
+    ws['!cols'] = cols.map(c => ({ wch: c.w || 12 }));
+    ws['!autofilter'] = { ref: 'A1:' + XLSX.utils.encode_col(cols.length - 1) + (data.length + 1) };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     XLSX.writeFile(wb, 'Scale_Report_' + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx');

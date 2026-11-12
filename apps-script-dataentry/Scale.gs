@@ -44,6 +44,7 @@ const SC_SETTINGS = [
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
   ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
+  ['SCALE_REPORT_COLS', '', 'Report columns and their order (set by an Admin on the Report screen). Empty = default.'],
   ['SCALE_DEBIT_NOTE_LINK', 'https://drive.google.com/drive/folders/1mFZFVYJGyijsnhFVjTviDluICME9e9tn', 'Drive link to the Debit Note Excel template (Report › Debit Note), or a folder (newest file with "Debit" in its name). Kept in G:\\My Drive\\SSK-STEEL\\SSK-WEIGHT.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
@@ -824,7 +825,7 @@ function scSettings_(p, user) {
   const keys = n > 0 ? sh.getRange(2, 1, n, 1).getDisplayValues().map(r => String(r[0]).trim()) : [];
   SC_SETTINGS.forEach(def => {
     if (p[def[0]] === undefined) return;
-    const v = clip_(p[def[0]], def[0] === 'SCALE_DNC_USERS' ? 3000 : 200);
+    const v = clip_(p[def[0]], def[0] === 'SCALE_DNC_USERS' || def[0] === 'SCALE_REPORT_COLS' ? 3000 : 200);
     const i = keys.indexOf(def[0]);
     if (i >= 0) {
       const before = sh.getRange(i + 2, 2).getDisplayValue();
