@@ -1378,7 +1378,7 @@
     const rightXf = i => {
       if (rightOf[i] != null) return rightOf[i];
       const base = (xfs[i] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>').replace(/\/>$/, '>').replace(/<alignment[^>]*\/>|<\/xf>$/g, '').replace(/ applyAlignment="\d"/, '');
-      const nx = base.replace(/>$/, ' applyAlignment="1"><alignment horizontal="right" vertical="center" shrinkToFit="1"/></xf>');
+      const nx = base.replace(/>$/, ' applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>');
       const n = (stylesOut.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].match(/<xf [^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || []).length;
       stylesOut = stylesOut.replace(/<\/cellXfs>/, nx + '</cellXfs>').replace(/<cellXfs count="\d+"/, `<cellXfs count="${n + 1}"`);
       return (rightOf[i] = n);
