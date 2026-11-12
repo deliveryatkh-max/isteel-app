@@ -480,6 +480,17 @@
       });
     });
     const box = tb.closest('.tbl');
+    // one table under an Option D header: ⚙️ Columns sits with Excel in the header (Kim, 12 Nov 2026)
+    const facts = $('#view .fhead .facts');
+    if (facts && $$(TSEL).length === 1) {
+      let cb = facts.querySelector('[data-tcols]');
+      if (!cb) { cb = document.createElement('button'); cb.type = 'button'; cb.className = 'btn'; cb.dataset.tcols = '1'; cb.textContent = '⚙️ ' + t('ជួរឈរ', 'Columns'); facts.insertBefore(cb, facts.querySelector('[data-ftog]')); }
+      cb.onclick = () => {
+        const all = [...Array(n).keys()].map(i => ({ k: i, h: name(i).trim() || '#' + (i + 1) }));
+        colsDialog(t('ជួរឈរតារាង', 'Table columns'), all, tShown(tb), [...Array(n).keys()], keys => tSave(key, keys.join(',') === [...Array(n).keys()].join(',') ? null : keys));
+      };
+      return;
+    }
     if (box && !(box.previousElementSibling && box.previousElementSibling.classList.contains('colbar'))) {
       const bar = document.createElement('div');
       bar.className = 'colbar';
@@ -1194,19 +1205,34 @@
   }
   const rangeIs = k => { const r = rangeOf(k); return LIST.from === r[0] && LIST.to === r[1]; };
   const paintRanges = () => $$('[data-rg]').forEach(b => b.classList.toggle('on', rangeIs(b.dataset.rg)));
+  // ---------------------------------------------------------------- filter header, "Option D" (Kim, 12 Nov 2026)
+  // Title + action buttons on one line, and a Filter button that opens or closes the filter panel (remembered per screen).
+  const fOpen = k => get('sc_fo_' + k) !== '0';
+  const fHead = (k, title, acts) => `<div class="fhead"><h2>${title}</h2><div class="facts">${acts}<button type="button" class="btn fbtn${fOpen(k) ? ' on' : ''}" data-ftog="${k}" aria-expanded="${fOpen(k)}">⏷ ${t('តម្រង', 'Filter')} <span class="car">${fOpen(k) ? '▴' : '▾'}</span></button></div></div>`;
+  const fPanel = (k, inner) => `<div class="filters fpanel" data-fp="${k}"${fOpen(k) ? '' : ' hidden'}>${inner}</div>`;
+  const fRange = (a, b, va, vb) => `<label class="frange">📅 ${t('ចន្លោះថ្ងៃ', 'Date range')}<span><input type="date" class="in" id="${a}" value="${va}"><i>–</i><input type="date" class="in" id="${b}" value="${vb}"></span></label>`;
+  const fSearch = (id, ph, v, cls) => `<label class="fsearch${cls ? ' ' + cls : ''}"><span class="ico" aria-hidden="true">🔍</span><input type="search" class="in" id="${id}" data-live-ok placeholder="${ph}" value="${esc(v)}" aria-label="${t('ស្វែងរក', 'Search')}"></label>`;
+  const fShow = id => `<button type="button" class="btn fshow" id="${id}">🔍 ${t('បង្ហាញ', 'Show')}</button>`;
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-ftog]');
+    if (!b) return;
+    const k = b.dataset.ftog, p = $(`[data-fp="${k}"]`), open = p ? p.hidden : false;
+    if (p) p.hidden = !open;
+    set('sc_fo_' + k, open ? null : '0');
+    b.classList.toggle('on', open); b.setAttribute('aria-expanded', open);
+    b.querySelector('.car').textContent = open ? '▴' : '▾';
+    requestAnimationFrame(fitTables);
+  });
   function renderList() {
     screen = renderList;
     document.body.classList.add('wide');
-    $('#view').innerHTML = `<section class="card">
-      <div class="filters">
-        <label>${t('ពី', 'From')}<input type="date" class="in" id="lFrom" value="${LIST.from}"></label>
-        <label>${t('ដល់', 'To')}<input type="date" class="in" id="lTo" value="${LIST.to}"></label>
-        <button type="button" class="btn ok" id="lGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
+    $('#view').innerHTML = `<section class="card"><div class="fwrap">
+      ${fHead('list', `🗂️ ${t('បញ្ជីប័ណ្ណថ្លឹង', 'Weighing tickets')}`, `<button type="button" class="btn" id="lXls"><span class="xl">X</span> Excel</button>`)}
+      ${fPanel('list', `${fRange('lFrom', 'lTo', LIST.from, LIST.to)}
         <div class="qchips">${QRANGES.map(r => `<button type="button" class="chip${rangeIs(r[0]) ? ' on' : ''}" data-rg="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <div class="qchips">${QSTATUS.map(r => `<button type="button" class="chip${LIST.st === r[0] ? ' on' : ''}" data-st="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
-        <input type="search" class="in lq" id="lQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...')}" value="${esc(LIST.q)}">
-        <button type="button" class="btn" id="lXls">⬇ Excel</button>
-      </div>
+        ${fSearch('lQ', t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...'), LIST.q)}
+        ${fShow('lGo')}`)}</div>
       <div id="lSum" class="sumline"></div>
       <div id="lBody"><div class="spinner"></div></div></section>`;
     $('#lGo').onclick = () => { LIST.from = $('#lFrom').value; LIST.to = $('#lTo').value; loadList(); paintRanges(); };
@@ -1324,20 +1350,17 @@
   function renderReport() {
     screen = renderReport;
     document.body.classList.add('wide');
-    $('#view').innerHTML = `<section class="card">
-      <div class="filters">
-        <label>${t('ពី', 'From')}<input type="date" class="in" id="rFrom" value="${REP.from}"></label>
-        <label>${t('ដល់', 'To')}<input type="date" class="in" id="rTo" value="${REP.to}"></label>
-        <button type="button" class="btn ok" id="rGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
+    $('#view').innerHTML = `<section class="card"><div class="fwrap">
+      ${fHead('rep', `🚚 ${t('របាយការណ៍ដឹកជញ្ជូន', 'Trip report')}`, `<button type="button" class="btn" id="rXls"><span class="xl">X</span> Excel</button>
+        <button type="button" class="btn" id="rDn">🧾 Debit Note</button>
+        ${me().admin ? `<button type="button" class="btn" id="rCols">⚙️ ${t('ជួរឈរ', 'Columns')}</button>` : ''}`)}
+      ${fPanel('rep', `${fRange('rFrom', 'rTo', REP.from, REP.to)}
         <div class="qchips">${RRANGES.map(r => `<button type="button" class="chip${repRangeIs(r[0]) ? ' on' : ''}" data-rr="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <label>${t('ស្ថានភាព', 'Status')}<select class="in" id="rSt">${RSTATUS.map(r => `<option value="${r[0]}"${REP.st === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
         <label>${t('ឡើង / ទំលាក់', 'Load / Unload')}<select class="in" id="rTy">${[['', 'ទាំងអស់', 'All'], ['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(r => `<option value="${r[0]}"${REP.ty === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
         <label>${t('ក្រុមហ៊ុនដឹក', 'Transporter')}<select class="in" id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option></select></label>
-        <input type="search" class="in lq" id="rQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...')}" value="${esc(REP.q)}">
-        <button type="button" class="btn" id="rXls">⬇ Excel</button>
-        <button type="button" class="btn" id="rDn">🧾 Debit Note</button>
-        ${me().admin ? `<button type="button" class="btn" id="rCols">⚙️ ${t('ជួរឈរ', 'Columns')}</button>` : ''}
-      </div>
+        ${fSearch('rQ', t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...'), REP.q)}
+        ${fShow('rGo')}`)}</div>
       <div id="rSum" class="sumline"></div>
       <div id="rBody"><div class="spinner"></div></div></section>`;
     const paint = () => $$('[data-rr]').forEach(b => b.classList.toggle('on', repRangeIs(b.dataset.rr)));
@@ -1648,16 +1671,12 @@
   function renderTat() {
     screen = renderTat;
     document.body.classList.add('wide');
-    $('#view').innerHTML = `<section class="card">
-      <div class="head2"><h2>⏱️ ${t('រយៈពេលឡាននៅក្នុងរោងចក្រ តាមក្រុមហ៊ុនឡាន', 'Turnaround time per truck company')}</h2></div>
-      <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')}</p>
-      <div class="filters">
-        <label>${t('ពី', 'From')}<input type="date" class="in" id="tFrom" value="${TAT.from}"></label>
-        <label>${t('ដល់', 'To')}<input type="date" class="in" id="tTo" value="${TAT.to}"></label>
+    $('#view').innerHTML = `<section class="card"><div class="fwrap">
+      ${fHead('tat', `⏱️ ${t('រយៈពេលឡាននៅក្នុងរោងចក្រ តាមក្រុមហ៊ុនឡាន', 'Turnaround time per truck company')}`, `<button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
+      ${fPanel('tat', `${fRange('tFrom', 'tTo', TAT.from, TAT.to)}
         <label>${t('យឺត បើលើស (នាទី)', 'Slow if over (min)')}<input type="number" class="in" id="tSlow" min="10" step="10" value="${TAT.slow}" style="width:110px"></label>
-        <button type="button" class="btn ok" id="tGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
-        <button type="button" class="btn" id="tXls">⬇ Excel</button>
-      </div>
+        <span class="fsp"></span>${fShow('tGo')}`)}</div>
+      <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')}</p>
       <div id="tBody"><div class="spinner"></div></div></section>`;
     $('#tGo').onclick = () => { TAT.from = $('#tFrom').value; TAT.to = $('#tTo').value; loadTat(); };
     $('#tSlow').onchange = e => { TAT.slow = Math.max(10, +e.target.value || 120); paintTat(); };
@@ -1791,16 +1810,12 @@
     screen = renderDnc;
     document.body.classList.add('wide');
     $('#view').innerHTML = `<section class="card dncf">
-      <div class="head2"><h2>🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}</h2></div>
-      <div class="filters">
-        <label>${t('ពី', 'From')}<input type="date" class="in" id="dFrom" value="${DNC.from}"></label>
-        <label>${t('ដល់', 'To')}<input type="date" class="in" id="dTo" value="${DNC.to}"></label>
+      <div class="fwrap">${fHead('dnc', `🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}`, `<button type="button" class="btn" id="dXls"><span class="xl">X</span> Excel</button>
+        <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>`)}
+      ${fPanel('dnc', `${fRange('dFrom', 'dTo', DNC.from, DNC.to)}
         <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<select class="in" id="dCo"><option value="">${t('ទាំងអស់', 'All')}</option>${dncCompanies().map(c => `<option${normC(c) === normC(DNC.co) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-        <button type="button" class="btn ok" id="dGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
-        <input type="search" class="in grow" id="dQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...')}" value="${esc(DNC.q)}">
-        <button type="button" class="btn" id="dXls">⬇ Excel</button>
-        <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>
-      </div>
+        ${fSearch('dQ', t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...'), DNC.q, 'grow')}
+        ${fShow('dGo')}`)}</div>
       <div id="dStat"></div></section>
       <div id="dBody"><div class="spinner"></div></div>`;
     $('#dGo').onclick = () => { DNC.from = $('#dFrom').value; DNC.to = $('#dTo').value; loadDnc(); };

@@ -242,6 +242,33 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .tbl.fit, .tbl.dncfit { overflow: auto; }
 .tbl.dncfit { max-height: calc(100vh - var(--barh, 58px) - 230px); min-height: 280px; }
 .card > .filters { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); padding-top: 4px; }
+/* Option D filter header (Kim, 12 Nov 2026): title + actions, Filter button opens/closes a soft panel */
+.card > .fwrap { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); padding-top: 4px; margin-bottom: 10px; }
+.fhead { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.fhead h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); flex: 1; min-width: 180px; }
+.facts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fwrap { --fh: 38px; --fr: 8px; --navy: #011e41; --hi: #e8f1fb; }
+.facts .btn { min-height: var(--fh); height: var(--fh); padding: 0 14px; font-size: 14px; font-weight: 600; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: var(--fr); display: inline-flex; align-items: center; gap: 6px; }
+.facts .btn.ok { background: var(--navy); color: #fff; border-color: var(--navy); }
+.facts .xl { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: #1e7b46; color: #fff; font: 800 11px/1 sans-serif; margin-right: 2px; }
+.facts .fbtn { color: var(--navy); border-color: #9ec3ea; }
+.facts .fbtn.on { background: var(--hi); }
+.fpanel { background: var(--hi); border: 1px solid #cfe0f3; border-radius: 10px; padding: 8px 10px; margin-bottom: 0; gap: 8px 10px; align-items: end; }
+.fpanel label { font-weight: 600; color: var(--text); font-size: 12.5px; }
+.fpanel .in, .fpanel select.in, .filters.fpanel input.in { min-height: var(--fh); height: var(--fh); padding: 0 10px; font-size: 14px; background: var(--field); border: 1px solid var(--line); border-radius: var(--fr); }
+.frange > span { display: flex; align-items: center; gap: 6px; }
+.frange i { font-style: normal; color: var(--muted); }
+.fsearch { position: relative; flex: 1; min-width: 220px; }
+.fsearch .ico { position: absolute; left: 10px; bottom: 10px; font-size: 13px; opacity: .6; pointer-events: none; }
+.fsearch input.in, .filters.fpanel .fsearch input.in { width: 100%; padding-left: 32px; }
+.fpanel .fsp { flex: 1; }
+.fpanel .fshow { min-height: var(--fh); height: var(--fh); padding: 0 18px; font-size: 14px; font-weight: 700; background: var(--navy); color: #fff; border: 0; border-radius: var(--fr); }
+.fpanel .qchips .chip, .filters.fpanel .qchips .chip { min-height: var(--fh); height: var(--fh); padding: 0 12px; font-size: 13.5px; border-radius: var(--fr); }
+.fpanel .qchips .chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fwrap { --navy: #61cbf4; --hi: #10263d; } :root:not([data-theme="light"]) .fpanel { border-color: var(--line); } :root:not([data-theme="light"]) .fpanel .fshow, :root:not([data-theme="light"]) .fpanel .qchips .chip.on, :root:not([data-theme="light"]) .facts .btn.ok { color: #011e41; } }
+:root[data-theme="dark"] .fwrap { --navy: #61cbf4; --hi: #10263d; } :root[data-theme="dark"] .fpanel .fshow, :root[data-theme="dark"] .fpanel .qchips .chip.on { color: #011e41; }
+@media (max-width: 640px) { .fhead h2 { font-size: 16px; min-width: 100%; } .facts { width: 100%; } .facts .btn { flex: 1 1 auto; justify-content: center; padding: 0 10px; } .fpanel > * { flex: 1 1 100%; } .frange > span input { flex: 1; min-width: 0; } .fpanel .fshow { width: 100%; } }
+.dncf .fwrap { position: static; margin-bottom: 0; }
 
 /* Truck info + photo under the weigh form (Kim, 8 Nov 2026) */
 .tinfo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--card); }
@@ -479,3 +506,15 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .tt th[draggable="true"] { cursor: grab; }
 .tt th.dragging { opacity: .45; }
 .tt th.dropto { box-shadow: inset 3px 0 0 var(--orange, #f39200); }
+
+/* compact: quick dates as one segmented control, fixed widths so the panel fits one or two lines */
+.fpanel .qchips { gap: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--fr); overflow: hidden; background: var(--field); flex-wrap: nowrap; }
+.fpanel .qchips .chip, .filters.fpanel .qchips .chip { border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; padding: 0 10px; font-weight: 600; white-space: nowrap; }
+.fpanel .qchips .chip:first-child { border-left: 0; }
+.filters.fpanel .frange input.in { width: 138px; }
+.fpanel select.in { width: auto; min-width: 110px; max-width: 220px; }
+@media (max-width: 640px) { .filters.fpanel .frange input.in { width: 0; flex: 1; min-width: 0; } .fpanel .qchips .chip { flex: 1; padding: 0 4px; } .fpanel select.in { max-width: none; width: 100%; } }
+.filters.fpanel .qchips .chip.on { background: var(--navy); color: #fff; }
+:root[data-theme="dark"] .filters.fpanel .qchips .chip.on { color: #011e41; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .filters.fpanel .qchips .chip.on { color: #011e41; } }
+.fpanel .fsearch { min-width: 170px; }
