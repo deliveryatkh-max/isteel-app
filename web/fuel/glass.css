@@ -32,11 +32,11 @@
   --bg: #07111F; --card: #0D1A2C; --line: #1C2C42;
 }
 
-.glass body { background: var(--bg) var(--g-wash) fixed no-repeat; font-family: var(--g-sans); }
+.glass body { background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; font-family: var(--g-sans); }
 .glass h2, .glass .rp-kpi b, .glass .seg-n, .glass .rv-right b, .glass .sheet-h, .glass .rp-sap h3 { font-family: var(--g-display); letter-spacing: -.005em; }
 
 /* Top: the navy ISI STEEL bar becomes a floating pill; Back / Forward become glass chips under it. */
-.glass .head { padding: 8px 12px 0; background: transparent; }
+.glass .head { padding: 8px 12px 0; background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; }
 .glass .head .topbar { border-radius: 999px; min-height: 50px; padding: 0 8px 0 10px; box-shadow: 0 10px 26px rgba(1, 30, 65, .22); }
 .glass .navbar { background: transparent; border: 0; box-shadow: none; padding: 8px 0 0; }
 .glass .nav-btn { background: var(--g-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--g-line); border-radius: 999px; box-shadow: var(--g-shadow); }
@@ -48,6 +48,8 @@
   border: 1px solid var(--g-line); border-radius: 20px; box-shadow: var(--g-shadow);
 }
 .glass .rp-tw { border-radius: 16px; }
+/* Report filter stays solid when it sticks, so the table never shows behind it (Kim, 13 Nov 2026). */
+.glass .rp-f { background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .glass .rp-kpi b { font-weight: 600; }
 .glass .dt-hero { border-radius: 24px; background: var(--g-grad); box-shadow: 0 14px 32px rgba(1, 30, 65, .18); }
 

@@ -2289,7 +2289,7 @@
     const list = sapRows(rows || rpRows());
     const n = list.length, litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
     const show = list.slice(0, 50);
-    $('#rpSapPrev').innerHTML = n ? `<table class="rp-t sap" data-nosort><thead><tr>${SAP_HEAD.map((h, i) => `<th${i === 1 ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead>
+    $('#rpSapPrev').innerHTML = n ? `<table class="rp-t sap" data-nosort data-nocols><thead><tr>${SAP_HEAD.map((h, i) => `<th${i === 1 ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead>
       <tbody>${show.map(r => `<tr>${sapCells(r).map((c, i) => `<td${i === 1 ? ' class="n"' : ''}>${i === 1 || i === 6 ? `<b>${esc(i === 1 ? fmtNum(c) : c)}</b>` : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><th>${n > show.length ? L(`… និង ${n - show.length} ជួរទៀត`, `… and ${n - show.length} more rows`) : `${n} ${L('ជួរ', 'rows')}`}</th><th class="n">${fmtNum(litres)}</th><th></th><th></th><th></th><th></th><th></th><th></th></tr></tfoot></table>`
       : `<div class="empty">☑️ ${L('ធីកជួរក្នុងតារាងខាងលើ ដើម្បីដាក់ក្នុងតារាង SAP', 'Tick rows in the table above to add them to the SAP table')}</div>`;
