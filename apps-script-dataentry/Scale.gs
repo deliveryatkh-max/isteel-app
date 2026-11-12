@@ -271,6 +271,8 @@ function scBoot_(user) {
   }
   const last = {};   // last empty weight seen per plate (from finished tickets), for the warning hint
   rows.forEach(r => { if (r[1] === 'Done' && r[2] && r[19] !== '') last[scNorm_(r[2])] = Number(r[19]); });
+  const use = {};   // trips per truck, so the truck list shows the most used first (Kim, 12 Nov 2026)
+  rows.forEach(r => { if (r[0] && r[2] && r[1] !== 'Void') { const k = String(r[2]).toUpperCase().replace(/[\s\-.]/g, ''); use[k] = (use[k] || 0) + 1; } });
   const dnc = scCanDnc_(user);
   return {
     dnUsed: scDnIndex_(rows),   // every DN already on a ticket, so the scale PC can stop a second use (Kim, 9 Nov 2026)
@@ -278,7 +280,7 @@ function scBoot_(user) {
     prices: dnc && typeof prices_ === 'function' ? prices_() : [],   // vendor prices: only for people who see the Debit Note check
     people: user.admin ? usersCached_().filter(u => u.okScale).map(u => ({ email: u.email, name: u.name, admin: u.admin })) : [],
     trucks: scTrucks_(), customers: scCustomers_(), items: scItems_(), dests: scDests_(),
-    settings: scSettingsMap_(), tickets: tickets, lastTare: last, sheetUrl: ss_().getUrl(), at: new Date().getTime(),
+    settings: scSettingsMap_(), tickets: tickets, lastTare: last, plateUse: use, sheetUrl: ss_().getUrl(), at: new Date().getTime(),
   };
 }
 
