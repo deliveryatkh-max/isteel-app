@@ -736,18 +736,15 @@
     const top = Object.keys(per).map(v => Object.assign({ v }, per[v])).sort((a, b) => b.n - a.n || b.net - a.net).slice(0, 6);
     const chip = (k, km, en, e) => `<button type="button" class="pill ${RF.p === k ? 'on' : ''}" data-p="${k}">${e} ${t(km, en)}</button>`;
     $('#view').innerHTML = `
-      <div class="rhead"><small>${t('របាយការណ៍ប័ណ្ណថ្លឹង', 'Weighing ticket report')}</small><h1>📊 ${t('របាយការណ៍', 'Report')}</h1></div>
-      <div class="searchbox"><span>🔍</span><input id="rQ" value="${esc(RF.q)}" placeholder="${t('ស្វែងរកលេខឡាន លេខប័ណ្ណ ឬក្រុមហ៊ុន…', 'Search vehicle, ticket or company…')}"></div>
-      <div class="pills">${chip('today', 'ថ្ងៃនេះ', 'Today', '☀️')}${chip('week', 'សប្តាហ៍នេះ', 'This week', '📆')}${chip('month', 'ខែនេះ', 'This month', '🗓️')}${chip('all', 'ទាំងអស់', 'All', '♾️')}${chip('custom', 'ជ្រើសថ្ងៃ', 'Pick dates', '🎯')}
-        <select class="pill cosel ${RF.co ? 'on' : ''}" id="rCo" aria-label="${t('ក្រុមហ៊ុន', 'Company')}">
-          <option value="">🏢 ${t('គ្រប់ក្រុមហ៊ុន', 'All companies')}</option>
-          ${Array.from(new Set(allRecs().map(r => r.company).filter(Boolean).concat(companies()))).sort().map(c => `<option value="${esc(c)}" ${RF.co === c ? 'selected' : ''}>🏢 ${esc(c)}</option>`).join('')}
-          <option value="-" ${RF.co === '-' ? 'selected' : ''}>❔ ${t('គ្មានក្រុមហ៊ុន', 'No company')}</option>
-        </select></div>
-      <div class="fbar" ${RF.p === 'custom' ? '' : 'hidden'}>
-        <div><label for="rFrom">${t('ពីថ្ងៃ', 'From')}</label><input class="in" type="date" id="rFrom" value="${RF.from}"></div>
-        <div><label for="rTo">${t('ដល់ថ្ងៃ', 'To')}</label><input class="in" type="date" id="rTo" value="${RF.to}"></div>
-      </div>
+      <div class="fb-wrap">${FB.head('report', `📊 ${t('របាយការណ៍ប័ណ្ណថ្លឹង', 'Weighing ticket report')}`, `<button type="button" class="fb-btn" id="rDl">${FB.xl} Excel</button>
+        <button type="button" class="fb-btn" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ', 'Save to file')}</button>
+        <button type="button" class="fb-btn" id="rMail">✉️ ${t('អ៊ីមែល', 'Email')}</button>
+        <button type="button" class="fb-btn dnbtn" id="rDn" title="${t('ជ្រើសក្រុមហ៊ុនមួយជាមុន', 'Pick one company first')}">🧾 Debit Note</button>`, () => { Object.assign(RF, { from: '', to: '', q: '', p: '', co: '' }); renderReport(); })}
+      ${FB.panel('report', FB.range('rFrom', 'rTo', RF.from, RF.to) + FB.show('rGo') + FB.seg([['today', t('ថ្ងៃនេះ', 'Today')], ['month', t('ខែនេះ', 'This month')], ['all', t('ទាំងអស់', 'All')]], RF.p, 'p') +
+        FB.field(t('ក្រុមហ៊ុនដឹក', 'Transporter'), `<select id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option>
+          ${Array.from(new Set(allRecs().map(r => r.company).filter(Boolean).concat(companies()))).sort().map(c => `<option value="${esc(c)}" ${RF.co === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+          <option value="-" ${RF.co === '-' ? 'selected' : ''}>❔ ${t('គ្មានក្រុមហ៊ុន', 'No company')}</option></select>`) +
+        FB.search('rQ', t('ស្វែងរកលេខឡាន លេខប័ណ្ណ ឬក្រុមហ៊ុន…', 'Search vehicle, ticket or company…'), RF.q))}</div>
       <div class="stats">
         <div class="stat"><i>🎫</i><small>${t('ប័ណ្ណថ្លឹង', 'Tickets')}</small><b>${L.length}</b></div>
         <div class="stat"><i>🚚</i><small>${t('ឡាន', 'Trucks')}</small><b>${trucks}</b></div>
@@ -765,12 +762,6 @@
           ${top.length ? top.map(p => `<div class="act"><span class="sq">🚚</span><div><b>${esc(p.v)}</b><small>${p.co ? '🏢 ' + esc(p.co) + ' · ' : ''}${p.n} ${t('ប័ណ្ណ', p.n === 1 ? 'ticket' : 'tickets')} · ${t('មធ្យម', 'avg')} ${p.min.length ? Math.round(p.min.reduce((a, b) => a + b, 0) / p.min.length) : '–'} ${t('នាទី', 'min')}</small></div><strong>${(p.net / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })} t</strong></div>`).join('') : `<p class="note">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</p>`}
         </section>
       </div>
-      <div class="pills acts2">
-        <button type="button" class="pill" id="rDl">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>
-        <button type="button" class="pill" id="rFile">💾 ${t('រក្សាទុកក្នុងឯកសារ Excel', 'Save to Local File')}</button>
-        <button type="button" class="pill" id="rMail">✉️ ${t('ផ្ញើ Excel តាមអ៊ីមែល', 'Send Excel to Email')}</button>
-        <button type="button" class="pill dnbtn" id="rDn" title="${t('ជ្រើសក្រុមហ៊ុនមួយជាមុន', 'Pick one company first')}">🧾 ${t('បង្កើត Debit Note', 'Debit Note')}</button>
-      </div>
       <div id="panel"></div>
       ${tableCard(L, t('ប័ណ្ណថ្លឹង', 'Weighing tickets'), L.length)}`;
     // The two charts stay hidden until someone clicks Show (Kim, 31 Oct 2026); the choice is remembered.
@@ -778,7 +769,8 @@
     $('#rCharts').onclick = () => { set('de_charts', get('de_charts') === '1' ? '0' : '1'); renderReport(); };
     $$('[data-p]').forEach(b => { b.onclick = () => { if (b.dataset.p === 'custom') { RF.p = 'custom'; if (!RF.from) period('month'), RF.p = 'custom'; } else period(b.dataset.p); renderReport(); }; });
     const re = () => { RF.from = $('#rFrom').value; RF.to = $('#rTo').value; RF.q = $('#rQ').value.trim(); const pos = $('#rQ').selectionStart; const focus = document.activeElement && document.activeElement.id; renderReport(); if (focus) { const el = $('#' + focus); el.focus(); if (focus === 'rQ') el.setSelectionRange(pos, pos); } };
-    $('#rFrom').onchange = re; $('#rTo').onchange = re; $('#rQ').oninput = re;
+    const reD = () => { RF.p = 'custom'; re(); };
+    $('#rFrom').onchange = reD; $('#rTo').onchange = reD; $('#rGo').onclick = reD; $('#rQ').oninput = re;
     $('#rDl').onclick = () => L.length ? download(L, 'Weighing_Tickets_' + (RF.from || 'all') + '_' + (RF.to || '') + '.xlsx') : toast(t('គ្មានកំណត់ត្រា', 'No records'));
     $('#rFile').onclick = async () => { if (!L.length) return toast(t('គ្មានកំណត់ត្រា', 'No records')); const b = $('#rFile'); busy(b, true); try { const n = await toLocalFile(L); if (n) toast('✅ ' + L.length + t(' ប័ណ្ណ → ', ' tickets → ') + n, 4000); } catch (e) { toast('⚠️ ' + e.message, 6000); } busy(b, false); renderReport(); };
     $('#rMail').onclick = () => mailPanel(true);
