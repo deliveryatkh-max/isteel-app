@@ -518,3 +518,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 :root[data-theme="dark"] .filters.fpanel .qchips .chip.on { color: #011e41; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .filters.fpanel .qchips .chip.on { color: #011e41; } }
 .fpanel .fsearch { min-width: 170px; }
+
+.fpanel .fclr { min-height: var(--fh); height: var(--fh); padding: 0 12px; font-size: 14px; font-weight: 600; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: var(--fr); }
+.fpanel .fclr:hover { border-color: var(--navy); }
+@media (max-width: 640px) { .fpanel .fclr { width: 100%; } }
