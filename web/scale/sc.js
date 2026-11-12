@@ -1208,11 +1208,11 @@
   // ---------------------------------------------------------------- filter header, "Option D" (Kim, 12 Nov 2026)
   // Title + action buttons on one line, and a Filter button that opens or closes the filter panel (remembered per screen).
   const fOpen = k => get('sc_fo_' + k) !== '0';
-  const fHead = (k, title, acts) => `<div class="fhead"><h2>${title}</h2><div class="facts">${acts}<button type="button" class="btn fbtn${fOpen(k) ? ' on' : ''}" data-ftog="${k}" aria-expanded="${fOpen(k)}">⏷ ${t('តម្រង', 'Filter')} <span class="car">${fOpen(k) ? '▴' : '▾'}</span></button></div></div>`;
+  const fHead = (k, title, acts) => `<div class="fhead"><h2>${title}</h2><div class="facts"><button type="button" class="btn fclr" data-fclr="${k}">✕ ${t('សម្អាតទាំងអស់', 'Clear all')}</button>${acts}<button type="button" class="btn fbtn${fOpen(k) ? ' on' : ''}" data-ftog="${k}" aria-expanded="${fOpen(k)}">⏷ ${t('តម្រង', 'Filter')} <span class="car">${fOpen(k) ? '▴' : '▾'}</span></button></div></div>`;
   const fPanel = (k, inner) => `<div class="filters fpanel" data-fp="${k}"${fOpen(k) ? '' : ' hidden'}>${inner}</div>`;
   const fRange = (a, b, va, vb) => `<label class="frange">📅 ${t('ចន្លោះថ្ងៃ', 'Date range')}<span><input type="date" class="in" id="${a}" value="${va}"><i>–</i><input type="date" class="in" id="${b}" value="${vb}"></span></label>`;
   const fSearch = (id, ph, v, cls) => `<label class="fsearch${cls ? ' ' + cls : ''}"><span class="ico" aria-hidden="true">🔍</span><input type="search" class="in" id="${id}" data-live-ok placeholder="${ph}" value="${esc(v)}" aria-label="${t('ស្វែងរក', 'Search')}"></label>`;
-  const fShow = id => `<button type="button" class="btn fclr" data-fclr>✕ ${t('សម្អាតទាំងអស់', 'Clear all')}</button><button type="button" class="btn fshow" id="${id}">🔍 ${t('បង្ហាញ', 'Show')}</button>`;
+  const fShow = id => `<button type="button" class="btn fshow" id="${id}">🔍 ${t('បង្ហាញ', 'Show')}</button>`;
   // Clear all (Kim, 12 Nov 2026): every filter of the screen back to its start value, then load again
   const FCLR = {
     list: () => { Object.assign(LIST, { from: ALL_FROM, to: today(), q: '', st: '' }); renderList(); },
@@ -1221,8 +1221,8 @@
     dnc: () => { Object.assign(DNC, { from: monthStart(), to: today(), co: '', q: '' }); renderDnc(); }
   };
   document.addEventListener('click', e => {
-    const b = e.target.closest && e.target.closest('[data-fclr]'), p = b && b.closest('[data-fp]');
-    if (p && FCLR[p.dataset.fp]) FCLR[p.dataset.fp]();
+    const b = e.target.closest && e.target.closest('[data-fclr]');
+    if (b && FCLR[b.dataset.fclr]) FCLR[b.dataset.fclr]();
   });
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-ftog]');
@@ -1239,11 +1239,10 @@
     document.body.classList.add('wide');
     $('#view').innerHTML = `<section class="card"><div class="fwrap">
       ${fHead('list', `🗂️ ${t('បញ្ជីប័ណ្ណថ្លឹង', 'Weighing tickets')}`, `<button type="button" class="btn" id="lXls"><span class="xl">X</span> Excel</button>`)}
-      ${fPanel('list', `${fRange('lFrom', 'lTo', LIST.from, LIST.to)}
+      ${fPanel('list', `${fRange('lFrom', 'lTo', LIST.from, LIST.to)}${fShow('lGo')}
         <div class="qchips">${QRANGES.map(r => `<button type="button" class="chip${rangeIs(r[0]) ? ' on' : ''}" data-rg="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <div class="qchips">${QSTATUS.map(r => `<button type="button" class="chip${LIST.st === r[0] ? ' on' : ''}" data-st="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
-        ${fSearch('lQ', t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...'), LIST.q)}
-        ${fShow('lGo')}`)}</div>
+        ${fSearch('lQ', t('ស្វែងរក ឡាន DN អតិថិជន...', 'Search truck, DN, customer...'), LIST.q)}`)}</div>
       <div id="lSum" class="sumline"></div>
       <div id="lBody"><div class="spinner"></div></div></section>`;
     $('#lGo').onclick = () => { LIST.from = $('#lFrom').value; LIST.to = $('#lTo').value; loadList(); paintRanges(); };
@@ -1365,13 +1364,12 @@
       ${fHead('rep', `🚚 ${t('របាយការណ៍ដឹកជញ្ជូន', 'Trip report')}`, `<button type="button" class="btn" id="rXls"><span class="xl">X</span> Excel</button>
         <button type="button" class="btn" id="rDn">🧾 Debit Note</button>
         ${me().admin ? `<button type="button" class="btn" id="rCols">⚙️ ${t('ជួរឈរ', 'Columns')}</button>` : ''}`)}
-      ${fPanel('rep', `${fRange('rFrom', 'rTo', REP.from, REP.to)}
+      ${fPanel('rep', `${fRange('rFrom', 'rTo', REP.from, REP.to)}${fShow('rGo')}
         <div class="qchips">${RRANGES.map(r => `<button type="button" class="chip${repRangeIs(r[0]) ? ' on' : ''}" data-rr="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <label>${t('ស្ថានភាព', 'Status')}<select class="in" id="rSt">${RSTATUS.map(r => `<option value="${r[0]}"${REP.st === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
         <label>${t('ឡើង / ទំលាក់', 'Load / Unload')}<select class="in" id="rTy">${[['', 'ទាំងអស់', 'All'], ['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(r => `<option value="${r[0]}"${REP.ty === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
         <label>${t('ក្រុមហ៊ុនដឹក', 'Transporter')}<select class="in" id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option></select></label>
-        ${fSearch('rQ', t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...'), REP.q)}
-        ${fShow('rGo')}`)}</div>
+        ${fSearch('rQ', t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...'), REP.q)}`)}</div>
       <div id="rSum" class="sumline"></div>
       <div id="rBody"><div class="spinner"></div></div></section>`;
     const paint = () => $$('[data-rr]').forEach(b => b.classList.toggle('on', repRangeIs(b.dataset.rr)));
@@ -1684,9 +1682,9 @@
     document.body.classList.add('wide');
     $('#view').innerHTML = `<section class="card"><div class="fwrap">
       ${fHead('tat', `⏱️ ${t('រយៈពេលឡាននៅក្នុងរោងចក្រ តាមក្រុមហ៊ុនឡាន', 'Turnaround time per truck company')}`, `<button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
-      ${fPanel('tat', `${fRange('tFrom', 'tTo', TAT.from, TAT.to)}
+      ${fPanel('tat', `${fRange('tFrom', 'tTo', TAT.from, TAT.to)}${fShow('tGo')}
         <label>${t('យឺត បើលើស (នាទី)', 'Slow if over (min)')}<input type="number" class="in" id="tSlow" min="10" step="10" value="${TAT.slow}" style="width:110px"></label>
-        <span class="fsp"></span>${fShow('tGo')}`)}</div>
+`)}</div>
       <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')}</p>
       <div id="tBody"><div class="spinner"></div></div></section>`;
     $('#tGo').onclick = () => { TAT.from = $('#tFrom').value; TAT.to = $('#tTo').value; loadTat(); };
@@ -1823,10 +1821,9 @@
     $('#view').innerHTML = `<section class="card dncf">
       <div class="fwrap">${fHead('dnc', `🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}`, `<button type="button" class="btn" id="dXls"><span class="xl">X</span> Excel</button>
         <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>`)}
-      ${fPanel('dnc', `${fRange('dFrom', 'dTo', DNC.from, DNC.to)}
+      ${fPanel('dnc', `${fRange('dFrom', 'dTo', DNC.from, DNC.to)}${fShow('dGo')}
         <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<select class="in" id="dCo"><option value="">${t('ទាំងអស់', 'All')}</option>${dncCompanies().map(c => `<option${normC(c) === normC(DNC.co) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-        ${fSearch('dQ', t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...'), DNC.q, 'grow')}
-        ${fShow('dGo')}`)}</div>
+        ${fSearch('dQ', t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...'), DNC.q, 'grow')}`)}</div>
       <div id="dStat"></div></section>
       <div id="dBody"><div class="spinner"></div></div>`;
     $('#dGo').onclick = () => { DNC.from = $('#dFrom').value; DNC.to = $('#dTo').value; loadDnc(); };
