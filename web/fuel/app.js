@@ -2091,6 +2091,7 @@
   ];
   const RP_DEF = ['id', 'type', 'plate', 'driver', 'km', 'litres', 'datetime', 'status', 'sap'];
   const isAdminUser = () => { const c = state.config || {}; return !!c.isAdmin || ((c.user || {}).role === 'admin'); };
+  window.TC_ADMIN = isAdminUser;   // shared ⚙️ Columns tool (table-cols.js)
   function rpCols() {
     const saved = (state.config && state.config.reportCols) || storeGet('fr_repcols') || '';
     const keys = String(saved).split(',').map(x => x.trim()).filter(Boolean);

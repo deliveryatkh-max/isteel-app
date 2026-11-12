@@ -303,6 +303,7 @@
   // Without the Google Sheet link (demo) the banner lets you try each role.
   const demoRole = () => get('de_demo_role') || 'admin';
   const isAdmin = () => (!LIVE ? demoRole() === 'admin' : !!(BOOT && BOOT.user && BOOT.user.admin));
+  window.TC_ADMIN = isAdmin;   // shared ⚙️ Columns tool (table-cols.js)
   // Edit and Delete of saved tickets: Role Reviewer or Admin only (Kim, 31 Oct 2026).
   const canEdit = () => (!LIVE ? demoRole() !== 'user' : !!(BOOT && BOOT.user && (BOOT.user.admin || BOOT.user.reviewer)));
   function paintTabs() { const s = $('nav.tabs .tab[data-r="settings"]'); if (s) s.hidden = !isAdmin(); $('nav.tabs').style.gridTemplateColumns = 'repeat(' + $$('nav.tabs .tab:not([hidden])').length + ', 1fr)'; }
