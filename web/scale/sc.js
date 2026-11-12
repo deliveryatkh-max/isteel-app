@@ -616,9 +616,9 @@
         ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
           <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
-        ${sel ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN', 'DN No')}${dnNeed(sel) ? ' ' + req : ''}</label>
+        ${sel && dnNeed(sel) ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN', 'DN No')} ${req}</label>
           <div class="dnbox in${dnNeed(sel) && !F.dns.length ? ' need' : ''}" id="dnBox">${F.dns.map((d, i) => `<span class="dn">${esc(d)}<button type="button" data-dn="${i}" aria-label="Remove">×</button></span>`).join('')}
-            <input id="fDn" autocomplete="off" inputmode="text" placeholder="${t('វាយ ឬស្កេន DN ហើយចុច Enter', 'Type or scan a DN, press Enter')}"></div>
+            <input id="fDn" autocomplete="off" inputmode="numeric" placeholder="${t('វាយ ឬស្កេន DN (លេខ ៨ ឬ ១០ ខ្ទង់) ហើយចុច Enter', 'Type or scan a DN (8 or 10 digits), press Enter')}"></div>
           ${F.dns.length ? `<div class="dnkg" id="dnKg"><table><tr><th>🧾 DN</th><th class="r">${t('ទម្ងន់លើ DN (kg)', 'Kg on the DN')} ${req}</th></tr>
             ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono${dnKgOf(F, d) ? '' : ' need'}" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
             <tr class="tot"><td>${t('សរុប DN', 'DN total')}</td><td class="r mono" id="dnTot">—</td></tr></table><div id="dnCmp"></div></div>` : ''}</div>` : ''}
@@ -639,7 +639,7 @@
     if ($('#tiImg')) $('#tiImg').onclick = () => openPhoto(photoSrc(tr.photo).replace(/&sz=w\d+/, '&sz=w2000'), tr.plate, tr.photo);   // click to open big (Kim, 12 Nov 2026)
     if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
-    document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); paintForm(); }; });
+    document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); if (r.value === 'In') { F.dns = []; F.dnkg = {}; keepForm(); } paintForm(); }; });   // Unload: no DN (Kim, 12 Nov 2026)
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
     document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
@@ -686,13 +686,15 @@
     const addDn = raw => {
       if (document.querySelector('.popwrap')) return;   // a message is open: the input's blur must not open a 2nd one
       if ($('#fDn')) $('#fDn').value = '';   // else repainting the form blurs the box and adds the same text again
-      const used = [];
-      khNum(raw).split(/[\s,;]+/).map(s => s.replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean).forEach(d => {
+      const used = [], bad = [];
+      khNum(raw).split(/[\s,;]+/).map(s => s.trim()).filter(Boolean).forEach(d => {
+        if (!/^(\d{8}|\d{10})$/.test(d)) { bad.push(d); return; }   // DN = numbers only, 8 or 10 digits (Kim, 12 Nov 2026)
         const u = dnUsedBy(d);
         if (u) { used.push([d, u]); return; }   // one DN, one ticket (Kim, 9 Nov 2026)
         if (F.dns.indexOf(d) < 0 && F.dns.length < 30) F.dns.push(d);
       });
       keepForm(); paintForm();
+      if (bad.length) toast('❌ ' + bad.join(', ') + ' · ' + t('DN ត្រូវតែជាលេខ ៨ ឬ ១០ ខ្ទង់', 'A DN must be 8 or 10 digits'));
       if (used.length) popup(used.map(x => `<p>⚠️ <b class="mono">${esc(x[0])}</b><br>${t('DN នេះបានប្រើរួចហើយ តាំងពី', 'This DN was used already since')} <b>${esc(x[1].date)}</b>${x[1].no ? ` · ${t('ប័ណ្ណ', 'ticket')} <span class="mono">${esc(x[1].no)}</span>` : ''}.</p>`).join(''), () => $('#fDn') && $('#fDn').focus());
       else setTimeout(() => $('#fDn') && $('#fDn').focus(), 0);   // scan every DN first, type the kg after (Kim, 10 Nov 2026)
     };
@@ -771,7 +773,7 @@
     if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
       if (dnNeed(ticketBy(F.cid)) || !ticketBy(F.cid)) miss.push('#dnBox');
     }
-    if (second && F.dns.length) {   // the kg written on every DN (Kim, 10 Nov 2026)
+    if (second && F.dns.length && dnNeed(ticketBy(F.cid))) {   // the kg written on every DN (Kim, 10 Nov 2026)
       const e = $$('[data-dk]').filter(k => !dnKgOf(F, F.dns[+k.dataset.dk]));
       if (e.length) { e.forEach(k => k.classList.add('need')); miss.push('#dnKgMiss'); }
     }
@@ -786,7 +788,7 @@
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
   const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
   const canType = () => isAdmin() || manAll();
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
