@@ -646,7 +646,7 @@
     if ($('#tiImg')) $('#tiImg').onclick = () => openPhoto(photoSrc(tr.photo).replace(/&sz=w\d+/, '&sz=w2000'), tr.plate, tr.photo);   // click to open big (Kim, 12 Nov 2026)
     if ($('#tiPhotoIn')) $('#tiPhotoIn').onchange = e => { const f = e.target.files && e.target.files[0]; if (f) truckPhoto(tr.plate, f); };
     // Load or unload, ticked at the 1st weigh, Load by default (Kim, 8 Nov 2026). Unloading trucks need no DN.
-    document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); if (r.value === 'In') { F.dns = []; F.dnkg = {}; keepForm(); } paintForm(); }; });   // Unload: no DN (Kim, 12 Nov 2026)
+    document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); if (r.value === 'In') { F.dns = []; F.dnkg = {}; F.load = ''; keepForm(); } else if (!F.load) { F.load = get('sc_load') || LOAD_DEF; keepForm(); } paintForm(); }; });   // Unload: no DN, no loading place (Kim, 12 Nov 2026)   // Unload: no DN (Kim, 12 Nov 2026)
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
     document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
@@ -796,7 +796,7 @@
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
   const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
   const canType = () => isAdmin() || manAll();
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.type === 'In' ? '' : F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
