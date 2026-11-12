@@ -166,6 +166,7 @@
   const pendingPOs = skip => VPOS().filter(po => pendingLines(po, skip).length);
   // Live: everything comes from the Apps Script in one "boot" call and is kept on the phone, so the app opens at once.
   let USER = null;
+  window.TC_ADMIN = () => DEMO || !!(USER && USER.admin);   // shared ⚙️ Columns tool (table-cols.js)
   function applyBoot(d) {
     setPlan(d.plan || []); DATA = d.receipts || []; USER = d.user || null;
     if (d.plates && d.plates.length) PLATES = d.plates;
