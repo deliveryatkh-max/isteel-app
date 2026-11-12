@@ -2003,7 +2003,7 @@
     ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
   const SAP_HEAD = ['Mat. Short Text', 'Qty', 'Plnt', 'Sloc', 'CC', 'GL', 'Text', 'Batch'];
   const RP_HEAD = ['ID_FR', 'ចាក់សាំងសម្រាប់', 'ផ្លាកលេខឡាន', 'ឈ្មោះតៃកុង', 'លេខកុងទ័រ (Km)', 'ចំនួនចាក់ (លីត្រ)', 'Date & Time of Record', 'Review Status', 'SAP Status'];
-  const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month']];
+  const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month'], ['all', 'ទាំងអស់', 'All']];
   const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
     ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
   const RP_SAP = [['all', 'SAP: ទាំងអស់', 'SAP: All', () => true], ['new', 'មិនទាន់ Post', 'Not posted', r => r.sapStatus !== SAP_POSTED],
@@ -2017,8 +2017,10 @@
     if (k === '7d') return [day(-6), day(0)];
     if (k === 'month') return [ymdOf(new Date(y, m, 1)), day(0)];
     if (k === 'lmonth') return [ymdOf(new Date(y, m - 1, 1)), ymdOf(new Date(y, m, 0))];
+    if (k === 'all') return ['', ''];   // every date (Kim, 12 Nov 2026)
     return [day(0), day(0)];
   }
+  const RP_MAX = 1500;   // rows drawn on screen, so 'All' stays fast; totals, Excel and Copy use every row
   const rp = { from: '', to: '', status: 'all', sap: 'all', q: '', onlyNew: true, defs: null, busy: false };
   function sapDefs() {
     if (!rp.defs) {
@@ -2063,7 +2065,7 @@
   async function renderReport(refresh) {
     const me = current();
     if (refresh) rv.fetchedAt = 0;
-    if (!rp.from) { const r = rpRange('today'); rp.from = r[0]; rp.to = r[1]; }
+    if (!rp.started) { const r = rpRange('today'); rp.from = r[0]; rp.to = r[1]; rp.started = true; }
     if (!(await ensureRows(me, () => paintReport()))) return;
     const defs = sapDefs();
     const chip = (attr, k, label, on) => `<button type="button" class="rp-chip${on ? ' on' : ''}" data-${attr}="${k}">${label}</button>`;
@@ -2074,6 +2076,7 @@
         <label>${L('ពីថ្ងៃ', 'From')}<input type="date" id="rpFrom" value="${rp.from}"></label>
         <label>${L('ដល់ថ្ងៃ', 'To')}<input type="date" id="rpTo" value="${rp.to}"></label>
         <button type="button" class="btn small rp-go" id="rpGo">${L('បង្ហាញ', 'Show')}</button>
+        <button type="button" class="btn ghost small rp-go" id="rpClear" title="${L('សម្អាតតម្រងទាំងអស់', 'Clear all filters')}">✕ ${L('សម្អាត', 'Clear')}</button>
         <div class="rp-chips" id="rpPer">${RP_PERIODS.map(([k, kh, en]) => chip('per', k, L(kh, en), rpRangeIs(k))).join('')}</div>
         <span class="rp-sep"></span>
         <div class="rp-chips" id="rpSt">${RP_STATUS.map(([k, kh, en]) => chip('st', k, L(kh, en), rp.status === k)).join('')}</div>
@@ -2104,6 +2107,8 @@
       setRange(a, b);
     };
     $$('[data-per]').forEach(b => b.onclick = () => { const r = rpRange(b.dataset.per); setRange(r[0], r[1]); });
+    // Clear (Kim, 12 Nov 2026): no filters at all = every date, every status, every SAP status, no search.
+    $('#rpClear').onclick = () => { rp.status = 'all'; rp.sap = 'all'; rp.q = ''; $('#rpQ').value = ''; setRange('', ''); };
     $$('[data-st]').forEach(b => b.onclick = () => { rp.status = b.dataset.st; paintChips(); paintReport(); });
     $$('[data-sap]').forEach(b => b.onclick = () => { rp.sap = b.dataset.sap; paintChips(); paintReport(); });
     $('#rpQ').oninput = e => { rp.q = e.target.value; clearTimeout(rp.qt); rp.qt = setTimeout(paintReport, 150); };
@@ -2139,7 +2144,8 @@
     const ok = rows.filter(r => r.status === STATUS_OK), pend = rows.filter(r => !r.status).length, bad = rows.filter(r => r.status === STATUS_BAD).length;
     const posted = rows.filter(r => r.sapStatus === SAP_POSTED).length;
     const plates = new Set(rows.map(r => r.plate).filter(Boolean)).size;
-    const span = rp.from === rp.to ? dmyOf(new Date(rp.from + 'T00:00:00').getTime()) : `${dmyOf(new Date(rp.from + 'T00:00:00').getTime())} – ${dmyOf(new Date(rp.to + 'T00:00:00').getTime())}`;
+    const dmy = v => (v ? dmyOf(new Date(v + 'T00:00:00').getTime()) : '…');
+    const span = !rp.from && !rp.to ? L('គ្រប់ថ្ងៃ', 'All dates') : rp.from === rp.to ? dmy(rp.from) : `${dmy(rp.from)} – ${dmy(rp.to)}`;
     const kpi = (kh, en, v, sub, cls) => `<div class="rp-kpi"><small>${L(kh, en)}</small><b${cls ? ` class="${cls}"` : ''}>${v}</b><i>${sub}</i></div>`;
     $('#rpKpi').innerHTML =
       kpi('ចាក់សាំង', 'Refills', fmtNum(rows.length), esc(span)) +
@@ -2152,10 +2158,10 @@
       const sapCell = r => r.sapStatus === SAP_POSTED
         ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>';
       $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr>${RP_HEAD.map((h, i) => `<th${i === 4 || i === 5 ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r => `<tr data-id="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td><td><b>${esc(r.plate || '–')}</b></td><td>${esc(r.driver || '–')}</td>
+        <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td><td><b>${esc(r.plate || '–')}</b></td><td>${esc(r.driver || '–')}</td>
           <td class="n">${r.km == null ? '' : fmtNum(r.km)}</td><td class="n"><b>${fmtNum(r.litres)}</b></td><td>${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}</td>
           <td>${rpStatus(r.status)}</td><td>${sapCell(r)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th></tr></tfoot></table>`;
+        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th></tr></tfoot></table>`;
     }
     paintSap(rows);
   }
@@ -2215,7 +2221,7 @@
     ws['!cols'] = [18, 9, 14, 11, 12, 12, 12, 12].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'SAP');
-    XLSX.writeFile(wb, 'Fuel_SAP_' + rp.from + (rp.to !== rp.from ? '_to_' + rp.to : '') + '.xlsx');
+    XLSX.writeFile(wb, 'Fuel_SAP_' + (rp.from || rp.to ? (rp.from || 'start') + (rp.to !== rp.from ? '_to_' + (rp.to || 'today') : '') : 'all') + '.xlsx');
   }
 
   /** "Copy Table" (Kim, 12 Nov 2026): every SAP row, without the header, tab-separated so it pastes into SAP or Excel cells. */
