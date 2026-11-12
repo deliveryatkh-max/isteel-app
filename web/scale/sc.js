@@ -774,7 +774,11 @@
       if (e.length) { e.forEach(k => k.classList.add('need')); miss.push('#dnKgMiss'); }
     }
     miss.forEach(s => $(s) && $(s).classList.add('need'));
-    if (miss.length) { toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false; }
+    if (miss.length) {   // scroll to the first red box so the weigher sees what is missing (Kim, 12 Nov 2026)
+      const first = miss.map(q => $(q)).filter(Boolean)[0] || document.querySelector('.need');
+      if (first) { first.scrollIntoView({ behavior: 'smooth', block: 'center' }); const f = first.matches('input,select,textarea') ? first : first.querySelector('input'); if (f) setTimeout(() => f.focus({ preventScroll: true }), 300); }
+      toast(t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Fill in the red boxes')); return false;
+    }
     return true;
   }
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
