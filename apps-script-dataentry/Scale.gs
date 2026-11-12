@@ -44,7 +44,7 @@ const SC_SETTINGS = [
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
   ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
-  ['SCALE_DEBIT_NOTE_LINK', 'https://drive.google.com/file/d/1bEbELGotdvHz40I_K5zKcELcp7a4ewLz/view', 'Drive link to the Debit Note Excel template (Report › Debit Note), or a folder (newest file with "Debit" in its name). Kept in G:\\My Drive\\SSK-STEEL\\SSK-WEIGHT.'],
+  ['SCALE_DEBIT_NOTE_LINK', 'https://drive.google.com/drive/folders/1mFZFVYJGyijsnhFVjTviDluICME9e9tn', 'Drive link to the Debit Note Excel template (Report › Debit Note), or a folder (newest file with "Debit" in its name). Kept in G:\\My Drive\\SSK-STEEL\\SSK-WEIGHT.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -58,6 +58,7 @@ function scaleRoute_(action, p, user) {
     case 'scTicketPdf': return scTicketPdf_(p, user);
     case 'scTemplate': return scTemplate_(p);
     case 'scDnTemplate': return scDnTemplate_(p);
+    case 'scDnNo': return withLock_(() => scDnNo_(p, user));
     case 'scTruckPhoto': return withLock_(() => scTruckPhoto_(p, user));
     default: fail_('BAD', 'Unknown action');
   }
@@ -506,6 +507,15 @@ function scDnTemplate_(p) {
     bytes = r.getBlob().getBytes();
   } else bytes = f.getBlob().getBytes();
   return { stamp: stamp, name: f.getName(), b64: Utilities.base64Encode(bytes) };
+}
+
+/** Next Debit Note number for the prefix (e.g. CK-2611 gives CK-2611-0001), logged in the "Debit Notes" tab with Data Entry's numbers. */
+function scDnNo_(p, user) {
+  const prefix = clip_(p.prefix, 30).toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (!/^[A-Z0-9]{1,8}-\d{4}$/.test(prefix)) fail_('BAD', 'Bad Debit Note prefix.');
+  const no = prefix + '-' + ('000' + ((dnSeq_()[prefix] || 0) + 1)).slice(-4);
+  sheet_(SH.DN, DN_COLS).appendRow([no, clip_(p.company), clip_(p.dest), new Date(), clip_(p.period), num_(p.trips), num_(p.qty), '', user.name, new Date()]);
+  return { no: no };
 }
 
 /** The template file the link points at (a folder link gives its newest Word file or Google Doc). */
