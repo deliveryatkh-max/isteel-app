@@ -610,7 +610,7 @@
           ${tr ? ''
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div></div></div>
-        ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')} ${req}</label><div><input class="in${need(F.item)}" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
+        ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
         ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
           <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
@@ -651,7 +651,7 @@
     const companies = () => { const s = []; trucks().forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort().map(v => ({ v })); };
     picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     // Item and Destination are asked at the 2nd weigh only (Kim, 8 Nov 2026)
-    if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); $('#fItem').classList.toggle('need', !v); } });
+    if ($('#fItem')) picker($('#fItem'), { list: () => ((B && B.items) || []).filter(i => i[2] !== 'No').map(i => ({ v: i[0], sub: i[1] })), addNew: true, onPick: v => { upd('item', v); } });
     // More than one destination can be picked (Kim, 8 Nov 2026); they are kept as one text "A, B".
     if ($('#fDest')) {
       // Tick several destinations straight in the list; it stays open until you click outside (Kim, 8 Nov 2026).
@@ -763,7 +763,7 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (!second && !F.empty1) miss.push('#emptyBox');   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
-    if (second && !F.item) miss.push('#fItem');
+    // Item is optional (Kim, 12 Nov 2026)
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
     if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
