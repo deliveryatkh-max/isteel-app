@@ -1220,6 +1220,13 @@
     });
     return out;
   }
+  /** Grand total of the rows shown (Kim, 12 Nov 2026): DN Kg adds every row; weights and Trips add only the Trips = 1 rows, so each truck counts once. */
+  function repTotal(lines) {
+    const tot = REP_HEAD.map(() => '');
+    REP_NUM.forEach(i => { tot[i] = 0; });
+    lines.forEach(l => REP_NUM.forEach(i => { if (i === 6 || l.cells[17] === 1) tot[i] += Number(l.cells[i]) || 0; }));
+    return tot;
+  }
   const whenTxt = v => String(v || '').replace('T', ' ').slice(0, 16);
   function paintReport() {
     if (!$('#rSum')) return;
@@ -1242,7 +1249,8 @@
       return `<td${i === 0 || i === 5 ? ' class="mono"' : ''}>${esc(c)}</td>`;
     };
     $('#rBody').innerHTML = `<div class="tbl fit"><table class="tt rep"><tr>${REP_HEAD.map((h, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r"' : ''}>${h}</th>`).join('')}</tr>
-      ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${l.cells.map(cell).join('')}</tr>`).join('')}</table></div>
+      ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${l.cells.map(cell).join('')}</tr>`).join('')}
+      <tr class="gtot">${repTotal(lines).map((c, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r mono"' : ''}>${i === 0 ? t('សរុបរួម', 'Grand total') : c === '' ? '' : kg(c)}</th>`).join('')}</tr></table></div>
       <div class="hint">${t('មួយជួរ = មួយ DN · ទម្ងន់ប័ណ្ណនៅគ្រប់ជួរ · Trips = 1 នៅជួរទីមួយនៃប័ណ្ណ (Excel: SUMIFS(Net, Trips, 1))', 'One row per DN · ticket weights on every row · Trips = 1 on the first row of each ticket (Excel: SUMIFS(Net, Trips, 1))')}</div>`;
     bindTable();
   }
@@ -1250,7 +1258,8 @@
     const lines = repLines(repTickets());
     if (!lines.length || !window.XLSX) { toast(t('គ្មានទិន្នន័យ', 'No data')); return; }
     const data = lines.map(l => l.cells.map((c, i) => (i === 1 ? (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') : i === 9 ? tarpName(c) : i === 10 || i === 12 ? String(c || '').replace('T', ' ').slice(0, 19) : c)));
-    const ws = XLSX.utils.aoa_to_sheet([REP_HEAD].concat(data));
+    const gt = repTotal(lines); gt[0] = 'Grand total';
+    const ws = XLSX.utils.aoa_to_sheet([REP_HEAD].concat(data, [[], gt]));   // a blank row keeps the total out of Excel's filter and sort
     ws['!cols'] = [16, 9, 11, 22, 22, 13, 9, 14, 26, 11, 19, 12, 19, 12, 11, 11, 11, 6].map(w => ({ wch: w }));
     ws['!autofilter'] = { ref: 'A1:R' + (data.length + 1) };
     const wb = XLSX.utils.book_new();
