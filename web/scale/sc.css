@@ -460,3 +460,17 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 
 /* Report grand total row stays at the bottom of the table box (Kim, 12 Nov 2026) */
 .rep tr.gtot th { position: sticky; bottom: 0; top: auto; background: var(--soft, #e8eef8); color: var(--text); font-weight: 700; z-index: 2; box-shadow: inset 0 1px 0 var(--line); cursor: default; }
+
+/* Report columns: drag a header (admins) and the Columns dialog (Kim, 12 Nov 2026) */
+.rep th[draggable="true"] { cursor: grab; }
+.rep th.dragging { opacity: .45; }
+.rep th.dropto, .colrow.dropto { box-shadow: inset 3px 0 0 var(--orange, #f39200); }
+.colsdlg { max-width: 460px; width: calc(100% - 32px); max-height: 86vh; display: flex; flex-direction: column; }
+.colsdlg .collist { overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.colrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--card); }
+.colrow[draggable="true"] { cursor: grab; }
+.colrow.off { opacity: .6; }
+.colrow .grip { width: 14px; color: var(--muted); }
+.colrow label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.colrow .sp, .colsdlg .btns .sp { flex: 1; }
+.colrow .btn.sm { padding: 2px 8px; min-height: 0; }
