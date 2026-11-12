@@ -1301,7 +1301,7 @@
   // "Trips" is 1 on the ticket's first row, 0 on the others, so totals count each truck once
   // (Excel: SUMIFS(Net, Trips, 1)).
   let REP = { from: today(), to: today(), q: '', st: '', co: '', ty: '', rows: null };
-  const RRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['week', 'សប្តាហ៍នេះ', 'This week'], ['month', 'ខែនេះ', 'This month'], ['all', 'ទាំងអស់', 'All']];
+  const RRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['month', 'ខែនេះ', 'This month'], ['all', 'ទាំងអស់', 'All']];
   const RSTATUS = [['', 'ទាំងអស់', 'All'], ['Done', 'រួចរាល់', 'Done'], ['Open', 'នៅលើទីតាំង', 'On site'], ['Void', 'បានលុប', 'Cancelled']];
   function repRange(k) {
     const d = new Date();
