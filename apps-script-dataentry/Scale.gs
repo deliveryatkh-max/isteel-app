@@ -582,6 +582,25 @@ function scDocxPdf_(docx, name) {
   }
 }
 
+/** Saved warnings are English ("a | b"); the ticket prints them in Khmer (Kim, 12 Nov 2026). Same words as scale-core.js warnKm. */
+function scWarnKm_(en) {
+  return String(en || '').split(' | ').map(function (t) {
+    var m = t.match(/^Empty weight (.+) kg is (\d+)% (above|below) the truck list \((.+) kg\)$/);
+    if (m) return 'ទម្ងន់ឡានទទេ ' + m[1] + ' kg ' + (m[3] === 'above' ? 'លើស' : 'ខ្វះ') + ' ' + m[2] + '% ពីបញ្ជីឡាន (' + m[4] + ' kg)';
+    m = t.match(/^Overload: gross (.+) kg is over the limit (.+) kg \(\+(.+) kg\)$/);
+    if (m) return 'ផ្ទុកលើសទម្ងន់: ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
+    m = t.match(/^Overload: goods (.+) kg is over the allowed (.+) kg \(\+(.+) kg\)$/);
+    if (m) return 'ផ្ទុកលើសទម្ងន់: ទំនិញ ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
+    m = t.match(/^Heavier than the last scale-again weight by (.+) kg$/);
+    if (m) return 'ធ្ងន់ជាងការថ្លឹងម្តងទៀតចុងក្រោយ ' + m[1] + ' kg';
+    m = t.match(/^DN total (.+) kg differs from the scale net by (.+) kg \(allowed ±(.+) kg\)$/);
+    if (m) return 'ទម្ងន់ DN សរុប ' + m[1] + ' kg ខុសពីទម្ងន់សុទ្ធ ' + m[2] + ' kg (អនុញ្ញាត ±' + m[3] + ' kg)';
+    m = t.match(/^Net weight is (.+) kg$/);
+    if (m) return 'ទម្ងន់សុទ្ធ ' + m[1] + ' kg';
+    return t;
+  }).join(' | ');
+}
+
 /** The words for each {{tag}}, from the ticket the app sends. */
 function scTicketVals_(x) {
   const num = v => (v === '' || v == null || isNaN(v) ? '' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }));
@@ -594,7 +613,7 @@ function scTicketVals_(x) {
     TicketNo: s(x.no), Date: dmy(x.t2 || x.t1), TruckNo: s(x.plate), Company: s(x.company), Item: s(x.item), Destination: s(x.dest), Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
     DN: dns.join(', '), DNCount: String(dns.length), Note: s(x.note), Customer: s(x.customer), Driver: s(x.driver), Type: s(x.type),
     Weight1: num(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: num(x.w2), Time2: when(x.t2), Source2: src(x.s2),
-    Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'Warning: ' + s(x.warn) : '',
+    Gross: num(x.gross), Tare: num(x.tare), Net: num(x.net), Warning: x.warn ? 'ការព្រមាន: ' + scWarnKm_(s(x.warn)) : '',
     Operator: s(x.op), Status: x.status === 'Void' ? 'CANCELLED' : x.status === 'Open' ? 'NOT FINISHED' : '',
     Printed: fmt_(new Date(), 'dd/MM/yyyy HH:mm'), CompanyName: s(setting_('SCALE_COMPANY') || 'ISI STEEL'),
   };

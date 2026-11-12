@@ -136,6 +136,10 @@
       if (m) return 'ផ្ទុកលើសទម្ងន់: ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
       m = s.match(/^Overload: goods (.+) kg is over the allowed (.+) kg \(\+(.+) kg\)$/);
       if (m) return 'ផ្ទុកលើសទម្ងន់: ទំនិញ ' + m[1] + ' kg លើសកំណត់ ' + m[2] + ' kg (+' + m[3] + ' kg)';
+      m = s.match(/^Heavier than the last scale-again weight by (.+) kg$/);
+      if (m) return 'ធ្ងន់ជាងការថ្លឹងម្តងទៀតចុងក្រោយ ' + m[1] + ' kg';
+      m = s.match(/^DN total (.+) kg differs from the scale net by (.+) kg \(allowed ±(.+) kg\)$/);
+      if (m) return 'ទម្ងន់ DN សរុប ' + m[1] + ' kg ខុសពីទម្ងន់សុទ្ធ ' + m[2] + ' kg (អនុញ្ញាត ±' + m[3] + ' kg)';
       m = s.match(/^Net weight is (.+) kg$/);
       if (m) return 'ទម្ងន់សុទ្ធ ' + m[1] + ' kg';
       return s;

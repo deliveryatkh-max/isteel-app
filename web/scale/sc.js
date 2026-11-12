@@ -1612,7 +1612,7 @@
     font(38, 700); g.fillStyle = NAVY; g.fillText('NET', M + 36, y + 62); font(24, 600); g.fillText('ទម្ងន់សុទ្ធ', M + 36, y + 98);
     g.textAlign = 'right'; font(62, 700); g.fillText(kg(x.net) + ' kg', W - M - 24, y + 88); g.textAlign = 'left';
     y += 150;
-    if (x.warn) { font(22, 600); g.fillStyle = '#8a5a00'; wrap('Warning: ' + x.warn, W - 2 * M).slice(0, 3).forEach(l => { g.fillText(l, M, y); y += 30; }); }
+    if (x.warn) { font(22, 600); g.fillStyle = '#8a5a00'; wrap('ការព្រមាន: ' + CORE.warnKm(x.warn), W - 2 * M).slice(0, 3).forEach(l => { g.fillText(l, M, y); y += 30; }); }
 
     // webcam photos of the truck (Kim, 10 Nov 2026), small, side by side, when this PC has them and they fit
     let sgap = 110;
@@ -1759,7 +1759,7 @@
       TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
       DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: typeOf(x),
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
-      Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'Warning: ' + x.warn : '', Operator: x.op || '',
+      Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
       Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
       Printed: dmy(iso(new Date())) + ' ' + hm(iso(new Date())), CompanyName: S().SCALE_COMPANY || 'ISI STEEL',
     };
