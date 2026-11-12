@@ -44,6 +44,7 @@ const SC_SETTINGS = [
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
   ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
+  ['SCALE_DEBIT_NOTE_LINK', 'https://drive.google.com/file/d/1bEbELGotdvHz40I_K5zKcELcp7a4ewLz/view', 'Drive link to the Debit Note Excel template (Report › Debit Note), or a folder (newest file with "Debit" in its name). Kept in G:\\My Drive\\SSK-STEEL\\SSK-WEIGHT.'],
 ];
 const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
 
@@ -56,6 +57,7 @@ function scaleRoute_(action, p, user) {
     case 'scSettings': return scSettings_(p, user);
     case 'scTicketPdf': return scTicketPdf_(p, user);
     case 'scTemplate': return scTemplate_(p);
+    case 'scDnTemplate': return scDnTemplate_(p);
     case 'scTruckPhoto': return withLock_(() => scTruckPhoto_(p, user));
     default: fail_('BAD', 'Unknown action');
   }
@@ -477,6 +479,35 @@ function scTemplate_(p) {
   if (p && p.stamp === stamp) return { same: true, stamp: stamp };
   return { stamp: stamp, name: f.getName(), size: key === 'SCALE_TEMPLATE_A5_LINK' ? 'A5' : 'A4', b64: Utilities.base64Encode(scDocxOf_(f)) };
 }
+// Debit Note Excel template (Kim, 12 Nov 2026): kept in Drive SSK-WEIGHT so Kim can change it; the app fills it.
+const SC_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const SC_GSHEET = 'application/vnd.google-apps.spreadsheet';
+function scDnTemplate_(p) {
+  const def = SC_SETTINGS.filter(r => r[0] === 'SCALE_DEBIT_NOTE_LINK')[0][1];
+  const link = String(setting_('SCALE_DEBIT_NOTE_LINK') || def).trim();
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) fail_('SETUP', 'SCALE_DEBIT_NOTE_LINK is not a Google Drive link.', 'SCALE_DEBIT_NOTE_LINK មិនមែនជា Link Google Drive ទេ។');
+  let f = null;
+  if (m[2]) {
+    const it = DriveApp.getFolderById(m[2]).getFiles();
+    while (it.hasNext()) {
+      const x = it.next();
+      if (x.isTrashed() || [SC_XLSX, SC_GSHEET].indexOf(x.getMimeType()) < 0 || !/debit/i.test(x.getName())) continue;
+      if (!f || x.getLastUpdated() > f.getLastUpdated()) f = x;
+    }
+    if (!f) fail_('SETUP', 'No Debit Note Excel file in the folder.', 'គ្មានឯកសារ Excel Debit Note ក្នុង Folder។');
+  } else f = DriveApp.getFileById(m[1] || m[3] || m[4]);
+  const stamp = f.getId() + '@' + f.getLastUpdated().getTime();
+  if (p && p.stamp === stamp) return { same: true, stamp: stamp };
+  let bytes;
+  if (f.getMimeType() === SC_GSHEET) {
+    const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + f.getId() + '/export?mimeType=' + encodeURIComponent(SC_XLSX), { headers: scAuth_(), muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) fail_('SERVER', 'Could not read the Debit Note template (' + r.getResponseCode() + ').');
+    bytes = r.getBlob().getBytes();
+  } else bytes = f.getBlob().getBytes();
+  return { stamp: stamp, name: f.getName(), b64: Utilities.base64Encode(bytes) };
+}
+
 /** The template file the link points at (a folder link gives its newest Word file or Google Doc). */
 function scTemplateFile_(key) {
   key = key || 'SCALE_TEMPLATE_LINK';
