@@ -1601,14 +1601,21 @@
     const cos = [...new Set(list.map(x => x.company).filter(Boolean))];
     const prefix = dnPrefix(REP.co || (cos.length === 1 ? cos[0] : '')) + '-' + today().slice(2, 4) + today().slice(5, 7);
     const qty = list.reduce((a, x) => a + Math.round((Number(x.net) || 0) / 10) / 100, 0);
+    // same tickets = same Debit Note: a reprint keeps its first number (Kim, 12 Nov 2026)
+    const raw = (REP.co || cos.join(',')) + '|' + list.map(x => x.no).sort().join(','); let h = 5381;
+    for (let i = 0; i < raw.length; i++) h = ((h * 33) ^ raw.charCodeAt(i)) >>> 0;
+    const key = 'K' + h.toString(36) + '-' + list.length;
+    let known = {}; try { known = JSON.parse(get('sc_dnkeys') || '{}') || {}; } catch (e) { known = {}; }
+    const keep = no => { known[key] = no; set('sc_dnkeys', JSON.stringify(known)); return no; };
+    if (known[key] && !/-T\d+$/.test(known[key])) return known[key];
     if (!DEMO) {
       try {
         const r = await api('scDnNo', { prefix, company: REP.co || cos.join(', '), dest: [...new Set(list.map(x => x.dest).filter(Boolean))].join(', ').slice(0, 200),
-          period: REP.from + (REP.to !== REP.from ? ' to ' + REP.to : ''), trips: list.length, qty: Math.round(qty * 100) / 100 });
-        if (r.no) return r.no;
+          period: REP.from + (REP.to !== REP.from ? ' to ' + REP.to : ''), trips: list.length, qty: Math.round(qty * 100) / 100, key });
+        if (r.no) return keep(r.no);
       } catch (e) { toast(t('មិនអាចយកលេខ Debit Note ពី Server (ប្រើលេខបណ្តោះអាសន្ន)', 'Could not get a Debit Note number from the server (temporary number used)') + ': ' + e.message); }
     }
-    return prefix + '-T' + String(Date.now()).slice(-3);
+    return known[key] || (DEMO ? keep(prefix + '-' + ('000' + (Object.keys(known).length + 1)).slice(-4)) : keep(prefix + '-T' + String(Date.now()).slice(-3)));
   }
   async function exportDebitNote() {
     if (!REP.co) {   // one Debit Note per truck company (Kim, 12 Nov 2026)
