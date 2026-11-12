@@ -2044,7 +2044,21 @@
   }
   /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
   const sapRows = rows => rp.onlyNew ? rows.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED) : rows;
-  const sapCells = r => { const d = sapDefs(); return [d.mat, Number(r.litres) || 0, d.plnt, d.sloc, d.cc, d.gl, r.plate, d.batch]; };
+  // SAP Text: forklifts and the generator are saved with Khmer names; SAP gets English (Kim, 12 Nov 2026).
+  const SAP_TEXT_EN = [
+    ['អេឡេវ៉ាទ័រ T25 ក្រហម', 'Forklift T25 Red'], ['អេឡេវ៉ាទ័រ T25 លឿង', 'Forklift T25 Yellow'], ['អេឡេវ៉ាទ័រ T25 ខៀវ', 'Forklift T25 Blue'],
+    ['អេឡេវ៉ាទ័រ T30 ក្រហម', 'Forklift T30 Red'], ['អេឡេវ៉ាទ័រ T30 លឿង', 'Forklift T30 Yellow'], ['អេឡេវ៉ាទ័រ T30 ខៀវ', 'Forklift T30 Blue'],
+    ['អេឡេវ៉ាទ័រ T50', 'Forklift T50'], ['អេឡេវ៉ាទ័រ T70', 'Forklift T70'], ['ចាក់ម៉ាស៊ីនភ្លើង', 'Generator'],
+  ];
+  const sapKey = v => String(v == null ? '' : v).replace(/[\s\u200b-\u200d\ufeff]+/g, '').toLowerCase();
+  const SAP_TEXT_MAP = new Map(SAP_TEXT_EN.map(([km, en]) => [sapKey(km), en]));
+  const sapText = r => {
+    const en = SAP_TEXT_MAP.get(sapKey(r.plate));
+    if (en) return en;
+    if (!String(r.plate || '').trim() && /ម៉ាស៊ីនភ្លើង/.test(r.type)) return 'Generator';   // older generator entries without a name
+    return r.plate;
+  };
+  const sapCells = r => { const d = sapDefs(); return [d.mat, Number(r.litres) || 0, d.plnt, d.sloc, d.cc, d.gl, sapText(r), d.batch]; };
 
   async function renderReport(refresh) {
     const me = current();
