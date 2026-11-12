@@ -1373,9 +1373,20 @@
     };
     // header fields above the table: value goes after the ":" cell next to the label
     const company = REP.co || [...new Set(list.map(x => x.company).filter(Boolean))].join(', ');
+    // right-aligned copies of cell styles, added to styles.xml
+    let stylesOut = styles; const rightOf = {};
+    const rightXf = i => {
+      if (rightOf[i] != null) return rightOf[i];
+      const base = (xfs[i] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>').replace(/\/>$/, '>').replace(/<alignment[^>]*\/>|<\/xf>$/g, '').replace(/ applyAlignment="\d"/, '');
+      const nx = base.replace(/>$/, ' applyAlignment="1"><alignment horizontal="right" vertical="center" shrinkToFit="1"/></xf>');
+      const n = (stylesOut.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].match(/<xf [^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || []).length;
+      stylesOut = stylesOut.replace(/<\/cellXfs>/, nx + '</cellXfs>').replace(/<cellXfs count="\d+"/, `<cellXfs count="${n + 1}"`);
+      return (rightOf[i] = n);
+    };
     const setAfter = (o, re, v, num) => {
       const cs = cells(o.xml), lab = cs.find(c => re.test(c.txt)); if (!lab || v === '' || v == null) return o.xml;
-      const colon = cs.find(c => c.n > lab.n && c.txt.trim() === ':'), vc = colOf((colon || lab).n + (colon ? 1 : 2)), st = num && dateXf >= 0 ? dateXf : (colon || lab).s;
+      // value in the last column of the table (K), right aligned (Kim, 12 Nov 2026)
+      const colon = cs.find(c => c.n > lab.n && c.txt.trim() === ':'), vc = lastCol, st = rightXf(num && dateXf >= 0 ? dateXf : +((colon || lab).s));
       const cell = num ? `<c r="${vc}${o.r}" s="${st}"><v>${v}</v></c>` : `<c r="${vc}${o.r}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`;
       let x = o.xml.replace(new RegExp(`<c r="${vc}${o.r}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`), '');
       const after = cells(x).filter(c => c.n > colNo(vc))[0];
@@ -1402,6 +1413,7 @@
     s = s.replace(/<mergeCells count="\d+">/, () => `<mergeCells count="${(s.match(/<mergeCell ref=/g) || []).length}">`);
     s = s.replace(/<selection [^>]*\/>/, '');
     zip.file(sheetPath, s);
+    zip.file('xl/styles.xml', stylesOut);
     // print area and other names below the table move down too; Excel recalculates on open
     zip.file('xl/workbook.xml', book.replace(/(<definedName [^>]*>)([^<]*)(<\/definedName>)/g, (all, a, v, b) => a + v.replace(/\$(\d+)/g, (z, n) => '$' + shift(+n)) + b)
       .replace(/<calcPr([^>]*?)\/>/, (all, a) => `<calcPr${a.replace(/ fullCalcOnLoad="[^"]*"/, '')} fullCalcOnLoad="1"/>`));
