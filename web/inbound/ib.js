@@ -149,8 +149,9 @@
   // the greyed fields copied from the plan
   function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
   // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
-  const posOf = r => r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/).filter(Boolean);
-  const itemPo = (i, r) => i.po || posOf(r)[0] || '';
+  const npo = v => { const x = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return x && !/^PO/.test(x) ? 'PO' + x : x; };
+  const posOf = r => (r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/)).map(npo).filter(Boolean);
+  const itemPo = (i, r) => npo(i.po) || posOf(r)[0] || '';
   const multi = r => posOf(r).length > 1;
   function headerOf(pos) {
     const ls = pos.map(po => PLAN.find(x => x.po === po)).filter(Boolean), j = k => Array.from(new Set(ls.map(l => l[k]).filter(Boolean))).join(', ');

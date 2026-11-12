@@ -306,7 +306,8 @@ function plan_() {
     return t; };
   const seen = {};
   return v.slice(1).map(r => ({
-    po: cell(r, iPo), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
+    // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
+    po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
     ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
@@ -314,8 +315,8 @@ function plan_() {
 // ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
 function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'Only a Supervisor or Admin can change the Incoming Plan.', 'មានតែ Supervisor ឬ Admin ទេដែលអាចកែផែនការបាន។'); }
 /** the POs of a receipt: rec.pos, or the "PO1, PO2" text of older ones */
-const posOf_ = r => (Array.isArray(r.pos) && r.pos.length ? r.pos : String(r.po || '').split(',')).map(x => String(x).trim()).filter(Boolean);
-const itemPo_ = (i, r) => i.po || posOf_(r)[0] || '';
+const posOf_ = r => (Array.isArray(r.pos) && r.pos.length ? r.pos : String(r.po || '').split(',')).map(poOf_).filter(Boolean);
+const itemPo_ = (i, r) => poOf_(i.po) || posOf_(r)[0] || '';
 const poOf_ = v => { const s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return s && !/^PO/.test(s) ? 'PO' + s : s; };
 /** kg arrived (still unloading) or received per PO|material */
 function recvdMap_() {

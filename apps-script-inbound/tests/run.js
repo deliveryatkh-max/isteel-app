@@ -305,4 +305,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const lg = env.ss.getSheetByName('GR Log').rows.filter(r => r[0] === m.id);
   eq(lg.map(r => r[2]), ['PO5100012725', 'PO5100012751'], 'log rows keep each item\'s PO');
   ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012751' }).error), 'second PO counts as received'); }
+// PO typed without "PO" in the plan sheet (Kim, 12 Nov 2026)
+{ plan.rows.push([4, 1300000001, 'COIL X', 'KMH1', 1020, 9000, 9, 1, '', 1, 5100077777, 'IN 7', 'X-1', eta, 'X Co']);
+  const x = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: 'PO5100077777', pos: ['PO5100077777'], dn3pl: 'DN-NUM', truck: '3E-2588', items: [{ po: 'PO5100077777', material: '1300000001', arrQty: 9000 }] }) }));
+  eq([x.po, x.items[0].po], ['PO5100077777', 'PO5100077777'], 'plan PO without the PO prefix still found'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
