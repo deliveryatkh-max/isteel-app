@@ -1153,7 +1153,7 @@
   // One row per DN (a ticket without DN = one row). The ticket's weights are on every row of the ticket;
   // "Trips" is 1 on the ticket's first row, 0 on the others, so totals count each truck once
   // (Excel: SUMIFS(Net, Trips, 1)).
-  let REP = { from: today(), to: today(), q: '', st: '', co: '', rows: null };
+  let REP = { from: today(), to: today(), q: '', st: '', co: '', ty: '', rows: null };
   const RRANGES = [['today', 'ថ្ងៃនេះ', 'Today'], ['week', 'សប្តាហ៍នេះ', 'This week'], ['month', 'ខែនេះ', 'This month'], ['all', 'ទាំងអស់', 'All']];
   const RSTATUS = [['', 'ទាំងអស់', 'All'], ['Done', 'រួចរាល់', 'Done'], ['Open', 'នៅលើទីតាំង', 'On site'], ['Void', 'បានលុប', 'Cancelled']];
   function repRange(k) {
@@ -1176,6 +1176,7 @@
         <button type="button" class="btn ok" id="rGo">🔍 ${t('បង្ហាញ', 'Show')}</button>
         <div class="qchips">${RRANGES.map(r => `<button type="button" class="chip${repRangeIs(r[0]) ? ' on' : ''}" data-rr="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <label>${t('ស្ថានភាព', 'Status')}<select class="in" id="rSt">${RSTATUS.map(r => `<option value="${r[0]}"${REP.st === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
+        <label>${t('ឡើង / ទំលាក់', 'Load / Unload')}<select class="in" id="rTy">${[['', 'ទាំងអស់', 'All'], ['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(r => `<option value="${r[0]}"${REP.ty === r[0] ? ' selected' : ''}>${t(r[1], r[2])}</option>`).join('')}</select></label>
         <label>${t('ក្រុមហ៊ុនដឹក', 'Transporter')}<select class="in" id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option></select></label>
         <input type="search" class="in lq" id="rQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...')}" value="${esc(REP.q)}">
         <button type="button" class="btn" id="rXls">⬇ Excel</button>
@@ -1187,6 +1188,7 @@
     $$('[data-rr]').forEach(b => { b.onclick = () => { const r = repRange(b.dataset.rr); REP.from = r[0]; REP.to = r[1]; $('#rFrom').value = r[0]; $('#rTo').value = r[1]; paint(); loadReport(); }; });
     $('#rSt').onchange = e => { REP.st = e.target.value; paintReport(); };
     $('#rCo').onchange = e => { REP.co = e.target.value; paintReport(); };
+    $('#rTy').onchange = e => { REP.ty = e.target.value; paintReport(); };
     $('#rQ').oninput = e => { REP.q = e.target.value; paintReport(); };
     $('#rXls').onclick = exportReport;
     loadReport();
@@ -1206,7 +1208,7 @@
   }
   const repTickets = () => {
     const q = REP.q.trim().toLowerCase();
-    return (REP.rows || []).filter(x => !REP.st || x.status === REP.st).filter(x => !REP.co || (x.company || '') === REP.co)
+    return (REP.rows || []).filter(x => !REP.st || x.status === REP.st).filter(x => !REP.co || (x.company || '') === REP.co).filter(x => !REP.ty || typeOf(x) === REP.ty)
       .filter(x => !q || [x.no, x.plate, x.company, x.item, x.dest, x.load, x.note, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0)
       .sort((a, b) => String(b.t1).localeCompare(String(a.t1)));
   };
