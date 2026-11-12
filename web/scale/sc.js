@@ -1301,7 +1301,7 @@
     ['unit', /unit|ឯកតា/i], ['qty', /quantity|weight|ទម្ងន់/i], ['rate', /rate/i], ['extra', /extra/i], ['amount', /amount/i], ['dns', /\bdn\b|delivery note/i],
     ['item', /item|goods|ទំនិញ/i], ['company', /transporter|company/i], ['seq', /\bno\.?$|^no\b|ល\.រ/im]];
   /** Builds the Debit Note .xlsx (Uint8Array) for the trips in `list`. */
-  async function buildDebitNote(bytes, list) {
+  async function buildDebitNote(bytes, list, docNo) {
     await loadJs('../vendor/jszip.min.js');
     const zip = await JSZip.loadAsync(bytes);
     const book = await zip.file('xl/workbook.xml').async('string');
@@ -1378,10 +1378,13 @@
     };
     const top = rows.filter(o => o.r < H).map(o => {
       let x = o.xml;
-      x = setAfter({ xml: x, r: o.r }, /customer/i, String(S().SCALE_COMPANY || 'ISI STEEL'));
       x = setAfter({ xml: x, r: o.r }, /invoice date/i, xSerial(today()), true);
-      x = setAfter({ xml: x, r: o.r }, /transporter|supplier|vendor/i, company);
-      if (o.r === 1 && company) x = x.replace(/(<c r="A1"[^>]*t="s"[^>]*><v>)(\d+)(<\/v><\/c>)/, (all, a, v) => `<c r="A1"${(/<c r="A1"([^>]*)>/.exec(all) || [])[1].replace(/ t="s"/, '')} t="inlineStr"><is><t xml:space="preserve">${xesc(sst[+v] + ' · ' + company)}</t></is></c>`);
+      x = setAfter({ xml: x, r: o.r }, /delivered by|transporter|supplier|vendor/i, company);   // truck company (Kim, 12 Nov 2026)
+      // DEBIT NOTE - [DOCUMENT NUMBER]: the number from the Debit Notes log
+      cells(x).filter(c => /\[DOCUMENT NUMBER\]/i.test(c.txt) || (c.txt.trim() === 'DEBIT NOTE' && !/\[DOCUMENT NUMBER\]/i.test(sst.join(' ')))).forEach(c => {
+        const v = /\[DOCUMENT NUMBER\]/i.test(c.txt) ? c.txt.replace(/\[DOCUMENT NUMBER\]/ig, docNo || '') : c.txt + ' - ' + (docNo || '');
+        x = x.replace(new RegExp(`<c r="${c.c}${o.r}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`), `<c r="${c.c}${o.r}" s="${c.s}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`);
+      });
       return x;
     });
     const rest = rows.filter(o => o.r >= T).map(moveRow);
@@ -1403,15 +1406,37 @@
     }
     return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
+  // Debit Note number (Kim, 12 Nov 2026): truck company initials + YYMM + 4-digit number, e.g. CK-2611-0001. The server gives
+  // the next number for that prefix and month and logs it in the "Debit Notes" tab (the same log as Data Entry), so it is unique.
+  const DN_SKIP = /^(CO|CO\.?,?|LTD|LTD\.?|COLTD|COMPANY|CORP|ENTERPRISE|TRANSPORT|TRANSPORTATION|LOGISTICS|SERVICE|SERVICES|GROUP|AND|&)$/;
+  function dnPrefix(name) {
+    const w = String(name || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/).filter(x => x && !DN_SKIP.test(x));
+    if (!w.length) return 'DN';
+    return (w.length === 1 ? w[0].slice(0, 2) : w[0][0] + w[1][0]).padEnd(2, 'X');
+  }
+  async function dnNumber(list) {
+    const cos = [...new Set(list.map(x => x.company).filter(Boolean))];
+    const prefix = dnPrefix(REP.co || (cos.length === 1 ? cos[0] : '')) + '-' + today().slice(2, 4) + today().slice(5, 7);
+    const qty = list.reduce((a, x) => a + Math.round((Number(x.net) || 0) / 10) / 100, 0);
+    if (!DEMO) {
+      try {
+        const r = await api('scDnNo', { prefix, company: REP.co || cos.join(', '), dest: [...new Set(list.map(x => x.dest).filter(Boolean))].join(', ').slice(0, 200),
+          period: REP.from + (REP.to !== REP.from ? ' to ' + REP.to : ''), trips: list.length, qty: Math.round(qty * 100) / 100 });
+        if (r.no) return r.no;
+      } catch (e) { toast(t('មិនអាចយកលេខ Debit Note ពី Server (ប្រើលេខបណ្តោះអាសន្ន)', 'Could not get a Debit Note number from the server (temporary number used)') + ': ' + e.message); }
+    }
+    return prefix + '-T' + String(Date.now()).slice(-3);
+  }
   async function exportDebitNote() {
     const list = repTickets().filter(x => x.status === 'Done').sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
     if (!list.length) { toast(t('គ្មានជើងដែលរួចរាល់ក្នុងតារាង', 'No finished trips in the table')); return; }
     const btn = $('#rDn'); if (btn) btn.disabled = true;
     try {
-      const out = await buildDebitNote(await dnTemplate(), list);
+      const docNo = await dnNumber(list);
+      const out = await buildDebitNote(await dnTemplate(), list, docNo);
       const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = document.createElement('a'), u = URL.createObjectURL(blob);
-      a.href = u; a.download = 'Debit_Note_' + (REP.co ? REP.co.replace(/[^A-Za-z0-9]+/g, '_') + '_' : '') + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx';
+      a.href = u; a.download = 'Debit_Note_' + docNo + '_' + (REP.co ? REP.co.replace(/[^A-Za-z0-9]+/g, '_') + '_' : '') + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx';
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
       if (!canDnc()) toast(t('តម្លៃមិនបានបំពេញ (សម្រាប់អ្នកពិនិត្យ Debit Note តែប៉ុណ្ណោះ)', 'Rates left empty (Price List is for Debit Note checkers only)'));
     } catch (e) { toast('Debit Note: ' + e.message); }
