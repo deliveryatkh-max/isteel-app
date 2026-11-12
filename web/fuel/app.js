@@ -2002,7 +2002,7 @@
   const SAP_FIELDS = [['mat', 'Mat. Short Text', 'Gasline/Deisel'], ['batch', 'Batch', 'Gasoline'], ['plnt', 'Plnt', 'Chaom Chao'],
     ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
   const SAP_HEAD = ['Mat. Short Text', 'Qty', 'Plnt', 'Sloc', 'CC', 'GL', 'Text', 'Batch'];
-  const RP_HEAD = ['ID_FR', 'ចាក់សាំងសម្រាប់', 'ផ្លាកលេខឡាន', 'ឈ្មោះតៃកុង', 'លេខកុងទ័រ (Km)', 'ចំនួនចាក់ (លីត្រ)', 'Date of Record', 'Date & Time of Record', 'Review Status', 'SAP Status'];
+  const RP_HEAD = ['ID_FR', 'ចាក់សាំងសម្រាប់', 'ផ្លាកលេខឡាន', 'ឈ្មោះតៃកុង', 'លេខកុងទ័រ (Km)', 'ចំនួនចាក់ (លីត្រ)', 'Date & Time of Record', 'Review Status', 'SAP Status'];
   const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month']];
   const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
     ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
@@ -2075,6 +2075,7 @@
           <div class="rp-defs">${SAP_FIELDS.map(([k, label]) => `<label>${label}<input type="text" data-def="${k}" value="${esc(defs[k])}"></label>`).join('')}</div>
           <label class="rp-chk"><input type="checkbox" id="rpOnly"${rp.onlyNew ? ' checked' : ''}> <span>${L('តែ ✅ ត្រឹមត្រូវ ដែលមិនទាន់ Post SAP', 'Only ✅ correct rows not yet posted in SAP')}</span></label>
           <button type="button" class="btn xl rp-big" id="rpXls"></button>
+          <button type="button" class="btn ghost rp-big" id="rpCopy"></button>
           <button type="button" class="btn xl-o rp-big" id="rpPost" hidden></button>
           <button type="button" class="btn ghost small rp-big" id="rpUndo" hidden></button>
           <div class="hint">${L('បន្ទាប់ពីបញ្ចូលជួរទាំងនេះក្នុង SAP រួច សូមចុច ✔ Posted SAP ដើម្បីកុំឱ្យទាញចេញម្តងទៀត។', 'After you post these rows in SAP, tap ✔ Posted SAP so they are not exported again.')}</div>
@@ -2100,6 +2101,7 @@
     });
     $('#rpRefresh').onclick = () => renderReport(true);
     $('#rpXls').onclick = exportSap;
+    $('#rpCopy').onclick = copySap;
     $('#rpPost').onclick = () => askPost(false);
     $('#rpUndo').onclick = () => askPost(true);
     $('#rpTable').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) go({ s: 'detail', id: tr.dataset.id }); };
@@ -2137,9 +2139,9 @@
         ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>';
       $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr>${RP_HEAD.map((h, i) => `<th${i === 4 || i === 5 ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
         <tbody>${rows.map(r => `<tr data-id="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td><td><b>${esc(r.plate || '–')}</b></td><td>${esc(r.driver || '–')}</td>
-          <td class="n">${r.km == null ? '' : fmtNum(r.km)}</td><td class="n"><b>${fmtNum(r.litres)}</b></td><td>${dmyOf(r.dateTime)}</td><td>${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}</td>
+          <td class="n">${r.km == null ? '' : fmtNum(r.km)}</td><td class="n"><b>${fmtNum(r.litres)}</b></td><td>${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}</td>
           <td>${rpStatus(r.status)}</td><td>${sapCell(r)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th><th></th></tr></tfoot></table>`;
+        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th></tr></tfoot></table>`;
     }
     paintSap(rows);
   }
@@ -2156,6 +2158,10 @@
     const xls = $('#rpXls');
     xls.textContent = `⬇ ${L('ទាញយក Excel', 'Download Excel')} (${n} ${L('ជួរ', 'rows')})`;
     xls.disabled = !n || rp.busy;
+    const cp = $('#rpCopy');
+    cp.textContent = `📋 Copy Table (${n} ${L('ជួរ', 'rows')})`;
+    cp.title = L('ចម្លងជួរ SAP ទាំងអស់ (គ្មានក្បាលតារាង) ដើម្បីបិទភ្ជាប់ក្នុង SAP ឬ Excel', 'Copies every SAP row (no header) to paste into SAP or Excel');
+    cp.disabled = !n || rp.busy;
     // Only reviewers and admins mark rows; only correct rows not posted yet can be marked.
     const toPost = list.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED).length;
     const post = $('#rpPost');
@@ -2196,6 +2202,23 @@
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'SAP');
     XLSX.writeFile(wb, 'Fuel_SAP_' + rp.from + (rp.to !== rp.from ? '_to_' + rp.to : '') + '.xlsx');
+  }
+
+  /** "Copy Table" (Kim, 12 Nov 2026): every SAP row, without the header, tab-separated so it pastes into SAP or Excel cells. */
+  async function copySap() {
+    const list = sapRows(rpRows());
+    if (!list.length) return;
+    const text = list.map(r => sapCells(r).map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n');
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+    if (!ok) {   // older phones / browsers: copy through a hidden text box
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+    }
+    toast(ok ? L(`📋 បានចម្លង ${list.length} ជួរ`, `📋 Copied ${list.length} rows`) : L('ចម្លងមិនបាន', 'Could not copy'));
   }
 
   function askPost(undo) {
