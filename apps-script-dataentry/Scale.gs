@@ -517,8 +517,15 @@ function scDnTemplate_(p) {
 function scDnNo_(p, user) {
   const prefix = clip_(p.prefix, 30).toUpperCase().replace(/[^A-Z0-9-]/g, '');
   if (!/^[A-Z0-9]{1,8}-\d{4}$/.test(prefix)) fail_('BAD', 'Bad Debit Note prefix.');
+  // the same tickets again (a reprint) get their first number back: key in column K "Tickets Key" (Kim, 12 Nov 2026)
+  const sh = sheet_(SH.DN, DN_COLS), key = clip_(p.key, 60);
+  if (sh.getRange(1, DN_COLS.length + 1).getDisplayValue() !== 'Tickets Key') sh.getRange(1, DN_COLS.length + 1).setValue('Tickets Key');
+  if (key && sh.getLastRow() > 1) {
+    const hit = sh.getRange(2, 1, sh.getLastRow() - 1, DN_COLS.length + 1).getDisplayValues().find(r => r[DN_COLS.length] === key);
+    if (hit) return { no: hit[0], again: true };
+  }
   const no = prefix + '-' + ('000' + ((dnSeq_()[prefix] || 0) + 1)).slice(-4);
-  sheet_(SH.DN, DN_COLS).appendRow([no, clip_(p.company), clip_(p.dest), new Date(), clip_(p.period), num_(p.trips), num_(p.qty), '', user.name, new Date()]);
+  sh.appendRow([no, clip_(p.company), clip_(p.dest), new Date(), clip_(p.period), num_(p.trips), num_(p.qty), '', user.name, new Date(), key]);
   return { no: no };
 }
 
