@@ -117,6 +117,7 @@ const ACTIONS = {
   umPhoto: umPhoto_,
   saver: fuelSaver_,
   sapPost: sapPost_,
+  reportCols: reportColsSave_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -142,7 +143,7 @@ const HOME_APPS = [
 // Truck Scale (6 Nov 2026) is not a default: tick ជញ្ជីង for the weighbridge operators.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
-  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel', sapPost: 'fuel',
+  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel', sapPost: 'fuel', reportCols: 'fuel',
   // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
   dashboard: 'dashboard', dashboardSave: 'dashboard',
 };
@@ -839,6 +840,7 @@ function getConfig_(payload, user) {
     photoCheck: photoCheckReady_(),
     isAdmin: isAdmin_(user),
     adsVersion: adsVersion_(),
+    reportCols: String(getSetting_('FUEL_REPORT_COLS') || ''),
   };
 }
 
@@ -1007,6 +1009,17 @@ function reviewRefill_(p, user) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Report table columns (Kim, 12 Nov 2026): an admin adds, removes and drags columns on the Report screen; the order is
+ * saved here as column keys ("id,type,plate,...") in Settings FUEL_REPORT_COLS for everyone. Empty = the default list.
+ */
+function reportColsSave_(p, user) {
+  if (!isAdmin_(user)) throw new Error('Only admins can change the report columns.');
+  const v = String(p.cols || '').toLowerCase().replace(/[^a-z0-9,]/g, '').slice(0, 500);
+  setSetting_('FUEL_REPORT_COLS', v);
+  return { reportCols: v };
 }
 
 /**

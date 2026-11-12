@@ -398,6 +398,7 @@
           if (p.note) r.note = (r.note ? r.note + ' | ' : '') + 'Review: ' + p.note;
           return resolve({ id: r.id });
         }
+        if (action === 'reportCols') return resolve({ reportCols: String(p.cols || '') });
         if (action === 'sapPost') {
           const ids = demo.rows.filter(r => p.ids.indexOf(r.id) >= 0 && (p.undo ? r.sapStatus === 'Posted SAP' : r.status === STATUS_OK && r.sapStatus !== 'Posted SAP')).map(r => r.id);
           const at = Date.now();
@@ -2002,7 +2003,6 @@
   const SAP_FIELDS = [['mat', 'Mat. Short Text', 'Gasline/Deisel'], ['batch', 'Batch', 'Gasoline'], ['plnt', 'Plnt', 'Chaom Chao'],
     ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
   const SAP_HEAD = ['Mat. Short Text', 'Qty', 'Plnt', 'Sloc', 'CC', 'GL', 'Text', 'Batch'];
-  const RP_HEAD = ['ID_FR', 'ចាក់សាំងសម្រាប់', 'ផ្លាកលេខឡាន', 'ឈ្មោះតៃកុង', 'លេខកុងទ័រ (Km)', 'ចំនួនចាក់ (លីត្រ)', 'Date & Time of Record', 'Review Status', 'SAP Status'];
   const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month'], ['all', 'ទាំងអស់', 'All']];
   const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
     ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
@@ -2021,7 +2021,7 @@
     return [day(0), day(0)];
   }
   const RP_MAX = 1500;   // rows drawn on screen, so 'All' stays fast; totals, Excel and Copy use every row
-  const rp = { from: '', to: '', status: 'all', sap: 'all', q: '', onlyNew: true, defs: null, busy: false };
+  const rp = { from: '', to: '', status: 'all', sap: 'all', q: '', sel: new Set(), defs: null, busy: false };
   function sapDefs() {
     if (!rp.defs) {
       let saved = {};
@@ -2045,7 +2045,10 @@
     });
   }
   /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
-  const sapRows = rows => rp.onlyNew ? rows.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED) : rows;
+  // Tick boxes (Kim, 12 Nov 2026): only the rows ticked in the table go into the SAP table. Only ✅ correct rows
+  // not posted yet can be ticked. Ticks stay while filters change; only ticked rows still shown count.
+  const sapOk = r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED;
+  const sapRows = rows => rows.filter(r => rp.sel.has(r.id) && sapOk(r));
   // SAP Text: forklifts and the generator are saved with Khmer names; SAP gets English (Kim, 12 Nov 2026).
   const SAP_TEXT_EN = [
     ['អេឡេវ៉ាទ័រ T25 ក្រហម', 'Forklift T25 Red'], ['អេឡេវ៉ាទ័រ T25 លឿង', 'Forklift T25 Yellow'], ['អេឡេវ៉ាទ័រ T25 ខៀវ', 'Forklift T25 Blue'],
@@ -2062,6 +2065,95 @@
   };
   const sapCells = r => { const d = sapDefs(); return [d.mat, Number(r.litres) || 0, d.plnt, d.sloc, d.cc, d.gl, sapText(r), d.batch]; };
 
+  // Report columns (Kim, 12 Nov 2026): admins add, remove and drag columns on the screen (⚙️ Columns, or drag a header).
+  // Saved in the Settings sheet (FUEL_REPORT_COLS) for everyone; empty = the default list. k key · h header · td cell
+  const RC = (k, h, td, o) => Object.assign({ k, h, td }, o || {});
+  const tdTxt = v => `<td>${esc(v == null ? '' : v)}</td>`;
+  const RP_COLS = [
+    RC('id', 'ID_FR', r => `<td class="mono">${esc(r.id)}</td>`),
+    RC('type', 'ចាក់សាំងសម្រាប់', r => tdTxt(r.type)),
+    RC('plate', 'ផ្លាកលេខឡាន', r => `<td><b>${esc(r.plate || '–')}</b></td>`),
+    RC('driver', 'ឈ្មោះតៃកុង', r => tdTxt(r.driver || '–')),
+    RC('km', 'លេខកុងទ័រ (Km)', r => `<td class="n">${r.km == null ? '' : fmtNum(r.km)}</td>`, { num: 1 }),
+    RC('hour', 'Hour Meter', r => `<td class="n">${r.hour == null ? '' : fmtNum(r.hour)}</td>`, { num: 1 }),
+    RC('litres', 'ចំនួនចាក់ (លីត្រ)', r => `<td class="n"><b>${fmtNum(r.litres)}</b></td>`, { num: 1, sum: 1 }),
+    RC('date', 'Date of Record', r => tdTxt(r.dateTime ? dmyOf(r.dateTime) : '')),
+    RC('datetime', 'Date & Time of Record', r => tdTxt(r.dateTime ? `${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}` : '')),
+    RC('note', 'សំគាល់', r => `<td class="wrap">${esc(r.note)}</td>`),
+    RC('user', 'User', r => tdTxt(r.user)),
+    RC('status', 'Review Status', r => `<td>${rpStatus(r.status)}</td>`),
+    RC('reviewedby', 'Reviewed By', r => tdTxt(r.reviewedByName || r.reviewedBy)),
+    RC('reviewedat', 'Reviewed At', r => tdTxt(r.reviewedAt ? `${dmyOf(r.reviewedAt)} ${hmsOf(r.reviewedAt)}` : '')),
+    RC('sap', 'SAP Status', r => `<td>${r.sapStatus === SAP_POSTED ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>'}</td>`),
+    RC('sapat', 'SAP Posted At', r => tdTxt(r.sapAt ? `${dmyOf(r.sapAt)} ${hmsOf(r.sapAt)}` : '')),
+    RC('saptext', 'SAP Text', r => tdTxt(sapText(r))),
+    RC('latlong', 'LatLong', r => tdTxt(r.latLong)),
+  ];
+  const RP_DEF = ['id', 'type', 'plate', 'driver', 'km', 'litres', 'datetime', 'status', 'sap'];
+  const isAdminUser = () => { const c = state.config || {}; return !!c.isAdmin || ((c.user || {}).role === 'admin'); };
+  function rpCols() {
+    const saved = (state.config && state.config.reportCols) || storeGet('fr_repcols') || '';
+    const keys = String(saved).split(',').map(x => x.trim()).filter(Boolean);
+    const out = (keys.length ? keys : RP_DEF).map(k => RP_COLS.find(c => c.k === k)).filter(Boolean);
+    return out.length ? out : RP_DEF.map(k => RP_COLS.find(c => c.k === k));
+  }
+  async function saveRpCols(keys) {
+    const v = keys.join(',') === RP_DEF.join(',') ? '' : keys.join(',');
+    storeSet('fr_repcols', v || null);   // this device at once
+    if (state.config) state.config.reportCols = v;
+    paintReport();
+    try {
+      const res = await api('reportCols', { cols: v });
+      if (state.config) state.config.reportCols = res.reportCols;
+      toast(L('បានរក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Saved for everyone'));
+    } catch (e) { toast(L('រក្សាទុកតែលើឧបករណ៍នេះ (Server មិនទាន់ទទួល)', 'Saved on this device only (server not updated yet)') + ': ' + e.message); }
+  }
+  /** Admin drags a header onto another to move the column there. */
+  function rpDrag() {
+    let from = '';
+    $$('#rpTable th[data-ck]').forEach(th => {
+      th.addEventListener('dragstart', e => { from = th.dataset.ck; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } th.classList.add('dragging'); });
+      th.addEventListener('dragend', () => { th.classList.remove('dragging'); $$('#rpTable th.dropto').forEach(x => x.classList.remove('dropto')); });
+      th.addEventListener('dragover', e => { if (from && from !== th.dataset.ck) { e.preventDefault(); th.classList.add('dropto'); } });
+      th.addEventListener('dragleave', () => th.classList.remove('dropto'));
+      th.addEventListener('drop', e => {
+        e.preventDefault(); th.classList.remove('dropto');
+        const keys = rpCols().map(c => c.k), a = keys.indexOf(from), b = keys.indexOf(th.dataset.ck);
+        from = '';
+        if (a < 0 || b < 0 || a === b) return;
+        keys.splice(b, 0, keys.splice(a, 1)[0]);
+        saveRpCols(keys);
+      });
+    });
+  }
+  /** ⚙️ Columns (admins): tick the columns to show, drag or ▲▼ to order them; saved for everyone. */
+  function rpColsDialog() {
+    let keys = rpCols().map(c => c.k);
+    const sh = openSheet(L('ជួរឈររបាយការណ៍', 'Report columns'), '<div id="cdBody"></div>', 'cols-sheet');
+    const box = $('#cdBody', sh.el);
+    const draw = () => {
+      const rest = RP_COLS.filter(c => keys.indexOf(c.k) < 0);
+      box.innerHTML = `<p class="hint">${L('ធីក = បង្ហាញ · អូស ឬ ▲▼ ដើម្បីប្តូរលំដាប់ · រក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · drag or ▲▼ to change the order · saved for everyone')}</p>
+        <div class="collist">${keys.map((k, i) => { const c = RP_COLS.find(z => z.k === k); return `<div class="colrow" draggable="true" data-k="${k}"><span class="grip" aria-hidden="true">⠿</span><label><input type="checkbox" checked data-ck2="${k}"> ${esc(c.h)}</label><span class="sp"></span><button type="button" class="icon-btn" data-up="${i}" ${i ? '' : 'disabled'} aria-label="Up">▲</button><button type="button" class="icon-btn" data-dn="${i}" ${i < keys.length - 1 ? '' : 'disabled'} aria-label="Down">▼</button></div>`; }).join('')}
+        ${rest.map(c => `<div class="colrow off" data-k="${c.k}"><span class="grip" aria-hidden="true"></span><label><input type="checkbox" data-ck2="${c.k}"> ${esc(c.h)}</label></div>`).join('')}</div>
+        <div class="actions cd-btns"><button type="button" class="btn ghost" id="cdReset">↺ ${L('លំនាំដើម', 'Default')}</button><button type="button" class="btn ghost" id="cdNo">${L('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="cdOk">💾 ${L('រក្សាទុក', 'Save')}</button></div>`;
+      $$('[data-ck2]', box).forEach(cb => { cb.onchange = () => { const k = cb.dataset.ck2; keys = cb.checked ? keys.concat(k) : keys.filter(z => z !== k); if (!keys.length) keys = [k]; draw(); }; });
+      $$('[data-up]', box).forEach(b => { b.onclick = () => { const i = +b.dataset.up; keys.splice(i - 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      $$('[data-dn]', box).forEach(b => { b.onclick = () => { const i = +b.dataset.dn; keys.splice(i + 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      let from = '';
+      $$('.colrow[draggable]', box).forEach(row => {
+        row.addEventListener('dragstart', e => { from = row.dataset.k; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } });
+        row.addEventListener('dragover', e => { if (from && from !== row.dataset.k) { e.preventDefault(); row.classList.add('dropto'); } });
+        row.addEventListener('dragleave', () => row.classList.remove('dropto'));
+        row.addEventListener('drop', e => { e.preventDefault(); const a = keys.indexOf(from), b = keys.indexOf(row.dataset.k); if (a >= 0 && b >= 0 && a !== b) { keys.splice(b, 0, keys.splice(a, 1)[0]); draw(); } });
+      });
+      $('#cdReset', box).onclick = () => { keys = RP_DEF.slice(); draw(); };
+      $('#cdNo', box).onclick = () => sh.close();
+      $('#cdOk', box).onclick = () => { sh.close(); saveRpCols(keys); };
+    };
+    draw();
+  }
+
   async function renderReport(refresh) {
     const me = current();
     if (refresh) rv.fetchedAt = 0;
@@ -2071,6 +2163,7 @@
     const chip = (attr, k, label, on) => `<button type="button" class="rp-chip${on ? ' on' : ''}" data-${attr}="${k}">${label}</button>`;
     $('#view').innerHTML = `
       <div class="rp-h"><h2>📊 ${L('របាយការណ៍', 'Report')}</h2>
+        ${isAdminUser() ? `<button type="button" class="btn ghost small" id="rpCols">⚙️ ${L('ជួរឈរ', 'Columns')}</button>` : ''}
         <button type="button" class="icon-btn round" id="rpRefresh" aria-label="${L('ទាញថ្មី', 'Refresh')}" title="${L('ទាញថ្មី', 'Refresh')}">↻</button></div>
       <div class="rp-f" id="rpF">
         <label>${L('ពីថ្ងៃ', 'From')}<input type="date" id="rpFrom" value="${rp.from}"></label>
@@ -2090,7 +2183,7 @@
           <h3>⬇ Excel for SAP</h3>
           <div class="hint">${L('មួយជួរ = ការចាក់សាំងមួយដង។ Qty = លីត្រ, Text = ផ្លាកលេខ។ ជួរផ្សេងទៀតប្រើតម្លៃនេះ៖', 'One row per refill. Qty = litres, Text = plate number. The other columns use these values:')}</div>
           <div class="rp-defs">${SAP_FIELDS.map(([k, label]) => `<label>${label}<input type="text" data-def="${k}" value="${esc(defs[k])}"></label>`).join('')}</div>
-          <label class="rp-chk"><input type="checkbox" id="rpOnly"${rp.onlyNew ? ' checked' : ''}> <span>${L('តែ ✅ ត្រឹមត្រូវ ដែលមិនទាន់ Post SAP', 'Only ✅ correct rows not yet posted in SAP')}</span></label>
+          <div class="rp-selnote" id="rpSelNote"></div>
           <button type="button" class="btn xl rp-big" id="rpXls"></button>
           <button type="button" class="btn ghost rp-big" id="rpCopy"></button>
           <button type="button" class="btn xl-o rp-big" id="rpPost" hidden></button>
@@ -2108,22 +2201,34 @@
     };
     $$('[data-per]').forEach(b => b.onclick = () => { const r = rpRange(b.dataset.per); setRange(r[0], r[1]); });
     // Clear (Kim, 12 Nov 2026): no filters at all = every date, every status, every SAP status, no search.
-    $('#rpClear').onclick = () => { rp.status = 'all'; rp.sap = 'all'; rp.q = ''; $('#rpQ').value = ''; setRange('', ''); };
+    $('#rpClear').onclick = () => { rp.sel.clear(); rp.status = 'all'; rp.sap = 'all'; rp.q = ''; $('#rpQ').value = ''; setRange('', ''); };
     $$('[data-st]').forEach(b => b.onclick = () => { rp.status = b.dataset.st; paintChips(); paintReport(); });
     $$('[data-sap]').forEach(b => b.onclick = () => { rp.sap = b.dataset.sap; paintChips(); paintReport(); });
     $('#rpQ').oninput = e => { rp.q = e.target.value; clearTimeout(rp.qt); rp.qt = setTimeout(paintReport, 150); };
-    $('#rpOnly').onchange = e => { rp.onlyNew = e.target.checked; paintReport(); };
     $$('[data-def]').forEach(i => i.oninput = () => {
       sapDefs()[i.dataset.def] = i.value;
       storeSet(SAP_DEF_KEY, JSON.stringify(sapDefs()));
       paintSap();
     });
     $('#rpRefresh').onclick = () => renderReport(true);
+    if ($('#rpCols')) $('#rpCols').onclick = rpColsDialog;
     $('#rpXls').onclick = exportSap;
     $('#rpCopy').onclick = copySap;
     $('#rpPost').onclick = () => askPost(false);
     $('#rpUndo').onclick = () => askPost(true);
-    $('#rpTable').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) go({ s: 'detail', id: tr.dataset.id }); };
+    $('#rpTable').onclick = e => {
+      if (e.target.closest('.rp-ck')) return;   // the tick box cell does not open the entry
+      const tr = e.target.closest('tr[data-id]'); if (tr) go({ s: 'detail', id: tr.dataset.id });
+    };
+    $('#rpTable').onchange = e => {
+      const cb = e.target;
+      if (cb.matches('[data-sel]')) { if (cb.checked) rp.sel.add(cb.dataset.sel); else rp.sel.delete(cb.dataset.sel); paintSelAll(); paintSap(); }
+      else if (cb.id === 'rpSelAll') {
+        rpRows().filter(sapOk).forEach(row => { if (cb.checked) rp.sel.add(row.id); else rp.sel.delete(row.id); });
+        $$('#rpTable [data-sel]').forEach(x => { x.checked = rp.sel.has(x.dataset.sel); });
+        paintSap();
+      }
+    };
     // The filter bar stays under the app bar while the page scrolls.
     document.documentElement.style.setProperty('--rp-top', ($('.head') ? $('.head').offsetHeight : 0) + 'px');
     paintReport();
@@ -2155,15 +2260,27 @@
     if (!rows.length) {
       $('#rpTable').innerHTML = `<div class="empty"><div class="big">📭</div>${L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
     } else {
-      const sapCell = r => r.sapStatus === SAP_POSTED
-        ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>';
-      $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr>${RP_HEAD.map((h, i) => `<th${i === 4 || i === 5 ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td><td><b>${esc(r.plate || '–')}</b></td><td>${esc(r.driver || '–')}</td>
-          <td class="n">${r.km == null ? '' : fmtNum(r.km)}</td><td class="n"><b>${fmtNum(r.litres)}</b></td><td>${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}</td>
-          <td>${rpStatus(r.status)}</td><td>${sapCell(r)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th></tr></tfoot></table>`;
+      const cols = rpCols(), adm = isAdminUser();
+      const drag = adm ? ` draggable="true" title="${esc(L('អូសដើម្បីរៀបចំជួរឈរ', 'Drag to move the column'))}"` : '';
+      const foot = cols.map((c, i) => c.sum ? `<th class="n">${fmtNum(sum(rows))} L</th>`
+        : i === cols.findIndex(x => !x.sum) ? `<th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th>` : '<th></th>');
+      const ck = r => `<td class="rp-ck">${sapOk(r) ? `<input type="checkbox" data-sel="${esc(r.id)}"${rp.sel.has(r.id) ? ' checked' : ''} aria-label="SAP">` : `<input type="checkbox" disabled title="${esc(r.sapStatus === SAP_POSTED ? 'Posted SAP' : L('តែ ✅ ត្រឹមត្រូវ ទើបដាក់ SAP បាន', 'Only ✅ correct rows go to SAP'))}">`}</td>`;
+      $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr><th class="rp-ck" data-nosort><input type="checkbox" id="rpSelAll" title="${esc(L('ធីកទាំងអស់', 'Tick all'))}" aria-label="${esc(L('ធីកទាំងអស់', 'Tick all'))}"></th>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="n"' : ''}${drag}>${esc(c.h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}">${ck(r)}${cols.map(c => c.td(r)).join('')}</tr>`).join('')}</tbody>
+        <tfoot><tr><th class="rp-ck"></th>${foot.join('')}</tr></tfoot></table>`;
+      paintSelAll();
+      if (adm) rpDrag();
     }
     paintSap(rows);
+  }
+
+  function paintSelAll() {
+    const all = $('#rpSelAll');
+    if (!all) return;
+    const ok = rpRows().filter(sapOk), n = ok.filter(r => rp.sel.has(r.id)).length;
+    all.disabled = !ok.length;
+    all.checked = !!ok.length && n === ok.length;
+    all.indeterminate = n > 0 && n < ok.length;
   }
 
   function paintSap(rows) {
@@ -2174,7 +2291,12 @@
     $('#rpSapPrev').innerHTML = n ? `<table class="rp-t sap" data-nosort><thead><tr>${SAP_HEAD.map((h, i) => `<th${i === 1 ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead>
       <tbody>${show.map(r => `<tr>${sapCells(r).map((c, i) => `<td${i === 1 ? ' class="n"' : ''}>${i === 1 || i === 6 ? `<b>${esc(i === 1 ? fmtNum(c) : c)}</b>` : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><th>${n > show.length ? L(`… និង ${n - show.length} ជួរទៀត`, `… and ${n - show.length} more rows`) : `${n} ${L('ជួរ', 'rows')}`}</th><th class="n">${fmtNum(litres)}</th><th></th><th></th><th></th><th></th><th></th><th></th></tr></tfoot></table>`
-      : `<div class="empty">${rp.onlyNew ? L('គ្មានជួរ ✅ ត្រឹមត្រូវ ដែលមិនទាន់ Post SAP', 'No ✅ correct rows waiting for SAP') : L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
+      : `<div class="empty">☑️ ${L('ធីកជួរក្នុងតារាងខាងលើ ដើម្បីដាក់ក្នុងតារាង SAP', 'Tick rows in the table above to add them to the SAP table')}</div>`;
+    const shown = rows || rpRows(), waiting = shown.filter(sapOk).length;
+    $('#rpSelNote').innerHTML = `☑️ ${L(`បានធីក <b>${n}</b> ជួរ · ${fmtNum(litres)} L`, `<b>${n}</b> rows ticked · ${fmtNum(litres)} L`)}
+      <span class="dim">(${L(`${waiting} ជួរ ✅ មិនទាន់ Post`, `${waiting} ✅ rows not posted`)})</span>
+      ${n ? `<button type="button" class="linkbtn" id="rpSelNone">${L('ដកធីកទាំងអស់', 'Untick all')}</button>` : ''}`;
+    if ($('#rpSelNone')) $('#rpSelNone').onclick = () => { rp.sel.clear(); $$('#rpTable [data-sel]').forEach(x => { x.checked = false; }); paintSelAll(); paintSap(); };
     const xls = $('#rpXls');
     xls.textContent = `⬇ ${L('ទាញយក Excel', 'Download Excel')} (${n} ${L('ជួរ', 'rows')})`;
     xls.disabled = !n || rp.busy;
@@ -2243,7 +2365,7 @@
 
   function askPost(undo) {
     const rows = rpRows();
-    const list = undo ? rows.filter(r => r.sapStatus === SAP_POSTED) : sapRows(rows).filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED);
+    const list = undo ? rows.filter(r => r.sapStatus === SAP_POSTED) : sapRows(rows);
     if (!list.length) return;
     const litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
     const sh = openSheet(undo ? L('ដក Posted SAP វិញ', 'Undo Posted SAP') : '✔ Posted SAP', `
@@ -2264,6 +2386,7 @@
           r.sapAt = undo ? null : res.at;
         });
         local.set('all', rv.rows);
+        done.forEach(id => rp.sel.delete(id));
         toast(undo ? L(`បានដក ${done.size} ជួរ`, `${done.size} rows undone`) : L(`✔ ${done.size} ជួរ Posted SAP`, `✔ ${done.size} rows marked Posted SAP`));
       } catch (e) { toast(e.message); }
       rp.busy = false;
