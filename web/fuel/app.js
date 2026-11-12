@@ -1,4 +1,4 @@
-/* Fuel Refill App – data collection front end (no reports). */
+/* Fuel Refill App – data collection front end, plus the Report tab (Excel for SAP). */
 (function () {
   'use strict';
 
@@ -398,6 +398,12 @@
           if (p.note) r.note = (r.note ? r.note + ' | ' : '') + 'Review: ' + p.note;
           return resolve({ id: r.id });
         }
+        if (action === 'sapPost') {
+          const ids = demo.rows.filter(r => p.ids.indexOf(r.id) >= 0 && (p.undo ? r.sapStatus === 'Posted SAP' : r.status === STATUS_OK && r.sapStatus !== 'Posted SAP')).map(r => r.id);
+          const at = Date.now();
+          demo.rows.forEach(r => { if (ids.indexOf(r.id) >= 0) { r.sapStatus = p.undo ? '' : 'Posted SAP'; r.sapAt = p.undo ? null : at; } });
+          return resolve({ marked: ids.length, ids, at, undo: !!p.undo });
+        }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
         if (action === 'transcribe') return setTimeout(() => resolve({ text: 'ចាក់សាំងនៅស្ថានីយ៍ទួលគោក' }), 800);
         if (action === 'readPhoto') {
@@ -565,6 +571,7 @@
     // No name or Sign out in the bar (Kim, 2026-10-11): signing out is done from the home menu.
     $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
+    $('#reportTab').hidden = !canCheck();
     $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').length > 4);
     reviewBadge();
   }
@@ -602,7 +609,7 @@
   try { nav.hist = window.top === window && !!(window.history && history.pushState); } catch (e) { nav.hist = false; }
   const TITLES = {
     new: ['បញ្ចូលថ្មី', 'New'], mine: ['របស់ខ្ញុំ', 'My entries'], review: ['អ្នកត្រួតពិនិត្យ', 'Reviewer'],
-    detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
+    report: ['របាយការណ៍', 'Report'], detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
   };
 
   function go(screen, replace) {
@@ -653,6 +660,7 @@
       : screen.s === 'edit' ? (screen.from || 'mine')
       : screen.s === 'success' ? 'new' : screen.s;
     state.tab = tab;
+    document.body.classList.toggle('rp-wide', screen.s === 'report');
     $$('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     $('#navBack').disabled = nav.i <= 0;
     $('#navFwd').disabled = nav.i >= nav.stack.length - 1;
@@ -665,6 +673,7 @@
     else if (screen.s === 'detail') openDetail(screen.id);
     else if (screen.s === 'edit') openEdit(screen);
     else if (screen.s === 'success') renderSuccess(screen.ref);
+    else if (screen.s === 'report') renderReport();
   }
 
   function show(tab) {
@@ -1983,6 +1992,242 @@
 
   // ---------------- Light / dark switch ----------------
 
+  // ---------------- Report tab (Kim, 12 Nov 2026: option B) ----------------
+  // Filters, 4 totals, the refill table and "Excel for SAP" (one row per refill, Qty = litres, Text = plate).
+  // "✔ Posted SAP" marks the exported rows so the SAP Status column says Posted SAP and they are not exported twice.
+  // It only reads the refills the Reviewer tab already loaded; nothing is written except the SAP Status columns.
+
+  const SAP_POSTED = 'Posted SAP';
+  const SAP_DEF_KEY = 'fr_sap_defaults';
+  const SAP_FIELDS = [['mat', 'Mat. Short Text', 'Gasline/Deisel'], ['batch', 'Batch', 'Gasoline'], ['plnt', 'Plnt', 'Chaom Chao'],
+    ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
+  const SAP_HEAD = ['Mat. Short Text', 'Qty', 'Plnt', 'Sloc', 'CC', 'GL', 'Text', 'Batch'];
+  const RP_HEAD = ['ID_FR', 'ចាក់សាំងសម្រាប់', 'ផ្លាកលេខឡាន', 'ឈ្មោះតៃកុង', 'លេខកុងទ័រ (Km)', 'ចំនួនចាក់ (លីត្រ)', 'Date of Record', 'Date & Time of Record', 'Review Status', 'SAP Status'];
+  const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month']];
+  const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
+    ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
+  const RP_SAP = [['all', 'SAP: ទាំងអស់', 'SAP: All', () => true], ['new', 'មិនទាន់ Post', 'Not posted', r => r.sapStatus !== SAP_POSTED],
+    ['posted', '✔ Posted SAP', '✔ Posted SAP', r => r.sapStatus === SAP_POSTED]];
+  const ymdOf = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const dmyOf = ms => { const d = new Date(ms); return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const hmsOf = ms => { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+  function rpRange(k) {
+    const d = new Date(), y = d.getFullYear(), m = d.getMonth(), day = n => ymdOf(new Date(y, m, d.getDate() + n));
+    if (k === 'yday') return [day(-1), day(-1)];
+    if (k === '7d') return [day(-6), day(0)];
+    if (k === 'month') return [ymdOf(new Date(y, m, 1)), day(0)];
+    if (k === 'lmonth') return [ymdOf(new Date(y, m - 1, 1)), ymdOf(new Date(y, m, 0))];
+    return [day(0), day(0)];
+  }
+  const rp = { from: '', to: '', status: 'all', sap: 'all', q: '', onlyNew: true, defs: null, busy: false };
+  function sapDefs() {
+    if (!rp.defs) {
+      let saved = {};
+      try { saved = JSON.parse(storeGet(SAP_DEF_KEY) || '{}') || {}; } catch (e) { saved = {}; }
+      rp.defs = {};
+      SAP_FIELDS.forEach(([k, , def]) => { rp.defs[k] = saved[k] != null && saved[k] !== '' ? String(saved[k]) : def; });
+    }
+    return rp.defs;
+  }
+  const rpRangeIs = k => { const r = rpRange(k); return rp.from === r[0] && rp.to === r[1]; };
+
+  function rpRows() {
+    const from = rp.from, to = rp.to, q = rp.q.trim().toLowerCase();
+    const st = RP_STATUS.find(x => x[0] === rp.status)[3], sp = RP_SAP.find(x => x[0] === rp.sap)[3];
+    return (rv.rows || []).filter(r => {
+      if (!r.dateTime) return false;
+      const k = ymdOf(new Date(r.dateTime));
+      if ((from && k < from) || (to && k > to)) return false;
+      if (!st(r) || !sp(r)) return false;
+      return !q || [r.id, r.type, r.plate, r.driver, r.note, r.km, r.litres].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
+  const sapRows = rows => rp.onlyNew ? rows.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED) : rows;
+  const sapCells = r => { const d = sapDefs(); return [d.mat, Number(r.litres) || 0, d.plnt, d.sloc, d.cc, d.gl, r.plate, d.batch]; };
+
+  async function renderReport(refresh) {
+    const me = current();
+    if (refresh) rv.fetchedAt = 0;
+    if (!rp.from) { const r = rpRange('today'); rp.from = r[0]; rp.to = r[1]; }
+    if (!(await ensureRows(me, () => paintReport()))) return;
+    const defs = sapDefs();
+    const chip = (attr, k, label, on) => `<button type="button" class="rp-chip${on ? ' on' : ''}" data-${attr}="${k}">${label}</button>`;
+    $('#view').innerHTML = `
+      <div class="rp-h"><h2>📊 ${L('របាយការណ៍', 'Report')}</h2>
+        <button type="button" class="icon-btn round" id="rpRefresh" aria-label="${L('ទាញថ្មី', 'Refresh')}" title="${L('ទាញថ្មី', 'Refresh')}">↻</button></div>
+      <div class="rp-f" id="rpF">
+        <label>${L('ពីថ្ងៃ', 'From')}<input type="date" id="rpFrom" value="${rp.from}"></label>
+        <label>${L('ដល់ថ្ងៃ', 'To')}<input type="date" id="rpTo" value="${rp.to}"></label>
+        <button type="button" class="btn small rp-go" id="rpGo">${L('បង្ហាញ', 'Show')}</button>
+        <div class="rp-chips" id="rpPer">${RP_PERIODS.map(([k, kh, en]) => chip('per', k, L(kh, en), rpRangeIs(k))).join('')}</div>
+        <span class="rp-sep"></span>
+        <div class="rp-chips" id="rpSt">${RP_STATUS.map(([k, kh, en]) => chip('st', k, L(kh, en), rp.status === k)).join('')}</div>
+        <div class="rp-chips" id="rpSap">${RP_SAP.map(([k, kh, en]) => chip('sap', k, L(kh, en), rp.sap === k)).join('')}</div>
+        <input type="search" class="rp-q" id="rpQ" data-live-ok placeholder="🔍 ${L('ស្វែងរក ផ្លាកលេខ ឈ្មោះតៃកុង ID_FR…', 'Search plate, driver, ID_FR…')}" value="${esc(rp.q)}">
+      </div>
+      <div class="rp-kpis" id="rpKpi"></div>
+      <div class="rp-tw" id="rpTable"></div>
+      <section class="card rp-sap">
+        <div>
+          <h3>⬇ Excel for SAP</h3>
+          <div class="hint">${L('មួយជួរ = ការចាក់សាំងមួយដង។ Qty = លីត្រ, Text = ផ្លាកលេខ។ ជួរផ្សេងទៀតប្រើតម្លៃនេះ៖', 'One row per refill. Qty = litres, Text = plate number. The other columns use these values:')}</div>
+          <div class="rp-defs">${SAP_FIELDS.map(([k, label]) => `<label>${label}<input type="text" data-def="${k}" value="${esc(defs[k])}"></label>`).join('')}</div>
+          <label class="rp-chk"><input type="checkbox" id="rpOnly"${rp.onlyNew ? ' checked' : ''}> <span>${L('តែ ✅ ត្រឹមត្រូវ ដែលមិនទាន់ Post SAP', 'Only ✅ correct rows not yet posted in SAP')}</span></label>
+          <button type="button" class="btn xl rp-big" id="rpXls"></button>
+          <button type="button" class="btn xl-o rp-big" id="rpPost" hidden></button>
+          <button type="button" class="btn ghost small rp-big" id="rpUndo" hidden></button>
+          <div class="hint">${L('បន្ទាប់ពីបញ្ចូលជួរទាំងនេះក្នុង SAP រួច សូមចុច ✔ Posted SAP ដើម្បីកុំឱ្យទាញចេញម្តងទៀត។', 'After you post these rows in SAP, tap ✔ Posted SAP so they are not exported again.')}</div>
+        </div>
+        <div class="rp-tw sap" id="rpSapPrev"></div>
+      </section>`;
+
+    const setRange = (a, b) => { rp.from = a; rp.to = b; $('#rpFrom').value = a; $('#rpTo').value = b; paintChips(); paintReport(); };
+    $('#rpGo').onclick = () => {
+      let a = $('#rpFrom').value, b = $('#rpTo').value;
+      if (a && b && a > b) { const t = a; a = b; b = t; }
+      setRange(a, b);
+    };
+    $$('[data-per]').forEach(b => b.onclick = () => { const r = rpRange(b.dataset.per); setRange(r[0], r[1]); });
+    $$('[data-st]').forEach(b => b.onclick = () => { rp.status = b.dataset.st; paintChips(); paintReport(); });
+    $$('[data-sap]').forEach(b => b.onclick = () => { rp.sap = b.dataset.sap; paintChips(); paintReport(); });
+    $('#rpQ').oninput = e => { rp.q = e.target.value; clearTimeout(rp.qt); rp.qt = setTimeout(paintReport, 150); };
+    $('#rpOnly').onchange = e => { rp.onlyNew = e.target.checked; paintReport(); };
+    $$('[data-def]').forEach(i => i.oninput = () => {
+      sapDefs()[i.dataset.def] = i.value;
+      storeSet(SAP_DEF_KEY, JSON.stringify(sapDefs()));
+      paintSap();
+    });
+    $('#rpRefresh').onclick = () => renderReport(true);
+    $('#rpXls').onclick = exportSap;
+    $('#rpPost').onclick = () => askPost(false);
+    $('#rpUndo').onclick = () => askPost(true);
+    $('#rpTable').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) go({ s: 'detail', id: tr.dataset.id }); };
+    // The filter bar stays under the app bar while the page scrolls.
+    document.documentElement.style.setProperty('--rp-top', ($('.head') ? $('.head').offsetHeight : 0) + 'px');
+    paintReport();
+  }
+
+  function paintChips() {
+    $$('[data-per]').forEach(b => b.classList.toggle('on', rpRangeIs(b.dataset.per)));
+    $$('[data-st]').forEach(b => b.classList.toggle('on', rp.status === b.dataset.st));
+    $$('[data-sap]').forEach(b => b.classList.toggle('on', rp.sap === b.dataset.sap));
+  }
+
+  // The sheet's own Review Status words (Kim's column), not the Reviewer tab's short labels.
+  const rpStatus = s => `<span class="pill ${statusCls(s)}">${s === STATUS_OK ? L(STATUS_OK, 'Correct') : s === STATUS_BAD ? L(STATUS_BAD, 'Not correct') : L('រង់ចាំ', 'Pending')}</span>`;
+  function paintReport() {
+    if (!$('#rpTable')) return;
+    const rows = rpRows();
+    const sum = list => list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const ok = rows.filter(r => r.status === STATUS_OK), pend = rows.filter(r => !r.status).length, bad = rows.filter(r => r.status === STATUS_BAD).length;
+    const posted = rows.filter(r => r.sapStatus === SAP_POSTED).length;
+    const plates = new Set(rows.map(r => r.plate).filter(Boolean)).size;
+    const span = rp.from === rp.to ? dmyOf(new Date(rp.from + 'T00:00:00').getTime()) : `${dmyOf(new Date(rp.from + 'T00:00:00').getTime())} – ${dmyOf(new Date(rp.to + 'T00:00:00').getTime())}`;
+    const kpi = (kh, en, v, sub, cls) => `<div class="rp-kpi"><small>${L(kh, en)}</small><b${cls ? ` class="${cls}"` : ''}>${v}</b><i>${sub}</i></div>`;
+    $('#rpKpi').innerHTML =
+      kpi('ចាក់សាំង', 'Refills', fmtNum(rows.length), esc(span)) +
+      kpi('លីត្រសរុប', 'Total litres', `${fmtNum(sum(rows))}<em>L</em>`, `${L('ត្រឹមត្រូវ', 'Correct')} ${fmtNum(sum(ok))} L`) +
+      kpi('ឡាន', 'Trucks', fmtNum(plates), `✔ Posted SAP ${fmtNum(posted)} / ${fmtNum(rows.length)}`) +
+      kpi('រង់ចាំពិនិត្យ', 'Waiting review', fmtNum(pend), `${fmtNum(bad)} ${L('មិនត្រឹមត្រូវ', 'not correct')}`, pend ? 'warn' : '');
+    if (!rows.length) {
+      $('#rpTable').innerHTML = `<div class="empty"><div class="big">📭</div>${L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
+    } else {
+      const sapCell = r => r.sapStatus === SAP_POSTED
+        ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>';
+      $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr>${RP_HEAD.map((h, i) => `<th${i === 4 || i === 5 ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr data-id="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td><td><b>${esc(r.plate || '–')}</b></td><td>${esc(r.driver || '–')}</td>
+          <td class="n">${r.km == null ? '' : fmtNum(r.km)}</td><td class="n"><b>${fmtNum(r.litres)}</b></td><td>${dmyOf(r.dateTime)}</td><td>${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}</td>
+          <td>${rpStatus(r.status)}</td><td>${sapCell(r)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><th>${fmtNum(rows.length)} ${L('ដង', 'refills')}</th><th></th><th></th><th></th><th></th><th class="n">${fmtNum(sum(rows))} L</th><th></th><th></th><th></th><th></th></tr></tfoot></table>`;
+    }
+    paintSap(rows);
+  }
+
+  function paintSap(rows) {
+    if (!$('#rpSapPrev')) return;
+    const list = sapRows(rows || rpRows());
+    const n = list.length, litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const show = list.slice(0, 50);
+    $('#rpSapPrev').innerHTML = n ? `<table class="rp-t sap" data-nosort><thead><tr>${SAP_HEAD.map((h, i) => `<th${i === 1 ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead>
+      <tbody>${show.map(r => `<tr>${sapCells(r).map((c, i) => `<td${i === 1 ? ' class="n"' : ''}>${i === 1 || i === 6 ? `<b>${esc(i === 1 ? fmtNum(c) : c)}</b>` : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><th>${n > show.length ? L(`… និង ${n - show.length} ជួរទៀត`, `… and ${n - show.length} more rows`) : `${n} ${L('ជួរ', 'rows')}`}</th><th class="n">${fmtNum(litres)}</th><th></th><th></th><th></th><th></th><th></th><th></th></tr></tfoot></table>`
+      : `<div class="empty">${rp.onlyNew ? L('គ្មានជួរ ✅ ត្រឹមត្រូវ ដែលមិនទាន់ Post SAP', 'No ✅ correct rows waiting for SAP') : L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
+    const xls = $('#rpXls');
+    xls.textContent = `⬇ ${L('ទាញយក Excel', 'Download Excel')} (${n} ${L('ជួរ', 'rows')})`;
+    xls.disabled = !n || rp.busy;
+    // Only reviewers and admins mark rows; only correct rows not posted yet can be marked.
+    const toPost = list.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED).length;
+    const post = $('#rpPost');
+    post.hidden = !canReview();
+    post.textContent = `✔ Posted SAP · ${L('បានបញ្ចូល SAP', 'mark as posted')} (${toPost})`;
+    post.disabled = !toPost || rp.busy;
+    const isAdmin = ((state.config || {}).user || {}).role === 'admin';
+    const undoN = rpRows().filter(r => r.sapStatus === SAP_POSTED).length;
+    const undo = $('#rpUndo');
+    undo.hidden = !(isAdmin && rp.sap === 'posted' && undoN);
+    undo.textContent = `↶ ${L('ដក Posted SAP វិញ', 'Undo Posted SAP')} (${undoN})`;
+    undo.disabled = rp.busy;
+  }
+
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    if (!loadXlsx.p) {
+      loadXlsx.p = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = '../vendor/xlsx.mini.min.js';
+        s.onload = () => resolve();
+        s.onerror = () => { loadXlsx.p = null; reject(new Error(L('មិនអាចផ្ទុក Excel បានទេ។ សូមព្យាយាមម្តងទៀត។', 'Could not load Excel. Please try again.'))); };
+        document.head.appendChild(s);
+      });
+    }
+    return loadXlsx.p;
+  }
+
+  async function exportSap() {
+    const list = sapRows(rpRows());
+    if (!list.length) { toast(L('គ្មានទិន្នន័យ', 'No entries')); return; }
+    try { await loadXlsx(); } catch (e) { toast(e.message); return; }
+    // CC and GL stay numbers when they are plain numbers (no leading 0), like the team's own SAP sheet.
+    const asNum = v => /^[1-9]\d{0,14}$/.test(String(v).trim()) ? Number(v) : v;
+    const data = list.map(r => sapCells(r).map((c, i) => (i === 4 || i === 5 ? asNum(c) : c)));
+    const ws = XLSX.utils.aoa_to_sheet([SAP_HEAD].concat(data));
+    ws['!cols'] = [18, 9, 14, 11, 12, 12, 12, 12].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SAP');
+    XLSX.writeFile(wb, 'Fuel_SAP_' + rp.from + (rp.to !== rp.from ? '_to_' + rp.to : '') + '.xlsx');
+  }
+
+  function askPost(undo) {
+    const rows = rpRows();
+    const list = undo ? rows.filter(r => r.sapStatus === SAP_POSTED) : sapRows(rows).filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED);
+    if (!list.length) return;
+    const litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const sh = openSheet(undo ? L('ដក Posted SAP វិញ', 'Undo Posted SAP') : '✔ Posted SAP', `
+      <p>${undo
+        ? L(`ដក "Posted SAP" ចេញពី <b>${list.length}</b> ជួរ (${fmtNum(litres)} L)?`, `Remove "Posted SAP" from <b>${list.length}</b> rows (${fmtNum(litres)} L)?`)
+        : L(`សម្គាល់ <b>${list.length}</b> ជួរ (${fmtNum(litres)} L) ថា <b>Posted SAP</b>? ធ្វើបែបនេះ បន្ទាប់ពីបញ្ចូលក្នុង SAP រួច។`, `Mark <b>${list.length}</b> rows (${fmtNum(litres)} L) as <b>Posted SAP</b>? Do this after you have posted them in SAP.`)}</p>
+      <div class="actions"><button type="button" class="btn ghost" data-close>${L('បោះបង់', 'Cancel')}</button>
+        <button type="button" class="btn ${undo ? 'bad' : 'xl'}" id="rpYes">${undo ? '↶ ' + L('ដកវិញ', 'Undo') : '✔ Posted SAP'}</button></div>`);
+    $('#rpYes', sh.el).onclick = async () => {
+      sh.close();
+      rp.busy = true; paintSap();
+      try {
+        const res = await api('sapPost', { ids: list.map(r => r.id), undo: !!undo });
+        const done = new Set(res.ids || []);
+        (rv.rows || []).forEach(r => {
+          if (!done.has(r.id)) return;
+          r.sapStatus = undo ? '' : SAP_POSTED;
+          r.sapAt = undo ? null : res.at;
+        });
+        local.set('all', rv.rows);
+        toast(undo ? L(`បានដក ${done.size} ជួរ`, `${done.size} rows undone`) : L(`✔ ${done.size} ជួរ Posted SAP`, `✔ ${done.size} rows marked Posted SAP`));
+      } catch (e) { toast(e.message); }
+      rp.busy = false;
+      paintReport();
+    };
+  }
+
   const THEME_KEY = 'fr_theme';
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   function applyTheme(theme) {
@@ -2004,7 +2249,7 @@
   const STATIC = [
     ['#brandName', 'ចាក់សាំង', 'Fuel Refill'], ['#navBack span', 'ថយក្រោយ', 'Back'], ['#navFwd span', 'ទៅមុខ', 'Forward'],
     ['.home-tab .lb', 'ទំព័រដើម', 'Home'], ['[data-tab="new"] .lb', 'បញ្ចូលថ្មី', 'New'],
-    ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'],
+    ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'], ['[data-tab="report"] .lb', 'របាយការណ៍', 'Report'],
     ['#demoBanner', 'DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុកទេ', 'DEMO · Nothing is saved'],
   ];
   function paintStatic() {

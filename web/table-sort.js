@@ -24,10 +24,12 @@
   function key(text) {
     const s = String(text || '').trim();
     if (!s || s === '—' || s === '-') return null;
+    // A time after the date ("12/11/2026 08:09:39") sorts inside the day too.
+    const tm = x => { const t = s.slice(x.length).match(/^[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/); return t ? +t[1] * 3600 + +t[2] * 60 + +(t[3] || 0) : 0; };
     let m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-    if (m) return { n: +(m[3] + ('0' + m[2]).slice(-2) + ('0' + m[1]).slice(-2)) };
+    if (m) return { n: +(m[3] + ('0' + m[2]).slice(-2) + ('0' + m[1]).slice(-2)) * 1e5 + tm(m[0]) };
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return { n: +(m[1] + m[2] + m[3]) };
+    if (m) return { n: +(m[1] + m[2] + m[3]) * 1e5 + tm(m[0]) };
     m = s.match(/^(\d+)\s*h\s*(\d+)/i);
     if (m) return { n: +m[1] * 60 + +m[2] };
     const num = s.replace(/[,\s$%៛]/g, '').replace(/(kg|t|min|km|l)$/i, '');

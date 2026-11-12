@@ -39,7 +39,12 @@ const COL = {
   HOUR: 'Hour Meter',
   HOUR_PHOTO: 'Hour Meter Photo',
   UPDATED_AT: 'Updated At',
+  // Report menu (Kim, 12 Nov 2026): "Posted SAP" button. Added at the end of the sheet the first time it is used.
+  SAP_STATUS: 'SAP Status',
+  SAP_BY: 'SAP Posted By',
+  SAP_AT: 'SAP Posted At',
 };
+const SAP_POSTED = 'Posted SAP';
 
 // Columns in the "Driver & Truck" sheet used for the dropdowns.
 const DT_DRIVER = 'ឈ្មោះតៃកុង';
@@ -111,6 +116,7 @@ const ACTIONS = {
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
   saver: fuelSaver_,
+  sapPost: sapPost_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -136,7 +142,7 @@ const HOME_APPS = [
 // Truck Scale (6 Nov 2026) is not a default: tick ជញ្ជីង for the weighbridge operators.
 const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
 const ACTION_APP = {
-  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel',
+  config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel', sapPost: 'fuel',
   // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
   dashboard: 'dashboard', dashboardSave: 'dashboard',
 };
@@ -998,6 +1004,60 @@ function reviewRefill_(p, user) {
       cell.setValue((old ? old + ' | ' : '') + 'Review: ' + p.note);
     }
     return { id: p.id, status: p.status };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Report menu "✔ Posted SAP" (Kim, 12 Nov 2026): after the SAP Excel rows are posted in SAP, the reviewer marks
+ * them so the SAP Status column says "Posted SAP" and they are not exported twice. Only correct (ត្រឹមត្រូវ) entries
+ * that are not posted yet are marked. Only the three SAP columns are written; the refill data itself is not touched.
+ * Admins can undo (p.undo) when rows were marked by mistake.
+ */
+function sapPost_(p, user) {
+  if (!isReviewer_(user)) throw new Error('Only reviewers can mark entries as posted in SAP.');
+  const want = new Set((Array.isArray(p.ids) ? p.ids : []).map(String));
+  if (!want.size) throw new Error('No entries to mark.');
+  if (want.size > 5000) throw new Error('Too many entries at once (max 5000).');
+  if (p.undo && user.role !== 'admin') throw new Error('Only admins can undo Posted SAP.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = refillSheet_();
+    const cols = headerIndex_(sheet);
+    [COL.SAP_STATUS, COL.SAP_BY, COL.SAP_AT].forEach(name => {
+      if (cols[name] === undefined) {
+        const c = sheet.getLastColumn() + 1;
+        sheet.getRange(1, c).setValue(name);
+        cols[name] = c - 1;
+      }
+    });
+    const n = sheet.getLastRow() - 1;
+    if (n < 1) return { marked: 0, skipped: want.size, ids: [] };
+    const col = name => sheet.getRange(2, cols[name] + 1, n, 1);
+    const ids = col(COL.ID_FR).getValues(), status = col(COL.STATUS).getValues();
+    const sap = col(COL.SAP_STATUS).getValues(), by = col(COL.SAP_BY).getValues(), at = col(COL.SAP_AT).getValues();
+    const now = new Date(), done = [];
+    for (let i = 0; i < n; i++) {
+      const id = String(ids[i][0]);
+      if (!want.has(id)) continue;
+      const posted = String(sap[i][0]).trim() === SAP_POSTED;
+      if (p.undo) {
+        if (!posted) continue;
+        sap[i][0] = ''; by[i][0] = ''; at[i][0] = '';
+      } else {
+        if (posted || String(status[i][0]).trim() !== STATUS_OK) continue;
+        sap[i][0] = SAP_POSTED; by[i][0] = user.email; at[i][0] = now;
+      }
+      done.push(id);
+    }
+    if (done.length) {
+      col(COL.SAP_STATUS).setValues(sap);
+      col(COL.SAP_BY).setValues(by);
+      col(COL.SAP_AT).setNumberFormat('dd-MMM-yyyy HH:mm').setValues(at);
+    }
+    return { marked: done.length, skipped: want.size - done.length, ids: done, at: p.undo ? null : now.getTime(), undo: !!p.undo };
   } finally {
     lock.releaseLock();
   }
@@ -2458,6 +2518,8 @@ function allRefills_() {
       hourPhoto: String(get(r, COL.HOUR_PHOTO)),
       pumpPhoto: String(get(r, COL.PUMP_PHOTO)),
       signature: String(get(r, COL.SIGNATURE)),
+      sapStatus: String(get(r, COL.SAP_STATUS)),
+      sapAt: get(r, COL.SAP_AT) instanceof Date ? get(r, COL.SAP_AT).getTime() : null,
     };
   });
 }

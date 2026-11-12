@@ -539,3 +539,61 @@ body.ad-open { overflow: hidden; }
 
 /* Forms 50% wider on computers (Kim, 5 Nov 2026) */
 @media (min-width: 900px) { main { max-width: 960px; } .sheet { max-width: 960px; } }
+
+/* Report tab (Kim, 12 Nov 2026, option B): filters, 4 totals, table, Excel for SAP + Posted SAP */
+body.rp-wide main { max-width: 1400px; }
+/* The filter bar stays under the app bar on computers; on phones it would cover half the screen. */
+@media (min-width: 900px) { .rp-f { position: sticky; top: var(--rp-top, 0); z-index: 6; } }
+@media (min-width: 900px) { body.rp-wide main { max-width: 1400px; padding: 18px 24px 28px; } }
+.rp-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.rp-h h2 { margin: 0; flex: 1; }
+.rp-f { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 12px; }
+.rp-f label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.rp-f input[type=date], .rp-f input[type=search] { font: inherit; font-size: 14px; color: var(--text); background: var(--card); border: 1.5px solid var(--line);
+  border-radius: 10px; padding: 6px 10px; min-height: 40px; }
+.rp-f input[type=date] { width: 150px; }
+.rp-f .rp-q { flex: 1 1 200px; width: auto; min-width: 180px; }
+.rp-go { min-height: 40px; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rp-chip { min-height: 38px; padding: 0 13px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card); color: var(--text);
+  font-weight: 600; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+.rp-chip.on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+.rp-sep { width: 1px; align-self: stretch; background: var(--line); }
+.rp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.rp-kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; min-width: 0; }
+.rp-kpi small { font-weight: 600; font-size: 12.5px; }
+.rp-kpi b { display: block; font-size: 26px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.rp-kpi b.warn { color: var(--warn); }
+.rp-kpi b em { font-style: normal; font-size: 14px; color: var(--muted); margin-left: 4px; }
+.rp-kpi i { font-style: normal; font-size: 12px; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 700px) { .rp-kpis { grid-template-columns: 1fr 1fr; } .rp-kpi b { font-size: 22px; } .rp-sep { display: none; }
+  .rp-chips { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; } .rp-f input[type=date] { width: 100%; } .rp-f label { flex: 1 1 40%; } }
+.rp-tw { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: auto; max-height: 70vh; }
+.rp-t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.rp-t th { position: sticky; top: 0; z-index: 1; background: #1f4e78; color: #fff; text-align: left; padding: 9px 8px; font-weight: 600; white-space: nowrap; }
+.rp-t tfoot th { top: auto; bottom: 0; background: var(--brand-soft); color: var(--text); font-weight: 700; border-top: 1px solid var(--line); }
+.rp-t td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rp-t tbody tr[data-id] { cursor: pointer; }
+.rp-t tbody tr[data-id]:hover td { background: var(--brand-soft); }
+.rp-t .n { text-align: right; font-variant-numeric: tabular-nums; }
+.rp-t .mono { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rp-t .dim { color: var(--muted); }
+.rp-t.sap th { background: #1d6f42; }
+.rp-t.sap tfoot th { background: var(--ok-soft); }
+.rp-tw.sap { max-height: 420px; }
+.sap-pill { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; background: var(--ok-soft); color: var(--ok); white-space: nowrap; }
+.rp-sap { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
+.rp-sap h3 { margin: 0 0 4px; font-size: 17px; }
+@media (max-width: 899px) { .rp-sap { grid-template-columns: minmax(0, 1fr); } }
+.rp-defs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.rp-defs label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
+.rp-defs input[type=text] { min-height: 38px; padding: 6px 10px; font-size: 14px; }
+.rp-chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin: 4px 0 2px; cursor: pointer; }
+.rp-chk input { width: 18px; height: 18px; flex: none; }
+.rp-big { width: 100%; margin-top: 8px; }
+.btn.xl { background: #1d6f42; color: #fff; }
+.btn.xl-o { background: var(--card); color: #1d6f42; border: 1.5px solid #1d6f42; }
+:root[data-theme="dark"] .btn.xl-o { color: var(--ok); border-color: var(--ok); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.xl-o { color: var(--ok); border-color: var(--ok); } }
+.btn.xl[disabled], .btn.xl-o[disabled] { opacity: .5; cursor: not-allowed; }
