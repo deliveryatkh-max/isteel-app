@@ -1162,8 +1162,8 @@
     return rangeOf(k);
   }
   const repRangeIs = k => { const r = repRange(k); return REP.from === r[0] && REP.to === r[1]; };
-  const REP_HEAD = ['Ticket No', 'Status', 'Truck No', 'Load/Unload', 'Company', 'Item', 'DN No', 'DN Kg', 'Loading Place', 'Destination', 'Canvas', 'In Time', 'Out Time', 'Total Time', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Trips'];   // In / Out / Total Time replace 1st/2nd time and weight (Kim, 12 Nov 2026)
-  const REP_NUM = [7, 14, 15, 16, 17];
+  const REP_HEAD = ['Ticket No', 'Status', 'Truck No', 'Load/Unload', 'Company', 'DN No', 'DN Kg', 'Loading Place', 'Destination', 'Canvas', 'In Time', 'Out Time', 'Total Time', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Trips'];   // In / Out / Total Time replace 1st/2nd time and weight (Kim, 12 Nov 2026)
+  const REP_NUM = [6, 13, 14, 15, 16];   // Item column removed (Kim, 12 Nov 2026)
   const stName = s => (s === 'Void' ? t('បានលុប', 'Cancelled') : s === 'Open' ? t('នៅលើទីតាំង', 'On site') : t('រួចរាល់', 'Done'));
   const tarpName = v => (v === 'Yes' ? 'Covered' : v === 'No' ? 'Not covered' : '');
   function renderReport() {
@@ -1219,7 +1219,7 @@
     const out = [];
     list.forEach(x => {
       const dns = x.dns && x.dns.length ? x.dns : [''];
-      dns.forEach((d, i) => out.push({ x, cells: [x.no, x.status, x.plate, typeOf(x), x.company || '', x.item || '', d, d ? dnKgOf(x, d) || '' : '', x.load || '', x.dest || '', x.tarp || '',
+      dns.forEach((d, i) => out.push({ x, cells: [x.no, x.status, x.plate, typeOf(x), x.company || '', d, d ? dnKgOf(x, d) || '' : '', x.load || '', x.dest || '', x.tarp || '',
         x.t1 || '', x.t2 || '', x.t2 ? dur(mins(x)) : '', num(x.gross), num(x.tare), num(x.net), i === 0 ? 1 : 0] }));
     });
     return out;
@@ -1228,7 +1228,7 @@
   function repTotal(lines) {
     const tot = REP_HEAD.map(() => '');
     REP_NUM.forEach(i => { tot[i] = 0; });
-    lines.forEach(l => REP_NUM.forEach(i => { if (i === 7 || l.cells[17] === 1) tot[i] += Number(l.cells[i]) || 0; }));
+    lines.forEach(l => REP_NUM.forEach(i => { if (i === 6 || l.cells[16] === 1) tot[i] += Number(l.cells[i]) || 0; }));
     return tot;
   }
   const whenTxt = v => String(v || '').replace('T', ' ').slice(0, 16);
@@ -1242,17 +1242,17 @@
     }
     const list = repTickets(), lines = repLines(list);
     const done = list.filter(x => x.status === 'Done'), open = list.filter(x => x.status === 'Open').length;
-    const net = done.reduce((s, x) => s + (Number(x.net) || 0), 0), dnKg = lines.reduce((s, l) => s + (Number(l.cells[7]) || 0), 0);
+    const net = done.reduce((s, x) => s + (Number(x.net) || 0), 0), dnKg = lines.reduce((s, l) => s + (Number(l.cells[6]) || 0), 0);
     $('#rSum').innerHTML = `<b>${lines.length}</b> ${t('ជួរ', 'rows')} · <b>${list.length}</b> ${t('ជើង', 'trips')} (${done.length} ${t('រួចរាល់', 'done')} · ${open} ${t('នៅលើទីតាំង', 'on site')}) · ${t('សុទ្ធ', 'Net')} <b>${kg(net)} kg</b> · ${t('សរុប DN', 'DN total')} <b>${kg(dnKg)} kg</b>`;
     if (!lines.length) { $('#rBody').innerHTML = `<div class="empty">${t('គ្មានទិន្នន័យ', 'No data')}</div>`; return; }
     const cell = (c, i) => {
       if (i === 1) return `<td><span class="badge ${c === 'Void' ? 'rejected' : c === 'Open' ? 'follow' : 'approved'}">${stName(c)}</span></td>`;
       if (i === 3) return `<td>${c === 'In' ? '⬇️ ' + typeName('In') : c === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td>`;   // Load / Unload (Kim, 12 Nov 2026)
-      if (i === 10) return `<td>${c === 'Yes' ? t('គ្របតង់', 'Covered') : c === 'No' ? t('មិនគ្របតង់', 'Not covered') : ''}</td>`;
-      if (i === 11 || i === 12) return `<td class="nw">${whenTxt(c)}</td>`;
-      if (i === 13) return `<td class="nw r">${esc(c)}</td>`;
-      if (REP_NUM.indexOf(i) >= 0) return `<td class="r mono"${i === 16 ? ' style="font-weight:700"' : ''}>${c === '' ? '' : kg(c)}</td>`;
-      return `<td${i === 0 || i === 6 ? ' class="mono"' : ''}>${esc(c)}</td>`;
+      if (i === 9) return `<td>${c === 'Yes' ? t('គ្របតង់', 'Covered') : c === 'No' ? t('មិនគ្របតង់', 'Not covered') : ''}</td>`;
+      if (i === 10 || i === 11) return `<td class="nw">${whenTxt(c)}</td>`;
+      if (i === 12) return `<td class="nw r">${esc(c)}</td>`;
+      if (REP_NUM.indexOf(i) >= 0) return `<td class="r mono"${i === 15 ? ' style="font-weight:700"' : ''}>${c === '' ? '' : kg(c)}</td>`;
+      return `<td${i === 0 || i === 5 ? ' class="mono"' : ''}>${esc(c)}</td>`;
     };
     $('#rBody').innerHTML = `<div class="tbl fit"><table class="tt rep"><tr>${REP_HEAD.map((h, i) => `<th${REP_NUM.indexOf(i) >= 0 ? ' class="r"' : ''}>${h}</th>`).join('')}</tr>
       ${lines.map(l => `<tr class="pick" data-tk="${esc(l.x.cid || l.x.no)}">${l.cells.map(cell).join('')}</tr>`).join('')}
@@ -1263,11 +1263,11 @@
   function exportReport() {
     const lines = repLines(repTickets());
     if (!lines.length || !window.XLSX) { toast(t('គ្មានទិន្នន័យ', 'No data')); return; }
-    const data = lines.map(l => l.cells.map((c, i) => (i === 1 ? (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') : i === 3 ? (c === 'In' ? 'Unload' : c === 'Out' ? 'Load' : '') : i === 10 ? tarpName(c) : i === 11 || i === 12 ? String(c || '').replace('T', ' ').slice(0, 19) : c)));
+    const data = lines.map(l => l.cells.map((c, i) => (i === 1 ? (c === 'Void' ? 'Cancelled' : c === 'Open' ? 'On site' : 'Done') : i === 3 ? (c === 'In' ? 'Unload' : c === 'Out' ? 'Load' : '') : i === 9 ? tarpName(c) : i === 10 || i === 11 ? String(c || '').replace('T', ' ').slice(0, 19) : c)));
     const gt = repTotal(lines); gt[0] = 'Grand total';
     const ws = XLSX.utils.aoa_to_sheet([REP_HEAD].concat(data, [[], gt]));   // a blank row keeps the total out of Excel's filter and sort
-    ws['!cols'] = [16, 9, 11, 10, 22, 22, 13, 9, 14, 26, 11, 19, 19, 11, 11, 11, 11, 6].map(w => ({ wch: w }));
-    ws['!autofilter'] = { ref: 'A1:R' + (data.length + 1) };
+    ws['!cols'] = [16, 9, 11, 10, 22, 13, 9, 14, 26, 11, 19, 19, 11, 11, 11, 11, 6].map(w => ({ wch: w }));
+    ws['!autofilter'] = { ref: 'A1:Q' + (data.length + 1) };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     XLSX.writeFile(wb, 'Scale_Report_' + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx');
