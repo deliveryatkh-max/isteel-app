@@ -12,11 +12,12 @@
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="apple-touch-icon" href="../icons/app-180.png">
   <link rel="manifest" href="../manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=20261112c">
+  <link rel="stylesheet" href="../filter-bar.css?v=20261113a">
+  <link rel="stylesheet" href="styles.css?v=20261113a">
   <link rel="stylesheet" href="../ads.css?v=20261031a">
   <link rel="stylesheet" href="../sidenav.css?v=20261105c">
   <!-- Glass look (Kim, 12 Nov 2026): try it with ?glass=1, back to the normal look with ?glass=0 (remembered on this device). -->
-  <script>(function () { try { var q = location.search.match(/[?&]glass=(0|1)/); if (q) localStorage.setItem('fr_glass', q[1]); if (localStorage.getItem('fr_glass') === '1') { document.documentElement.classList.add('glass'); document.write('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;600;700&display=swap"><link rel="stylesheet" href="glass.css?v=20261113b">'); } } catch (e) { /* storage blocked: normal look */ } })();</script>
+  <script>(function () { try { var q = location.search.match(/[?&]glass=(0|1)/); if (q) localStorage.setItem('fr_glass', q[1]); if (localStorage.getItem('fr_glass') === '1') { document.documentElement.classList.add('glass'); document.write('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;600;700&display=swap"><link rel="stylesheet" href="glass.css?v=20261113c">'); } } catch (e) { /* storage blocked: normal look */ } })();</script>
   <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
   <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
   <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
@@ -64,6 +65,7 @@
   <script src="../ads.js?v=20261031a" data-app="fuel"></script>
   <script src="../table-sort.js?v=20261112a"></script>
   <script src="../table-cols.js?v=20261113b"></script>
-  <script src="app.js?v=20261113c"></script>
+  <script src="../filter-bar.js?v=20261113a"></script>
+  <script src="app.js?v=20261113d"></script>
 </body>
 </html>

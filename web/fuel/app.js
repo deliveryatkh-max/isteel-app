@@ -2161,22 +2161,16 @@
     if (!rp.started) { const r = rpRange('today'); rp.from = r[0]; rp.to = r[1]; rp.started = true; }
     if (!(await ensureRows(me, () => paintReport()))) return;
     const defs = sapDefs();
-    const chip = (attr, k, label, on) => `<button type="button" class="rp-chip${on ? ' on' : ''}" data-${attr}="${k}">${label}</button>`;
     $('#view').innerHTML = `
-      <div class="rp-h"><h2>📊 ${L('របាយការណ៍', 'Report')}</h2>
-        ${isAdminUser() ? `<button type="button" class="btn ghost small" id="rpCols">⚙️ ${L('ជួរឈរ', 'Columns')}</button>` : ''}
-        <button type="button" class="icon-btn round" id="rpRefresh" aria-label="${L('ទាញថ្មី', 'Refresh')}" title="${L('ទាញថ្មី', 'Refresh')}">↻</button></div>
-      <div class="rp-f" id="rpF">
-        <label>${L('ពីថ្ងៃ', 'From')}<input type="date" id="rpFrom" value="${rp.from}"></label>
-        <label>${L('ដល់ថ្ងៃ', 'To')}<input type="date" id="rpTo" value="${rp.to}"></label>
-        <button type="button" class="btn small rp-go" id="rpGo">${L('បង្ហាញ', 'Show')}</button>
-        <button type="button" class="btn ghost small rp-go" id="rpClear" title="${L('សម្អាតតម្រងទាំងអស់', 'Clear all filters')}">✕ ${L('សម្អាត', 'Clear')}</button>
-        <div class="rp-chips" id="rpPer">${RP_PERIODS.map(([k, kh, en]) => chip('per', k, L(kh, en), rpRangeIs(k))).join('')}</div>
-        <span class="rp-sep"></span>
-        <div class="rp-chips" id="rpSt">${RP_STATUS.map(([k, kh, en]) => chip('st', k, L(kh, en), rp.status === k)).join('')}</div>
-        <div class="rp-chips" id="rpSap">${RP_SAP.map(([k, kh, en]) => chip('sap', k, L(kh, en), rp.sap === k)).join('')}</div>
-        <input type="search" class="rp-q" id="rpQ" data-live-ok placeholder="🔍 ${L('ស្វែងរក ផ្លាកលេខ ឈ្មោះតៃកុង ID_FR…', 'Search plate, driver, ID_FR…')}" value="${esc(rp.q)}">
-      </div>
+      <div class="fb-wrap rp-fw" id="rpF">${FB.head('rp', `📊 ${L('របាយការណ៍', 'Report')}`,
+        (isAdminUser() ? `<button type="button" class="fb-btn" id="rpCols">⚙️ ${L('ជួរឈរ', 'Columns')}</button>` : '') +
+        `<button type="button" class="fb-btn" id="rpRefresh" aria-label="${L('ទាញថ្មី', 'Refresh')}" title="${L('ទាញថ្មី', 'Refresh')}">↻</button>`,
+        () => { rp.sel.clear(); rp.status = 'all'; rp.sap = 'all'; rp.q = ''; rp.from = ''; rp.to = ''; renderReport(); })}
+      ${FB.panel('rp', FB.range('rpFrom', 'rpTo', rp.from, rp.to) + FB.show('rpGo')
+        + FB.seg(RP_PERIODS.map(([k, kh, en]) => [k, L(kh, en)]), RP_PERIODS.map(x => x[0]).find(rpRangeIs), 'per', true)
+        + FB.seg(RP_STATUS.map(([k, kh, en]) => [k, L(kh, en)]), rp.status, 'st', true)
+        + FB.seg(RP_SAP.map(([k, kh, en]) => [k, L(kh, en)]), rp.sap, 'sap', true)
+        + FB.search('rpQ', L('ស្វែងរក ផ្លាកលេខ ឈ្មោះតៃកុង ID_FR…', 'Search plate, driver, ID_FR…'), rp.q))}</div>
       <div class="rp-kpis" id="rpKpi"></div>
       <div class="rp-tw" id="rpTable"></div>
       <section class="card rp-sap">
@@ -2202,7 +2196,6 @@
     };
     $$('[data-per]').forEach(b => b.onclick = () => { const r = rpRange(b.dataset.per); setRange(r[0], r[1]); });
     // Clear (Kim, 12 Nov 2026): no filters at all = every date, every status, every SAP status, no search.
-    $('#rpClear').onclick = () => { rp.sel.clear(); rp.status = 'all'; rp.sap = 'all'; rp.q = ''; $('#rpQ').value = ''; setRange('', ''); };
     $$('[data-st]').forEach(b => b.onclick = () => { rp.status = b.dataset.st; paintChips(); paintReport(); });
     $$('[data-sap]').forEach(b => b.onclick = () => { rp.sap = b.dataset.sap; paintChips(); paintReport(); });
     $('#rpQ').oninput = e => { rp.q = e.target.value; clearTimeout(rp.qt); rp.qt = setTimeout(paintReport, 150); };

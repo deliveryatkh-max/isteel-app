@@ -543,7 +543,8 @@ body.ad-open { overflow: hidden; }
 /* Report tab (Kim, 12 Nov 2026, option B): filters, 4 totals, table, Excel for SAP + Posted SAP */
 body.rp-wide main { max-width: 1400px; }
 /* The filter bar stays under the app bar on computers; on phones it would cover half the screen. */
-@media (min-width: 900px) { .rp-f { position: sticky; top: var(--rp-top, 0); z-index: 6; } }
+/* Filters (shared filter-bar.css look) stay under the app bar on computers, on a solid band so the table never shows behind them. */
+@media (min-width: 900px) { .rp-fw { position: sticky; top: var(--rp-top, 0); z-index: 6; background: var(--bg); padding: 8px 0 4px; margin-top: -8px; } }
 @media (min-width: 900px) { body.rp-wide main { max-width: 1400px; padding: 18px 24px 28px; } }
 .rp-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .rp-h h2 { margin: 0; flex: 1; }

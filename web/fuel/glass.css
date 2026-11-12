@@ -49,7 +49,7 @@
 }
 .glass .rp-tw { border-radius: 16px; }
 /* Report filter stays solid when it sticks, so the table never shows behind it (Kim, 13 Nov 2026). */
-.glass .rp-f { background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (min-width: 900px) { .glass .rp-fw { background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; } }
 .glass .rp-kpi b { font-weight: 600; }
 .glass .dt-hero { border-radius: 24px; background: var(--g-grad); box-shadow: 0 14px 32px rgba(1, 30, 65, .18); }
 
