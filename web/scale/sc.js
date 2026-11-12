@@ -1445,6 +1445,13 @@
     const editing = location.hash.indexOf('?edit') > 0;
     $('#view').innerHTML = `<section class="card">
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
+      <div class="btns tbtns">
+        <a class="btn" href="#/list">← ${t('ត្រឡប់', 'Back')}</a>
+        ${x.status !== 'Open' || lastAgain(x) ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
+        ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
+        ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
+        ${x.err && x.cid && LOC[x.cid] ? `<button type="button" class="btn" id="tRetry">↻ ${t('ផ្ញើម្តងទៀត', 'Send again')}</button>` : ''}
+      </div>
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ចូល / ចេញ', 'In / Out'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
@@ -1459,13 +1466,6 @@
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
-      <div class="btns mt">
-        <a class="btn" href="#/list">← ${t('ត្រឡប់', 'Back')}</a>
-        ${x.status !== 'Open' || lastAgain(x) ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
-        ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
-        ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
-        ${x.err && x.cid && LOC[x.cid] ? `<button type="button" class="btn" id="tRetry">↻ ${t('ផ្ញើម្តងទៀត', 'Send again')}</button>` : ''}
-      </div>
       <div id="tMore"></div></section>`;
     bindDone();
     if ($('#tPrev')) ticketPreview(x, $('#tPrev'));

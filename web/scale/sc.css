@@ -454,3 +454,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .phbox img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 8px; background: #fff; }
 .phbox .phbar { display: flex; gap: 14px; align-items: center; color: #fff; font-size: 15px; }
 .phbox .phbar a { color: #9cc8ff; }
+
+/* Ticket page: Back / Print / PDF / Edit / Cancel on top, frozen while scrolling (Kim, 12 Nov 2026) */
+.tbtns { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); margin: 0 -4px 10px; padding: 8px 4px; box-shadow: 0 8px 12px -10px rgba(1, 30, 65, .25); }
