@@ -1180,6 +1180,7 @@
         <label>${t('ក្រុមហ៊ុនដឹក', 'Transporter')}<select class="in" id="rCo"><option value="">${t('ទាំងអស់', 'All')}</option></select></label>
         <input type="search" class="in lq" id="rQ" data-live-ok placeholder="${t('ស្វែងរក ឡាន DN ទំនិញ គោលដៅ...', 'Search truck, DN, item, destination...')}" value="${esc(REP.q)}">
         <button type="button" class="btn" id="rXls">⬇ Excel</button>
+        <button type="button" class="btn" id="rDn">🧾 Debit Note</button>
       </div>
       <div id="rSum" class="sumline"></div>
       <div id="rBody"><div class="spinner"></div></div></section>`;
@@ -1191,6 +1192,7 @@
     $('#rTy').onchange = e => { REP.ty = e.target.value; paintReport(); };
     $('#rQ').oninput = e => { REP.q = e.target.value; paintReport(); };
     $('#rXls').onclick = exportReport;
+    $('#rDn').onclick = exportDebitNote;
     loadReport();
   }
   async function loadReport() {
@@ -1268,6 +1270,151 @@
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     XLSX.writeFile(wb, 'Scale_Report_' + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx');
+  }
+
+  // ---------------------------------------------------------------- Debit Note from the Report (Kim, 12 Nov 2026)
+  // Fills Kim's "Delivery Service Debit Note" Excel template with the finished trips of the filtered Report: one row per
+  // ticket. The template lives in Drive (G:\My Drive\SSK-STEEL\SSK-WEIGHT, Setting SCALE_DEBIT_NOTE_LINK) so Kim can change
+  // it; columns are found by their header words, so moving or adding a column keeps working. Offline, or before Scale.gs
+  // is updated, the copy shipped with the app (debit-note-template.xlsx) is used.
+  async function dnTemplate() {
+    if (!DEMO) {
+      let T = null;
+      try { T = JSON.parse(get('sc_dntpl') || 'null'); } catch (e) { T = null; }
+      try {
+        const r = await api('scDnTemplate', { stamp: (T && T.stamp) || '' });
+        if (r.b64) { T = { stamp: r.stamp, b64: r.b64 }; set('sc_dntpl', JSON.stringify(T)); }
+      } catch (e) { /* offline or old Scale.gs: the copy on this PC, else the app's copy */ }
+      if (T && T.b64) return Uint8Array.from(atob(T.b64), ch => ch.charCodeAt(0));
+    }
+    const r = await fetch('debit-note-template.xlsx?v=1');
+    if (!r.ok) throw new Error('debit-note-template.xlsx ' + r.status);
+    return new Uint8Array(await r.arrayBuffer());
+  }
+  const xesc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const xunesc = v => String(v).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const xSerial = d => { const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(d || ''); return m ? Math.round((Date.UTC(+m[1], m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86400000) : ''; };
+  const colNo = c => c.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+  const colOf = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const DN_COLS = [['no', /ticket/i], ['plate', /truck|plate/i], ['date', /date/i], ['load', /origin|loading|ដើម/i], ['dest', /destination|កន្លែងទៅ/i],
+    ['unit', /unit|ឯកតា/i], ['qty', /quantity|weight|ទម្ងន់/i], ['rate', /rate/i], ['extra', /extra/i], ['amount', /amount/i], ['dns', /\bdn\b|delivery note/i],
+    ['item', /item|goods|ទំនិញ/i], ['company', /transporter|company/i], ['seq', /\bno\.?$|^no\b|ល\.រ/im]];
+  /** Builds the Debit Note .xlsx (Uint8Array) for the trips in `list`. */
+  async function buildDebitNote(bytes, list) {
+    await loadJs('../vendor/jszip.min.js');
+    const zip = await JSZip.loadAsync(bytes);
+    const book = await zip.file('xl/workbook.xml').async('string');
+    const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const rid = (/<sheet [^>]*r:id="([^"]+)"/.exec(book) || [])[1];
+    const tgt = (new RegExp('<Relationship [^>]*Id="' + rid + '"[^>]*>').exec(rels) || [''])[0].match(/Target="([^"]+)"/);
+    const sheetPath = tgt ? 'xl/' + tgt[1].replace(/^\/?xl\//, '') : 'xl/worksheets/sheet1.xml';
+    let s = await zip.file(sheetPath).async('string');
+    const sstF = zip.file('xl/sharedStrings.xml');
+    const sst = sstF ? ((await sstF.async('string')).match(/<si>[\s\S]*?<\/si>/g) || []).map(x => xunesc((x.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(y => y.replace(/<[^>]+>/g, '')).join(''))) : [];
+    const styles = await zip.file('xl/styles.xml').async('string');
+    // one date style without border for the Invoice Date (the template has dd-mmm-yyyy)
+    const fmts = {}; (styles.match(/<numFmt [^>]*>/g) || []).forEach(f => { fmts[(/numFmtId="(\d+)"/.exec(f) || [])[1]] = (/formatCode="([^"]*)"/.exec(f) || [])[1] || ''; });
+    const xfs = ((/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles) || [])[1] || '').match(/<xf [^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
+    const dateXf = xfs.findIndex(x => { const id = +(/numFmtId="(\d+)"/.exec(x) || [])[1]; return (id >= 14 && id <= 22 || /[dmy]{2}/i.test(fmts[id] || '')) && /borderId="0"/.test(x); });
+    const ROW = /<row [^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, CELL = /<c r="([A-Z]+)(\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+    const rows = (s.match(ROW) || []).map(x => ({ xml: x, r: +(/ r="(\d+)"/.exec(x) || [])[1] }));
+    const cells = x => { const out = []; let m; CELL.lastIndex = 0; while ((m = CELL.exec(x))) {
+      const a = m[3], v = (/<v>([\s\S]*?)<\/v>/.exec(m[4] || '') || [])[1], f = (/<f[^>]*>([\s\S]*?)<\/f>/.exec(m[4] || '') || [])[1];
+      out.push({ c: m[1], n: colNo(m[1]), s: (/ s="(\d+)"/.exec(a) || [])[1] || '0', f, txt: /t="s"/.test(a) ? sst[+v] || '' : /t="inlineStr"/.test(a) ? xunesc((m[4] || '').replace(/<[^>]+>/g, '')) : v == null ? '' : xunesc(v) });
+    } return out; };
+    const head = rows.find(o => { const t2 = cells(o.xml).map(c => c.txt).join(' '); return /truck|plate/i.test(t2) && /date/i.test(t2); });
+    if (!head) throw new Error(t('រកមិនឃើញជួរចំណងជើងក្នុងគំរូ', 'Header row not found in the template'));
+    const H = head.r, tot = rows.find(o => o.r > H && cells(o.xml).some(c => /grand total|សរុប/i.test(c.txt)));
+    const T = tot ? tot.r : (rows.filter(o => o.r > H).pop() || head).r + 1;
+    const sample = rows.find(o => o.r === H + 1) || head, sc = cells(sample.xml);
+    const map = {}; cells(head.xml).forEach(c => { const k = (DN_COLS.find(d => !Object.values(map).includes(d[0]) && d[1].test(c.txt.trim())) || [])[0]; if (k) map[c.c] = k; });
+    const colFor = k => Object.keys(map).find(c => map[c] === k);
+    const firstCol = sc.length ? sc[0].c : 'A', lastCol = (sc[sc.length - 1] || {}).c || 'K';
+    const ownF = (sc.find(c => map[c.c] === 'amount' && c.f) || {}).f || '';
+    const N = list.length, d = N - (T - H - 1), shift = r => (r >= T ? r + d : r);
+    const rowAttr = (/<row ([^>]*?)\/?>/.exec(sample.xml) || [])[1].replace(/ ?r="\d+"/, '').replace(/ ?spans="[^"]*"/, '').replace(/\/$/, '');
+    const cq = colFor('qty'), cr = colFor('rate'), ce = colFor('extra');
+    let sumQ = 0, sumA = 0;
+    const out = list.map((x, i) => {
+      const r = H + 1 + i, pl = priceOf(x), q = Math.round((Number(x.net) || 0) / 10) / 100;
+      const perT = !!pl && /(^|\W)(t|ton|tons|តោន)(\W|$)/i.test(pl.per || '') && !/trip|truck|ជើង/i.test(pl.per || '');
+      const rate = pl && pl.price !== '' && isFinite(pl.price) ? Number(pl.price) : '';
+      const amt = rate === '' ? '' : Math.round((perT ? q * rate : rate) * 100) / 100;
+      sumQ += q; sumA += amt || 0;
+      const val = { seq: i + 1, date: xSerial(tripDay(x)), plate: x.plate || '', no: x.no || '', load: x.load || '', dest: x.dest || '', unit: 'តោន', qty: q,
+        rate, extra: '', dns: (x.dns || []).join(', '), item: x.item || '', company: x.company || '' };
+      const cs = sc.map(c => {
+        const ref = c.c + r, k = map[c.c];
+        if (k === 'amount') {
+          const f = perT && cq && cr ? `IF(${cr}${r}="","",ROUND(${cq}${r}*${cr}${r},2)${ce ? '+N(' + ce + r + ')' : ''})` : ownF ? ownF.replace(new RegExp('([A-Z]+)\\$?' + (H + 1) + '(?!\\d)', 'g'), '$1' + r) : '';
+          return f ? `<c r="${ref}" s="${c.s}"><f>${f}</f>${amt === '' ? '' : '<v>' + amt + '</v>'}</c>` : amt === '' ? `<c r="${ref}" s="${c.s}"/>` : `<c r="${ref}" s="${c.s}"><v>${amt}</v></c>`;
+        }
+        const v = k ? val[k] : '';
+        if (v === '' || v == null) return `<c r="${ref}" s="${c.s}"/>`;
+        return typeof v === 'number' ? `<c r="${ref}" s="${c.s}"><v>${v}</v></c>` : `<c r="${ref}" s="${c.s}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`;
+      }).join('');
+      return `<row r="${r}" ${rowAttr}>${cs}</row>`;
+    });
+    const fixF = (f, r0) => f.replace(/(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(])/g, (all, a, c, b, n) => { n = +n; return a + c + b + (n >= T ? n + d : n === T - 1 && r0 >= T ? H + N : n); });
+    const moveRow = o => {
+      const nr = shift(o.r);
+      let x = o.xml.replace(/^<row ([^>]*?) ?r="\d+"/, (all, pre) => `<row ${pre} r="${nr}"`).replace(/<c r="([A-Z]+)\d+"/g, (all, c) => `<c r="${c}${nr}"`);
+      x = x.replace(/<f([^>]*)>([\s\S]*?)<\/f>/g, (all, a, f) => `<f${a.replace(/ref="([^"]+)"/, (z, rf) => 'ref="' + fixF(rf, o.r) + '"')}>${fixF(f, o.r)}</f>`).replace(/(<\/f>)<v>[^<]*<\/v>/g, '$1');
+      if (o === tot) { if (cq) x = x.replace(new RegExp(`(<c r="${cq}${nr}"[^>]*>[\\s\\S]*?</f>)`), `$1<v>${Math.round(sumQ * 100) / 100}</v>`); const ca = colFor('amount'); if (ca) x = x.replace(new RegExp(`(<c r="${ca}${nr}"[^>]*>[\\s\\S]*?</f>)`), `$1<v>${Math.round(sumA * 100) / 100}</v>`); }
+      return x;
+    };
+    // header fields above the table: value goes after the ":" cell next to the label
+    const company = REP.co || [...new Set(list.map(x => x.company).filter(Boolean))].join(', ');
+    const setAfter = (o, re, v, num) => {
+      const cs = cells(o.xml), lab = cs.find(c => re.test(c.txt)); if (!lab || v === '' || v == null) return o.xml;
+      const colon = cs.find(c => c.n > lab.n && c.txt.trim() === ':'), vc = colOf((colon || lab).n + (colon ? 1 : 2)), st = num && dateXf >= 0 ? dateXf : (colon || lab).s;
+      const cell = num ? `<c r="${vc}${o.r}" s="${st}"><v>${v}</v></c>` : `<c r="${vc}${o.r}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`;
+      let x = o.xml.replace(new RegExp(`<c r="${vc}${o.r}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`), '');
+      const after = cells(x).filter(c => c.n > colNo(vc))[0];
+      if (after) x = x.replace(new RegExp(`<c r="${after.c}${o.r}"`), cell + `<c r="${after.c}${o.r}"`);
+      else x = x.replace(/<\/row>$/, cell + '</row>').replace(/^(<row [^>]*?)\/>$/, '$1>' + cell + '</row>');
+      return x;
+    };
+    const top = rows.filter(o => o.r < H).map(o => {
+      let x = o.xml;
+      x = setAfter({ xml: x, r: o.r }, /customer/i, String(S().SCALE_COMPANY || 'ISI STEEL'));
+      x = setAfter({ xml: x, r: o.r }, /invoice date/i, xSerial(today()), true);
+      x = setAfter({ xml: x, r: o.r }, /transporter|supplier|vendor/i, company);
+      if (o.r === 1 && company) x = x.replace(/(<c r="A1"[^>]*t="s"[^>]*><v>)(\d+)(<\/v><\/c>)/, (all, a, v) => `<c r="A1"${(/<c r="A1"([^>]*)>/.exec(all) || [])[1].replace(/ t="s"/, '')} t="inlineStr"><is><t xml:space="preserve">${xesc(sst[+v] + ' · ' + company)}</t></is></c>`);
+      return x;
+    });
+    const rest = rows.filter(o => o.r >= T).map(moveRow);
+    s = s.replace(/<sheetData>[\s\S]*<\/sheetData>|<sheetData\/>/, '<sheetData>' + top.join('') + head.xml + out.join('') + rest.join('') + '</sheetData>');
+    const lastRow = Math.max(H + N, ...rows.map(o => shift(o.r)));
+    s = s.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="${firstCol === 'A' ? 'A' : firstCol}1:${lastCol}${lastRow}"/>`);
+    s = s.replace(/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/g, (all, a, r1, b, r2) => (+r1 > H && +r1 < T ? '' : `<mergeCell ref="${a}${shift(+r1)}:${b}${shift(+r2)}"/>`));
+    s = s.replace(/<mergeCells count="\d+">/, () => `<mergeCells count="${(s.match(/<mergeCell ref=/g) || []).length}">`);
+    s = s.replace(/<selection [^>]*\/>/, '');
+    zip.file(sheetPath, s);
+    // print area and other names below the table move down too; Excel recalculates on open
+    zip.file('xl/workbook.xml', book.replace(/(<definedName [^>]*>)([^<]*)(<\/definedName>)/g, (all, a, v, b) => a + v.replace(/\$(\d+)/g, (z, n) => '$' + shift(+n)) + b)
+      .replace(/<calcPr([^>]*?)\/>/, (all, a) => `<calcPr${a.replace(/ fullCalcOnLoad="[^"]*"/, '')} fullCalcOnLoad="1"/>`));
+    if (zip.file('xl/calcChain.xml')) {
+      zip.remove('xl/calcChain.xml');
+      zip.file('xl/_rels/workbook.xml.rels', rels.replace(/<Relationship [^>]*calcChain[^>]*\/>/, ''));
+      const ct = await zip.file('[Content_Types].xml').async('string');
+      zip.file('[Content_Types].xml', ct.replace(/<Override [^>]*calcChain[^>]*\/>/, ''));
+    }
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+  async function exportDebitNote() {
+    const list = repTickets().filter(x => x.status === 'Done').sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
+    if (!list.length) { toast(t('គ្មានជើងដែលរួចរាល់ក្នុងតារាង', 'No finished trips in the table')); return; }
+    const btn = $('#rDn'); if (btn) btn.disabled = true;
+    try {
+      const out = await buildDebitNote(await dnTemplate(), list);
+      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a'), u = URL.createObjectURL(blob);
+      a.href = u; a.download = 'Debit_Note_' + (REP.co ? REP.co.replace(/[^A-Za-z0-9]+/g, '_') + '_' : '') + REP.from + (REP.to !== REP.from ? '_to_' + REP.to : '') + '.xlsx';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
+      if (!canDnc()) toast(t('តម្លៃមិនបានបំពេញ (សម្រាប់អ្នកពិនិត្យ Debit Note តែប៉ុណ្ណោះ)', 'Rates left empty (Price List is for Debit Note checkers only)'));
+    } catch (e) { toast('Debit Note: ' + e.message); }
+    finally { if (btn) btn.disabled = false; }
   }
 
   // ---------------------------------------------------------------- turnaround per 3PL (Kim, feature 8)
