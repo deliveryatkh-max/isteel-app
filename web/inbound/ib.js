@@ -351,19 +351,18 @@
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
     rows.forEach(r => { if (r.date !== last) { last = r.date; html += `<div class="daylabel">${r.date === today() ? t('ថ្ងៃនេះ', 'Today') + ' · ' : ''}${showDate(r.date)}</div>`; } html += itemHTML(r); });
-    const chip = (k, km, en) => `<button class="chip${LF === k ? ' on' : ''}" data-f="${k}">${t(km, en)}</button>`;
-    view(`<div class="logbar">
-      <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
-      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('today', 'ថ្ងៃនេះ', 'Today')}${LF === 'todaydone' ? chip('todaydone', '✅ ថ្ងៃនេះ', '✅ Today') : ''}${LF === 'period' ? chip('period', '📊 ' + sumLabel(), '📊 ' + sumLabel()) : ''}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
-      <div class="range"><label>${t('ពី', 'From')}<input class="in" type="date" id="lFrom" value="${esc(LFROM)}"></label><label>${t('ដល់', 'To')}<input class="in" type="date" id="lTo" value="${esc(LTO)}"></label>
-        ${LFROM || LTO ? `<button class="btn sm" id="lClr" type="button">✕</button>` : ''}<button class="btn ok" id="xls" type="button">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button></div></div>
+    // Option D filter header, same as the Truck Scale Report (Kim, 13 Nov 2026)
+    const chips = [['all', t('ទាំងអស់', 'All')], ['today', t('ថ្ងៃនេះ', 'Today')]].concat(LF === 'todaydone' ? [['todaydone', t('✅ ថ្ងៃនេះ', '✅ Today')]] : [], LF === 'period' ? [['period', '📊 ' + sumLabel()]] : [],
+      [['live', t('⏱ កំពុងទម្លាក់', '⏱ Unloading')], ['done', t('✅ រួចរាល់', '✅ Done')], ['dmg', t('⚠️ ខូចខាត', '⚠️ Damaged')], ['less', t('⬇ ទទួលខ្វះ', '⬇ Received less')]]);
+    view(`<div class="fb-wrap">${FB.head('log', `📋 ${t('កំណត់ត្រាទទួលទំនិញ', 'Receiving log')}`, `<button class="fb-btn" id="xls" type="button">${FB.xl} Excel</button>`, () => { LQ = ''; LF = 'all'; LFROM = LTO = ''; renderLog(); })}
+      ${FB.panel('log', FB.range('lFrom', 'lTo', LFROM, LTO) + FB.show('lGo') + FB.seg(chips, LF, 'f', true) + FB.search('q', t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'), LQ))}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
 `);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
     $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
     $('#lTo').onchange = e => { LTO = e.target.value; if (LFROM && LTO < LFROM) LFROM = LTO; renderLog(); };
-    if ($('#lClr')) $('#lClr').onclick = () => { LFROM = LTO = ''; renderLog(); };
+    $('#lGo').onclick = () => { LFROM = $('#lFrom').value; LTO = $('#lTo').value; if (LFROM && LTO && LFROM > LTO) { const x = LFROM; LFROM = LTO; LTO = x; } renderLog(); };
     // Download Excel = Kim's summary report template filled for the dates shown (Kim, 6 Nov 2026); old Apps Script: the CSV log
     $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : sumReport(rows.filter(r => r.end), 'xlsx', $('#xls'), () => exportCsv(rows)));
   }
@@ -1222,7 +1221,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(siteBar() + `
       <div class="upl2"><label class="btn ok big upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុកផែនការទំនិញចូល', 'Upload Incoming Plan')}</label>
       <a class="btn big tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download template')}</a></div>
-      <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
+      <div class="fb-wrap">${FB.head('plan', `📑 ${t('ផែនការទំនិញចូល', 'Incoming plan')}`, '', () => { PQ = ''; renderPlan(); })}
+      ${FB.panel('plan', FB.search('pq', t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'), PQ))}</div>
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length, g = ym(po);
         let head = '';

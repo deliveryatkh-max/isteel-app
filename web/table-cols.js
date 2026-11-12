@@ -127,8 +127,16 @@
     });
     // ⚙️ Columns sits above the table (above its scroll box when the table has one of its own)
     let box = tb;
-    while (box.parentElement && box.parentElement.children.length === 1 && box.parentElement !== document.body && box.parentElement.tagName !== 'TD') box = box.parentElement;
+    // never climb out of a grid or flex item: a new sibling there becomes its own cell and moves the table (Fuel SAP preview)
+    const gf = el => { try { return /grid|flex/.test(getComputedStyle(el).display); } catch (e) { return false; } };
+    while (box.parentElement && box.parentElement.children.length === 1 && box.parentElement !== document.body && box.parentElement.tagName !== 'TD' && !gf(box.parentElement.parentElement || document.body)) box = box.parentElement;
     if (box.previousElementSibling && box.previousElementSibling.classList.contains('tc-bar')) box.previousElementSibling.remove();
+    if (box.parentElement && gf(box.parentElement)) {   // still in a grid/flex cell: put the bar inside the cell, above the table
+      const cell = box === tb ? null : box;
+      if (cell) { const old = cell.querySelector(':scope > .tc-bar'); if (old) old.remove(); }
+      if (!cell) return;   // table is itself a grid item: leave the bar out, header drag still works
+      box = cell.firstElementChild;
+    }
     const bar = document.createElement('div');
     bar.className = 'tc-bar';
     bar.innerHTML = `<button type="button" class="tc-btn">⚙️ ${t('ជួរឈរ', 'Columns')}</button>`;

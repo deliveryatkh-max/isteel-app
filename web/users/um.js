@@ -156,9 +156,10 @@
         <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
         <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
       ${waiting ? `<a class="reqbar" href="#/req">📨 <b>${t('សំណើថ្មី', 'New requests')} ${waiting}</b><span>${t('មើល', 'Open')} ›</span></a>` : ''}
-      <div class="filters"><div class="frow"><input class="in q" id="q" type="search" placeholder="🔍 ${t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…')}" value="${esc(F.q)}">
-        <select class="in dsel${F.dept ? ' on' : ''}" id="fDeptF" aria-label="${t('ផ្នែក', 'Department')}"><option value="">🏢 ${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select></div>
-        <div class="chips">${chipList().map(c => `<button type="button" class="chip${F.chip === c[0] ? ' on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''}${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div></div>
+      <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; sel.clear(); renderList(); })}
+      ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q) +
+        `<div class="fb-seg wrap" style="flex-basis:100%">${chipList().map(c => `<button type="button" class="${F.chip === c[0] ? 'on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''} ${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div>`)}</div>
       <div id="bulk"></div><div id="res"></div>`);
     const pb = $('#pickBtn'); if (pb) pb.onclick = () => { PICK = !PICK; if (!PICK) sel.clear(); renderList(); };
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
@@ -505,7 +506,7 @@
   function renderLog() {
     paintTabs('log');
     view(`<div class="um-head"><h1>🕘 ${t('ប្រវត្តិការផ្លាស់ប្តូរ', 'Change log')}</h1></div>
-      <input class="in q" id="lq" type="search" placeholder="🔍 ${t('ស្វែងរក…', 'Search…')}" value="${esc(logQ)}"><div id="lres"></div>
+      <div class="fb-wrap">${FB.head('log', '', '', () => { logQ = ''; renderLog(); })}${FB.panel('log', FB.search('lq', t('ស្វែងរក…', 'Search…'), logQ))}</div><div id="lres"></div>
       <p class="hint">${t('កត់ត្រាក្នុងតារាង “User Log” នៃ Google Sheet ចាក់សាំង', 'Kept in the “User Log” tab of the Fuel Refill Google Sheet')}</p>`);
     const draw = () => { const q = logQ.toLowerCase(); $('#lres').innerHTML = logHTML(D.log.filter(l => !q || [l.by, l.name, l.email, l.change].join(' ').toLowerCase().indexOf(q) >= 0)); };
     $('#lq').oninput = e => { logQ = e.target.value; draw(); };
