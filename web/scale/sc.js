@@ -1611,6 +1611,11 @@
     return prefix + '-T' + String(Date.now()).slice(-3);
   }
   async function exportDebitNote() {
+    if (!REP.co) {   // one Debit Note per truck company (Kim, 12 Nov 2026)
+      toast(t('សូមជ្រើសរើសក្រុមហ៊ុនដឹកជាមុនសិន', 'Choose a Transporter first'));
+      const co = $('#rCo'); if (co) { co.classList.add('need'); co.focus(); setTimeout(() => co.classList.remove('need'), 2500); }
+      return;
+    }
     const list = repTickets().filter(x => x.status === 'Done').sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
     if (!list.length) { toast(t('គ្មានជើងដែលរួចរាល់ក្នុងតារាង', 'No finished trips in the table')); return; }
     const btn = $('#rDn'); if (btn) btn.disabled = true;
