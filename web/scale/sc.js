@@ -1212,7 +1212,18 @@
   const fPanel = (k, inner) => `<div class="filters fpanel" data-fp="${k}"${fOpen(k) ? '' : ' hidden'}>${inner}</div>`;
   const fRange = (a, b, va, vb) => `<label class="frange">📅 ${t('ចន្លោះថ្ងៃ', 'Date range')}<span><input type="date" class="in" id="${a}" value="${va}"><i>–</i><input type="date" class="in" id="${b}" value="${vb}"></span></label>`;
   const fSearch = (id, ph, v, cls) => `<label class="fsearch${cls ? ' ' + cls : ''}"><span class="ico" aria-hidden="true">🔍</span><input type="search" class="in" id="${id}" data-live-ok placeholder="${ph}" value="${esc(v)}" aria-label="${t('ស្វែងរក', 'Search')}"></label>`;
-  const fShow = id => `<button type="button" class="btn fshow" id="${id}">🔍 ${t('បង្ហាញ', 'Show')}</button>`;
+  const fShow = id => `<button type="button" class="btn fclr" data-fclr>✕ ${t('សម្អាតទាំងអស់', 'Clear all')}</button><button type="button" class="btn fshow" id="${id}">🔍 ${t('បង្ហាញ', 'Show')}</button>`;
+  // Clear all (Kim, 12 Nov 2026): every filter of the screen back to its start value, then load again
+  const FCLR = {
+    list: () => { Object.assign(LIST, { from: ALL_FROM, to: today(), q: '', st: '' }); renderList(); },
+    rep: () => { Object.assign(REP, { from: today(), to: today(), q: '', st: '', co: '', ty: '' }); renderReport(); },
+    tat: () => { Object.assign(TAT, { from: monthStart(), to: today(), slow: 120 }); renderTat(); },
+    dnc: () => { Object.assign(DNC, { from: monthStart(), to: today(), co: '', q: '' }); renderDnc(); }
+  };
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-fclr]'), p = b && b.closest('[data-fp]');
+    if (p && FCLR[p.dataset.fp]) FCLR[p.dataset.fp]();
+  });
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-ftog]');
     if (!b) return;
