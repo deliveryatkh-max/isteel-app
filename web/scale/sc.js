@@ -892,8 +892,8 @@
     F = EMPTY_F(); keepForm();
     paintForm(); paintLists(); paintLcd();
     // The PDF (from the Word template when there is one, else the built-in ticket) goes up to Drive with the ticket.
+    if (get('sc_autoprint') === '1') printTicket(tk);   // print first; the Drive PDF waits its turn
     bestPdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
-    if (get('sc_autoprint') === '1') printTicket(tk);
   }
 
   function paintWarn() {
@@ -1849,6 +1849,7 @@
   }
   async function tplPdf(x) {
     await loadJs('../vendor/html2canvas.min.js');
+    return tplOne(async () => {
     const box = await tplRender(x);
     const hold = await tplMount(box);
     try {
@@ -1863,6 +1864,7 @@
       for (let i = 0; i < pdf.length; i += 0x8000) s2 += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000));
       return btoa(s2);
     } finally { hold.remove(); }
+    });
   }
   /** Template PDF when there is a template, else the built-in one. */
   async function bestPdf(x) {
@@ -1882,11 +1884,14 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
+  // One Word ticket drawn at a time: the print and the Drive PDF used to draw together right after the 2nd weigh,
+  // and a print could come out with empty boxes (Kim, 12 Nov 2026).
+  let tplLock = Promise.resolve();
+  const tplOne = fn => { const p = tplLock.then(fn, fn); tplLock = p.catch(() => {}); return p; };
   async function printTicket(x) {
     if (tplOn()) {
       try {
-        const box = await tplRender(x);
-        const hold = await tplMount(box);
+        const { box, hold } = await tplOne(async () => { const bx = await tplRender(x); return { box: bx, hold: await tplMount(bx) }; });
         const area = $('#printArea');
         area.innerHTML = '';
         area.appendChild(box);
