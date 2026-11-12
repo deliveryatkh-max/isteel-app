@@ -423,6 +423,109 @@
   let fitQ = 0;
   new MutationObserver(() => { cancelAnimationFrame(fitQ); fitQ = requestAnimationFrame(fitTables); }).observe($('#view'), { childList: true, subtree: true });
 
+  // ---------------------------------------------------------------- column layout for every table (Kim, 12 Nov 2026)
+  // Admins drag a header onto another to move the column, or press ⚙️ Columns above the table to hide, show and order
+  // columns. Saved per table in DE Settings SCALE_TABLE_COLS (for everyone). The Report has its own, richer list.
+  const TSEL = '#view .tbl table:not(.rep)';
+  const tCols = () => { try { return JSON.parse(S().SCALE_TABLE_COLS || get('sc_tcols') || '{}') || {}; } catch (e) { return {}; } };
+  const tKey = tb => (location.hash.replace(/^#\/?/, '').split('/')[0] || 'home') + ':' + $$(TSEL).indexOf(tb) + ':' + tb.rows[0].children.length;
+  function tApply(tb, lay) {
+    const n = tb.__n;
+    const order = Array.isArray(lay) && lay.length && lay.every(i => i >= 0 && i < n) ? lay : [...Array(n).keys()];
+    [...tb.rows].forEach(r => {
+      if (r.children.length !== n) return;
+      const cells = [...r.children].sort((a, b) => a.__ci - b.__ci);
+      cells.forEach((c, i) => { c.hidden = order.indexOf(i) < 0; });
+      order.forEach(i => r.appendChild(cells[i]));
+      cells.forEach((c, i) => { if (order.indexOf(i) < 0) r.appendChild(c); });
+    });
+  }
+  const tShown = tb => [...tb.rows[0].children].filter(c => !c.hidden).map(c => c.__ci);
+  async function tSave(key, lay) {
+    const all = tCols();
+    if (lay) all[key] = lay; else delete all[key];
+    const v = Object.keys(all).length ? JSON.stringify(all) : '';
+    set('sc_tcols', v || null);
+    if (B) B.settings = Object.assign({}, B.settings, { SCALE_TABLE_COLS: v });
+    $$(TSEL).forEach(tb => { if (tb.__key === key) tApply(tb, lay); });
+    if (DEMO) return;
+    try { const r = await api('scSettings', { SCALE_TABLE_COLS: v }); if (r.settings) B.settings = r.settings; toast(t('បានរក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Saved for everyone')); }
+    catch (e) { toast(t('រក្សាទុកតែលើកុំព្យូទ័រនេះ (Server មិនទាន់ទទួល)', 'Saved on this PC only (server not updated yet)') + ': ' + e.message); }
+  }
+  function colKit(tb) {
+    if (tb.__ck) return;
+    tb.__ck = 1;
+    const head = tb.rows[0];
+    if (!head || head.children.length < 3) return;
+    const n = tb.__n = head.children.length, key = tb.__key = tKey(tb);
+    [...tb.rows].forEach(r => { if (r.children.length === n) [...r.children].forEach((c, i) => { c.__ci = i; }); });
+    const lay = tCols()[key];
+    if (lay) tApply(tb, lay);
+    if (!me().admin) return;
+    const name = i => ([...head.children].find(c => c.__ci === i) || {}).textContent || '';
+    let from = -1;
+    [...head.children].forEach(th => {
+      th.draggable = true; th.title = t('អូសដើម្បីរៀបចំជួរឈរ', 'Drag to move the column');
+      th.addEventListener('dragstart', e => { from = th.__ci; try { e.dataTransfer.setData('text/plain', String(from)); } catch (er) { /* old browser */ } th.classList.add('dragging'); });
+      th.addEventListener('dragend', () => { th.classList.remove('dragging'); head.querySelectorAll('.dropto').forEach(x => x.classList.remove('dropto')); });
+      th.addEventListener('dragover', e => { if (from >= 0 && from !== th.__ci) { e.preventDefault(); th.classList.add('dropto'); } });
+      th.addEventListener('dragleave', () => th.classList.remove('dropto'));
+      th.addEventListener('drop', e => {
+        e.preventDefault(); th.classList.remove('dropto');
+        const keys = tShown(tb), a = keys.indexOf(from), b = keys.indexOf(th.__ci);
+        from = -1;
+        if (a < 0 || b < 0 || a === b) return;
+        keys.splice(b, 0, keys.splice(a, 1)[0]);
+        tSave(key, keys);
+      });
+    });
+    const box = tb.closest('.tbl');
+    if (box && !(box.previousElementSibling && box.previousElementSibling.classList.contains('colbar'))) {
+      const bar = document.createElement('div');
+      bar.className = 'colbar';
+      bar.innerHTML = `<button type="button" class="btn sm">⚙️ ${t('ជួរឈរ', 'Columns')}</button>`;
+      bar.firstChild.onclick = () => {
+        const all = [...Array(n).keys()].map(i => ({ k: i, h: name(i).trim() || '#' + (i + 1) }));
+        colsDialog(t('ជួរឈរតារាង', 'Table columns'), all, tShown(tb), [...Array(n).keys()], keys => tSave(key, keys.join(',') === [...Array(n).keys()].join(',') ? null : keys));
+      };
+      box.parentNode.insertBefore(bar, box);
+    }
+  }
+  /** Columns dialog: tick to show, drag or ▲▼ to order. all = [{k, h}], keys = shown keys in order. */
+  function colsDialog(title, all, keys, def, onSave) {
+    keys = keys.slice();
+    const back = document.createElement('div');
+    back.className = 'popwrap';
+    const hOf = k => (all.find(c => c.k === k) || {}).h || '';
+    const draw = () => {
+      const rest = all.filter(c => keys.indexOf(c.k) < 0);
+      back.innerHTML = `<div class="popbox colsdlg" role="dialog" aria-modal="true"><h3>⚙️ ${esc(title)}</h3>
+        <p class="hint">${t('ធីក = បង្ហាញ · អូស ឬ ▲▼ ដើម្បីប្តូរលំដាប់ · រក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · drag or ▲▼ to change the order · saved for everyone')}</p>
+        <div class="collist">${keys.map((k, i) => `<div class="colrow" draggable="true" data-i="${i}"><span class="grip" aria-hidden="true">⠿</span><label><input type="checkbox" checked data-i="${i}"> ${esc(hOf(k))}</label><span class="sp"></span><button type="button" class="btn sm" data-up="${i}" ${i ? '' : 'disabled'}>▲</button><button type="button" class="btn sm" data-dn="${i}" ${i < keys.length - 1 ? '' : 'disabled'}>▼</button></div>`).join('')}
+        ${rest.map(c => `<div class="colrow off"><span class="grip" aria-hidden="true"></span><label><input type="checkbox" data-add="${all.indexOf(c)}"> ${esc(c.h)}</label></div>`).join('')}</div>
+        <div class="btns mt"><button type="button" class="btn" id="cdReset">↺ ${t('លំនាំដើម', 'Default')}</button><span class="sp"></span><button type="button" class="btn" id="cdNo">${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="cdOk">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
+      back.querySelectorAll('input[data-i]').forEach(cb => { cb.onchange = () => { if (keys.length > 1) keys.splice(+cb.dataset.i, 1); draw(); }; });
+      back.querySelectorAll('input[data-add]').forEach(cb => { cb.onchange = () => { keys.push(all[+cb.dataset.add].k); draw(); }; });
+      back.querySelectorAll('[data-up]').forEach(b => { b.onclick = () => { const i = +b.dataset.up; keys.splice(i - 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      back.querySelectorAll('[data-dn]').forEach(b => { b.onclick = () => { const i = +b.dataset.dn; keys.splice(i + 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      let from = -1;
+      back.querySelectorAll('.colrow[draggable]').forEach(r => {
+        r.addEventListener('dragstart', e => { from = +r.dataset.i; try { e.dataTransfer.setData('text/plain', String(from)); } catch (er) { /* old browser */ } });
+        r.addEventListener('dragover', e => { if (from >= 0 && from !== +r.dataset.i) { e.preventDefault(); r.classList.add('dropto'); } });
+        r.addEventListener('dragleave', () => r.classList.remove('dropto'));
+        r.addEventListener('drop', e => { e.preventDefault(); const b = +r.dataset.i; if (from >= 0) { keys.splice(b, 0, keys.splice(from, 1)[0]); from = -1; draw(); } });
+      });
+      back.querySelector('#cdReset').onclick = () => { keys = def.slice(); draw(); };
+      back.querySelector('#cdNo').onclick = () => back.remove();
+      back.querySelector('#cdOk').onclick = () => { back.remove(); onSave(keys); };
+    };
+    draw();
+    back.addEventListener('click', e => { if (e.target === back) back.remove(); });
+    document.body.appendChild(back);
+  }
+  let ckQ = 0;
+  new MutationObserver(() => { cancelAnimationFrame(ckQ); ckQ = requestAnimationFrame(() => $$(TSEL).forEach(colKit)); }).observe($('#view'), { childList: true, subtree: true });
+
   // ---------------------------------------------------------------- truck info + photo (Kim, 8 Nov 2026)
   /** A Drive link becomes an image address the page can show; any other https link is used as it is. */
   function photoSrc(u) {
@@ -1317,33 +1420,7 @@
   }
   /** ⚙️ Columns (admins): tick the columns to show, drag or ▲▼ to order them; saved for everyone. */
   function repColsDialog() {
-    let keys = repCols().map(c => c.k);
-    const back = document.createElement('div');
-    back.className = 'popwrap';
-    const draw = () => {
-      const rest = REP_COLS.filter(c => keys.indexOf(c.k) < 0);
-      back.innerHTML = `<div class="popbox colsdlg" role="dialog" aria-modal="true"><h3>⚙️ ${t('ជួរឈររបាយការណ៍', 'Report columns')}</h3>
-        <p class="hint">${t('ធីក = បង្ហាញ · អូស ឬ ▲▼ ដើម្បីប្តូរលំដាប់ · រក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · drag or ▲▼ to change the order · saved for everyone')}</p>
-        <div class="collist">${keys.map((k, i) => { const c = REP_COLS.find(z => z.k === k); return `<div class="colrow" draggable="true" data-k="${k}"><span class="grip" aria-hidden="true">⠿</span><label><input type="checkbox" checked data-tk2="${k}"> ${esc(c.h)}</label><span class="sp"></span><button type="button" class="btn sm" data-up="${i}" ${i ? '' : 'disabled'}>▲</button><button type="button" class="btn sm" data-dn="${i}" ${i < keys.length - 1 ? '' : 'disabled'}>▼</button></div>`; }).join('')}
-        ${rest.map(c => `<div class="colrow off" data-k="${c.k}"><span class="grip" aria-hidden="true"></span><label><input type="checkbox" data-tk2="${c.k}"> ${esc(c.h)}</label></div>`).join('')}</div>
-        <div class="btns mt"><button type="button" class="btn" id="cdReset">↺ ${t('លំនាំដើម', 'Default')}</button><span class="sp"></span><button type="button" class="btn" id="cdNo">${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="cdOk">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
-      back.querySelectorAll('[data-tk2]').forEach(cb => { cb.onchange = () => { const k = cb.dataset.tk2; keys = cb.checked ? keys.concat(k) : keys.filter(z => z !== k); if (!keys.length) keys = [k]; draw(); }; });
-      back.querySelectorAll('[data-up]').forEach(b => { b.onclick = () => { const i = +b.dataset.up; keys.splice(i - 1, 0, keys.splice(i, 1)[0]); draw(); }; });
-      back.querySelectorAll('[data-dn]').forEach(b => { b.onclick = () => { const i = +b.dataset.dn; keys.splice(i + 1, 0, keys.splice(i, 1)[0]); draw(); }; });
-      let from = '';
-      back.querySelectorAll('.colrow[draggable]').forEach(r => {
-        r.addEventListener('dragstart', e => { from = r.dataset.k; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } });
-        r.addEventListener('dragover', e => { if (from && from !== r.dataset.k) { e.preventDefault(); r.classList.add('dropto'); } });
-        r.addEventListener('dragleave', () => r.classList.remove('dropto'));
-        r.addEventListener('drop', e => { e.preventDefault(); const a = keys.indexOf(from), b = keys.indexOf(r.dataset.k); if (a >= 0 && b >= 0) { keys.splice(b, 0, keys.splice(a, 1)[0]); draw(); } });
-      });
-      back.querySelector('#cdReset').onclick = () => { keys = REP_DEF.slice(); draw(); };
-      back.querySelector('#cdNo').onclick = () => back.remove();
-      back.querySelector('#cdOk').onclick = () => { back.remove(); saveRepCols(keys); };
-    };
-    draw();
-    back.addEventListener('click', e => { if (e.target === back) back.remove(); });
-    document.body.appendChild(back);
+    colsDialog(t('ជួរឈររបាយការណ៍', 'Report columns'), REP_COLS.map(c => ({ k: c.k, h: c.h })), repCols().map(c => c.k), REP_DEF, saveRepCols);
   }
   async function saveRepCols(keys) {
     const v = keys.join(',') === REP_DEF.join(',') ? '' : keys.join(',');

@@ -474,3 +474,8 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .colrow label { display: flex; align-items: center; gap: 8px; margin: 0; }
 .colrow .sp, .colsdlg .btns .sp { flex: 1; }
 .colrow .btn.sm { padding: 2px 8px; min-height: 0; }
+.colbar { display: flex; justify-content: flex-end; margin: 4px 0; }
+.colbar .btn.sm { padding: 3px 10px; min-height: 0; font-size: 13px; }
+.tt th[draggable="true"] { cursor: grab; }
+.tt th.dragging { opacity: .45; }
+.tt th.dropto { box-shadow: inset 3px 0 0 var(--orange, #f39200); }
