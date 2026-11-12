@@ -302,6 +302,12 @@
   // Phnom Penh is first in the Destination list (Kim, 10 Nov 2026; not ticked by default)
   const homeDest = () => { const l = (B && B.dests) || []; return l.find(v => /^12\s*PNH\b/i.test(v)) || l.find(v => v.indexOf('ភ្នំពេញ') >= 0) || ''; };
   const destList = () => { const l = (B && B.dests) || [], h = homeDest(); return h ? [h].concat(l.filter(v => v !== h)) : l; };
+  /** Trips per truck (all tickets in the sheet, from the server; else the tickets on this PC), so the most used trucks come first (Kim, 12 Nov 2026). */
+  function plateUse() {
+    if (B && B.plateUse) return B.plateUse;
+    const n = {}; tickets().forEach(x => { if (x.status !== 'Void' && x.plate) { const k = normP(x.plate); n[k] = (n[k] || 0) + 1; } });
+    return n;
+  }
   function picker(input, opts) {
     const box = document.createElement('div');
     box.className = 'sugg'; box.hidden = true;
@@ -646,7 +652,8 @@
     document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     // The truck number is fixed after the 1st weigh (Kim, 9 Nov 2026)
     if (!sel) picker($('#fPlate'), {
-      list: () => trucks().map(x => ({ v: x.plate, sub: [x.company, x.type].filter(Boolean).join(' · ') })), addNew: true, fix: fixPlate,
+      list: () => { const n = plateUse(); return trucks().map(x => ({ v: x.plate, n: n[normP(x.plate)] || 0, sub: [x.company, x.type].filter(Boolean).join(' · ') }))
+        .sort((a, b) => b.n - a.n || a.v.localeCompare(b.v)).map(x => (x.n ? Object.assign(x, { sub: x.sub + (x.sub ? ' · ' : '') + x.n + ' ' + t('ជើង', 'trips') }) : x)); }, addNew: true, fix: fixPlate,
       onPick: v => { const was = F.plate; upd('plate', v ? fixPlate(v) : ''); const tr2 = truckOf(v); if (tr2 && was !== F.plate) { F.company = tr2.company || F.company; if (tr2.drivers.length === 1) F.driver = tr2.drivers[0]; keepForm(); } paintForm(); },
     });
     // ✕ in the Truck No box clears the truck, its company and driver (Kim, 8 Nov 2026)
