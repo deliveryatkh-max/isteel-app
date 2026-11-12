@@ -2266,7 +2266,7 @@
       const foot = cols.map((c, i) => c.sum ? `<th class="n">${fmtNum(sum(rows))} L</th>`
         : i === cols.findIndex(x => !x.sum) ? `<th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th>` : '<th></th>');
       const ck = r => `<td class="rp-ck">${sapOk(r) ? `<input type="checkbox" data-sel="${esc(r.id)}"${rp.sel.has(r.id) ? ' checked' : ''} aria-label="SAP">` : `<input type="checkbox" disabled title="${esc(r.sapStatus === SAP_POSTED ? 'Posted SAP' : L('តែ ✅ ត្រឹមត្រូវ ទើបដាក់ SAP បាន', 'Only ✅ correct rows go to SAP'))}">`}</td>`;
-      $('#rpTable').innerHTML = `<table class="rp-t"><thead><tr><th class="rp-ck" data-nosort><input type="checkbox" id="rpSelAll" title="${esc(L('ធីកទាំងអស់', 'Tick all'))}" aria-label="${esc(L('ធីកទាំងអស់', 'Tick all'))}"></th>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="n"' : ''}${drag}>${esc(c.h)}</th>`).join('')}</tr></thead>
+      $('#rpTable').innerHTML = `<table class="rp-t" data-nocols><thead><tr><th class="rp-ck" data-nosort><input type="checkbox" id="rpSelAll" title="${esc(L('ធីកទាំងអស់', 'Tick all'))}" aria-label="${esc(L('ធីកទាំងអស់', 'Tick all'))}"></th>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="n"' : ''}${drag}>${esc(c.h)}</th>`).join('')}</tr></thead>
         <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}">${ck(r)}${cols.map(c => c.td(r)).join('')}</tr>`).join('')}</tbody>
         <tfoot><tr><th class="rp-ck"></th>${foot.join('')}</tr></tfoot></table>`;
       paintSelAll();
