@@ -366,7 +366,7 @@
         }
       });
       if (isCount) {
-        needPhoto = ok && needsPhoto(worstOf(statuses));
+        needPhoto = false;   // no photo rule for now (Kim, 13 Nov: no Diff / Status / Photo columns in Counts)
         $('#photoBox').hidden = !needPhoto;
         $('#photoRow').classList.toggle('need', needPhoto && !S.photo);
         $('#needTxt').textContent = needPhoto && !S.photo ? T('ត្រូវថតរូបមុនបញ្ជូន', 'Photo needed before submit') : '';

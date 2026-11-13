@@ -4,7 +4,7 @@
  *
  * Bound to the "SSK-STOCK-COUNT" Google Sheet (Extensions > Apps Script inside that sheet). Tabs:
  *   Bin Master  one row per bin: Bin, Warehouse, SKU, Description, UoM, Pcs per Bundle, Book Qty, Active (+ last count, filled by the app)
- *   Counts      one row per count (the history / digital stock card). Book Qty is NOT changed by a count.
+ *   Counts      one row per counted or issued SKU line (the history / digital stock card), written by header name.
  *   Who may count: the Users tab of the Fuel Refill sheet (USERS_SHEET_ID), tick box ការរាប់ស្តុក.
  *   Settings    TOLERANCE_PCS, DAILY_LIST_SIZE, ACCURACY_WINDOW
  * Drive folder "Stock Count Photos": one photo per count with a difference (SHORT or OVER).
@@ -21,7 +21,10 @@ const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Setti
 // Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
 const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
 const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty'];
-const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'Book Qty', 'Bundle', 'Kg', 'Pcs', 'Counted Qty', 'Out Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
+// Counts tab as Kim set it on 13 Nov. Rows are written by header name (appendCount_), so columns can be moved,
+// renamed back to the old names, or added (Out Qty, Counted Qty, Diff, Status, Photo, Note) without changing the code.
+const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'SKU', 'Description', 'Batch No', 'Sloc', 'On Hand', 'OH UoM',
+  'Counted Qty Bundle', 'Counted Qty Kg', 'Counted Qty Pcs', 'Remark', 'Counted By'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const SET_SEED = [
   ['TOLERANCE_PCS', '0', 'Difference allowed without a photo (pcs). 0 = must match exactly.'],
@@ -285,7 +288,7 @@ function submit_(user, c) {
     if (status === 'SHORT' || (status === 'OVER' && worst !== 'SHORT')) worst = status;
     rows.push({ s: s, counted: counted, diff: diff, status: status, cmp: true });
   });
-  if (needsPhoto(worst) && !c.photo) fail_('PHOTO', 'Take a photo of the bin: the count does not match the book.', 'សូមថតរូបកុងតឺន័រ ដោយសារចំនួនមិនត្រូវនឹងសៀវភៅ។');
+  // No photo rule for now: Kim's Counts tab has no Diff / Status / Photo columns (13 Nov). A photo is still saved when one is sent.
 
   const now = new Date();
   const id = 'SC' + fmt_(now, 'yyMMddHHmmss') + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
@@ -294,9 +297,9 @@ function submit_(user, c) {
   const stk = sheet_(SH.STK, STK_COLS);
   rows.forEach((r, i) => {
     const l = lines[i];
-    cnt.appendRow([id, 'Count', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, r.s.material, r.s.desc, r.s.batch, r.s.sloc,
-      r.s.book, l.bundles === '' || l.bundles == null ? '' : Number(l.bundles), l.kg === '' || l.kg == null ? '' : Number(l.kg), l.pieces === '' || l.pieces == null ? '' : Number(l.pieces),
-      r.counted, '', r.diff, r.status, photo, user.email, [clip_(l.remark, 200), clip_(c.note, 200)].filter(Boolean).join(' | ')]);
+    const num = v => (v === '' || v == null ? '' : Number(v));
+    appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
+      counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: user.email, remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
     if (r.cmp) setBook_(stk, r.s, r.counted);   // book qty changes right away
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
@@ -327,11 +330,26 @@ function out_(user, c) {
     return { s: s, out: out };
   });
   plan.forEach(p => {
-    cnt.appendRow([id, 'Out', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, p.s.material, p.s.desc, p.s.batch, p.s.sloc,
-      p.s.book, '', '', '', '', p.out, '', '', '', user.email, clip_(c.note, 200)]);
+    appendCount_(cnt, { id: id, type: 'Out', now: now, bin: b.bin, s: p.s, out: p.out, by: user.email, note: clip_(c.note, 200) });
     setBook_(stk, p.s, p.s.book - p.out);   // book qty changes right away
   });
   return { id: id, lines: plan.map(p => ({ material: p.s.material, desc: p.s.desc, out: p.out, after: p.s.book - p.out })) };
+}
+
+// Adds one row to Counts, matching each value to its column by header name (new names and the old ones).
+// A value whose column is not in the sheet is simply not saved. Without a Note column, the note goes into Remark.
+function appendCount_(sh, r) {
+  const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  const hasNote = head.indexOf('note') >= 0;
+  const v = {
+    'count id': r.id, 'type': r.type, 'date': fmt_(r.now, 'yyyy-MM-dd'), 'time': fmt_(r.now, 'HH:mm'), 'bin': r.bin,
+    'sku': r.s.material, 'material': r.s.material, 'description': r.s.desc, 'batch no': r.s.batch, 'batch': r.s.batch, 'sloc': r.s.sloc,
+    'on hand': r.s.book, 'book qty': r.s.book, 'oh uom': r.s.uom,
+    'counted qty bundle': r.bundles, 'bundle': r.bundles, 'counted qty kg': r.kg, 'kg': r.kg, 'counted qty pcs': r.pieces, 'pcs': r.pieces,
+    'counted qty': r.counted, 'out qty': r.out, 'diff': r.diff, 'status': r.status, 'photo': r.photo,
+    'remark': hasNote ? r.remark : [r.remark, r.note].filter(Boolean).join(' | '), 'note': r.note, 'counted by': r.by,
+  };
+  sh.appendRow(head.map(h => (v[h] == null ? '' : v[h])));
 }
 
 // Writes the new book qty into the Stock On Hand row of this line.
