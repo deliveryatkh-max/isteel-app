@@ -175,14 +175,20 @@
         <span class="muted">${esc(b.warehouse)} · ${b.lines ? b.lines + ' ' + T('ប្រភេទ', 'SKU') : ''} · ${T('បានរាប់ចុងក្រោយ', 'last counted')}: ${esc(shortDate(b.lastCount))}</span></span>
         <span class="acc">${accText(b.accuracy)}<small>${T('ភាពត្រឹមត្រូវ', 'accuracy')}</small></span></button>`).join('');
     view(`
-      <section class="card">
-        <label for="binIn">${T('ស្កេន ឬវាយកូដកុងតឺន័រ', 'Scan or type bin code')}</label>
-        <div class="row">
-          <input id="binIn" type="text" autocomplete="off" autocapitalize="characters" placeholder="A-01-01">
-          <button type="button" class="btn" id="goBin">${T('ទៅ', 'Go')}</button>
-          <label class="btn ghost shrink" for="camIn" style="margin:0;cursor:pointer" title="Camera">📷<input id="camIn" type="file" accept="image/*" capture="environment" hidden></label>
+      <section class="card gate">
+        <div class="gate-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="7" width="4" height="4" rx=".5"/><rect x="13" y="7" width="4" height="4" rx=".5"/><rect x="7" y="13" width="4" height="4" rx=".5"/><path d="M13 13h1.5v1.5M17 13v4h-4"/></svg>
         </div>
-        <p class="muted" id="binMsg"></p>
+        <h2>${T('ស្កេន QR Code របស់កុងតឺន័រ', 'Scan the bin QR code')}</h2>
+        <p class="muted center">${T('សូមស្កេន QR Code ដែលបិទនៅកុងតឺន័រ ដើម្បីបើកកាតស្តុក។', 'Scan the QR code posted on the bin to open its stock card.')}</p>
+        <div class="qr-view" id="qrView" hidden><video playsinline muted></video><div class="qr-frame"></div></div>
+        <p class="muted center" id="binMsg" hidden></p>
+        <button type="button" class="btn ok big" id="scanBtn">📷 ${T('ស្កេន QR Code', 'Scan QR code')}</button>
+        <label class="btn ghost photo" id="photoBtn"><input type="file" accept="image/*" capture="environment" hidden>🖼️ ${T('ថតរូប QR ជំនួសវិញ', 'Take a photo of the QR instead')}</label>
+        <div class="row" style="margin-top:12px">
+          <input id="binIn" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('ឬវាយកូដកុងតឺន័រ', 'or type the bin code')}">
+          <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
+        </div>
       </section>
       ${S.loadError ? `<div class="card err"><b>⚠️ ${T('ផ្ទុកទិន្នន័យមិនបាន', 'Could not load the data')}</b><p class="muted">${esc(S.loadError)}</p><button type="button" class="btn ghost" id="retry">${T('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>` : ''}
       ${q.length ? `<div class="card"><span class="pill">${q.length} ${T('រង់ចាំផ្ញើ', 'waiting to send')}</span> <button type="button" class="btn ghost" id="sendQ">${T('ផ្ញើឥឡូវ', 'Send now')}</button></div>` : ''}
@@ -192,24 +198,80 @@
     const go = () => { const code = $('#binIn').value.trim(); if (code) openBin(code); };
     $('#goBin').onclick = go;
     $('#binIn').onkeydown = e => { if (e.key === 'Enter') go(); };
-    $('#camIn').onchange = scanPhoto;
+    $('#scanBtn').onclick = () => (scanner.on ? stopScan() : startScan());
+    $('#photoBtn input').onchange = scanPhoto;
     if ($('#sendQ')) $('#sendQ').onclick = () => flush().then(route);
     if ($('#retry')) $('#retry').onclick = () => { view('<div class="loading"><div class="skel"></div><div class="skel short"></div></div>'); boot(); };
     document.querySelectorAll('[data-bin]').forEach(el => { el.onclick = () => openBin(el.dataset.bin); });
   }
 
-  // Reads a bin barcode from a photo when the phone supports it; otherwise the user types the code.
-  async function scanPhoto(e) {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const msg = $('#binMsg');
-    if (!('BarcodeDetector' in window)) { msg.textContent = T('ទូរស័ព្ទនេះស្កេនមិនបាន។ សូមវាយកូដ។', 'This phone cannot read barcodes. Please type the code.'); return; }
+  // Scan like the Overtime app: live camera inside the card, or a photo of the QR. Android reads QR and barcodes with the
+  // built-in BarcodeDetector; other phones load jsQR (QR only). The bin code can always be typed instead.
+  let qrLib = null;
+  function loadQrLib() {
+    return qrLib || (qrLib = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = '../vendor/jsQR.min.js'; el.onload = () => resolve(window.jsQR); el.onerror = () => { qrLib = null; reject(new Error('QR reader did not load')); };
+      document.head.appendChild(el);
+    }));
+  }
+  const qrCanvas = document.createElement('canvas');
+  async function decodeQr(src) {
+    const w = src.videoWidth || src.naturalWidth || src.width, h = src.videoHeight || src.naturalHeight || src.height;
+    if (!w || !h) return '';
+    if ('BarcodeDetector' in window) {
+      try { const r = await new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'data_matrix'] }).detect(src); if (r[0]) return r[0].rawValue; } catch (e) { /* fall back to jsQR */ }
+    }
+    const jsQR = await loadQrLib();
+    const k = Math.min(1, 720 / Math.max(w, h));
+    qrCanvas.width = Math.round(w * k); qrCanvas.height = Math.round(h * k);
+    const ctx = qrCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0, qrCanvas.width, qrCanvas.height);
+    const img = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+    const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+    return code ? code.data : '';
+  }
+  const scanner = { on: false, stream: null, timer: 0 };
+  function stopScan() {
+    scanner.on = false; clearTimeout(scanner.timer);
+    if (scanner.stream) scanner.stream.getTracks().forEach(x => x.stop());
+    scanner.stream = null;
+    if ($('#qrView')) { $('#qrView').hidden = true; $('#binMsg').hidden = true; $('#scanBtn').innerHTML = '📷 ' + T('ស្កេន QR Code', 'Scan QR code'); }
+  }
+  async function startScan() {
+    const view = $('#qrView'), video = $('#qrView video'), msg = $('#binMsg');
+    view.hidden = false; msg.hidden = false; msg.textContent = T('ដាក់ QR ក្នុងប្រអប់', 'Hold the QR code inside the square');
+    $('#scanBtn').textContent = '✖ ' + T('បិទកាមេរ៉ា', 'Close camera');
+    scanner.on = true;
+    if (DEMO) { scanner.timer = setTimeout(() => { stopScan(); openBin(DEMO_BIN.bin); }, 1200); return; }
     try {
-      const bmp = await createImageBitmap(f);
-      const found = await new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] }).detect(bmp);
-      if (found.length) return openBin(found[0].rawValue.trim());
-      msg.textContent = T('រកមិនឃើញកូដ។ សូមថតឲ្យជិតជាង។', 'No code found. Try again, closer.');
-    } catch (err) { msg.textContent = T('ស្កេនមិនបាន។ សូមវាយកូដ។', 'Scan failed. Please type the code.'); }
+      scanner.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      if (!scanner.on) { stopScan(); return; }
+      video.srcObject = scanner.stream; await video.play();
+      const tick = async () => {
+        if (!scanner.on) return;
+        const text = await decodeQr(video).catch(() => '');
+        if (text) { stopScan(); openBin(text.trim()); } else scanner.timer = setTimeout(tick, 180);
+      };
+      tick();
+    } catch (e) {
+      stopScan();
+      msg.hidden = false;
+      msg.textContent = T('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមអនុញ្ញាតកាមេរ៉ា ឬថតរូប QR ខាងក្រោម។', 'Cannot open the camera. Allow the camera, or take a photo of the QR below.');
+    }
+  }
+  function scanPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const msg = $('#binMsg');
+    const img = new Image();
+    img.onload = async () => {
+      const text = await decodeQr(img).catch(() => '');
+      URL.revokeObjectURL(img.src);
+      if (text) openBin(text.trim());
+      else { msg.hidden = false; msg.textContent = T('រកមិនឃើញ QR Code ក្នុងរូបទេ។ សូមថតម្តងទៀត។', 'No QR code found in the photo. Please try again.'); }
+    };
+    img.src = URL.createObjectURL(file);
   }
 
   async function openBin(code) {
@@ -222,6 +284,7 @@
       catch (e) { if (e.code === 'AUTH') S.signedOut = true; toast(e.message); return; }
     }
     if (!b) { toast(T('រកមិនឃើញកុងតឺន័រនេះ', 'Bin not found')); return; }
+    stopScan();
     S.bin = b; S.view = 'bin'; S.photo = '';
     route();
   }

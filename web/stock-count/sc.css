@@ -97,3 +97,15 @@ table.lines td, table.lines th { padding: 5px 3px; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 12px 18px; border-radius: 12px; z-index: 20; max-width: 90vw; text-align: center; }
 
 @media (max-width: 380px) { .fields { grid-template-columns: 1fr; } .kv { grid-template-columns: 1fr; } }
+
+/* Scan card, same as the Overtime app */
+.gate { text-align: center; }
+.gate h2 { font-size: 19px; margin: 6px 0 4px; color: var(--ink); }
+.gate-ic { width: 92px; height: 92px; margin: 6px auto 4px; border-radius: 24px; display: flex; align-items: center; justify-content: center; background: #e3ecf7; color: var(--navy); }
+:root[data-theme="dark"] .gate-ic { background: #1d2e4a; color: #9cc3f5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gate-ic { background: #1d2e4a; color: #9cc3f5; } }
+.muted.center { text-align: center; margin: 0 0 14px; }
+.btn.photo { width: 100%; margin-top: 10px; cursor: pointer; }
+.qr-view { position: relative; width: 100%; max-width: 360px; aspect-ratio: 1; margin: 0 auto 10px; border-radius: 16px; overflow: hidden; background: #000; }
+.qr-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qr-frame { position: absolute; inset: 16%; border: 3px solid #fff; border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); }
