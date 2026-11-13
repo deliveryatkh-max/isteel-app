@@ -20,7 +20,8 @@
 const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings' };
 // Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
 const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
-const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty'];
+const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty',
+  'Counted Qty Bundle', 'Counted Qty Kg', 'Counted Qty Pcs', 'Total Counted Qty Kg', 'Difference'];
 // Counts tab as Kim set it on 13 Nov. Rows are written by header name (appendCount_), so columns can be moved,
 // renamed back to the old names, or added (Out Qty, Counted Qty, Diff, Status, Photo, Note) without changing the code.
 const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'SKU', 'Description', 'Batch No', 'Sloc', 'On Hand', 'OH UoM',
@@ -230,8 +231,10 @@ function bins_() {
 function stock_(bin) {
   return objs_(SH.STK, STK_COLS).filter(r => r.Bin && (!bin || r.Bin.toUpperCase() === bin.toUpperCase())).map(r => ({
     bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
-    pcsPerBundle: Number(r['Pcs per Bundle']) || 1, book: Number(r['Book Qty']) || 0 }));
+    pcsPerBundle: num_(r['Pcs per Bundle']) || 1, book: num_(r['Book Qty']) }));
 }
+// Sheet text to number: '4,620.00' -> 4620, blank -> 0.
+const num_ = v => Number(String(v == null ? '' : v).replace(/,/g, '')) || 0;
 const lineKey_ = l => [l.bin || '', l.material, l.batch, l.sloc].join('|').toUpperCase();
 
 // Status history per bin, in the order it was saved (counts only).
@@ -300,7 +303,7 @@ function submit_(user, c) {
     const num = v => (v === '' || v == null ? '' : Number(v));
     appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
       counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: user.email, remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
-    if (r.cmp) setBook_(stk, r.s, r.counted);   // book qty changes right away
+    addCounted_(stk, r.s, l);   // every count adds up in Stock On Hand; Book Qty (from MB52) is not changed by a count
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
   const hist = history_();
@@ -350,6 +353,32 @@ function appendCount_(sh, r) {
     'remark': hasNote ? r.remark : [r.remark, r.note].filter(Boolean).join(' | '), 'note': r.note, 'counted by': r.by,
   };
   sh.appendRow(head.map(h => (v[h] == null ? '' : v[h])));
+}
+
+// Adds one count to the Stock On Hand row of this line (Kim, 13 Nov): Counted Qty Bundle / Kg / Pcs each add up,
+// Total Counted Qty Kg = the Kg total, Difference = Total Counted Qty Kg - Book Qty. Columns are found by header name.
+// Clearing the three Counted cells of a row starts a new count round for it.
+function addCounted_(sh, s, l) {
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  const col = n => head.indexOf(n) + 1;
+  const v = sh.getRange(2, 1, last - 1, 5).getDisplayValues();
+  const i = v.findIndex(r => lineKey_({ bin: r[0], material: r[1], batch: r[3], sloc: r[4] }) === lineKey_({ bin: s.bin, material: s.material, batch: s.batch, sloc: s.sloc }));
+  if (i < 0) return;
+  const row = i + 2;
+  const add = (name, x) => {
+    const c = col(name);
+    if (!c || x === '' || x == null) return c ? num_(sh.getRange(row, c).getDisplayValue()) : 0;
+    const total = num_(sh.getRange(row, c).getDisplayValue()) + Number(x);
+    sh.getRange(row, c).setValue(total);
+    return total;
+  };
+  add('counted qty bundle', l.bundles);
+  const kg = add('counted qty kg', l.kg);
+  add('counted qty pcs', l.pieces);
+  if (col('total counted qty kg')) sh.getRange(row, col('total counted qty kg')).setValue(kg);
+  if (col('difference')) sh.getRange(row, col('difference')).setValue(kg - s.book);
 }
 
 // Writes the new book qty into the Stock On Hand row of this line.

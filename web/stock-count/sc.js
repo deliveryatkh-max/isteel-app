@@ -413,8 +413,8 @@
         else { toast(e.message); return; }
       }
     }
-    (out.lines || []).forEach(l => { const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && x.material === l.material); if (s && l.counted != null) s.book = l.counted; });
-    S.result = { title: T('បានរក្សាទុក', 'Saved'), status: out.status, lines: out.lines, accuracy: out.accuracy, offline: !!out.offline, kind: 'count' };
+    // No Diff / status on screen for now (Kim): the totals and Difference are in the Stock On Hand tab.
+    S.result = { title: T('បានរក្សាទុក', 'Saved'), status: 'MATCH', lines: [], offline: !!out.offline, kind: 'saved' };
     S.view = 'result'; S.photo = ''; route();
   }
 
@@ -425,7 +425,6 @@
       const diff = counted - l.book;
       return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: counted, diff: diff, status: statusOf(diff, 0) };
     });
-    b.lines.forEach((l, i) => { if (out[i].counted != null) l.book = out[i].counted; });   // book qty changes right away (demo)
     return { status: worstOf(out.map(x => x.status)), lines: out, accuracy: null };
   }
 
@@ -464,7 +463,7 @@
         ${r.kind === 'count' ? `<span class="badge ${r.status}">${statusLabel(r.status)}</span>` : ''}
         ${r.offline ? `<p class="muted" style="margin-top:10px">${T('បានរក្សាទុកក្នុងទូរស័ព្ទ។ នឹងផ្ញើនៅពេលមានអ៊ីនធឺណិត។', 'Saved on this phone. It will be sent when you are online.')}</p>` : ''}
       </section>
-      <table class="lines">${r.kind === 'out' ? `<tr><th>Material</th><th>Out</th><th>After</th></tr>` : `<tr><th>Material</th><th>Book</th><th>Counted</th><th>Diff</th></tr>`}${rows}</table>
+      <table class="lines" ${(r.lines || []).length ? '' : 'hidden'}>${r.kind === 'out' ? `<tr><th>Material</th><th>Out</th><th>After</th></tr>` : `<tr><th>Material</th><th>Book</th><th>Counted</th><th>Diff</th></tr>`}${rows}</table>
       <div style="height:12px"></div>
       <button type="button" class="btn big ok" id="next">${T('ត្រឡប់ទៅបញ្ជី', 'Back to list')}</button>`);
     $('#next').onclick = () => { S.view = 'home'; S.bin = null; S.result = null; route(); };
