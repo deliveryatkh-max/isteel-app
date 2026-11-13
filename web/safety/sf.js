@@ -408,7 +408,7 @@
     return `<div class="nobox">
       <div><label class="f">📷 ${t('រូបថតបញ្ហា', 'Photo of the problem')} ${needPhoto ? '<span class="req">*</span>' : ''}</label>
         <div class="photos${needPhoto && !photos.length ? ' err' : ''}">${photos.map((p, k) => `<div class="ph"><img src="${p}" alt=""><button type="button" data-del="${k}" aria-label="Delete">×</button></div>`).join('')}
-        ${photos.length < MAX_PHOTOS ? `<label class="add">📷<br>${t('ថតរូប', 'Take photo')}<input type="file" accept="image/*" capture="environment" data-photo="${i}"></label>` : ''}</div></div>
+        ${photos.length < MAX_PHOTOS ? photoBtns(`data-photo="${i}"`) : ''}</div></div>
       <div>${wrongBox(q, a)}</div>
       <div class="two"><div class="search"><label class="f">👤 ${t('អ្នកកែ', 'Who fixes it')} <span class="req">*</span></label>
         <input class="in${a.owner && a.owner.n ? '' : ' err'}" data-k="owner" autocomplete="off" value="${esc(a.owner ? a.owner.n : '')}" placeholder="${t('ឈ្មោះ ឬ ID', 'Name or ID')}"><div class="sugg" hidden></div></div>
@@ -453,12 +453,11 @@
     const a = draft.answers[q.no];
     if (!a || a.a !== 'No') return;
     el.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => { a.photos.splice(+b.dataset.del, 1); saveDraft(); repaintQ(q, i); }; });
-    const fi = el.querySelector('[data-photo]');
-    if (fi) fi.onchange = async () => {
+    el.querySelectorAll('[data-photo]').forEach(fi => { fi.onchange = async () => {
       const files = Array.from(fi.files || []).slice(0, MAX_PHOTOS - (a.photos || []).length);
       for (const file of files) { try { (a.photos = a.photos || []).push(await shrink(file)); } catch (e) { toast(t('មិនអាចអានរូបថត', 'Could not read the photo')); } }
       saveDraft(); repaintQ(q, i);
-    };
+    }; });
     const nt = el.querySelector('[data-k="note"]');
     if (nt) nt.oninput = e => { a.note = e.target.value; saveDraft(); };
     const pk = el.querySelector('[data-k="pick"]');
@@ -492,6 +491,11 @@
     inp.onblur = () => setTimeout(() => { box.hidden = true; }, 150);
   }
   /** Photo shrunk on the phone (1280 px, JPEG) with the date and time stamped in the corner. */
+  // Every photo box: 📷 camera, or 🖼️ pick several from the phone gallery (Kim, 13 Nov 2026).
+  function photoBtns(attr) {
+    return `<label class="add">📷<br>${t('ថតរូប', 'Camera')}<input type="file" accept="image/*" capture="environment" ${attr}></label>`
+      + `<label class="add">🖼️<br>${t('រូបក្នុងទូរស័ព្ទ', 'Gallery')}<input type="file" accept="image/*" multiple ${attr}></label>`;
+  }
   function shrink(file) {
     return new Promise((res, rej) => {
       const img = new Image(), url = URL.createObjectURL(file);
@@ -639,12 +643,11 @@
       const paint = () => {
         $('#doBox').innerHTML = `<div class="nobox" style="background:var(--ok-soft)"><label class="f">📷 ${t('រូបថតក្រោយកែ', 'Photo after the fix')} <span class="req">*</span></label>
           <div class="photos${st.photos.length ? '' : ' err'}">${st.photos.map((p, k) => `<div class="ph"><img src="${p}" alt=""><button type="button" data-del="${k}">×</button></div>`).join('')}
-          ${st.photos.length < MAX_PHOTOS ? `<label class="add">📷<br>${t('ថតរូប', 'Take photo')}<input type="file" accept="image/*" capture="environment" id="afterIn"></label>` : ''}</div>
+          ${st.photos.length < MAX_PHOTOS ? photoBtns('data-after') : ''}</div>
           <input class="in" id="doneNote" placeholder="${t('បានធ្វើអ្វី? (ជាជម្រើស)', 'What was done? (optional)')}" value="${esc(st.note || '')}">
           <button class="btn ok" id="sendDone">✅ ${t('រក្សាទុក', 'Save')}</button></div>`;
         $$('#doBox [data-del]').forEach(b => { b.onclick = () => { st.photos.splice(+b.dataset.del, 1); paint(); }; });
-        const ai = $('#afterIn');
-        if (ai) ai.onchange = async () => { for (const f of Array.from(ai.files || [])) { try { st.photos.push(await shrink(f)); } catch (e) { /* skip */ } } paint(); };
+        $$('#doBox [data-after]').forEach(ai => { ai.onchange = async () => { for (const f of Array.from(ai.files || []).slice(0, MAX_PHOTOS - st.photos.length)) { try { st.photos.push(await shrink(f)); } catch (e) { /* skip */ } } paint(); }; });
         $('#doneNote').oninput = e => { st.note = e.target.value; };
         $('#sendDone').onclick = async () => {
           if (!st.photos.length) { toast(t('សូមថតរូបក្រោយកែ', 'Take a photo after the fix')); return; }
