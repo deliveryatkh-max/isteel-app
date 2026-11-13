@@ -1,5 +1,5 @@
 // Stock Count settings. Paste the Stock Count Apps Script web app URL (ends with /exec) after deploying it (see apps-script-stock-count/SETUP.md).
 // While API_URL is empty the app runs in DEMO mode: sample bins, nothing is saved to the Google Sheet.
 window.SC_CONFIG = {
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyMaGBBMaMfGmb0FWnEMc-RK9mCochRZ45S_wcM2RUiZDXaptE0VW1KJHGFQgm1M_H-/exec',
 };
