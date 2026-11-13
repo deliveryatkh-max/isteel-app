@@ -5,6 +5,7 @@
   const DEMO = !CFG.API_URL;
   const TOKEN_KEY = 'fr_id_token';
   const QUEUE_KEY = 'sc_queue';
+  const CACHE_KEY = 'sc_boot';   // last boot answer, shown at once on the next open
   const T = (km, en) => LANG.t(km, en);
   const $ = s => document.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,7 +35,7 @@
     { bin: 'B-02-05', warehouse: 'WH OB', lastCount: '2026-11-08 14:30', lastStatus: 'SHORT', accuracy: 60, lines: 1 },
   ];
 
-  const S = { list: [], user: null, view: 'home', bin: null, mode: '', result: null, photo: '', signedOut: false, blocked: '' };
+  const S = { list: [], bins: [], stock: [], user: null, view: 'home', bin: null, mode: '', result: null, photo: '', signedOut: false, blocked: '' };
 
   // ------------------------------------------------------------------ Apps Script (same sign-in as every iSteel app)
   function claims() {
@@ -102,10 +103,11 @@
   async function boot() {
     if (DEMO) { S.list = DEMO_LIST.slice(); S.user = { name: 'Demo' }; return route(); }
     if (!signedIn()) { S.signedOut = true; return route(); }
+    const cached = jget(CACHE_KEY, null);
+    if (cached && !S.user) { useBoot(cached); route(); }   // fast: last data at once, fresh data follows
     try {
       const b = await api('boot');
-      S.user = b.user; S.list = b.today || [];
-      S.signedOut = false; S.blocked = ''; S.loadError = '';
+      useBoot(b); put(CACHE_KEY, JSON.stringify(b));
       await flush();
     } catch (e) {
       if (e.code === 'AUTH') S.signedOut = true;
@@ -113,6 +115,17 @@
       else S.loadError = e.message;
     }
     route();
+  }
+
+  function useBoot(b) {
+    S.user = b.user; S.list = b.today || []; S.bins = b.bins || []; S.stock = b.stock || [];
+    S.signedOut = false; S.blocked = ''; S.loadError = '';
+  }
+  // Bin from the booted data (no request). null when the bin is not in Bin Master.
+  function localBin(key) {
+    const b = S.bins.find(x => String(x.bin).toUpperCase() === key);
+    if (!b) return null;
+    return Object.assign({}, b, { lines: S.stock.filter(l => String(l.bin).toUpperCase() === key).map(l => Object.assign({}, l)) });
   }
 
   // Counts and outs saved on the phone while offline are sent when the connection is back.
@@ -203,6 +216,7 @@
     const key = code.toUpperCase();
     let b = null;
     if (DEMO) { b = key === DEMO_BIN.bin ? JSON.parse(JSON.stringify(DEMO_BIN)) : null; }
+    else if (S.bins.length) b = localBin(key);
     else {
       try { b = await api('bin', { bin: code }); }
       catch (e) { if (e.code === 'AUTH') S.signedOut = true; toast(e.message); return; }
@@ -236,12 +250,11 @@
     const b = S.bin;
     const isCount = mode === 'count';
     const rows = (b.lines || []).map((l, i) => isCount
-      ? `<tr class="desc"><td colspan="5">${esc(l.desc)}</td></tr>
+      ? `<tr class="desc"><td colspan="4">${esc(l.desc)}</td></tr>
         <tr><td>${esc(l.material)}<br><small class="muted">Batch: ${esc(l.batch)}</small><br><small class="muted">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</small></td>
         <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles"></td>
         <td><input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg"></td>
-        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces"></td>
-        <td class="diff" data-i="${i}">—</td></tr>`
+        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces"></td></tr>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
         <td>${l.book}</td>
@@ -250,7 +263,7 @@
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
       <section class="card" style="overflow-x:auto"><table class="lines">${isCount
-        ? `<tr><th colspan="5" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('កញ្ចប់', 'Bundle')}</th><th>Kg</th><th>${T('បំណែក', 'Pcs')}</th><th>${T('ខុសគ្នា', 'Diff')}</th></tr>`
+        ? `<tr><th colspan="4" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('កញ្ចប់', 'Bundle')}</th><th>Kg</th><th>${T('បំណែក', 'Pcs')}</th></tr>`
         : `<tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>`}${rows}</table></section>
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
@@ -268,11 +281,8 @@
         const cell = document.querySelector(`.diff[data-i="${i}"]`);
         if (isCount) {
           const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
-          if (!lineOk(c)) { ok = false; cell.textContent = '—'; return; }
-          const diff = countedQty(c, l.uom, l.pcsPerBundle) - l.book;
-          const st = statusOf(diff, 0);
-          statuses.push(st);
-          cell.innerHTML = `<span class="badge ${st}">${diff > 0 ? '+' : ''}${diff}</span>`;
+          if (!lineOk(c)) { ok = false; return; }
+          statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // no Diff column (Kim), status only for the photo rule
         } else {
           const v = document.querySelector(`[data-i="${i}"][data-f="outQty"]`).value;
           if (v === '') { cell.textContent = '—'; return; }   // blank line = no out
@@ -328,6 +338,7 @@
         else { toast(e.message); return; }
       }
     }
+    (out.lines || []).forEach(l => { const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && x.material === l.material); if (s) s.book = l.counted; });
     S.result = { title: T('បានរក្សាទុក', 'Saved'), status: out.status, lines: out.lines, accuracy: out.accuracy, offline: !!out.offline, kind: 'count' };
     S.view = 'result'; S.photo = ''; route();
   }
@@ -359,6 +370,7 @@
         else { toast(e.message); return; }
       }
     }
+    (out.lines || []).forEach(l => { const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && x.material === l.material); if (s && l.after != null) s.book = l.after; });
     S.result = { title: T('ចេញស្តុករួច', 'Out saved'), status: 'OUT', lines: out.lines, offline: !!out.offline, kind: 'out' };
     S.view = 'result'; route();
   }

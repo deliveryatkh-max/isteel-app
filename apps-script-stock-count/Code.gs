@@ -176,6 +176,14 @@ function authenticate_(token) {
 // Active = Yes and the ការរាប់ស្តុក tick box ticked (admins always). Admin role = Role contains "admin".
 const APP_COL = 'ការរាប់ស្តុក';
 function counter_(user) {
+  const cache = CacheService.getScriptCache(), ck = 'who_' + user.email;
+  const hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  const who = counterLookup_(user);
+  cache.put(ck, JSON.stringify(who), 600);   // 10 min: a new tick in Users shows within 10 minutes
+  return who;
+}
+function counterLookup_(user) {
   const id = prop_('USERS_SHEET_ID');
   if (!id) fail_('SETUP', 'USERS_SHEET_ID is missing in Script properties.');
   const sh = SpreadsheetApp.openById(id).getSheetByName('Users');
@@ -234,9 +242,11 @@ function boot_(user) {
   const who = counter_(user);
   const st = settings_();
   const hist = history_();
-  const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin).length }));
+  const stock = stock_(''), per = {};
+  stock.forEach(l => { per[l.bin.toUpperCase()] = (per[l.bin.toUpperCase()] || 0) + 1; });
+  const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: per[b.bin.toUpperCase()] || 0 }));
   return { user: { email: user.email, name: who.Name || user.email }, settings: { tolerance: st.tol },
-    today: todayList(list, st.listSize), binCount: list.length };
+    today: todayList(list, st.listSize), bins: list, stock: stock, binCount: list.length };
 }
 
 function binInfo_(user, code) {
