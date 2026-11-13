@@ -2298,46 +2298,46 @@
     const W = '(?:<[^>]*>)*';
     const re = new RegExp('\\{' + W + '\\{((?:' + W + '[A-Za-z0-9_])+)' + W + '\\}' + W + '\\}', 'g');
     const xml = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    let qrTarget = '';
     const picT = {};   // alt text -> picture file in the .docx (QR, PHOTO1, PHOTO2, BARCODE)
+    const parts = {};  // part name -> its xml, after the {{ }} values are filled in
     for (const n of Object.keys(zip.files)) {
       if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(n)) continue;
       let d = await zip.file(n).async('string');
       d = d.replace(re, (all, k) => { k = k.replace(/<[^>]*>/g, ''); return Object.prototype.hasOwnProperty.call(vals, k) ? xml(vals[k]) : all; });
       zip.file(n, d);
-      if (n === 'word/document.xml') {
-        const rf = zip.file('word/_rels/document.xml.rels');
-        let rels = rf ? await rf.async('string') : '';
-        const found = [];
-        for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE']) {
-          const at = d.search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
-          const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
-          const rel = emb && rels.match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
-          const tg = rel && rel[0].match(/Target="([^"]+)"/);
-          if (tg) found.push({ key, at, rid: emb[1], tg: tg[1] });
-        }
-        // A picture copied in Word shares one image file with the first one, so filling the barcode also changed
-        // the QR (Kim, 13 Nov 2026). Each marked picture gets its own copy of the image and its own link.
-        const seen = {};
-        found.sort((p, q) => q.at - p.at).forEach(f => { seen[f.tg] = (seen[f.tg] || 0) + 1; });
-        const used = {};
-        found.slice().sort((p, q) => p.at - q.at).forEach(f => {
-          if (seen[f.tg] < 2 || !used[f.tg]) { used[f.tg] = 1; return; }
-          const src = 'word/' + f.tg.replace(/^\.?\//, '').replace(/^word\//, ''), file = zip.file(src);
-          if (!file) return;
-          const ext = (f.tg.match(/\.[a-z0-9]+$/i) || ['.png'])[0], nt = 'media/sc_' + f.key.toLowerCase() + ext, nid = 'rIdSc' + f.key;
-          zip.file('word/' + nt, file.async('uint8array'));
-          rels = rels.replace('</Relationships>', `<Relationship Id="${nid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${nt}"/></Relationships>`);
-          f.newRid = nid; f.tg = nt;
-        });
-        found.sort((p, q) => q.at - p.at).forEach(f => {
-          if (f.newRid) { const i = d.indexOf('r:embed="' + f.rid + '"', f.at); if (i >= 0) d = d.slice(0, i) + 'r:embed="' + f.newRid + '"' + d.slice(i + ('r:embed="' + f.rid + '"').length); }
-          picT[f.key] = 'word/' + f.tg.replace(/^\.?\//, '').replace(/^word\//, '');
-        });
-        if (found.some(f => f.newRid)) { zip.file(n, d); zip.file('word/_rels/document.xml.rels', rels); }
-        qrTarget = picT.QR || '';
+      parts[n] = d;
+    }
+    // Marked pictures may sit in the page body, a header or a footer (Kim's QR is in the footer), each part with its
+    // own links. A picture copied in Word shares one image file with the first one, so filling the barcode also
+    // changed the QR (Kim, 13 Nov 2026): every marked picture after the first on the same file gets its own copy.
+    const found = [], relsOf = {};
+    for (const n of Object.keys(parts)) {
+      const rp = n.replace(/^word\//, 'word/_rels/') + '.rels', rf = zip.file(rp);
+      relsOf[n] = rf ? await rf.async('string') : '';
+      for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE']) {
+        if (found.some(f => f.key === key)) continue;
+        const at = parts[n].search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
+        const emb = at >= 0 ? parts[n].slice(at).match(/r:embed="([^"]+)"/) : null;
+        const rel = emb && relsOf[n].match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
+        const tg = rel && rel[0].match(/Target="([^"]+)"/);
+        if (tg) found.push({ n, key, at, rid: emb[1], tg: tg[1], file: 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '') });
       }
     }
+    const used = {}, changed = {};
+    found.forEach(f => {
+      if (!used[f.file]) { used[f.file] = 1; return; }
+      const file = zip.file(f.file);
+      if (!file) return;
+      const ext = (f.tg.match(/\.[a-z0-9]+$/i) || ['.png'])[0], nt = 'media/sc_' + f.key.toLowerCase() + ext, nid = 'rIdSc' + f.key;
+      zip.file('word/' + nt, file.async('uint8array'));
+      relsOf[f.n] = relsOf[f.n].replace('</Relationships>', `<Relationship Id="${nid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${nt}"/></Relationships>`);
+      const old = 'r:embed="' + f.rid + '"', i = parts[f.n].indexOf(old, f.at);
+      if (i >= 0) parts[f.n] = parts[f.n].slice(0, i) + 'r:embed="' + nid + '"' + parts[f.n].slice(i + old.length);
+      f.file = 'word/' + nt; changed[f.n] = 1;
+    });
+    Object.keys(changed).forEach(n => { zip.file(n, parts[n]); zip.file(n.replace(/^word\//, 'word/_rels/') + '.rels', relsOf[n]); });
+    found.forEach(f => { picT[f.key] = f.file; });
+    const qrTarget = picT.QR || '';
     const qr = qrPng(x);
     if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
     const bc = picT.BARCODE && barcodePng(x.plate);
