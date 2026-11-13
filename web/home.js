@@ -13,6 +13,7 @@
     { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
+    { key: 'stockcount', kh: 'ការរាប់ស្តុក', en: 'Stock Count', url: 'stock-count/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
     // Admins only: the server adds 'users' for Role = admin (User Management, 28 Oct 2026).
     { key: 'users', kh: 'អ្នកប្រើប្រាស់', en: 'Users', url: 'users/' },
