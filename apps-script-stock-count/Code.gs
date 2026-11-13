@@ -5,21 +5,21 @@
  * Bound to the "SSK-STOCK-COUNT" Google Sheet (Extensions > Apps Script inside that sheet). Tabs:
  *   Bin Master  one row per bin: Bin, Warehouse, SKU, Description, UoM, Pcs per Bundle, Book Qty, Active (+ last count, filled by the app)
  *   Counts      one row per count (the history / digital stock card). Book Qty is NOT changed by a count.
- *   Counters    who may count: Email, Name, Active (Yes/No). Only these emails can use the app.
+ *   Who may count: the Users tab of the Fuel Refill sheet (USERS_SHEET_ID), tick box ការរាប់ស្តុក.
  *   Settings    TOLERANCE_PCS, DAILY_LIST_SIZE, ACCURACY_WINDOW
  * Drive folder "Stock Count Photos": one photo per count with a difference (SHORT or OVER).
  *
  * Script Properties (Project Settings > Script properties):
  *   GOOGLE_CLIENT_ID   same Client ID as the other iSteel apps (web/config.js)
  *   SESSION_SECRET     copy of the Fuel app's SESSION_SECRET, so one sign-in works in every app
+ *   USERS_SHEET_ID     id of the Fuel Refill sheet (same as Inbound)
  *   SC_FOLDER_ID       made by setup(); Drive folder "Stock Count Photos"
  * Pure rules (countedPcs, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
-const SH = { BIN: 'Bin Master', CNT: 'Counts', WHO: 'Counters', SET: 'Settings' };
+const SH = { BIN: 'Bin Master', CNT: 'Counts', SET: 'Settings' };
 const BIN_COLS = ['Bin', 'Warehouse', 'SKU', 'Description', 'UoM', 'Pcs per Bundle', 'Book Qty', 'Active', 'Last Count', 'Last Counted Qty', 'Last Status'];
 const CNT_COLS = ['Count ID', 'Date', 'Time', 'Bin', 'Warehouse', 'SKU', 'Description', 'Book Qty', 'Bundles', 'Pieces', 'Counted Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
-const WHO_COLS = ['Email', 'Name', 'Active'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const SET_SEED = [
   ['TOLERANCE_PCS', '0', 'Difference allowed without a photo (pcs). 0 = must match exactly.'],
@@ -95,15 +95,14 @@ function objs_(name, cols) {
 function setup() {
   sheet_(SH.BIN, BIN_COLS);
   sheet_(SH.CNT, CNT_COLS);
-  sheet_(SH.WHO, WHO_COLS);
   sheet_(SH.SET, SET_COLS, SET_SEED);
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('SC_FOLDER_ID')) props.setProperty('SC_FOLDER_ID', DriveApp.createFolder('Stock Count Photos').getId());
   const first = ss_().getSheets()[0];
   if (first && !Object.values(SH).includes(first.getName()) && first.getLastRow() === 0) ss_().deleteSheet(first);
   const notes = [];
-  ['GOOGLE_CLIENT_ID', 'SESSION_SECRET'].forEach(k => { if (!prop_(k)) notes.push('Add ' + k + ' in Script properties.'); });
-  notes.push('Add your email (and the counters\' emails) on the Counters tab with Active = Yes.');
+  ['GOOGLE_CLIENT_ID', 'SESSION_SECRET', 'USERS_SHEET_ID'].forEach(k => { if (!prop_(k)) notes.push('Add ' + k + ' in Script properties.'); });
+  notes.push('Tick ' + APP_COL + ' for each counter in the Users tab (Fuel Refill sheet).');
   notes.push('Then: Deploy > New deployment > Web app, Execute as Me, Who has access Anyone.');
   const msg = notes.join('\n');
   console.log(msg);
@@ -169,11 +168,23 @@ function authenticate_(token) {
   return { email: email, session: session };
 }
 
-// Access = a row in the Counters tab with Active = Yes.
+// Access = the one user list: the Users tab of the Fuel Refill sheet (USERS_SHEET_ID), same as Inbound.
+// Active = Yes and the ការរាប់ស្តុក tick box ticked (admins always). Admin role = Role contains "admin".
+const APP_COL = 'ការរាប់ស្តុក';
 function counter_(user) {
-  const row = objs_(SH.WHO, WHO_COLS).find(r => r.Email.toLowerCase() === user.email && yes_(r.Active));
-  if (!row) fail_('NOACCESS', 'Your account is not allowed to count yet. Ask Kim to add your email.', 'គណនីរបស់អ្នកមិនទាន់មានសិទ្ធិរាប់ស្តុកទេ។');
-  return row;
+  const id = prop_('USERS_SHEET_ID');
+  if (!id) fail_('SETUP', 'USERS_SHEET_ID is missing in Script properties.');
+  const sh = SpreadsheetApp.openById(id).getSheetByName('Users');
+  const v = sh && sh.getLastRow() > 1 ? sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues() : [[]];
+  const head = v[0].map(h => String(h).trim());
+  const c = n => head.indexOf(n);
+  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL);
+  const row = v.slice(1).find(x => e >= 0 && String(x[e]).trim().toLowerCase() === user.email);
+  const admin = !!row && r >= 0 && /admin/i.test(String(row[r]));
+  const ok = !!row && (a < 0 || yes_(row[a])) && (admin || (tick >= 0 && yes_(row[tick])));
+  if (!ok) fail_('NOACCESS', 'Your account is not allowed to count yet. Ask Kim to tick ' + APP_COL + ' in Users.',
+    'គណនីរបស់អ្នកមិនទាន់មានសិទ្ធិរាប់ស្តុកទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
+  return { Name: n >= 0 ? String(row[n]).trim() : user.email };
 }
 
 // ---------------------------------------------------------------- data
