@@ -326,7 +326,7 @@
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
       <section class="card" style="overflow-x:auto"><table class="lines">${isCount
-        ? `<tr><th colspan="4" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('បាច់', 'Bundle')}</th><th>Kg</th><th>${T('បំណែក', 'Pcs')}</th></tr>`
+        ? `<tr><th colspan="4" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('បាច់', 'Bundle')}</th><th>Kg</th><th>${T('រាយ', 'Pcs')}</th></tr>`
         : `<tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>`}${rows}</table></section>
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
