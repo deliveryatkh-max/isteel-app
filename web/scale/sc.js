@@ -1768,6 +1768,8 @@
     const hit = P.find(r => normC(r[0]) === normC(x.company) && normD(r[1]) === d) || (() => { const same = P.filter(r => normD(r[1]) === d); return same.length && same.every(r => r[3] === same[0][3]) ? same[0] : null; })();
     return hit ? { price: hit[3], per: hit[2], uom: hit[4] || hit[2] || '' } : null;
   }
+  // A confirmed ticket shows the price it was confirmed with, not the Price List (Kim, 13 Nov 2026)
+  const billPl = x => (x.billPrice !== '' && x.billPrice != null && isFinite(+x.billPrice) ? { price: +x.billPrice, per: String(x.billUom || ''), uom: String(x.billUom || '') } : priceOf(x));
   function plateGap(a, b) {   // letters that differ, same length only (3E-0044 read for 3E-9044 = 1)
     a = normP(a); b = normP(b);
     if (a === b) return 0;
@@ -1801,7 +1803,7 @@
     const agent = normC(dn.agent);
     res.forEach(r => {
       const d = r.d, x = r.x; if (!d) return;
-      const pl = priceOf(x), netT = Number(x.net || 0) / 1000;
+      const pl = billPl(x), netT = Number(x.net || 0) / 1000;
       if (normP(d.plate) !== normP(x.plate)) r.notes.push(t('DN អានបាន ', 'DN read ') + d.plate);
       if (!d.ok || d.guess) r.notes.push('⚠ ' + t('ជួរនេះអានមិនច្បាស់: ពិនិត្យក្នុងតារាង DN ខាងក្រោម', 'this DN line was not read clearly: check it in the DN lines below'));
       if (d.date && d.date !== tripDay(x)) r.diffs.push({ k: 'date', txt: t('ថ្ងៃ', 'Date') + ' DN ' + dmy(d.date) + ' · ' + t('កម្មវិធី', 'app') + ' ' + dmy(tripDay(x)) });
@@ -1886,7 +1888,7 @@
       .map(x => `<button type="button" class="chip${DNC.tab === x[0] ? ' on' : ''}" data-tab="${x[0]}">${x[1]} <b>${n[x[0]]}</b></button>`).join('')}</div>` : '';
     const show = s => !dn || DNC.tab === 'all' || DNC.tab === s;
     const rowHtml = r => {
-      const x = r.x, pl = priceOf(x), s = dncState(r);
+      const x = r.x, pl = billPl(x), s = dncState(r);
       const k = x.no || x.cid;
       return `<tr class="pick${s === 'diff' ? ' warnrow' : ''}${DNC.pick[k] ? ' picked' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="ckc"><input type="checkbox" data-pick="${esc(k)}"${DNC.pick[k] ? ' checked' : ''} aria-label="${t('ធីក', 'Tick')}"></td><td>${s ? chip(s) : ''}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.item || '')}</td>
         <td>${esc(x.load || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono"><b>${kg(x.net)}</b></td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td>${pl ? esc(pl.uom) : ''}</td>
@@ -1915,7 +1917,11 @@
     $$('[data-pick]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { if (c.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; paintDnc(); }; });
     const all = $('#dPickAll'), vis = $$('[data-pick]');
     if (all) { all.checked = vis.length > 0 && vis.every(c => c.checked); all.onchange = () => { vis.forEach(c => { if (all.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; }); paintDnc(); }; }
-    $$('[data-px]').forEach(el => { el.onchange = () => { const o = DNC.px[el.dataset.px] = DNC.px[el.dataset.px] || {}; o[el.dataset.f] = el.value; paintDnc(); }; });
+    $$('[data-px]').forEach(el => {
+      const save = () => { const o = DNC.px[el.dataset.px] = DNC.px[el.dataset.px] || {}; o[el.dataset.f] = el.value; };
+      if (el.tagName === 'SELECT') { el.onchange = () => { save(); paintDnc(); }; return; }
+      el.oninput = () => { save(); pickSums(); };
+    });
     if ($('#dDnNo')) $('#dDnNo').oninput = e => { DNC.billNo = e.target.value; };
     if ($('#dConfirm')) $('#dConfirm').onclick = () => confirmBilling(true);
     if ($('#dUnconfirm')) $('#dUnconfirm').onclick = () => confirmBilling(false);
@@ -1926,6 +1932,11 @@
   const billChip = x => (x.bill ? `<span class="badge approved" title="${esc([x.billBy, x.billAt ? String(x.billAt).replace('T', ' ').slice(0, 16) : '', x.billDn ? 'DN ' + x.billDn : ''].filter(Boolean).join(' · '))}">✔ Confirmed Billing</span>` : '');
   // Unit price and UoM for billing: typed by the user, else the confirmed one, else the Price List (Kim, 13 Nov 2026)
   const isTon = u => /^(t|ton|tons|tonne|mt|per\s*t(on)?)$/i.test(String(u || '').trim());
+  function pickSums() {   // re-adds the ticked table without redrawing it, so focus and the next click stay
+    const M = dncMatch(); let sum = 0;
+    M.res.forEach(r => { const k = r.x.no || r.x.cid; if (!DNC.pick[k]) return; const v = pxOf(r.x), c = document.querySelector(`[data-amt="${CSS.escape(String(k))}"]`); if (c) c.textContent = v.amt == null ? '' : money2(v.amt); if (v.amt != null) sum += v.amt; });
+    const tc = $('#dPickSum'); if (tc) tc.innerHTML = '<b>' + money2(sum) + '</b>';
+  }
   function pxOf(x) {
     const o = DNC.px[x.no || x.cid] || {}, pl = priceOf(x), has = v => v != null && v !== '';
     const price = has(o.price) ? +o.price : has(x.billPrice) ? +x.billPrice : pl ? pl.price : null;
@@ -1942,12 +1953,12 @@
       const x = r.x, k = x.no || x.cid, v = pxOf(x), amt = v.amt;
       sumKg += Number(x.net || 0); if (amt != null) sumAmt += amt;
       const uo = ['t', 'Trip'].concat(v.uom && ['t', 'Trip'].indexOf(v.uom) < 0 ? [v.uom] : []);
-      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r"><input class="pxin" type="number" step="0.01" min="0" inputmode="decimal" data-px="${esc(k)}" data-f="price" value="${v.price == null ? '' : v.price}" placeholder="0.00"></td><td><select class="pxin" data-px="${esc(k)}" data-f="uom"><option value=""></option>${uo.map(u => `<option${u === v.uom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></td><td class="r mono">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td></tr>`;
+      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r"><input class="pxin" type="number" step="0.01" min="0" inputmode="decimal" data-px="${esc(k)}" data-f="price" value="${v.price == null ? '' : v.price}" placeholder="0.00"></td><td><select class="pxin" data-px="${esc(k)}" data-f="uom"><option value=""></option>${uo.map(u => `<option${u === v.uom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></td><td class="r mono" data-amt="${esc(k)}">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td></tr>`;
     }).join('');
     const done = rows.filter(r => r.x.bill).length;
     return `<h3 class="mt">☑ ${t('ប័ណ្ណដែលបានធីក', 'Ticked tickets')} (${rows.length})</h3>
       <div class="tbl"><table class="tt dncpick" data-nocols><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th class="r">${t('ចំនួនទឹកប្រាក់', 'Amount')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខ DN អតិថិជន', "Customer's DN #")}</th></tr>
-      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td></td><td class="r mono"><b>${money2(sumAmt)}</b></td><td></td><td></td></tr></table></div>
+      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td></td><td class="r mono" id="dPickSum"><b>${money2(sumAmt)}</b></td><td></td><td></td></tr></table></div>
       <div class="dnno mt"><label class="req" for="dDnNo">🧾 ${t('លេខ DN អតិថិជន', "Customer's DN #")}</label><input id="dDnNo" type="text" autocomplete="off" placeholder="${t('វាយលេខ Debit Note', 'Type the Debit Note number')}" value="${esc(DNC.billNo != null ? DNC.billNo : (DNC.dn && DNC.dn.no) || '')}"></div>
       <div class="btns mt"><button type="button" class="btn ok" id="dConfirm"${done === rows.length ? ' disabled' : ''}>✔ ${t('បញ្ជាក់', 'Confirm')} (${rows.length - done})</button>
         ${isAdmin() && done ? `<button type="button" class="btn" id="dUnconfirm">↺ ${t('ដកការបញ្ជាក់', 'Undo confirm')} (${done})</button>` : ''}
@@ -1993,7 +2004,7 @@
     const M = dncMatch(), dn = DNC.dn;
     const st = r => ({ ok: 'Matched', diff: 'Different', none: 'Not on DN', '': '' })[dncState(r)];
     const a = [['Check', 'Billing', "Customer's DN #", 'Ticket No', 'Truck No', 'Truck Company', 'DN No', 'Item', 'Loading Place', 'Unloading Place', 'Trip Date', 'Net (kg)', 'Unit Price', 'UoM', 'DN Qty (t)', 'DN Price', 'DN Extra', 'DN Total', 'App Amount', 'Difference']]
-      .concat(M.res.map(r => { const x = r.x, pl = priceOf(x), d = r.d || {}; return [st(r), x.bill || '', x.billDn || '', x.no, x.plate, x.company, (x.dns || []).join(', '), x.item, x.load || '', x.dest, tripDay(x), num(x.net), pl ? pl.price : '', pl ? pl.uom : '', d.qty == null ? '' : d.qty, d.price == null ? '' : d.price, d.extra == null ? '' : d.extra, d.total == null ? '' : d.total, r.app ? Math.round(r.app * 100) / 100 : '', r.diffs.map(z => z.txt).concat(r.notes).join('; ')]; }))
+      .concat(M.res.map(r => { const x = r.x, pl = billPl(x), d = r.d || {}; return [st(r), x.bill || '', x.billDn || '', x.no, x.plate, x.company, (x.dns || []).join(', '), x.item, x.load || '', x.dest, tripDay(x), num(x.net), pl ? pl.price : '', pl ? pl.uom : '', d.qty == null ? '' : d.qty, d.price == null ? '' : d.price, d.extra == null ? '' : d.extra, d.total == null ? '' : d.total, r.app ? Math.round(r.app * 100) / 100 : '', r.diffs.map(z => z.txt).concat(r.notes).join('; ')]; }))
       .concat(dn ? M.only.map(d => ['On DN only', '', '', '', d.plate, dn.agent, '', '', '', d.place, d.date, '', '', '', d.qty, d.price, d.extra, d.total, '', 'No weigh ticket']) : []);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(a);
