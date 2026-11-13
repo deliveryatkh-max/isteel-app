@@ -254,12 +254,12 @@
       <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; sel.clear(); renderList(); })}
       ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
         FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q) +
-        `<div class="fb-seg wrap" style="flex-basis:100%">${chipList().map(c => `<button type="button" class="${F.chip === c[0] ? 'on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''} ${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div>`)}</div>
+        FB.field(t('ការមើល', 'View'), `<select id="fChip">${chipList().map(c => `<option value="${c[0]}" ${F.chip === c[0] ? 'selected' : ''}>${esc(c[1])} (${c[2]})</option>`).join('')}</select>`))}</div>
       <div id="bulk"></div><div id="res"></div>`);
     const pb = $('#pickBtn'); if (pb) pb.onclick = () => { PICK = !PICK; if (!PICK) sel.clear(); renderList(); };
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
     $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
-    $$('[data-chip]').forEach(b => b.onclick = () => { F.chip = b.dataset.chip; $$('[data-chip]').forEach(x => x.classList.toggle('on', x === b)); drawResults(); });
+    $('#fChip').onchange = e => { F.chip = e.target.value; drawResults(); };
     drawResults();
   }
 
