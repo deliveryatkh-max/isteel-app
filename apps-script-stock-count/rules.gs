@@ -27,6 +27,13 @@ function validateCount(c) {
   return '';
 }
 
+// Stock out: qty must be more than 0 and no more than what is on hand. Returns '' when valid.
+function outOk(out, onHand) {
+  if (!(Number(out) > 0) || Math.floor(Number(out)) !== Number(out)) return 'Out Qty must be a whole number above 0.';
+  if (Number(out) > Number(onHand)) return 'Out Qty is more than qty on hand.';
+  return '';
+}
+
 // Accuracy of one bin = share of MATCH among its last `win` counts (null when never counted).
 function accuracyPct(statuses, win) {
   const last = (statuses || []).slice(-(Number(win) || 10));

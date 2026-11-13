@@ -11,7 +11,8 @@ Kim does these steps once. Nothing here is secret in chat: paste the values from
    - `USERS_SHEET_ID`: the same Fuel Refill sheet id as the Inbound app. Its Users tab is the one user list.
 5. **Run `setup()`** from the editor (choose `setup`, press Run, allow the permissions). It creates the tabs, the Drive folder "Stock Count Photos", and the Settings values. Run `authorize()` too if asked for Drive permission.
 6. **Fill the tabs:**
-   - **Bin Master:** one row per bin. Columns: Bin, Warehouse, SKU, Description, UoM, Pcs per Bundle, Book Qty, Active (Yes/No). Leave the last three columns empty.
+   - **Bin Master:** bin master data only. One row per bin: Bin, Warehouse, Active (Yes/No). The last two columns are filled by the app.
+   - **Stock On Hand:** what is in each bin, from MB52: Bin, Material, Description, Batch, SLOC, UoM, Pcs per Bundle, Book Qty. One row per material + batch + SLOC in the bin. A count or Out updates Book Qty here right away.
    - **Users (Fuel Refill sheet):** tick ការរាប់ស្តុក for each counter. Nothing is added on a second list.
 7. **Deploy:** Deploy > New deployment > Web app, Execute as: Me, Who has access: Anyone. Copy the URL that ends with `/exec`.
 8. **Give the URL to Claude** (or paste it into `web/stock-count/config.js` as `API_URL`). Until then the app runs in demo mode and saves nothing.
