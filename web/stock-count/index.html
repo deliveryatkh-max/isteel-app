@@ -12,7 +12,8 @@
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="apple-touch-icon" href="../icons/app-180.png">
   <link rel="manifest" href="../manifest.webmanifest">
-  <link rel="stylesheet" href="sc.css?v=20261113m">
+  <link rel="stylesheet" href="sc.css?v=20261113n">
+  <link rel="stylesheet" href="../sidenav.css?v=20261113n">
   <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
   <!-- Tapping the ISI STEEL logo refreshes the screen. -->
   <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
@@ -33,12 +34,14 @@
   </header>
   <div id="demo" class="demo" hidden></div>
   <main id="view"><div class="loading" role="status"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></main>
+  <nav class="tabs" id="scTabs" hidden></nav>
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="config.js?v=20261113a"></script>
   <script src="../live.js?v=20261113b"></script>
   <script src="../lang.js"></script>
   <script src="../table-sort.js?v=20261108a"></script>
-  <script src="sc.js?v=20261113m"></script>
+  <script src="sc.js?v=20261113n"></script>
+  <script src="desk.js?v=20261113n"></script>
 </body>
 </html>

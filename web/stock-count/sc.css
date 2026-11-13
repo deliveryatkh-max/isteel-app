@@ -152,3 +152,71 @@ td.num.out { color: var(--bad); font-weight: 700; }
 .icon-btn.dark { background: var(--line); color: var(--ink); }
 table.hist td:first-child { white-space: nowrap; }
 table.hist td { vertical-align: middle; }
+
+/* Menu: bottom bar on phones, navy side menu on computers (../sidenav.css). Demo screens: dashboard, lists, SAP check. */
+body:has(> nav.tabs:not([hidden])) { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: flex; overflow-x: auto; background: var(--card); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+nav.tabs .tab { position: relative; flex: 1 0 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 6px 2px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+nav.tabs .tab span { font-size: 20px; line-height: 1; }
+nav.tabs .tab b { font-weight: 600; white-space: nowrap; }
+nav.tabs .tab.on { color: var(--blue); background: rgba(37, 99, 235, .1); }
+nav.tabs .tab .count { position: absolute; top: 2px; right: 8px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-style: normal; line-height: 18px; }
+@media (min-width: 900px) {
+  body > nav.tabs:not([hidden]) { top: 60px; }
+  nav.tabs .tab .count { position: static; margin-left: auto; }
+  body.wide main { max-width: 1480px; padding-left: 24px; padding-right: 24px; }
+  .toast { bottom: 24px; }
+}
+.demo .role-pick { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: inherit; font-weight: 600; }
+.demo select { min-height: 32px; padding: 2px 8px; border: 1px solid var(--warn); border-radius: 8px; background: var(--card); color: var(--ink); font: inherit; font-size: 13px; }
+.ptitle { font-size: 18px; color: var(--ink); margin-top: 4px; }
+.ptitle small { font-weight: 400; margin-left: 6px; }
+h3 { font-size: 14px; margin: 0 0 10px; }
+.dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.stat[data-go] { cursor: pointer; }
+.stat b { display: block; font-size: 22px; line-height: 1.2; }
+.stat span { font-size: 12px; color: var(--muted); }
+.stat.in b { color: var(--ok); } .stat.out b { color: var(--bad); } .stat.warn b { color: var(--warn); }
+.card.scroll { overflow: auto; }
+.card.scroll.tall { max-height: calc(100vh - 250px); min-height: 220px; padding-top: 0; }
+.card.scroll.tall table.hist th { padding-top: 12px; }
+table.hist td.num { text-align: right; white-space: nowrap; }
+table.hist th { white-space: nowrap; }
+tr.go { cursor: pointer; } tr.go:hover td { background: rgba(37, 99, 235, .06); }
+th.ctr, td.ctr { text-align: center !important; } .me { background: rgba(37, 99, 235, .08) !important; }
+.fbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fbar input[type="search"] { flex: 1 1 220px; min-height: 44px; font-size: 16px; }
+.fbar select, .mapgrid select { min-height: 44px; padding: 6px 10px; border: 2px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: inherit; font-size: 15px; }
+.btn.sm { min-height: 40px; padding: 0 12px; font-size: 14px; border-radius: 10px; }
+.btn.file { cursor: pointer; margin: 0; color: #fff; }
+.acts { white-space: nowrap; }
+.st { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--line); }
+.st-submitted, .st-var { background: var(--warn-bg); color: var(--warn); }
+.st-approved, .st-adjustmentposted, .st-match { background: var(--ok-bg); color: var(--ok); }
+.st-rejected, .st-sap, .st-digital { background: var(--bad-bg); color: var(--bad); }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.steps span { padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.chart { display: flex; align-items: flex-end; gap: 8px; height: 170px; padding-top: 18px; }
+.cday { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; font-size: 11px; color: var(--muted); }
+.cbars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 3px; border-bottom: 1px solid var(--line); }
+.cbars i { position: relative; width: 38%; max-width: 26px; min-height: 0; border-radius: 4px 4px 0 0; }
+.cbars em { position: absolute; top: -16px; left: 0; right: 0; text-align: center; font-style: normal; font-size: 11px; color: var(--ink); }
+i.bi { background: var(--ok); } i.bo { background: var(--bad); }
+.legend { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 2px 0 8px; }
+.mapgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.mapgrid label { margin: 0; } .mapgrid select { width: 100%; }
+select.need { background: var(--bad-bg); border-color: #fca5a5; }
+.paste { margin: 8px 0; font-size: 13px; color: var(--muted); }
+.paste textarea { width: 100%; margin: 8px 0; padding: 8px; border: 2px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font: 13px monospace; }
+.bad { color: var(--bad); }
+.chk { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; color: var(--ink); }
+.chk input { width: 18px; height: 18px; }
+.card.scroll h3 { padding: 12px 12px 0; }
+.card.scroll.tall { padding: 0; }
+body.wide table.hist td { white-space: nowrap; }
+body.wide table.hist td small { white-space: normal; }
+@media (min-width: 1100px) { body.wide main .dash-kpis { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); } body.wide main .dash-kpis .stat b { font-size: 24px; } }
+@media (min-width: 1100px) { body.wide main .dgrid { columns: 2 440px; } }
+@media (max-width: 899px) { body:has(> nav.tabs:not([hidden])) .toast { bottom: calc(92px + env(safe-area-inset-bottom)); } }
