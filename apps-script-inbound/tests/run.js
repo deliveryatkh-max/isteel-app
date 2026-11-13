@@ -29,9 +29,9 @@ ok(env.props.IB_FOLDER_ID, 'photo folder made');
 // Kim pastes the Incoming Packing List (dates and numbers as Sheets gives them)
 const plan = env.ss.getSheetByName('Incoming Plan');
 const eta = new Date(2026, 9, 18);
-plan.rows.push([1, 1100000230, 'INTANU G300AZ30 BT 1200x0.260', 'KMH1', 1020, 32520, 32.52, 7, '', 1, 'PO5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
-plan.rows.push([2, 1100000231, 'INTANU G300AZ30 BR 1200x0.220', 'KMH1', 1020, 23550, 23.55, 5, '', 1, 'PO5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
-plan.rows.push([3, 1200000101, 'ZINC INGOT', 'KMH1', 1020, 25000, 25, 1000, '', 1, 'PO5100012751', 'IN 1', 'ZN-1', eta, 'Zinc Co']);
+plan.rows.push([1, 1100000230, 'INTANU G300AZ30 BT 1200x0.260', 'KMH1', 1020, 32520, 32.52, 7, '', 1, '5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
+plan.rows.push([2, 1100000231, 'INTANU G300AZ30 BR 1200x0.220', 'KMH1', 1020, 23550, 23.55, 5, '', 1, '5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
+plan.rows.push([3, 1200000101, 'ZINC INGOT', 'KMH1', 1020, 25000, 25, 1000, '', 1, '5100012751', 'IN 1', 'ZN-1', eta, 'Zinc Co']);
 env.ss.getSheetByName('IB Settings').rows[1][1] = '-100123';   // TELEGRAM_CHAT_ID
 
 const call = (who, action, payload) => env.post({ action, token: env.session(who), payload });
@@ -42,17 +42,17 @@ ok(/^NOACCESS/.test(call('nobody@x.com', 'boot', {}).error), 'unticked user refu
 ok(/^AUTH/.test(env.post({ action: 'boot', token: '', payload: {} }).error), 'no token refused');
 let b = must(call('sok@x.com', 'boot', {}));
 eq(b.plan.length, 3, 'plan lines');
-eq(b.plan[0], { po: 'PO5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
+eq(b.plan[0], { po: '5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
   ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '' }, 'plan line read by heading');
 eq(b.plates, ['2A-2233', '3E-2588'], 'plates from Driver & Truck');
 eq(b.carriers, ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'], '3PL list from settings');
 ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
 
 // arrival
-const ARR = { po: 'PO5100012725', truck: '3e 2588', dn3pl: 'DN-778', ph: { front: PHOTO, load: PHOTO, doc: PHOTO },
+const ARR = { po: '5100012725', truck: '3e 2588', dn3pl: 'DN-778', ph: { front: PHOTO, load: PHOTO, doc: PHOTO },
   items: [{ material: '1100000230', arrQty: 20000 }, { material: '1100000231', arrQty: '23,550' }] };
 ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), ph: { front: PHOTO } }) }).error), 'photos required');
-ok(/not on PO5100012725/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
+ok(/not on 5100012725/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
 ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
 ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: '' }) }).error), '3PL DN required');
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
@@ -123,16 +123,16 @@ eq(b.receipts.map(x => x.id).sort(), [r.id, r2.id].sort(), 'receipts in boot');
 ok(/^DENIED/.test(call('sok@x.com', 'planSave', { lines: [{ po: 'PO1', material: 'M1', kg: 5 }] }).error), 'user cannot change the plan');
 let pl = must(call('kim@x.com', 'planSave', { lines: [
   { po: '5100099999', material: '1300000001', desc: 'NEW A', kg: '40,000', pcs: 2, inbound: 'IN 9', ref: 'R9', eta: '2026-11-02', supplier: 'New Co' },
-  { po: 'PO5100099999', material: '1300000002', desc: 'NEW B', kg: 1000 },
-  { po: 'PO5100099999', material: '', kg: 5 }] }));
-eq(pl.filter(x => x.po === 'PO5100099999').map(x => [x.material, x.kg, x.eta, x.supplier]), [['1300000001', 40000, '2026-11-02', 'New Co'], ['1300000002', 1000, '', '']], 'new PO added, PO prefix, bad row skipped');
+  { po: '5100099999', material: '1300000002', desc: 'NEW B', kg: 1000 },
+  { po: '5100099999', material: '', kg: 5 }] }));
+eq(pl.filter(x => x.po === '5100099999').map(x => [x.material, x.kg, x.eta, x.supplier]), [['1300000001', 40000, '2026-11-02', 'New Co'], ['1300000002', 1000, '', '']], 'new PO added, PO prefix, bad row skipped');
 eq(pl.length, 5, 'other POs kept');
-// re-upload PO5100012725 without line 1100000231: received line stays, line 230 updated
-pl = must(call('kim@x.com', 'planSave', { lines: [{ po: 'PO5100012725', material: '1100000230', desc: 'X', kg: 33000, supplier: 'Regency' }] }));
-eq(pl.filter(x => x.po === 'PO5100012725').map(x => [x.material, x.kg]).sort(), [['1100000230', 33000], ['1100000231', 23550]], 'replace PO, keep received line');
-ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012725' }).error), 'PO with trucks cannot be deleted');
-pl = must(call('kim@x.com', 'planDel', { po: 'PO5100099999' }));
-eq(pl.map(x => x.po).sort(), ['PO5100012725', 'PO5100012725', 'PO5100012751'], 'PO deleted');
+// re-upload 5100012725 without line 1100000231: received line stays, line 230 updated
+pl = must(call('kim@x.com', 'planSave', { lines: [{ po: '5100012725', material: '1100000230', desc: 'X', kg: 33000, supplier: 'Regency' }] }));
+eq(pl.filter(x => x.po === '5100012725').map(x => [x.material, x.kg]).sort(), [['1100000230', 33000], ['1100000231', 23550]], 'replace PO, keep received line');
+ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: '5100012725' }).error), 'PO with trucks cannot be deleted');
+pl = must(call('kim@x.com', 'planDel', { po: '5100099999' }));
+eq(pl.map(x => x.po).sort(), ['5100012725', '5100012725', '5100012751'], 'PO deleted');
 eq(env.ss.getSheetByName('Incoming Plan').rows.slice(1).filter(r => r && r.some(c => String(c).trim())).map(r => r[0]), ['1', '2', '3'], 'No. renumbered');
 
 // PDF report and email
@@ -221,16 +221,16 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   // packing list with a Warehouse column; Dara only sees BDM POs
   must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099001', material: 'M1', desc: 'x', kg: 1000, site: 'WH IB' }, { po: '5100099002', material: 'M2', desc: 'y', kg: 1000, site: 'WH BDM' }] }));
   const dp = must(call('dara@x.com', 'boot', {})).plan.map(x => x.po);
-  ok(dp.indexOf('PO5100099002') >= 0 && dp.indexOf('PO5100099001') < 0, 'Dara sees only BDM POs');
-  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099001').site, 'WH IB', 'Warehouse column written and read');
+  ok(dp.indexOf('5100099002') >= 0 && dp.indexOf('5100099001') < 0, 'Dara sees only BDM POs');
+  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === '5100099001').site, 'WH IB', 'Warehouse column written and read');
   must(call('sai@x.com', 'planSave', { lines: [{ po: '5100099003', material: 'M3', desc: 'z', kg: 500 }] }));
-  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === 'PO5100099003').site, 'WH IB', 'no Warehouse column: the uploader\'s warehouse'); }
+  eq(must(call('kim@x.com', 'boot', {})).plan.find(x => x.po === '5100099003').site, 'WH IB', 'no Warehouse column: the uploader\'s warehouse'); }
 // incoming alert one day ahead (Kim, 2 Nov 2026)
 { const tx = env.g.incomingText_('2026-11-03', '2026-11-02');
-  ok(tx && /Late, not yet received/.test(tx) && /PO5100012751/.test(tx), 'late POs listed: ' + (tx || '').slice(0, 60));
+  ok(tx && /Late, not yet received/.test(tx) && /5100012751/.test(tx), 'late POs listed: ' + (tx || '').slice(0, 60));
   must(call('kim@x.com', 'planSave', { lines: [{ po: '5100099100', material: 'M9', desc: 'x', kg: 80000, eta: '2026-11-03', supplier: 'NS', site: 'WH GVM' }] }));
   const t2 = env.g.incomingText_('2026-11-03', '2026-11-02');
-  ok(/Incoming tomorrow 03-Nov-2026/.test(t2) && /WH GVM · PO5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
+  ok(/Incoming tomorrow 03-Nov-2026/.test(t2) && /WH GVM · 5100099100 · NS · 80 t \(~2 🚛\)/.test(t2), 'tomorrow list: ' + t2.split('\n')[1]);
   eq(env.g.incomingText_('2030-01-02', '2020-01-01'), null, 'nothing due = no post'); }
 // Warehouse List with Warehouse | Entrance | Description (Kim, 2 Nov 2026)
 { whTab.rows = [['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH IB', 'A1', 'Raw Materials'], ['WH IB', 'I1', 'Trading'], ['WH OB', '', 'Finished Goods Warehouse'], ['WH BDM', '', 'Finished Goods Warehouse']];
@@ -246,10 +246,10 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   const old = JSON.parse(recs[k][5]); delete old.site; recs[k][5] = JSON.stringify(old);
   eq(must(call('kim@x.com', 'boot', {})).receipts.find(r => r.id === old.id).site, 'WH IB', 'old receipt: warehouse from its entrance'); }
 // ETA typed as text in the sheet (Kim, 2 Nov 2026: 31-Oct-2026)
-{ plan.rows.push([9, 'M77', 'x', 'KMH1', 1020, 1000, 1, 1, '', 1, 'PO5100077777', '', '', '31-Oct-2026', 'YW'], [10, 'M78', 'y', 'KMH1', 1020, 1000, 1, 1, '', 1, 'PO5100077778', '', '', '02.11.2026', 'HS']);
+{ plan.rows.push([9, 'M77', 'x', 'KMH1', 1020, 1000, 1, 1, '', 1, '5100077777', '', '', '31-Oct-2026', 'YW'], [10, 'M78', 'y', 'KMH1', 1020, 1000, 1, 1, '', 1, '5100077778', '', '', '02.11.2026', 'HS']);
   const pl = must(call('kim@x.com', 'boot', {})).plan;
-  eq([pl.find(x => x.po === 'PO5100077777').eta, pl.find(x => x.po === 'PO5100077778').eta], ['2026-10-31', '2026-11-02'], 'text ETAs read as dates'); }
-{ const pr = env.ss.getSheetByName('Incoming Plan').rows, h = pr[0].map(String), r = pr.find(x => x[h.indexOf('PO Number')] === 'PO5100099100');
+  eq([pl.find(x => x.po === '5100077777').eta, pl.find(x => x.po === '5100077778').eta], ['2026-10-31', '2026-11-02'], 'text ETAs read as dates'); }
+{ const pr = env.ss.getSheetByName('Incoming Plan').rows, h = pr[0].map(String), r = pr.find(x => x[h.indexOf('PO Number')] === '5100099100');
   eq(r[h.indexOf('ETA')], '03-Nov-2026', 'ETA written as dd-mmm-yyyy'); }
 // the Telegram group became a supergroup (Kim, 2 Nov 2026): new id saved, message sent again
 { const set = env.ss.getSheetByName('IB Settings').rows; set[1][1] = '-5351019426'; const n = env.telegrams.length;
@@ -258,8 +258,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq(env.telegrams.slice(n).map(x => x.payload.chat_id), ['-5351019426', '-1004445393710'], 'sent again to the new id'); }
 // Goods Receipt Report PDFs copied for Kim's OneDrive (Kim, 5 Nov 2026)
 { const g = env.g;
-  eq(JSON.parse(JSON.stringify(g.grName_({ date: '2026-11-05', po: 'PO5100012725', id: 'IB-261105-03', supplier: 'A/B: Steel "Co" ' }))),
-    { year: 'Goods Receipt Report 2026', month: 'GR 2026-11', path: 'Goods Receipt Report 2026\\GR 2026-11', name: 'GR 2026-11 PO5100012725 IB-261105-03 A-B- Steel -Co-.pdf' }, 'GR file name and folders');
+  eq(JSON.parse(JSON.stringify(g.grName_({ date: '2026-11-05', po: '5100012725', id: 'IB-261105-03', supplier: 'A/B: Steel "Co" ' }))),
+    { year: 'Goods Receipt Report 2026', month: 'GR 2026-11', path: 'Goods Receipt Report 2026\\GR 2026-11', name: 'GR 2026-11 5100012725 IB-261105-03 A-B- Steel -Co-.pdf' }, 'GR file name and folders');
   ok(env.triggers.some(t => t.spec.fn === 'grExport' && t.spec.after === 60000) && env.triggers.some(t => t.spec.fn === 'grExport' && t.spec.every === 1), 'finishing a truck queues a PDF copy (+ hourly run)');
   const nTrig = env.triggers.length;
   g.grQueue_();
@@ -295,18 +295,18 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(s2.files.every(f => f.exported > last) && s1.files.concat(s2.files).some(f => f.replaces) && s1.files.length + s2.files.length === nDone, 'next call: only newer files; the edited one carries the old name to remove');
   eq(get({}).app, 'Inbound', 'plain GET still answers'); }
 // one truck, two POs (Kim, 11 Nov 2026)
-{ const M = Object.assign({}, ARR, { po: '', pos: ['PO5100012725', 'PO5100012751'], dn3pl: 'DN-MULTI', truck: '2A-2233',
-    items: [{ po: 'PO5100012751', material: '1200000101', arrQty: 5000 }, { po: 'PO5100012725', material: '1100000230', arrQty: 100 }] });
-  ok(/PO9 is not in the Incoming Plan/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, M, { pos: ['PO9'] }) }).error), 'unknown PO refused');
+{ const M = Object.assign({}, ARR, { po: '', pos: ['5100012725', '5100012751'], dn3pl: 'DN-MULTI', truck: '2A-2233',
+    items: [{ po: '5100012751', material: '1200000101', arrQty: 5000 }, { po: '5100012725', material: '1100000230', arrQty: 100 }] });
+  ok(/^BAD: 9 is not in the Incoming Plan/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, M, { pos: ['PO9'] }) }).error), 'unknown PO refused');
   const m = must(call('sok@x.com', 'start', { receipt: M }));
-  eq([m.po, m.pos, m.supplier, m.items.map(i => i.po)], ['PO5100012725, PO5100012751', ['PO5100012725', 'PO5100012751'], 'Regency, Zinc Co', ['PO5100012725', 'PO5100012751']], 'two POs on one receipt, items in PO order');
-  const f = must(call('sok@x.com', 'finish', { receipt: { id: m.id, owner: 'ISI', manpower: 3, items: [{ po: 'PO5100012725', material: '1100000230', grQty: 100 }, { po: 'PO5100012751', material: '1200000101', grQty: 4900 }] } }));
+  eq([m.po, m.pos, m.supplier, m.items.map(i => i.po)], ['5100012725, 5100012751', ['5100012725', '5100012751'], 'Regency, Zinc Co', ['5100012725', '5100012751']], 'two POs on one receipt, items in PO order');
+  const f = must(call('sok@x.com', 'finish', { receipt: { id: m.id, owner: 'ISI', manpower: 3, items: [{ po: '5100012725', material: '1100000230', grQty: 100 }, { po: '5100012751', material: '1200000101', grQty: 4900 }] } }));
   eq(f.items.map(i => i.grQty), [100, 4900], 'GR matched by PO + material');
   const lg = env.ss.getSheetByName('GR Log').rows.filter(r => r[0] === m.id);
-  eq(lg.map(r => r[2]), ['PO5100012725', 'PO5100012751'], 'log rows keep each item\'s PO');
-  ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: 'PO5100012751' }).error), 'second PO counts as received'); }
+  eq(lg.map(r => r[2]), ['5100012725', '5100012751'], 'log rows keep each item\'s PO');
+  ok(/cannot be deleted/.test(call('kim@x.com', 'planDel', { po: '5100012751' }).error), 'second PO counts as received'); }
 // PO typed without "PO" in the plan sheet (Kim, 12 Nov 2026)
 { plan.rows.push([4, 1300000001, 'COIL X', 'KMH1', 1020, 9000, 9, 1, '', 1, 5100077777, 'IN 7', 'X-1', eta, 'X Co']);
-  const x = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: 'PO5100077777', pos: ['PO5100077777'], dn3pl: 'DN-NUM', truck: '3E-2588', items: [{ po: 'PO5100077777', material: '1300000001', arrQty: 9000 }] }) }));
-  eq([x.po, x.items[0].po], ['PO5100077777', 'PO5100077777'], 'plan PO without the PO prefix still found'); }
+  const x = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: 'PO 5100077777', pos: ['PO5100077777'], dn3pl: 'DN-NUM', truck: '3E-2588', items: [{ po: '5100077777', material: '1300000001', arrQty: 9000 }] }) }));
+  eq([x.po, x.items[0].po], ['5100077777', '5100077777'], 'PO typed with or without "PO" is the same'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

@@ -317,7 +317,8 @@ function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'O
 /** the POs of a receipt: rec.pos, or the "PO1, PO2" text of older ones */
 const posOf_ = r => (Array.isArray(r.pos) && r.pos.length ? r.pos : String(r.po || '').split(',')).map(poOf_).filter(Boolean);
 const itemPo_ = (i, r) => poOf_(i.po) || posOf_(r)[0] || '';
-const poOf_ = v => { const s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return s && !/^PO/.test(s) ? 'PO' + s : s; };
+// PO number as in Kim's Excel: no "PO" in front (Kim, 13 Nov 2026); "PO 5100013709" and "PO5100013709" both become 5100013709
+const poOf_ = v => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, '');
 /** kg arrived (still unloading) or received per PO|material */
 function recvdMap_() {
   const m = {};
