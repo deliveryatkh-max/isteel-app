@@ -2260,14 +2260,13 @@
       let sum = 104; for (let i = 1; i < codes.length; i++) sum += codes[i] * i;
       codes.push(sum % 103, 106);   // check digit, Stop
       const bars = codes.map(c => C128[c]).join('');
-      const unit = 4, quiet = 10 * unit, h = 120, txt = 40;
+      const unit = 4, quiet = 10 * unit, h = 120;   // bars only, no plate text under them (Kim, 13 Nov 2026)
       const w = [...bars].reduce((a, d) => a + +d, 0) * unit + 2 * quiet;
-      const c = document.createElement('canvas'); c.width = w; c.height = h + txt + 10;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
       const g = c.getContext('2d');
       g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
       let x = quiet;
       [...bars].forEach((d, i) => { const bw = +d * unit; if (i % 2 === 0) g.fillRect(x, 0, bw, h); x += bw; });
-      g.font = '700 34px monospace'; g.textAlign = 'center'; g.fillText(v, w / 2, h + txt);
       return c.toDataURL('image/png');
     } catch (e) { return ''; }
   }
