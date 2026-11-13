@@ -198,9 +198,21 @@ function settings_() {
   return { tol: Number(m.TOLERANCE_PCS) || 0, listSize: Number(m.DAILY_LIST_SIZE) || 20, win: Number(m.ACCURACY_WINDOW) || 10 };
 }
 
+// Bin Master is the storage-bin master list: the bin code is the "STORAGE BIN" column (or "Bin"), Warehouse and Active.
+const binHead_ = h => ({ code: h.indexOf('STORAGE BIN') >= 0 ? h.indexOf('STORAGE BIN') : h.indexOf('Bin'), wh: h.indexOf('Warehouse'), active: h.indexOf('Active'),
+  last: h.indexOf('Last Count'), status: h.indexOf('Last Status') });
+function binRows_() {
+  const sh = sheet_(SH.BIN, BIN_COLS);
+  if (sh.getLastRow() < 2) return { sh: sh, head: [], rows: [] };
+  const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  return { sh: sh, head: v[0].map(h => String(h).trim()), rows: v.slice(1) };
+}
 function bins_() {
-  return objs_(SH.BIN, BIN_COLS).filter(b => b.Bin && yes_(b.Active)).map(b => ({
-    bin: b.Bin, warehouse: b.Warehouse, lastCount: b['Last Count'] || '', lastStatus: b['Last Status'] || '', active: true }));
+  const d = binRows_(), c = binHead_(d.head);
+  if (c.code < 0) return [];
+  return d.rows.filter(r => String(r[c.code]).trim() && (c.active < 0 || yes_(r[c.active]))).map(r => ({
+    bin: String(r[c.code]).trim(), warehouse: c.wh >= 0 ? String(r[c.wh]).trim() : '',
+    lastCount: c.last >= 0 ? String(r[c.last]).trim() : '', lastStatus: c.status >= 0 ? String(r[c.status]).trim() : '', active: true }));
 }
 
 // Stock lines of one bin (or all, when bin is empty). Each line is one material + batch + SLOC.
@@ -329,11 +341,10 @@ function savePhoto_(id, dataUrl) {
 
 // Writes the last count date and status into the Bin Master row (book qty lives in Stock On Hand).
 function markBin_(bin, when, status) {
-  const sh = sheet_(SH.BIN, BIN_COLS);
-  const last = sh.getLastRow();
-  if (last < 2) return;
-  const bins = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
-  const i = bins.findIndex(r => String(r[0]).trim().toUpperCase() === bin.toUpperCase());
+  const d = binRows_(), c = binHead_(d.head);
+  if (c.code < 0 || c.last < 0 || c.status < 0) return;
+  const i = d.rows.findIndex(r => String(r[c.code]).trim().toUpperCase() === bin.toUpperCase());
   if (i < 0) return;
-  sh.getRange(i + 2, 4, 1, 2).setValues([[when, status]]);
+  d.sh.getRange(i + 2, c.last + 1, 1, 1).setValue(when);
+  d.sh.getRange(i + 2, c.status + 1, 1, 1).setValue(status);
 }
