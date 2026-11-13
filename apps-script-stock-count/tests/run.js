@@ -14,7 +14,7 @@ const ok = (c, m) => { assert.ok(c, m); pass++; };
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
-const { countedPcs, statusOf, needsPhoto, validateCount, accuracyPct, todayList, outOk } = ctx;
+const { countedPcs, statusOf, needsPhoto, validateCount, countedQty, accuracyPct, todayList, outOk } = ctx;
 
 // Bundles x pieces per bundle + loose pieces
 eq(countedPcs(2, 50, 7), 107, 'bundles x pcs per bundle + pieces');
@@ -30,10 +30,15 @@ eq(statusOf(-3, 2), 'SHORT', 'beyond tolerance');
 eq([needsPhoto('MATCH'), needsPhoto('SHORT'), needsPhoto('OVER')], [false, true, true], 'photo only on SHORT/OVER');
 
 // Validation
-eq(validateCount({ bundles: '0', pieces: '0' }), '', '0 and 0 is a valid count');
-ok(validateCount({ bundles: '', pieces: '5' }) !== '', 'empty bundles rejected');
-ok(validateCount({ bundles: '1.5', pieces: '0' }) !== '', 'fraction rejected');
-ok(validateCount({ bundles: '-1', pieces: '0' }) !== '', 'negative rejected');
+eq(validateCount({ bundles: '0', kg: '', pieces: '0' }), '', '0 and 0 is a valid count');
+eq(validateCount({ bundles: '', kg: '', pieces: '5' }), '', 'blank bundles = 0');
+ok(validateCount({ bundles: '', kg: '', pieces: '' }) === 'Fill Bundle, Kg or Pcs for every line.', 'all blank rejected');
+ok(validateCount({ bundles: '1.5', kg: '', pieces: '0' }) !== '', 'fraction bundle rejected');
+eq(validateCount({ bundles: '1', kg: '4620.5', pieces: '' }), '', 'decimal kg allowed');
+ok(validateCount({ bundles: '-1', kg: '', pieces: '0' }) !== '', 'negative rejected');
+// Counted qty follows the book unit (Kim's template: Bundle 1 / Kg 4,620 / Pcs -)
+eq(countedQty({ bundles: '1', kg: '4620', pieces: '' }, 'KG', 1), 4620, 'KG line counts the kg');
+eq(countedQty({ bundles: '2', kg: '', pieces: '7' }, 'PC', 50), 107, 'PC line counts bundles x pcs + pcs');
 
 // Accuracy = MATCH share of last N counts
 eq(accuracyPct([], 10), null, 'never counted = no score');

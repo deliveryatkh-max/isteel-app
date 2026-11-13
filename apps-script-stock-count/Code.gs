@@ -14,14 +14,14 @@
  *   SESSION_SECRET     copy of the Fuel app's SESSION_SECRET, so one sign-in works in every app
  *   USERS_SHEET_ID     id of the Fuel Refill sheet (same as Inbound)
  *   SC_FOLDER_ID       made by setup(); Drive folder "Stock Count Photos"
- * Pure rules (countedPcs, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
+ * Pure rules (countedPcs, countedQty, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
 const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings' };
 // Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
 const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
 const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty'];
-const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'Book Qty', 'Bundles', 'Pieces', 'Counted Qty', 'Out Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
+const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'Book Qty', 'Bundle', 'Kg', 'Pcs', 'Counted Qty', 'Out Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const SET_SEED = [
   ['TOLERANCE_PCS', '0', 'Difference allowed without a photo (pcs). 0 = must match exactly.'],
@@ -267,7 +267,7 @@ function submit_(user, c) {
     if (bad) fail_('BAD', bad);
     const s = stock.find(x => lineKey_(Object.assign({ bin: b.bin }, x)) === lineKey_(Object.assign({ bin: b.bin }, l)));
     if (!s) fail_('NOLINE', 'Material ' + l.material + ' is not in this bin.');
-    const counted = countedPcs(l.bundles, s.pcsPerBundle, l.pieces);
+    const counted = countedQty(l, s.uom, s.pcsPerBundle);
     const diff = counted - s.book;
     const status = statusOf(diff, st.tol);
     if (status !== 'MATCH') worst = status;
@@ -283,7 +283,7 @@ function submit_(user, c) {
   rows.forEach((r, i) => {
     const l = lines[i];
     cnt.appendRow([id, 'Count', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, r.s.material, r.s.desc, r.s.batch, r.s.sloc,
-      r.s.book, Number(l.bundles), Number(l.pieces), r.counted, '', r.diff, r.status, photo, user.email, clip_(c.note, 200)]);
+      r.s.book, Number(l.bundles) || 0, Number(l.kg) || 0, Number(l.pieces) || 0, r.counted, '', r.diff, r.status, photo, user.email, clip_(c.note, 200)]);
     setBook_(stk, r.s, r.counted);   // book qty changes right away
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), worst);
@@ -315,7 +315,7 @@ function out_(user, c) {
   });
   plan.forEach(p => {
     cnt.appendRow([id, 'Out', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, p.s.material, p.s.desc, p.s.batch, p.s.sloc,
-      p.s.book, '', '', '', p.out, '', '', '', user.email, clip_(c.note, 200)]);
+      p.s.book, '', '', '', '', p.out, '', '', '', user.email, clip_(c.note, 200)]);
     setBook_(stk, p.s, p.s.book - p.out);   // book qty changes right away
   });
   return { id: id, lines: plan.map(p => ({ material: p.s.material, desc: p.s.desc, out: p.out, after: p.s.book - p.out })) };

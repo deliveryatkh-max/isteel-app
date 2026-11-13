@@ -58,6 +58,9 @@ table.lines th { text-align: left; color: var(--muted); font-weight: 600; paddin
 table.lines td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.lines input { width: 70px; min-height: 40px; padding: 6px; border: 2px solid var(--line); border-radius: 8px; font-size: 16px; background: var(--card); color: var(--ink); }
 .diff { white-space: nowrap; }
+table.lines th.cap { text-align: center; color: var(--ink); font-size: 14px; border-bottom: 2px solid var(--navy); }
+table.lines tr.desc td { font-weight: 600; border-bottom: 0; padding-bottom: 0; }
+table.lines input { width: 64px; }
 .note { margin: 8px 0; }
 .card.err { border-color: var(--warn); background: var(--warn-bg); }
 
