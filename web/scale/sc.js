@@ -1888,11 +1888,11 @@
     const rowHtml = r => {
       const x = r.x, pl = priceOf(x), s = dncState(r);
       const k = x.no || x.cid;
-      return `<tr class="pick${s === 'diff' ? ' warnrow' : ''}${DNC.pick[k] ? ' picked' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="ckc"><input type="checkbox" data-pick="${esc(k)}"${DNC.pick[k] ? ' checked' : ''} aria-label="${t('ធីក', 'Tick')}"></td><td>${s ? chip(s) : ''}</td><td>${billChip(x)}</td><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.item || '')}</td>
+      return `<tr class="pick${s === 'diff' ? ' warnrow' : ''}${DNC.pick[k] ? ' picked' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="ckc"><input type="checkbox" data-pick="${esc(k)}"${DNC.pick[k] ? ' checked' : ''} aria-label="${t('ធីក', 'Tick')}"></td><td>${s ? chip(s) : ''}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc((x.dns || []).join(', '))}</td><td>${esc(x.item || '')}</td>
         <td>${esc(x.load || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono"><b>${kg(x.net)}</b></td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td>${pl ? esc(pl.uom) : ''}</td>
         <td class="dd">${r.diffs.map(d => esc(d.txt)).join('<br>')}${r.notes.length ? `<small class="muted">${esc(r.notes.join(' · '))}</small>` : ''}</td></tr>`;
     };
-    const onlyHtml = d => `<tr class="warnrow"><td></td><td>${chip('only')}</td><td></td><td class="muted">DN #${d.n}</td><td><b>${esc(d.plate)}</b></td><td>${esc(dn.agent || '')}</td><td></td><td></td><td></td><td>${esc(d.place || '')}</td><td class="nw">${d.date ? dmy(d.date) : '?'}</td>
+    const onlyHtml = d => `<tr class="warnrow"><td></td><td>${chip('only')}</td><td></td><td></td><td class="muted">DN #${d.n}</td><td><b>${esc(d.plate)}</b></td><td>${esc(dn.agent || '')}</td><td></td><td></td><td></td><td>${esc(d.place || '')}</td><td class="nw">${d.date ? dmy(d.date) : '?'}</td>
       <td class="r mono">${d.qty != null ? kg(Math.round(d.qty * 1000)) : ''}</td><td class="r mono">${money2(d.price)}</td><td></td><td class="dd">${t('គ្មានប័ណ្ណថ្លឹងសម្រាប់ជួរនេះ', 'No weigh ticket for this line')}</td></tr>`;
     const body = M.res.filter(r => show(dncState(r))).map(rowHtml).join('') + (show('only') && dn ? M.only.map(onlyHtml).join('') : '');
     const list = M.res.filter(r => dncState(r) === 'diff');
@@ -1904,7 +1904,7 @@
       ${dncTotals(M)}
       ${dncReadTable()}` : `<p class="hint mt">${t('ផ្ទុក Debit Note (PDF ឬរូបថត) ដើម្បីប្រៀបធៀបជាមួយប័ណ្ណថ្លឹងក្នុងតារាងនេះ៖ លេខឡាន ថ្ងៃ ទម្ងន់សុទ្ធ តម្លៃ និងក្រុមហ៊ុនឡាន។', 'Upload the Debit Note (PDF or photo) to compare it with the weigh tickets in this table: truck, date, net weight, unit price and truck company.')}</p>`;
     $('#dBody').innerHTML = `<section class="card">${cards}${tabs}
-      ${body ? `<div class="tbl dncfit"><table class="tt dnct"><tr><th class="ckc" data-nosort><input type="checkbox" id="dPickAll" aria-label="${t('ធីកទាំងអស់', 'Tick all')}"></th><th>${t('ពិនិត្យ', 'Check')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>DN</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('កន្លែងផ្ទុក', 'Loading place')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th>${t('ភាពខុសគ្នា', 'Difference')}</th></tr>${body}</table></div>`
+      ${body ? `<div class="tbl dncfit"><table class="tt dnct"><tr><th class="ckc" data-nosort><input type="checkbox" id="dPickAll" aria-label="${t('ធីកទាំងអស់', 'Tick all')}"></th><th>${t('ពិនិត្យ', 'Check')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខ DN អតិថិជន', "Customer's DN #")}</th><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>DN</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('កន្លែងផ្ទុក', 'Loading place')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th>${t('ភាពខុសគ្នា', 'Difference')}</th></tr>${body}</table></div>`
         : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`}
       ${pickTable(M)}
       ${diffList}</section>`;
@@ -1915,6 +1915,7 @@
     $$('[data-pick]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { if (c.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; paintDnc(); }; });
     const all = $('#dPickAll'), vis = $$('[data-pick]');
     if (all) { all.checked = vis.length > 0 && vis.every(c => c.checked); all.onchange = () => { vis.forEach(c => { if (all.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; }); paintDnc(); }; }
+    if ($('#dDnNo')) $('#dDnNo').oninput = e => { DNC.billNo = e.target.value; };
     if ($('#dConfirm')) $('#dConfirm').onclick = () => confirmBilling(true);
     if ($('#dUnconfirm')) $('#dUnconfirm').onclick = () => confirmBilling(false);
     if ($('#dPickClr')) $('#dPickClr').onclick = () => { DNC.pick = {}; paintDnc(); };
@@ -1931,12 +1932,13 @@
       const x = r.x, pl = priceOf(x), netT = Number(x.net || 0) / 1000;
       const amt = pl ? (/^(t|ton|tons|tonne|mt)$/i.test(String(pl.uom).trim()) || /per\s*t(on)?$/i.test(String(pl.per).trim()) ? netT * pl.price : pl.price) : null;
       sumKg += Number(x.net || 0); if (amt != null) sumAmt += amt;
-      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td class="r mono">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td></tr>`;
+      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td class="r mono">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td></tr>`;
     }).join('');
     const done = rows.filter(r => r.x.bill).length;
     return `<h3 class="mt">☑ ${t('ប័ណ្ណដែលបានធីក', 'Ticked tickets')} (${rows.length})</h3>
-      <div class="tbl"><table class="tt dncpick" data-nocols><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th class="r">${t('ចំនួនទឹកប្រាក់', 'Amount')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th></tr>
-      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td class="r mono"><b>${money2(sumAmt)}</b></td><td></td></tr></table></div>
+      <div class="tbl"><table class="tt dncpick" data-nocols><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th class="r">${t('ចំនួនទឹកប្រាក់', 'Amount')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខ DN អតិថិជន', "Customer's DN #")}</th></tr>
+      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td class="r mono"><b>${money2(sumAmt)}</b></td><td></td><td></td></tr></table></div>
+      <div class="dnno mt"><label class="req" for="dDnNo">🧾 ${t('លេខ DN អតិថិជន', "Customer's DN #")}</label><input id="dDnNo" type="text" autocomplete="off" placeholder="${t('វាយលេខ Debit Note', 'Type the Debit Note number')}" value="${esc(DNC.billNo != null ? DNC.billNo : (DNC.dn && DNC.dn.no) || '')}"></div>
       <div class="btns mt"><button type="button" class="btn ok" id="dConfirm"${done === rows.length ? ' disabled' : ''}>✔ ${t('បញ្ជាក់', 'Confirm')} (${rows.length - done})</button>
         ${isAdmin() && done ? `<button type="button" class="btn" id="dUnconfirm">↺ ${t('ដកការបញ្ជាក់', 'Undo confirm')} (${done})</button>` : ''}
         <button type="button" class="btn" id="dPickClr">✕ ${t('ដកធីកទាំងអស់', 'Clear ticks')}</button></div>`;
@@ -1945,12 +1947,15 @@
     const M = dncMatch(), list = M.res.map(r => r.x).filter(x => DNC.pick[x.no || x.cid] && (on ? !x.bill : x.bill));
     const nos = list.map(x => x.no).filter(Boolean);
     if (!nos.length) { toast(t('គ្មានប័ណ្ណត្រូវបញ្ជាក់', 'Nothing to confirm')); return; }
+    // The customer's Debit Note number is typed before Confirm and saved on each ticket (Kim, 13 Nov 2026)
+    const dnNo = on ? String(($('#dDnNo') && $('#dDnNo').value) || '').trim() : '';
+    if (on && !dnNo) { toast(t('សូមវាយលេខ DN អតិថិជន', "Type the Customer's DN # first")); if ($('#dDnNo')) { $('#dDnNo').classList.add('bad'); $('#dDnNo').focus(); } return; }
     const b = $(on ? '#dConfirm' : '#dUnconfirm'); if (b) b.disabled = true;
     try {
-      const r = await api('scBill', { nos, on: on ? 1 : '', dn: (DNC.dn && DNC.dn.no) || '' });
-      const mark = x => { if (nos.indexOf(x.no) < 0) return; x.bill = on ? 'Confirmed Billing' : ''; x.billBy = on ? r.by : ''; x.billAt = on ? r.at : ''; x.billDn = on ? (DNC.dn && DNC.dn.no) || '' : ''; };
+      const r = await api('scBill', { nos, on: on ? 1 : '', dn: dnNo });
+      const mark = x => { if (nos.indexOf(x.no) < 0) return; x.bill = on ? 'Confirmed Billing' : ''; x.billBy = on ? r.by : ''; x.billAt = on ? r.at : ''; x.billDn = on ? dnNo : ''; };
       (DNC.rows || []).forEach(mark); ((B && B.tickets) || []).forEach(mark);
-      if (on) DNC.pick = {};
+      if (on) { DNC.pick = {}; DNC.billNo = null; }
       toast((on ? '✔ ' + t('បានបញ្ជាក់', 'Confirmed') : '↺ ' + t('បានដក', 'Undone')) + ': ' + (r.n != null ? r.n : nos.length) + ' ' + t('ប័ណ្ណ', 'tickets'));
     } catch (e) { toast(e.message); }
     paintDnc();
@@ -1975,12 +1980,12 @@
     if (!window.XLSX) return;
     const M = dncMatch(), dn = DNC.dn;
     const st = r => ({ ok: 'Matched', diff: 'Different', none: 'Not on DN', '': '' })[dncState(r)];
-    const a = [['Check', 'Billing', 'Ticket No', 'Truck No', 'Truck Company', 'DN No', 'Item', 'Loading Place', 'Unloading Place', 'Trip Date', 'Net (kg)', 'Unit Price', 'UoM', 'DN Qty (t)', 'DN Price', 'DN Extra', 'DN Total', 'App Amount', 'Difference']]
-      .concat(M.res.map(r => { const x = r.x, pl = priceOf(x), d = r.d || {}; return [st(r), x.bill || '', x.no, x.plate, x.company, (x.dns || []).join(', '), x.item, x.load || '', x.dest, tripDay(x), num(x.net), pl ? pl.price : '', pl ? pl.uom : '', d.qty == null ? '' : d.qty, d.price == null ? '' : d.price, d.extra == null ? '' : d.extra, d.total == null ? '' : d.total, r.app ? Math.round(r.app * 100) / 100 : '', r.diffs.map(z => z.txt).concat(r.notes).join('; ')]; }))
-      .concat(dn ? M.only.map(d => ['On DN only', '', '', d.plate, dn.agent, '', '', '', d.place, d.date, '', '', '', d.qty, d.price, d.extra, d.total, '', 'No weigh ticket']) : []);
+    const a = [['Check', 'Billing', "Customer's DN #", 'Ticket No', 'Truck No', 'Truck Company', 'DN No', 'Item', 'Loading Place', 'Unloading Place', 'Trip Date', 'Net (kg)', 'Unit Price', 'UoM', 'DN Qty (t)', 'DN Price', 'DN Extra', 'DN Total', 'App Amount', 'Difference']]
+      .concat(M.res.map(r => { const x = r.x, pl = priceOf(x), d = r.d || {}; return [st(r), x.bill || '', x.billDn || '', x.no, x.plate, x.company, (x.dns || []).join(', '), x.item, x.load || '', x.dest, tripDay(x), num(x.net), pl ? pl.price : '', pl ? pl.uom : '', d.qty == null ? '' : d.qty, d.price == null ? '' : d.price, d.extra == null ? '' : d.extra, d.total == null ? '' : d.total, r.app ? Math.round(r.app * 100) / 100 : '', r.diffs.map(z => z.txt).concat(r.notes).join('; ')]; }))
+      .concat(dn ? M.only.map(d => ['On DN only', '', '', '', d.plate, dn.agent, '', '', '', d.place, d.date, '', '', '', d.qty, d.price, d.extra, d.total, '', 'No weigh ticket']) : []);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(a);
-    ws['!cols'] = a[0].map((h, i) => ({ wch: [12, 18, 16, 11, 18, 16, 14, 16, 16, 11, 10, 9, 8, 9, 8, 8, 10, 10, 50][i] }));
+    ws['!cols'] = a[0].map((h, i) => ({ wch: [12, 18, 16, 16, 11, 18, 16, 14, 16, 16, 11, 10, 9, 8, 9, 8, 8, 10, 10, 50][i] }));
     XLSX.utils.book_append_sheet(wb, ws, 'Check');
     if (dn) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['#', 'Date', 'Truck No', 'Qty (t)', 'Price', 'Extra', 'Total', 'Place', 'Read OK']].concat(dn.rows.map((d, i) => [i + 1, d.date, d.plate, d.qty, d.price, d.extra, d.total, d.place, d.ok && !d.guess ? 'Yes' : 'Check']))), 'Debit Note');
     XLSX.writeFile(wb, 'Debit_Note_Check_' + (DNC.co ? DNC.co.replace(/[^A-Za-z0-9]+/g, '_') + '_' : '') + DNC.from + '_' + DNC.to + '.xlsx');

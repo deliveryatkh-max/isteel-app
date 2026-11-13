@@ -18,7 +18,7 @@ const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd', 'Empty Truck',
-  'Billing Status', 'Billing By', 'Billing At', 'Billing DN'];   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
+  'Billing Status', 'Billing By', 'Billing At', "Customer's DN #"];   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
@@ -298,6 +298,7 @@ function scBill_(p, user) {
   if (!p.on && !user.admin) fail_('DENIED', 'Admins only.', 'សម្រាប់ Admin ប៉ុណ្ណោះ។');
   const nos = (Array.isArray(p.nos) ? p.nos : []).map(String).filter(Boolean).slice(0, 1000);
   if (!nos.length) fail_('BAD', 'Tick the tickets first.', 'សូមធីកប័ណ្ណជាមុនសិន។');
+  if (p.on && !String(p.dn || '').trim()) fail_('BAD', "Type the Customer's DN # first.", 'សូមវាយលេខ DN អតិថិជន។');
   const { sh, rows } = scRows_(), c = SC_TK_COLS.indexOf('Billing Status') + 1, now = new Date(), want = {};
   nos.forEach(n => { want[n] = 1; });
   let n = 0;
