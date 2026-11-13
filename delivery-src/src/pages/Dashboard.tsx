@@ -50,7 +50,7 @@ export default function DashboardPage() {
   const maxSeg = d ? Math.max(1, ...d.segments.map(s => s.avg || 0)) : 1;
   const maxDay = d ? Math.max(1, tgt.turnaroundTarget, ...d.byDay.map(s => s.avg || 0)) : 1;
   return (
-    <main className="max-w-4xl mx-auto p-3 sm:p-4" lang="en">
+    <main className="max-w-4xl xl:max-w-[1480px] mx-auto p-3 sm:p-4 xl:px-6" lang="en">
       <div className="card !p-3 flex flex-wrap items-end gap-2">
         <label className="text-[13px] muted">From<input className="in" type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} /></label>
         <label className="text-[13px] muted">To<input className="in" type="date" value={to} min={from} onChange={e => setTo(e.target.value)} /></label>
@@ -69,6 +69,8 @@ export default function DashboardPage() {
             <Tile v={String(d.complaints.n)} k="Complaints" sub={d.complaints.open + ' still open'} tone={d.complaints.open ? 'bad' : 'ok'} />
           </div>
 
+          {/* Kim, 5 Nov 2026: on computers the dashboard uses the whole screen, cards in two columns */}
+          <div className="xl:grid xl:grid-cols-2 xl:gap-x-3 xl:items-start">
           <section className="card">
             <h2 className="text-[15px] font-bold mt-0 mb-1">Where trucks spend time inside the plant</h2>
             <p className="muted text-[12.5px] mt-0">Average minutes per step · {d.trips} trips with Gate In in the period</p>
@@ -81,7 +83,7 @@ export default function DashboardPage() {
             ))}
           </section>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-2 gap-3 xl:mb-3">
             <section className="card !mb-0">
               <h2 className="text-[15px] font-bold mt-0 mb-2">Gate In → Out by day</h2>
               {!d.byDay.length ? <p className="muted text-sm">No trips</p> : (
@@ -108,7 +110,7 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          <section className="card mt-3">
+          <section className="card mt-3 xl:mt-0 xl:col-span-2">
             <h2 className="text-[15px] font-bold mt-0 mb-1">3PL scorecard</h2>
             <p className="muted text-[12.5px] mt-0">OTIF per DN (credited to the truck that made the last delivery) · rating from customers · POD = Delivered steps with a photo</p>
             <div className="overflow-x-auto">
@@ -134,7 +136,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card xl:col-span-2">
             <h2 className="text-[15px] font-bold mt-0 mb-1">OTIF</h2>
             <p className="muted text-[12.5px] mt-0">DNs with a plan date in the period. On time = last delivery on or before the plan date; in full = DN delivered (weight ≥ 99.5% of plan, or "whole DN" ticked).
               Canceled DNs and confirmed customer delays are left out.</p>
@@ -163,6 +165,7 @@ export default function DashboardPage() {
               </div>
             ) : <p className="muted text-sm m-0">No misses 🎉</p>}
           </section>
+          </div>
           <p className="muted text-[12px] text-center">Updated {new Date(d.builtAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Phnom_Penh' })} · numbers are kept for 5 minutes</p>
         </>
       )}

@@ -231,3 +231,97 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .pdfv .pph img { width: 100%; height: 100%; object-fit: cover; }
 .btn .spinner { display: inline-block; width: 16px; height: 16px; margin: 0 4px 0 0; border-width: 2px; vertical-align: -3px; }
 .mailbox label.f { margin: 6px 0 2px; }
+
+/* number boxes that open the Log (30 Oct 2026) */
+a.stat.go { display: block; color: inherit; text-decoration: none; cursor: pointer; position: relative; }
+a.stat.go::after { content: '›'; position: absolute; right: 8px; top: 6px; opacity: .45; font-weight: 700; }
+a.stat.go:active { transform: scale(.98); }
+.voice { margin-top: 8px; } .voice .vrow { display: flex; gap: 8px; flex-wrap: wrap; } .voice audio, .kvs audio { width: 100%; margin-top: 6px; }
+/* PO card: % of completion next to the received tonnage (Kim, 1 Nov 2026) */
+.pmeta{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pmeta .pct{font-size:15px;color:var(--ok,#1e7a3c)}
+/* tap a photo to open it big (Kim, 2 Nov 2026) */
+img[data-zoom] { cursor: zoom-in; }
+.zoom-bg { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.zoom-bg img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.zoom-bg .zoom-x { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; }
+.zoom-bg.loading::after { content: ''; position: absolute; bottom: 24px; width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: zspin .8s linear infinite; }
+@keyframes zspin { to { transform: rotate(360deg); } }
+/* warehouse split (2 Nov 2026) */
+.whbar { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid #011E41; border-radius: 12px; padding: 8px 12px; margin: 0 0 10px; }
+.whi { font-size: 20px; }
+.wht { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.wht small { color: var(--muted); font-size: 11px; }
+.wht b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whsw { flex: none; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.whtag { display: inline-block; font-size: 11px; font-weight: 600; color: var(--muted); background: var(--soft); border-radius: 999px; padding: 1px 7px; margin-left: 4px; vertical-align: middle; }
+.whh { margin: 4px 0 2px; font-size: 18px; }
+.whcard { display: flex !important; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
+.whcard.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.whico { font-size: 26px; }
+.whtx { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.whtx b { font-size: 16px; }
+.whtx small { color: var(--muted); font-size: 12px; }
+.whgo { font-size: 24px; color: var(--muted); }
+.in.locked { display: flex; justify-content: space-between; align-items: center; }
+.tmpl { display: block; width: 100%; margin: -4px 0 12px; text-align: center; text-decoration: none; }
+/* incoming schedule (2 Nov 2026) */
+.sched h3 { margin: 12px 0 4px; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+.sched h3 small { color: var(--muted); font-weight: 500; }
+.schg.late h3 { color: var(--bad); } .schg.tom h3 { color: var(--accent); }
+.schr { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--line); text-decoration: none; color: var(--text); }
+.schd { flex: none; width: 46px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.scht, .schn { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.scht { flex: 1; } .scht small, .schn small { color: var(--muted); font-size: 12px; }
+.scht small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.schn { flex: none; text-align: right; }
+.tombar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fff4d6; color: #7a4b00; text-decoration: none; border: 1px solid #f3d27a; }
+.tombar b { flex: 1; } .tombar span { font-weight: 600; }
+:root[data-theme="dark"] .tombar { background: #45300f; color: #f6c27a; border-color: #7a5a1c; }
+.sched h3 em { font-style: normal; font-size: 12px; font-weight: 600; margin-left: 4px; }
+.schg.today h3 { color: var(--ok); }
+.upl2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.upl2 .btn { margin: 0; width: 100%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 15px; line-height: 1.25; padding: 10px 8px; min-height: 56px; }
+.mailres { margin-top: 8px; padding: 10px 12px; border-radius: 10px; font-weight: 600; line-height: 1.4; }
+.mailres small { display: block; font-weight: 400; opacity: .8; margin-top: 2px; word-break: break-word; }
+.mailres.ok { background: rgba(34,197,94,.15); color: #16a34a; border: 1px solid rgba(34,197,94,.45); }
+.mailres.bad { background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.45); }
+.sync { position: fixed; right: 10px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 30; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted, #6b7a8c); font-family: inherit; font-weight: 600; font-size: 11px; line-height: 1.4; box-shadow: var(--shadow); opacity: .9; cursor: pointer; }
+.sync.busy { color: var(--accent); }
+.sync.bad { color: #fff; background: #d97706; border-color: #d97706; opacity: 1; font-size: 12px; }
+.sync:not(.bad) { display: none; }
+.btn.danger { color: #fff; background: #dc2626; border-color: #dc2626; }
+#delBtn.btn.danger { color: #dc2626; background: transparent; }
+.delbox { margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(220,38,38,.45); background: rgba(220,38,38,.08); display: grid; gap: 6px; }
+.delbox .in.bad { border-color: #dc2626; }
+.delrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+/* Summary on computers (Kim, 5 Nov 2026): incoming schedule on the left, numbers and charts on the right */
+@media (min-width: 1100px) {
+  body.wide .ibdash { display: grid; grid-template-columns: minmax(320px, 1fr) 3fr; gap: 0 16px; align-items: start; }
+  body.wide .ibdash > .sched { grid-column: 1; grid-row: 1 / span 4; }
+  body.wide .ibdash > :not(.sched) { grid-column: 2; }
+  body.wide .ibdash .dash-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  body.wide .ibdash .dgrid { columns: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; margin-bottom: 14px; }
+  body.wide .ibdash .dgrid > * { margin: 0; }
+}
+
+/* Forms 50% wider on computers (Kim, 5 Nov 2026) */
+@media (min-width: 900px) { .sheet { max-width: 960px; } }
+
+/* Outlook helper link: computers only, at the bottom of the side menu (Kim, 6 Nov 2026) */
+@media (max-width: 899px) { nav.tabs a.tab.pc-only { display: none; } }
+@media (min-width: 900px) { nav.tabs a.tab.pc-only { margin-top: auto; } }
+.ymlabel { font-size: 14px; color: var(--text, #011e41); margin-top: 12px; }
+.range { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.range label { flex: 1 1 130px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.range label .in { margin-top: 2px; }
+.range .btn { width: auto; min-height: 44px; padding: 0 14px; margin: 0; }
+/* Log: search, filters and dates stay at the top while the list scrolls (Kim, 6 Nov 2026) */
+@media (min-width: 900px) {
+  .logbar { position: sticky; top: calc(54px + env(safe-area-inset-top)); z-index: 4; background: var(--bg); margin: -16px -16px 4px; padding: 12px 16px 2px; box-shadow: 0 6px 8px -8px rgba(1,30,65,.25); }
+  .logbar .range { margin-bottom: 10px; }
+}
+/* one truck, several POs (Kim, 11 Nov 2026) */
+.itbl tr.porow td { background: #011e41; color: #fff; padding: 6px 8px; font-size: 13px; text-align: left; }
+.itbl tr.porow small { opacity: .8; margin-left: 4px; }

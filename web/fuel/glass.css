@@ -1,0 +1,86 @@
+/* Fuel app in the soft glass bento look (Kim, 12 Nov 2026: "apply this style", mockup https://claude.ai/artifact/91XoFr4oPtJ6KZYu1NuBV7).
+   Design only, loaded after styles.css and sidenav.css when html has the class "glass" (see index.html).
+   Every field, rule, save step and the sheet stay the same. Undo = remove the glass switch in index.html. */
+:root.glass {
+  --g-glass: rgba(255, 255, 255, .72); --g-line: rgba(1, 30, 65, .08); --g-field: rgba(255, 255, 255, .9);
+  --g-shadow: 0 1px 2px rgba(1, 30, 65, .04), 0 8px 24px rgba(1, 30, 65, .07);
+  --g-wash: radial-gradient(760px 520px at 0% 0%, rgba(97, 203, 244, .30), transparent 62%),
+    radial-gradient(700px 500px at 100% 10%, rgba(180, 205, 240, .70), transparent 62%),
+    radial-gradient(800px 560px at 45% 110%, rgba(11, 118, 160, .14), transparent 62%);
+  --g-grad: linear-gradient(135deg, #0B76A0, #084F6A 70%, #011E41);
+  --g-display: "Outfit", "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+  --g-sans: "Inter", "Noto Sans Khmer", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bg: #F3F6FA; --card: #ffffff; --line: #E6EBF2; --radius: 20px;
+  --shadow: var(--g-shadow);
+}
+@media (prefers-color-scheme: dark) {
+  :root.glass:not([data-theme="light"]) {
+    --g-glass: rgba(13, 26, 44, .72); --g-line: rgba(255, 255, 255, .08); --g-field: rgba(19, 36, 59, .9);
+    --g-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .28);
+    --g-wash: radial-gradient(620px 420px at 0% -5%, rgba(11, 118, 160, .35), transparent 60%),
+      radial-gradient(560px 400px at 100% 0%, rgba(8, 79, 106, .45), transparent 60%),
+      radial-gradient(640px 480px at 50% 105%, rgba(97, 203, 244, .10), transparent 60%);
+    --bg: #07111F; --card: #0D1A2C; --line: #1C2C42;
+  }
+}
+:root.glass[data-theme="dark"] {
+  --g-glass: rgba(13, 26, 44, .72); --g-line: rgba(255, 255, 255, .08); --g-field: rgba(19, 36, 59, .9);
+  --g-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .28);
+  --g-wash: radial-gradient(620px 420px at 0% -5%, rgba(11, 118, 160, .35), transparent 60%),
+    radial-gradient(560px 400px at 100% 0%, rgba(8, 79, 106, .45), transparent 60%),
+    radial-gradient(640px 480px at 50% 105%, rgba(97, 203, 244, .10), transparent 60%);
+  --bg: #07111F; --card: #0D1A2C; --line: #1C2C42;
+}
+
+.glass body { background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; font-family: var(--g-sans); }
+.glass h2, .glass .rp-kpi b, .glass .seg-n, .glass .rv-right b, .glass .sheet-h, .glass .rp-sap h3 { font-family: var(--g-display); letter-spacing: -.005em; }
+
+/* Top: the navy ISI STEEL bar becomes a floating pill; Back / Forward become glass chips under it. */
+.glass .head { padding: 8px 12px 0; background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; }
+.glass .head .topbar { border-radius: 999px; min-height: 50px; padding: 0 8px 0 10px; box-shadow: 0 10px 26px rgba(1, 30, 65, .22); }
+.glass .navbar { background: transparent; border: 0; box-shadow: none; padding: 8px 0 0; }
+.glass .nav-btn { background: var(--g-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--g-line); border-radius: 999px; box-shadow: var(--g-shadow); }
+.glass .demo-banner { margin: 8px 12px 0; border-radius: 999px; }
+
+/* Cards, lists and panels: frosted, 20px corners, soft shadow. */
+.glass .card, .glass .day-card, .glass .seg, .glass .rp-f, .glass .rp-kpi, .glass .rp-tw, .glass .saver, .glass .pc-card, .glass .tile {
+  background: var(--g-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--g-line); border-radius: 20px; box-shadow: var(--g-shadow);
+}
+.glass .rp-tw { border-radius: 16px; }
+/* Report filter stays solid when it sticks, so the table never shows behind it (Kim, 13 Nov 2026). */
+@media (min-width: 900px) { .glass .rp-fw { background: var(--bg); background-image: var(--g-wash); background-attachment: fixed; background-repeat: no-repeat; } }
+.glass .rp-kpi b { font-weight: 600; }
+.glass .dt-hero { border-radius: 24px; background: var(--g-grad); box-shadow: 0 14px 32px rgba(1, 30, 65, .18); }
+
+/* Fields and buttons: soft fields, pill buttons, navy-blue gradient for the main action. */
+.glass select, .glass input[type=text], .glass input[type=number], .glass input[type=search], .glass input[type=date], .glass textarea {
+  background-color: var(--g-field); border-color: var(--line); border-radius: 14px;
+}
+.glass .btn { border-radius: 999px; }
+.glass .btn.primary { background: var(--g-grad); box-shadow: 0 8px 20px rgba(11, 118, 160, .28); }
+.glass .type-btn, .glass .photo-slot { border-radius: 16px; background-color: var(--g-field); }
+.glass .type-btn.on { box-shadow: 0 0 0 2px #0B76A0 inset, 0 6px 16px rgba(11, 118, 160, .18); }
+.glass .seg-btn.on, .glass .rp-chip.on { background: var(--g-grad); color: #fff; border-color: transparent; }
+.glass .seg-btn.on .seg-n, .glass .seg-btn.on small { color: #fff; }
+.glass .rp-chip { background: var(--g-field); }
+.glass .sheet { border-radius: 26px 26px 0 0; }
+
+/* Phone: the bottom bar becomes a floating glass capsule; the open tab is a gradient pill. */
+@media (max-width: 899px) {
+  .glass body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .glass nav.tabs:not([hidden]) {
+    left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); padding: 5px; gap: 2px;
+    background: var(--g-glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    border: 1px solid var(--g-line); border-radius: 999px; box-shadow: 0 12px 30px rgba(1, 30, 65, .16);
+  }
+  .glass .tab { border-radius: 999px; padding: 6px 2px 5px; }
+  .glass .tab.home-tab { border-right: 0; }
+  .glass .tab.on { background: var(--g-grad); color: #fff; }
+  .glass .tab.on img { filter: brightness(0) invert(1); }
+}
+/* Computer: the side menu keeps its navy colour; the open item is a blue pill. */
+@media (min-width: 900px) {
+  .glass nav.tabs .tab.on, .glass #tabs.many .tab.on { background: linear-gradient(135deg, #2a9fd6, #0B76A0); box-shadow: 0 6px 16px rgba(0, 0, 0, .3); border-radius: 999px; color: #fff; }
+  .glass .head { padding-left: 12px; }
+}

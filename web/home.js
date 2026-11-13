@@ -14,7 +14,14 @@
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
     { key: 'stockcount', kh: 'ការរាប់ស្តុក', en: 'Stock Count', url: 'stock-count/' },
+    { key: 'dataentry', kh: 'បញ្ចូលទិន្នន័យ', en: 'Data Entry', url: 'dataentry/' },
+    { key: 'safety', kh: 'សុវត្ថិភាព & 5S', en: 'Safety & 5S', url: 'safety/' },
+    { key: 'scale', kh: 'ជញ្ជីងឡាន', en: 'Truck Scale', url: 'scale/' },
     { key: 'dashboard', kh: 'Dashboard', en: 'Dashboards', url: 'dashboards/' },
+    // Everyone (switched off in the Gallery Manager's Settings): every ad, to watch again (Kim, 30 Oct 2026).
+    { key: 'gallery', kh: 'វិចិត្រសាល', en: 'Gallery', url: 'gallery/' },
+    // Admins only: post and manage the startup ads of every app.
+    { key: 'adsmgr', kh: 'គ្រប់គ្រងវិចិត្រសាល', en: 'Gallery Manager', url: 'gallery/#/manage' },
     // Admins only: the server adds 'users' for Role = admin (User Management, 28 Oct 2026).
     { key: 'users', kh: 'អ្នកប្រើប្រាស់', en: 'Users', url: 'users/' },
   ];
@@ -69,7 +76,14 @@
     $('#who').textContent = name;
     // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
     if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '' }));
-    const mine = APPS.filter(a => d.apps.indexOf(a.key) >= 0);
+    // One 🖼️ Gallery tile (Kim, 1 Nov 2026): the Gallery Manager lives inside it as admin-only tabs,
+    // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
+    const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
+    const apps = d.apps.filter(k => k !== 'adsmgr').concat(admin && d.apps.indexOf('gallery') < 0 ? ['gallery'] : []);
+    // Admins may open every app, so a new app's tile shows for them even before the Fuel Code.gs with its tick box
+    // column is pasted (Safety Walk, 4 Nov 2026). Everyone else still needs the tick box.
+    if (admin) APPS.forEach(a => { if (a.url && a.key !== 'adsmgr' && apps.indexOf(a.key) < 0) apps.push(a.key); });
+    const mine = APPS.filter(a => apps.indexOf(a.key) >= 0);
     $('#view').innerHTML = mine.length ? `
       <p class="hello">${t('សួស្តី', 'Hello')} <b>${esc(name)}</b> · ${t('ជ្រើសរើសកម្មវិធី', 'Choose an app')}</p>
       <div class="grid">${mine.map(a => {
@@ -131,7 +145,8 @@
   function requestAccess() {
     AccessRequest.open({
       call: api,
-      onDone: status => {
+      onDone: (status, o) => {
+        if (o && o.enter) { load(); return; }
         $('#reqBox').innerHTML = status === 'active'
           ? `<div class="alert ok">${t('គណនីរបស់អ្នកបានអនុញ្ញាតហើយ។ ចុច ព្យាយាមម្តងទៀត។', 'Your account is already allowed. Tap Try again.')}</div>`
           : `<div class="alert ok">✅ ${t('សំណើបានផ្ញើទៅអ្នកគ្រប់គ្រង។ សូមរង់ចាំការអនុញ្ញាត រួចចុច ព្យាយាមម្តងទៀត។', 'Request sent to the admin. Once they allow you, tap Try again.')}</div>`;
@@ -178,20 +193,26 @@
   }
 
   // Opens at once from the saved menu, then checks with the server in the background.
-  async function load() {
+  // quiet = background refresh (new apps ticked, waiting counts): no spinner, redraws only on a change
+  async function load(quiet) {
+    quiet = quiet === true;
     if (!CFG.API_URL) { renderMenu({ user: { name: 'Demo' }, apps: APPS.map(a => a.key) }); return; }
     if (!tokenValid()) { renderLogin(); return; }
     const key = CACHE_KEY + email();
     let cached = null;
     try { cached = JSON.parse(get(key) || 'null'); } catch (e) { /* ignore */ }
-    if (cached) renderMenu(cached); else $('#view').innerHTML = '<div class="spinner"></div>';
-    $('#bar').classList.add('busy');
+    if (!quiet) {
+      if (cached) renderMenu(cached); else $('#view').innerHTML = '<div class="spinner"></div>';
+      $('#bar').classList.add('busy');
+    }
     try {
       const d = await api('home');
       set(key, JSON.stringify(d));
+      if (window.MENUS && Array.isArray(d.menusOff)) MENUS.set(d.menusOff);   // who sees which menu (👥 Users › Menus)
       if (JSON.stringify(d) !== JSON.stringify(cached)) renderMenu(d);
     } catch (e) {
       if (e.code === 'AUTH') { set(TOKEN_KEY, null); renderLogin(); }
+      else if (quiet) throw e;
       // Apps Script not updated yet: show today's apps (each app still checks access when opened).
       else if (/Unknown action/i.test(e.message)) renderMenu({ user: { name: email() }, apps: ['fuel', 'dashboard'] });
       else if (e.code === 'NOACCESS') { set(key, null); renderError(e, true); }
@@ -244,7 +265,7 @@
     box.innerHTML = `<img src="icons/isi-logo.png" alt="" width="44" height="44">
       <div class="txt"><b>${t('ដំឡើង STEEL លើទូរស័ព្ទ', 'Install STEEL on your phone')}</b>
         <small>${installEvt ? t('បើកលឿន ប្រើបានទោះអ៊ីនធឺណិតខ្សោយ', 'Opens fast, works on weak internet')
-          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')}</small></div>
+          : t('ចុច Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> រួច “Add to Home Screen”', 'Tap Share <svg class="share" viewBox="0 0 24 24" width="15" height="15" aria-label="Share"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> then “Add to Home Screen”')} · <a href="install/">${t('មើលរបៀប', 'How?')}</a></small></div>
       ${installEvt ? `<button type="button" class="btn ok" id="installGo">${t('ដំឡើង', 'Install')}</button>` : ''}
       <button type="button" class="x" id="installX" aria-label="${t('បិទ', 'Close')}">✕</button>`;
     if ($('#installGo')) $('#installGo').onclick = async () => {
@@ -274,4 +295,6 @@
   // Coming back to the menu (phone back button) shows any change made by the admin.
   window.addEventListener('pageshow', e => { if (e.persisted) load(); });
   load();
+  // The menu also refreshes in the background every minute while it is open on a signed-in phone.
+  if (window.LIVE && CFG.API_URL) LIVE.start({ run: () => load(true), busy: () => !tokenValid() || !$('#view .tile') });
 })();

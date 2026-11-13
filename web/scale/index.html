@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e41">
+  <title>ជញ្ជីងឡាន · Truck Scale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@800&text=STEEL&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="../icons/favicon.png">
+  <link rel="apple-touch-icon" href="../icons/app-180.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="stylesheet" href="../overtime/ot.css?v=20261105c">
+  <link rel="stylesheet" href="sc.css?v=20261113n">
+  <link rel="stylesheet" href="../ads.css?v=20261031a">
+  <link rel="stylesheet" href="../sidenav.css?v=20261105c">
+  <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+  <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
+  <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
+  <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
+  <script src="../view-mode.js?v=20261113c"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <div class="isi-logo"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30"><span class="word">STEEL</span></div>
+      <span class="sep" aria-hidden="true"></span>
+      <div><b data-km="ជញ្ជីងឡាន" data-en="Truck Scale">ជញ្ជីងឡាន</b><small data-km="ថ្លឹងឡាន ប័ណ្ណថ្លឹង របាយការណ៍" data-en="Weigh trucks, tickets, reports">ថ្លឹងឡាន ប័ណ្ណថ្លឹង របាយការណ៍</small></div>
+    </div>
+    <div class="bar-right">
+      <span id="syncDot" class="syncdot" hidden></span>
+      <button type="button" class="icon-btn lang-btn" id="langBtn"></button>
+      <button type="button" class="icon-btn" id="themeBtn" aria-label="Light / Dark" title="Light / Dark">🌙</button>
+    </div>
+  </header>
+  <div id="demo" class="demo" hidden></div>
+
+  <main id="view"><div class="spinner" role="status" aria-label="Loading"></div></main>
+
+  <nav class="tabs">
+    <a href="../" class="tab"><img src="../icons/home.svg" alt="" width="24" height="24"><b data-km="ទំព័រដើម" data-en="Home">ទំព័រដើម</b></a>
+    <a href="#/" class="tab" data-r="home"><span aria-hidden="true">⚖️</span><b data-km="ថ្លឹង" data-en="Weigh">ថ្លឹង</b></a>
+    <a href="#/list" class="tab" data-r="list"><span aria-hidden="true">📋</span><b data-km="ប័ណ្ណថ្លឹង" data-en="Tickets">ប័ណ្ណថ្លឹង</b></a>
+    <a href="#/rep" class="tab" data-r="rep"><span aria-hidden="true">📊</span><b data-km="របាយការណ៍" data-en="Report">របាយការណ៍</b></a>
+    <a href="#/tat" class="tab" data-r="tat"><span aria-hidden="true">⏱️</span><b data-km="រយៈពេល" data-en="Turnaround">រយៈពេល</b></a>
+    <a href="#/dnc" class="tab" data-r="dnc" hidden><span aria-hidden="true">🧾</span><b data-km="ពិនិត្យ DN" data-en="DN check">ពិនិត្យ DN</b></a>
+    <a href="#/set" class="tab" data-r="set" hidden><span aria-hidden="true">⚙️</span><b data-km="ការកំណត់" data-en="Settings">ការកំណត់</b></a>
+  </nav>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="printArea" aria-hidden="true"></div>
+
+  <script src="config.js?v=20261106b"></script>
+  <script src="../lang.js"></script>
+  <script src="../live.js?v=20261113b"></script>
+  <script src="../config.js"></script>
+  <script src="../vendor/qrcode.min.js"></script>
+  <script src="../vendor/xlsx.mini.min.js"></script>
+  <script src="../ads.js?v=20261031a" data-app="scale"></script>
+  <script src="scale-core.js?v=20261106g"></script>
+  <script src="dn-read.js?v=20261106a"></script>
+  <script src="../table-sort.js?v=20261108a"></script>
+  <script src="../menus.js?v=20261113a" data-app="scale"></script>
+  <script src="sc.js?v=20261113r"></script>
+</body>
+</html>

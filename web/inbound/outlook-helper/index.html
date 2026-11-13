@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Outlook helper · iSteel</title>
+  <meta name="theme-color" content="#011e41">
+  <link rel="icon" href="../../icons/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --navy: #011e41; --accent: #0b5cad; --ok: #1a7f37; --bg: #f2f5fa; --card: #fff; --line: #dfe5ee; --muted: #5d6b7e; --text: #10233f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 "Noto Sans Khmer", system-ui, sans-serif; }
+    header { background: var(--navy); color: #fff; padding: 16px; display: flex; gap: 14px; align-items: center; }
+    header img { height: 40px; background: #fff; border-radius: 8px; padding: 4px 8px; }
+    header h1 { font-size: 20px; margin: 0; line-height: 1.35; }
+    header small { display: block; opacity: .8; font-size: 13px; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+    .en { display: block; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .step { display: grid; grid-template-columns: 38px 1fr; gap: 12px; }
+    .num { width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; display: grid; place-items: center; }
+    h2 { font-size: 17px; margin: 4px 0 2px; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 54px; border-radius: 12px; background: var(--ok); color: #fff; font-size: 18px; font-weight: 700; text-decoration: none; margin-top: 12px; }
+    .note { font-size: 14px; color: var(--muted); }
+    code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header><img src="../../icons/isi-steel-logo.png" alt="ISI STEEL"><h1>Outlook helper<small>បើកអ៊ីមែល Outlook ពីកម្មវិធី ទទួលទំនិញ · Open Outlook drafts from Inbound</small></h1></header>
+  <main>
+    <div class="card">
+      <p style="margin-top:0">ដំឡើងតែម្តងលើកុំព្យូទ័រនីមួយៗ។ បន្ទាប់មក ប៊ូតុង <b>📧 បើកក្នុង Outlook</b> នឹងបើកសេចក្តីព្រាងអ៊ីមែល Outlook ភ្លាមៗ ជាមួយ PDF ភ្ជាប់រួច ដូចម៉ាក្រូ Excel។
+        <span class="en">Install once on each computer. After that, <b>📧 Open in Outlook</b> opens the Outlook draft straight away with the PDF attached, like an Excel macro.</span></p>
+      <a class="btn" href="iSteel-Outlook-helper.zip" download>⬇ ទាញយក · Download (iSteel-Outlook-helper.zip)</a>
+    </div>
+    <div class="card step"><div class="num">1</div><div><h2>ចុចលើ zip ដែលទាញយក រួចចុចពីរដងលើ <code>iSteel Outlook helper.vbs</code></h2>
+      <span class="en">Open the downloaded zip and double-click <code>iSteel Outlook helper.vbs</code>. No admin rights needed.</span></div></div>
+    <div class="card step"><div class="num">2</div><div><h2>ចុច OK · កម្មវិធី ទទួលទំនិញ បើកឡើងវិញដោយខ្លួនឯង</h2>
+      <span class="en">Click OK. The Inbound app opens again by itself and now knows this computer has the helper.</span></div></div>
+    <div class="card step"><div class="num">3</div><div><h2>ពេលចុច បើកក្នុង Outlook លើកដំបូង Chrome សួរ៖ ធីក <b>Always allow</b> រួចចុច <b>Open</b></h2>
+      <span class="en">The first time you click Open in Outlook, Chrome asks to open the helper: tick <b>Always allow</b>, then click <b>Open</b>.</span></div></div>
+    <div class="card note">
+      ត្រូវការ Outlook (classic) លើកុំព្យូទ័រ។ ដើម្បីលុប៖ ចុចពីរដងលើ <code>%LOCALAPPDATA%\iSteel\Outlook\iSteel Outlook helper.vbs</code>។
+      <span class="en">Needs the classic Outlook desktop app. To remove it, double-click <code>%LOCALAPPDATA%\iSteel\Outlook\iSteel Outlook helper.vbs</code> and click Yes. If Windows warns about the file, click More info, then Run anyway.</span>
+    </div>
+  </main>
+</body>
+</html>

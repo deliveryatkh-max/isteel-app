@@ -136,17 +136,26 @@
   const reports = () => (B && B.reports) || [];
   const toSign = () => reports().filter(r => r.toSign);
 
-  async function refresh() {
+  let lastBoot = '';
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  async function refresh(quiet) {
+    quiet = quiet === true;
     try {
       const d = PUBLIC ? await api('publicBoot', { key: PUBLIC_KEY }) : await api('boot');
+      const json = JSON.stringify(d);
+      if (quiet && json === lastBoot) return liveReport();
+      lastBoot = json;
       B = PUBLIC ? Object.assign({ user: null, reports: [] }, d) : d;
       CATS = B.categories || [];
       useTexts(B.texts);
       if (!PUBLIC) set('ir_boot', JSON.stringify(B));
       paintTabs();
-      screen();
+      if (!quiet) screen();
+      else if (cur && /^#\/?r\//.test(location.hash)) await liveReport();
+      else LIVE.keep(screen);
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ir_boot', null); B = null; showBlocked(e); return; }
+      if (quiet) throw e;
       if (!B) $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><button class="btn mt" id="retry">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>`, $('#retry').onclick = refresh;
       else toast(e.message);
     }
@@ -167,6 +176,7 @@
   function route() {
     const h = location.hash.replace(/^#\/?/, '');
     $$('.tab[data-r]').forEach(a => a.classList.toggle('on', (h.split('/')[0] || 'home') === a.dataset.r));
+    document.body.classList.toggle('wide', h === 'sum' && !PUBLIC);   // summary is a wide dashboard on computers
     if (PUBLIC) return renderForm(null);
     if (!B) { $('#view').innerHTML = loader('កំពុងផ្ទុករបាយការណ៍', 'Loading reports'); screen = route; return; }
     if (h === 'new') return renderForm(null);
@@ -865,6 +875,15 @@
     } catch (e) { if (!saved) $('#view').innerHTML = `<div class="card"><div class="alert bad">${esc(e.message)}</div><a class="btn mt" href="#/">${t('ទៅបញ្ជី', 'Back to the list')}</a></div>`; }
   }
 
+  // Background refresh of the open report: repaints only when it changed on the server.
+  async function liveReport() {
+    if (!cur || !/^#\/?r\//.test(location.hash)) return;
+    const id = cur.id, d = await api('get', { id });
+    if (!cur || cur.id !== id || JSON.stringify(Object.assign({}, plain(cur), { _at: 0 })) === JSON.stringify(Object.assign({}, plain(d), { _at: 0 }))) return;
+    keepReport(d);
+    cur = d; LIVE.keep(paintReport);
+  }
+
   const kv = (km, en, v) => (v ? `<div class="kv"><span>${esc(t(km, en))}</span><b>${esc(v)}</b></div>` : '');
   function paintReport() {
     withMedia(cur); keepReport(cur);
@@ -1070,19 +1089,19 @@
     const injured = rs.reduce((s, r) => s + (+r.injured || 0), 0);
     $('#view').innerHTML = `<div class="head2"><h2>📊 ${t('សង្ខេប', 'Summary')}</h2><select class="in yearsel" id="yearSel">${years.map(y => `<option ${y === yr ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
       ${seesAll() ? '' : `<p class="hint">${t('បង្ហាញតែរបាយការណ៍ដែលអ្នកអាចមើលបាន', 'Shows only the reports you can see')}</p>`}
-      <div class="stats">
+      <div class="stats dash-kpis">
         <button type="button" class="stat" data-sd="all"><small>${t('ហេតុការណ៍', 'Incidents')}</small><b>${rs.length}</b></button>
         <button type="button" class="stat" data-sd="injured"><small>${t('អ្នករបួស', 'Injured')}</small><b class="bad">${injured}</b></button>
         <button type="button" class="stat" data-sd="open"><small>${t('មិនទាន់បិទ', 'Open')}</small><b class="warn">${rs.filter(r => r.status !== 'Closed').length}</b></button>
       </div>
       <div class="card"><h2>${t('តាមខែ', 'By month')}</h2><div class="months">${months.map((n, i) => `<div><i style="height:${(n / mmax) * 100}%"></i><b>${n || ''}</b><small>${esc(MN[i])}</small></div>`).join('')}</div></div>
-      <div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k, 'type')}</div>
+      <div class="dgrid"><div class="card"><h2>${t('តាមប្រភេទ', 'By type')}</h2>${bars(cnt(r => typeOfEn(r.type)), k => typeName(k) || k, 'type')}</div>
       <div class="card"><h2>${t('តាមកម្រិតហានិភ័យ', 'By risk level')}</h2>${bars(cnt(r => level(r.score)), k => (k === '–' ? t('មិនទាន់វាយតម្លៃ', 'Not rated') : t(levelKm(k), k)), 'level')}</div>
       <div class="card"><h2>${t('តាមប្រភេទរង', 'By category')}</h2>${bars(cnt(r => r.category), catName, 'category')}</div>
       <div class="card"><h2>${t('តាមមូលហេតុ', 'By main cause')}</h2>${bars(cnt(r => r.cause), k => pick(CAUSES, k), 'cause')}</div>
       <div class="card"><h2>${t('តាមក្រុមហ៊ុន', 'By company')}</h2>${bars(cnt(r => r.company), k => pick(COMPANIES, k), 'company')}</div>
       <div class="card"><h2>${t('តាមឃ្លាំង', 'By warehouse')}</h2>${bars(cnt(r => r.warehouse), null, 'warehouse')}</div>
-      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8), null, 'plate')}</div>`;
+      <div class="card"><h2>${t('ឡានដែលកើតហេតុច្រើន', 'Trucks with most incidents')}</h2>${bars(cnt(r => r.plate).filter(r => r[0] !== '–').slice(0, 8), null, 'plate')}</div></div>`;
     $('#yearSel').onchange = e => { set('ir_year', e.target.value); renderSummary(); };
     const inYr = r => +String(r.date).slice(0, 4) === yr;
     const SD = { all: [t('ហេតុការណ៍', 'Incidents'), r => true], injured: [t('អ្នករបួស', 'Injured'), r => +r.injured > 0], open: [t('មិនទាន់បិទ', 'Open'), r => r.status !== 'Closed'] };
@@ -1197,8 +1216,8 @@
   if (B) CATS = B.categories || [];
   if (!DEMO && !PUBLIC && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { if (B) paintTabs(); route(); refresh(); }
-  // Screens auto-refresh when the phone comes back to the app (not while a form is open).
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !PUBLIC && !(f && $('#view .steps'))) refresh(); });
+  // Screens refresh in the background every minute and when the phone comes back to the app (not while a form is open).
+  if (window.LIVE && !PUBLIC && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => sending || !!(f && $('#view .steps')) });
 
   // ---------------------------------------------------------------- demo (no API_URL in config.js)
   function demoApi(action, p) {

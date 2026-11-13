@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ដំឡើង STEEL · Install</title>
+  <meta name="theme-color" content="#011e41">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="STEEL">
+  <link rel="apple-touch-icon" href="../icons/app-180.png">
+  <link rel="icon" href="../icons/favicon.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <script>
+    // opened from the home-screen icon: go straight to the STEEL home menu
+    if ((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true) location.replace('../');
+  </script>
+  <style>
+    :root { --navy: #011e41; --accent: #0b5cad; --ok: #1a7f37; --bad: #b3261e; --bg: #f2f5fa; --card: #fff; --line: #dfe5ee; --muted: #5d6b7e; --text: #10233f; --hl: #ffcf33; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 "Noto Sans Khmer", "Khmer OS Battambang", system-ui, -apple-system, sans-serif; padding-bottom: 120px; }
+    header { background: var(--navy) url(../icons/banner-pattern.png) center / cover; color: #fff; padding: calc(14px + env(safe-area-inset-top)) 16px 16px; display: flex; gap: 12px; align-items: center; }
+    header img { width: 56px; height: 56px; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    header h1 { font-size: 20px; margin: 0; line-height: 1.35; }
+    header small { display: block; opacity: .8; font-size: 13px; }
+    main { max-width: 520px; margin: 0 auto; padding: 14px 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(1,30,65,.06); }
+    .en { display: block; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+    .step { display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: start; }
+    .num { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; font-size: 20px; display: grid; place-items: center; }
+    .step h2 { font-size: 18px; margin: 4px 0 2px; line-height: 1.45; }
+    .pic { grid-column: 1 / -1; margin-top: 12px; border-radius: 14px; background: #eef1f6; border: 1px solid var(--line); overflow: hidden; }
+    .warn { background: #fff4e5; border-color: #f0c37a; }
+    .warn h2 { color: #8a4b00; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 58px; border: 0; border-radius: 14px; background: var(--ok); color: #fff; font: inherit; font-size: 19px; font-weight: 700; cursor: pointer; text-decoration: none; margin-top: 12px; }
+    .btn.sec { background: var(--card); color: var(--accent); border: 2px solid var(--accent); font-size: 16px; min-height: 50px; }
+    .ok-card { text-align: center; }
+    .ok-card .big { font-size: 54px; }
+    [hidden] { display: none !important; }
+    /* drawn phone parts */
+    .safari { padding: 14px 10px 10px; }
+    .url { background: #fff; border-radius: 12px; padding: 8px 12px; text-align: center; font: 14px system-ui, sans-serif; color: #333; }
+    .bar { display: flex; justify-content: space-around; align-items: center; padding: 10px 4px 2px; color: #0a84ff; }
+    .bar span { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; font: 600 22px system-ui, sans-serif; }
+    .hl { background: var(--hl); color: #000 !important; box-shadow: 0 0 0 3px #000; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(0,0,0,.25); } }
+    .sheet { padding: 10px; }
+    .row { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 12px 14px; font: 16px system-ui, sans-serif; border-bottom: 1px solid #e6e6ea; }
+    .row:first-child { border-radius: 12px 12px 0 0; } .row:last-child { border-radius: 0 0 12px 12px; border-bottom: 0; }
+    .row.hl { border-radius: 12px; animation: none; margin: 6px 0; }
+    .top3 { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font: 16px system-ui, sans-serif; background: #f7f7f8; }
+    .top3 .add { color: #0a84ff; font-weight: 700; padding: 6px 12px; border-radius: 10px; }
+    .homescr { display: flex; gap: 18px; padding: 18px; background: linear-gradient(160deg, #3a6ea5, #011e41); }
+    .app { width: 64px; text-align: center; color: #fff; font: 12px system-ui, sans-serif; }
+    .app i { display: block; width: 60px; height: 60px; border-radius: 14px; background: rgba(255,255,255,.25); margin: 0 auto 4px; }
+    .app img { width: 60px; height: 60px; border-radius: 14px; display: block; margin: 0 auto 4px; box-shadow: 0 0 0 3px var(--hl); }
+    .copy-ok { color: var(--ok); font-weight: 700; text-align: center; margin-top: 6px; }
+    /* bouncing arrow pointing at Safari's toolbar */
+    .arrow { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; text-align: center; pointer-events: none; animation: bob 1s ease-in-out infinite; }
+    .arrow b { display: block; background: var(--navy); color: #fff; border-radius: 12px; padding: 6px 12px; font-size: 14px; white-space: nowrap; }
+    .arrow span { font-size: 44px; line-height: 1; display: block; color: var(--navy); text-shadow: 0 0 6px #fff; }
+    @keyframes bob { 50% { transform: translate(-50%, 10px); } }
+    #qr svg { width: 220px; height: 220px; display: block; margin: 8px auto; }
+    .center { text-align: center; }
+    @media (prefers-reduced-motion: reduce) { .hl, .arrow { animation: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="../icons/app-180.png" alt="STEEL">
+    <div><h1>ដំឡើងកម្មវិធី STEEL</h1><small>Install the STEEL app on your phone</small></div>
+  </header>
+  <main>
+    <!-- already installed or opened from the icon -->
+    <div class="card ok-card" id="done" hidden>
+      <div class="big">✅</div>
+      <h2>បានដំឡើងរួចហើយ</h2><span class="en">The app is installed</span>
+      <a class="btn" href="../">បើក STEEL · Open</a>
+    </div>
+
+    <!-- Android with Chrome: one tap -->
+    <section id="android" hidden>
+      <div class="card" id="androidOne" hidden>
+        <div class="step"><span class="num">1</span><div><h2>ចុចប៊ូតុងបៃតងខាងក្រោម</h2><span class="en">Tap the green button</span></div></div>
+        <button class="btn" id="installBtn">📲 ដំឡើងឥឡូវ · Install now</button>
+      </div>
+      <div class="card" id="androidSteps">
+        <div class="step"><span class="num" id="aNum">1</span><div><h2>ចុច ⋮ នៅជ្រុងខាងលើស្តាំ ក្នុង Chrome</h2><span class="en">In Chrome, tap ⋮ at the top right</span></div></div>
+        <div class="step" style="margin-top:14px"><span class="num" id="aNum2">2</span><div><h2>ចុច «Install app» ឬ «Add to Home screen»</h2><span class="en">Tap "Install app" or "Add to Home screen", then "Install"</span></div></div>
+      </div>
+    </section>
+
+    <!-- iPhone / iPad -->
+    <section id="ios" hidden>
+      <div class="card warn" id="notSafari" hidden>
+        <div class="step"><span class="num" style="background:#c25e00">!</span><div>
+          <h2>ត្រូវបើកក្នុង Safari 🧭</h2>
+          <span class="en">You must open this page in Safari</span>
+          <p style="margin:8px 0 0">បើកពី Telegram? ចុច <b>•••</b> ឬ <b>🧭</b> រួចជ្រើស <b>«Open in Safari»</b>។<span class="en">From Telegram: tap ••• or 🧭, then "Open in Safari".</span></p>
+          <p style="margin:8px 0 0">ឬ ចម្លងតំណ បើក Safari ហើយបិទភ្ជាប់ (Paste) ក្នុងប្រអប់អាសយដ្ឋាន។<span class="en">Or copy the link, open Safari and paste it in the address bar.</span></p>
+        </div></div>
+        <button class="btn sec" id="copyBtn">📋 ចម្លងតំណ · Copy link</button>
+        <div class="copy-ok" id="copied" hidden>✅ បានចម្លង · Copied</div>
+      </div>
+
+      <div class="card">
+        <div class="step"><span class="num">1</span><div>
+          <h2>ចុចប៊ូតុង Share <svg viewBox="0 0 24 24" width="22" height="22" style="vertical-align:-4px"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="#0a84ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> (ការ៉េ មានព្រួញឡើងលើ)</h2>
+          <span class="en">Tap the Share button (square with an arrow up)</span>
+          <p style="margin:6px 0 0;font-size:14.5px">iPhone ថ្មី៖ ចុច <b>•••</b> នៅខាងក្រោមស្តាំ មុនសិន រួចចុច Share។<span class="en">Newer iPhones: tap ••• at the bottom right first, then Share.</span></p></div>
+          <div class="pic safari"><div class="url">🔒 isteel-app.pages.dev</div>
+            <div class="bar"><span>‹</span><span>›</span><span class="hl"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>📖</span><span>⧉</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="step"><span class="num">2</span><div>
+          <h2>រំកិលចុះ ហើយចុច «Add to Home Screen»</h2>
+          <span class="en">Scroll down and tap "Add to Home Screen" (បន្ថែមទៅអេក្រង់ដើម)</span></div>
+          <div class="pic sheet"><div class="row">Copy <span>⧉</span></div><div class="row">Add to Reading List <span>👓</span></div>
+            <div class="row hl">Add to Home Screen <span>⊞</span></div><div class="row">Find on Page <span>🔍</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="step"><span class="num">3</span><div>
+          <h2>ចុច «Add» នៅជ្រុងខាងលើស្តាំ</h2>
+          <span class="en">Tap "Add" at the top right</span></div>
+          <div class="pic"><div class="top3"><span style="color:#0a84ff">Cancel</span><b>Add to Home Screen</b><span class="add hl">Add</span></div>
+            <div class="row" style="border-radius:0"><span style="display:flex;gap:10px;align-items:center"><img src="../icons/app-180.png" alt="" width="40" height="40" style="border-radius:9px"> STEEL</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="step"><span class="num" style="background:var(--ok)">✓</span><div>
+          <h2>រួចរាល់! ចុចរូប STEEL នៅលើអេក្រង់ទូរស័ព្ទ ដើម្បីបើក</h2>
+          <span class="en">Done! Tap the STEEL icon on your home screen to open it</span></div>
+          <div class="pic homescr"><div class="app"><i></i>Phone</div><div class="app"><i></i>Telegram</div><div class="app"><img src="../icons/app-180.png" alt="">STEEL</div></div>
+        </div>
+      </div>
+      <div class="arrow" id="arrow" hidden><b>Share ⬆️ នៅខាងក្រោមនេះ</b><span>⬇</span></div>
+    </section>
+
+    <!-- computer: show a QR code to scan with the phone -->
+    <section id="desk" hidden>
+      <div class="card center">
+        <h2>ស្កេន QR នេះ ដោយកាមេរ៉ាទូរស័ព្ទ</h2><span class="en">Scan this QR code with the phone camera, then follow the steps</span>
+        <div id="qr"></div>
+        <p style="margin:0;font-weight:700" id="link"></p>
+      </div>
+    </section>
+  </main>
+  <script src="../vendor/qrcode.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var $ = function (s) { return document.querySelector(s); };
+      var ua = navigator.userAgent;
+      var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      var android = /Android/.test(ua);
+      var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+      var link = location.origin + location.pathname;
+      if (standalone) { $('#done').hidden = false; return; }
+      if (ios) {
+        $('#ios').hidden = false;
+        // Safari only: Chrome, Firefox, Edge, Google app and in-app browsers (Facebook, Instagram, LINE, Telegram) cannot add to the home screen
+        var safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|FBAN|FBAV|Instagram|Line\/|Telegram|MicroMessenger/.test(ua);
+        if (!safari) $('#notSafari').hidden = false;
+        if (safari && /iPhone|iPod/.test(ua)) $('#arrow').hidden = false;
+        $('#copyBtn').onclick = function () {
+          var ok = function () { $('#copied').hidden = false; };
+          if (navigator.clipboard) navigator.clipboard.writeText(link).then(ok, function () { prompt('Copy', link); });
+          else prompt('Copy', link);
+        };
+        window.addEventListener('scroll', function () { if (scrollY > 900) $('#arrow').hidden = true; }, { passive: true });
+        return;
+      }
+      if (android) {
+        $('#android').hidden = false;
+        var evt = null;
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault(); evt = e;
+          $('#androidOne').hidden = false;
+          $('#androidSteps').insertAdjacentHTML('afterbegin', '<p style="margin:0 0 10px;color:#5d6b7e">ឬ · or</p>');
+        });
+        $('#installBtn').onclick = function () {
+          if (!evt) return;
+          evt.prompt();
+          evt.userChoice.then(function (c) { if (c.outcome === 'accepted') { $('#android').hidden = true; $('#done').hidden = false; } });
+          evt = null;
+        };
+        window.addEventListener('appinstalled', function () { $('#android').hidden = true; $('#done').hidden = false; });
+        return;
+      }
+      $('#desk').hidden = false;
+      $('#link').textContent = link.replace(/^https?:\/\//, '');
+      try { var q = qrcode(0, 'M'); q.addData(link); q.make(); $('#qr').innerHTML = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); } catch (e) { /* no QR */ }
+    })();
+  </script>
+</body>
+</html>

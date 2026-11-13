@@ -12,13 +12,16 @@
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="apple-touch-icon" href="../icons/app-180.png">
   <link rel="manifest" href="../manifest.webmanifest">
-  <link rel="stylesheet" href="../overtime/ot.css">
-  <link rel="stylesheet" href="ib.css?v=20261028j">
-  <link rel="stylesheet" href="../sidenav.css?v=20261028a">
+  <link rel="stylesheet" href="../overtime/ot.css?v=20261105c">
+  <link rel="stylesheet" href="ib.css?v=20261111a">
+  <link rel="stylesheet" href="../filter-bar.css?v=20261113a">
+  <link rel="stylesheet" href="../ads.css?v=20261102b">
+  <link rel="stylesheet" href="../sidenav.css?v=20261105c">
   <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
   <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
   <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
   <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
+  <script src="../view-mode.js?v=20261113c"></script>
 </head>
 <body>
   <header class="bar">
@@ -42,11 +45,19 @@
     <a href="#/log" class="tab" data-r="log"><span aria-hidden="true">📋</span><b data-km="កំណត់ត្រា" data-en="Log">កំណត់ត្រា</b></a>
     <a href="#/sum" class="tab" data-r="sum"><span aria-hidden="true">📊</span><b data-km="សង្ខេប" data-en="Summary">សង្ខេប</b></a>
     <a href="#/plan" class="tab" data-r="plan" id="planTab" hidden><span aria-hidden="true">📑</span><b data-km="ផែនការ" data-en="Plan">ផែនការ</b></a>
+    <a href="outlook-helper/" class="tab pc-only" target="_blank" rel="noopener"><span aria-hidden="true">📧</span><b data-km="ដំឡើង Outlook helper" data-en="Install Outlook helper">ដំឡើង Outlook helper</b></a>
   </nav>
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script src="config.js?v=20261028j"></script>
+  <script src="config.js?v=20261102b"></script>
   <script src="../lang.js"></script>
-  <script src="ib.js?v=20261028j"></script>
+  <script src="../live.js?v=20261113b"></script>
+  <script src="../config.js"></script>
+  <script src="../ads.js?v=20261102b" data-app="inbound"></script>
+  <script src="../table-sort.js?v=20261108a"></script>
+  <script src="../table-cols.js?v=20261113b"></script>
+  <script src="../filter-bar.js?v=20261113a"></script>
+  <script src="../menus.js?v=20261113a" data-app="inbound"></script>
+  <script src="ib.js?v=20261113c"></script>
 </body>
 </html>

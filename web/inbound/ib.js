@@ -12,10 +12,28 @@
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
   const CFG = window.IB_CONFIG || {};
   const DEMO = !CFG.API_URL;
+  // The Outlook helper installer opens the app with ?olhelper=1 (removal: 0), so this PC remembers it has the helper
+  try { const q = new URLSearchParams(location.search).get('olhelper'); if (q != null) { set('ib_olhelper', q); history.replaceState(null, '', location.pathname + location.hash); } } catch (e) { /* old browser */ }
 
   const UOMS = ['Kg', 'Ton', 'PC', 'M', 'BAG', 'ROL'];
   let PLATES = ['2A-2233', '3E-2588', '3E-4320', '3E-6115', '3A-2102', '2B-7741', '3C-1180', '2A-9054', '3F-3307', '3B-5521'];
   let CARRIERS = ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'];
+  let WAREHOUSES = [{ code: 'A1', desc: '' }, { code: 'A2', desc: '' }, { code: 'I1', desc: '' }, { code: 'I2', desc: '' }, { code: 'I3', desc: '' }];   // Warehouse List tab
+  // Warehouses (Kim, 2 Nov 2026): each team sees only its own receipts and Incoming Plan. Set per person in 👥 User Management.
+  // SITES = the warehouses this person may open; ALLS = may also see all at once. SITE = the one chosen ('' = all, null = not chosen yet).
+  let SITES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'], ALLS = true;
+  let SITE = (() => { try { const v = localStorage.getItem('ib_site'); return v === null ? null : v; } catch (e) { return null; } })();
+  const setSite = v => { SITE = v; try { localStorage.setItem('ib_site', v); } catch (e) { /* private mode */ } };
+  const siteOn = () => SITES.length > 0;
+  const fixSite = () => { if (!siteOn()) { SITE = ''; return; } if (SITES.length === 1 && !ALLS) setSite(SITES[0]); else if (SITE !== null && SITE !== '' && SITES.indexOf(SITE) < 0) SITE = null; else if (SITE === '' && !ALLS) SITE = null; };
+  const vis = r => !SITE || !r.site || r.site === SITE;
+  const VD = () => DATA.filter(vis);
+  const VPOS = () => POS.filter(po => PLAN.some(x => x.po === po && vis(x)));
+  function siteBar() {
+    if (!siteOn()) return '';
+    const many = SITES.length > 1 || ALLS;
+    return `<div class="whbar"><span class="whi">🏭</span><span class="wht"><small>${t('ឃ្លាំង', 'Warehouse')}</small><b>${SITE ? esc(SITE) : '🌐 ' + t('ទាំងអស់', 'All warehouses')}</b></span>${many ? `<a class="whsw" href="#/site">⇄ ${t('ប្តូរ', 'Change')}</a>` : ''}</div>`;
+  }
   let LISTS = [{ name: 'Warehouse', count: 3 }, { name: 'Procurement', count: 2 }, { name: 'Finance', count: 1 }];   // email lists (Email Lists tab)
 
   // ------------------------------------------------------------------ time helpers
@@ -46,7 +64,7 @@
 
   // ------------------------------------------------------------------ incoming plan (Kim's "Incoming Packing List Template")
   // One row per PO line: the real app reads these from the Incoming Plan tab of the sheet.
-  const PL = (po, inbound, ref, eta, supplier, lines) => lines.map(l => ({ po, inbound, ref, eta, supplier, material: l[0], desc: l[1], plant: 'KMH1', sloc: l[4] || '1020', kg: l[2], pcs: l[3] }));
+  const PL = (po, inbound, ref, eta, supplier, lines, site) => lines.map(l => ({ po, inbound, ref, eta, supplier, material: l[0], desc: l[1], plant: 'KMH1', sloc: l[4] || '1020', kg: l[2], pcs: l[3], site: site || '' }));
   let PLAN = [].concat(
     PL('PO5100012725', 'Test IN 1800048956', '1072003238-Lot1', '2026-10-18', 'Regency', [
       ['1100000230', 'INTANU G300AZ30 BT 1200x0.260', 32520, 7], ['1100000231', 'INTANU G300AZ30 BR 1200x0.220', 23550, 5],
@@ -57,15 +75,17 @@
       ['1100000780', 'INTANU G300AZ30 MK 1200x0.310', 53030, 12], ['1100000781', 'INTANU G300AZ30 MK 1200x0.360', 22830, 5],
       ['1100001392', 'INTANU G300AZ30 SW 1065x0.220', 20870, 5], ['1100001393', 'INTANU G300AZ30 SW 1110x0.220', 53360, 12],
       ['1100000244', 'INTANU G300AZ30 YL 1200x0.220', 50730, 11], ['1100000245', 'INTANU G300AZ30 YL 1200x0.260', 174450, 39],
-      ['1100000246', 'INTANU G300AZ30 YL 1200x0.310', 90890, 20], ['1100000247', 'INTANU G300AZ30 YL 1200x0.360', 42170, 10]]),
+      ['1100000246', 'INTANU G300AZ30 YL 1200x0.310', 90890, 20], ['1100000247', 'INTANU G300AZ30 YL 1200x0.360', 42170, 10]], 'WH BDM'),
     PL('PO5100012740', 'IN 1800049012', '1072003255-Lot2', '2026-10-24', 'Sample Supplier A', [
-      ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]]),
+      ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]], 'WH IB'),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
-      ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]]));
+      ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]], 'WH METAL'));
+  PLAN.forEach(x => { x.po = npo(x.po); });
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
-  function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
+  function setPlan(p) { p.forEach(x => { x.po = npo(x.po); }); PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
-  const showEta = s => showDate(s);
+  const showEta = s => { const e = etaOf(s), m = String(e || '').match(/^(\d{4})-(\d\d)-(\d\d)$/);   // dd-mmm-yyyy like Kim's sheet
+    return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : (e || ''); };
 
   // damage types (Kim, 28 Oct 2026: Dent, Rust, ... "suggest more")
   const DMG = [
@@ -81,7 +101,13 @@
     ['other', '❓', 'ផ្សេងៗ', 'Other'],
   ];
   const dmgName = k => { const d = DMG.find(x => x[0] === k); return d ? d[1] + ' ' + t(d[2], d[3]) : (k || ''); };
-  const MAX_DMG_PH = 6;
+  // unit of the damaged qty (Kim, 31 Oct 2026: "pcs, t, bundle, m, etc.")
+  const DMG_UOM = ['Kg', 'PCS', 't', 'Bundle', 'm', 'Coil', 'Roll', 'Sheet', 'Box'];
+  const dmgUoms = () => { const s = {}; DATA.forEach(r => (r.items || []).forEach(i => { if (i.dmgUom && !DMG_UOM.includes(i.dmgUom)) s[i.dmgUom] = 1; })); return DMG_UOM.concat(Object.keys(s).sort()); };
+  const dmgEn = k => { const d = DMG.find(x => x[0] === k); return d ? d[3] : (k || ''); };
+  // damage types typed in by users (Kim, 31 Oct 2026: "allow user to add new type of damage")
+  const dmgCustom = () => { const s = {}; DATA.forEach(r => (r.items || []).forEach(i => { if (i.dmgType && !DMG.some(d => d[0] === i.dmgType)) s[i.dmgType] = 1; })); return Object.keys(s).sort(); };
+  const MAX_DMG_PH = 10;
 
   // ------------------------------------------------------------------ data (demo)
   let DATA = [];
@@ -114,29 +140,42 @@
       const p0 = PLAN[x[3][0][0]];
       out.push(Object.assign(header(p0), {
         id: 'IB' + ymd(d).slice(2).replace(/-/g, '') + '-' + pad(i + 1), truck: PLATES[i % PLATES.length], dn3pl: 'DN-' + (26100 + i * 7),
-        items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
+        items: x[3].map(it => Object.assign(item(PLAN[it[0]]), { arrQty: it[1], grQty: end ? it[1] + (it[2] || 0) : '', dmgQty: end ? it[3] || 0 : '', dmgType: it[4] || '', dmgUom: it[3] ? 'Kg' : '', dmgPh: it[3] ? ['sample', 'sample'] : [] })),
         date: ymd(d), start, end, manpower: x[4], owner: end ? x[5] : '', carrier: x[6],
-        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
+        remark: i === 10 ? 'រង់ចាំស៊ីរ៉ង់ / waited for crane' : '', ph: { front: 'sample', load: 'sample', doc: 'sample' }, warehouse: ['A1', 'A2', 'I1'][i % 3], site: p0.site || '', by: i % 3 ? 'Sokha (Storekeeper)' : 'Dara (Checker)',
       }));
     });
     return out;
   }
   // the greyed fields copied from the plan
   function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
-  function item(p) { return { material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgPh: [] }; }
+  // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
+  function npo(v) { return String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, ''); }   // as in Kim's Excel, no "PO" (13 Nov 2026)
+  const posOf = r => (r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/)).map(npo).filter(Boolean);
+  const itemPo = (i, r) => npo(i.po) || posOf(r)[0] || '';
+  const multi = r => posOf(r).length > 1;
+  function headerOf(pos) {
+    const ls = pos.map(po => PLAN.find(x => x.po === po)).filter(Boolean), j = k => Array.from(new Set(ls.map(l => l[k]).filter(Boolean))).join(', ');
+    return { po: pos.join(', '), pos: pos.slice(), inbound: j('inbound'), ref: j('ref'), supplier: j('supplier'), eta: ls.length ? ls[0].eta : '', uom: 'Kg' };
+  }
+  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
-  const recvd = (po, mat, skip) => DATA.filter(r => r.po === po && r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
+  const recvd = (po, mat, skip) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
   // a PO is pending while any of its lines still has kg to receive
   const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
-  const pendingPOs = skip => POS.filter(po => pendingLines(po, skip).length);
+  const pendingPOs = skip => VPOS().filter(po => pendingLines(po, skip).length);
   // Live: everything comes from the Apps Script in one "boot" call and is kept on the phone, so the app opens at once.
   let USER = null;
+  window.TC_ADMIN = () => DEMO || !!(USER && USER.admin);   // shared ⚙️ Columns tool (table-cols.js)
   function applyBoot(d) {
     setPlan(d.plan || []); DATA = d.receipts || []; USER = d.user || null;
     if (d.plates && d.plates.length) PLATES = d.plates;
     if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
     LISTS = d.lists || [];
+    WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Entrance box is then hidden
+    SITES = d.sites || []; ALLS = !!d.allSites;   // an older Apps Script sends none: no warehouse split
+    fixSite();
   }
   function load() {
     if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
@@ -146,7 +185,7 @@
   }
   function save() {
     if (DEMO) set('ib_demo_v5', JSON.stringify({ day: today(), rows: DATA }));
-    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER, lists: LISTS }));
+    else set('ib_boot', JSON.stringify({ plan: PLAN, receipts: DATA, plates: PLATES, carriers: CARRIERS, user: USER, lists: LISTS, warehouses: WAREHOUSES, sites: SITES, allSites: ALLS }));
   }
   const canEdit = r => DEMO || (USER && (USER.admin || USER.reviewer || r.byEmail === USER.email));
 
@@ -171,13 +210,39 @@
     return data.data;
   }
   const formOpen = () => /^#\/(new|edit\/|plan-)/.test(location.hash);
-  async function refresh() {
+  let lastBoot = '';
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  // small pill above the tabs: Updating… / ✓ time of the last good update / ⚠️ not updated (tap to retry)
+  let syncAt = +(get('ib_boot_at') || 0), syncBusy = false, syncFrom = 0;
+  function paintSync(err) {
     if (DEMO) return;
+    let el = document.getElementById('sync');
+    if (!el) { el = document.createElement('button'); el.id = 'sync'; el.type = 'button'; el.onclick = () => refresh(); document.body.appendChild(el); }
+    const hm = syncAt ? new Date(syncAt).toTimeString().slice(0, 5) : '–', old = !syncAt || Date.now() - syncAt > 3 * 60000;
+    const slow = syncBusy && Date.now() - syncFrom > 15000;   // still waiting: show it, the old data stays on screen meanwhile
+    el.className = 'sync' + (slow ? ' busy bad' : syncBusy ? ' busy' : err || old ? ' bad' : '');
+    el.textContent = syncBusy ? '🔄 ' + t('កំពុងធ្វើបច្ចុប្បន្នភាព…', 'Updating…') + (slow ? ' ' + hm : '')
+      : err || old ? '⚠️ ' + t('ទិន្នន័យម៉ោង ', 'Data from ') + hm + (typeof err === 'string' ? ' · ' + err : '') + ' · ' + t('ចុចដើម្បីធ្វើថ្មី', 'tap to refresh')
+      : '✓ ' + hm;
+  }
+  setInterval(() => paintSync(), 15000);
+  async function refresh(quiet) {
+    if (DEMO) return;
+    if (syncBusy && Date.now() - syncFrom < 95000) return;   // an answer lost while the phone slept no longer blocks refresh
+    syncBusy = true; syncFrom = Date.now(); paintSync();
     try {
-      applyBoot(await api('boot')); save();
-      if (!formOpen()) screen(); else paintTabs('');
+      const d = await api('boot'), json = JSON.stringify(d);
+      syncAt = Date.now(); set('ib_boot_at', String(syncAt)); syncBusy = false; paintSync();
+      if (quiet === true && json === lastBoot) return;
+      lastBoot = json;
+      applyBoot(d); save();
+      if (formOpen()) paintTabs('');
+      else if (quiet === true && window.LIVE) LIVE.keep(screen);
+      else screen();
     } catch (e) {
+      syncBusy = false; paintSync(e.name === 'AbortError' || /abort/i.test(e.message) ? t('គ្មានចម្លើយ', 'no answer') : e.message || true);
       if (e.code === 'AUTH' || e.code === 'NOACCESS') { set('ib_boot', null); showBlocked(e); return; }
+      if (quiet === true) throw e;
       toast(e.message);
     }
   }
@@ -196,18 +261,40 @@
     try {
       const got = await api('photos', { ids: ids.slice(0, 20) });
       ids.forEach(id => { THUMBS[id] = got[id] || ''; });
-      $$('[data-fid]').forEach(el => { const u = THUMBS[el.dataset.fid]; if (u) el.outerHTML = `<img src="${u}" alt="">`; });
+      $$('[data-fid]').forEach(el => { const u = THUMBS[el.dataset.fid]; if (u) el.outerHTML = `<img src="${u}" alt="" data-zoom data-full="${esc(el.dataset.fid)}">`; });
     } catch (e) { /* offline: keep the placeholders */ }
     thumbBusy = false;
     if ($$('[data-fid]').some(el => !(el.dataset.fid in THUMBS))) loadThumbs();
   }
+  // tap a photo to see it big (Kim, 2 Nov 2026); full size comes from Drive, the thumbnail shows meanwhile
+  const FULL = {};
+  function zoom(img) {
+    const bg = document.createElement('div');
+    bg.className = 'zoom-bg';
+    bg.innerHTML = `<img src="${img.src}" alt=""><button type="button" class="icon-btn zoom-x" aria-label="${esc(t('បិទ', 'Close'))}">✕</button>`;
+    const big = bg.querySelector('img'), id = img.dataset.full;
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    const close = () => { document.removeEventListener('keydown', onKey); bg.remove(); };
+    bg.onclick = close;
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(bg);
+    if (id && !DEMO) {
+      if (FULL[id]) big.src = FULL[id];
+      else { bg.classList.add('loading'); api('photo', { id }).then(d => { if (d && d.url) { FULL[id] = d.url; big.src = d.url; } }).catch(() => {}).finally(() => bg.classList.remove('loading')); }
+    }
+  }
+  document.addEventListener('click', e => {
+    const img = e.target.closest && e.target.closest('img[data-zoom]');
+    if (!img || img.closest('label')) return;   // photo boxes in the form still open the camera
+    e.preventDefault(); e.stopPropagation(); zoom(img);
+  }, true);
   const byId = id => DATA.find(r => r.id === id);
   const isLive = r => r.start && !r.end;
 
   // ------------------------------------------------------------------ chrome
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
-  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = DATA.filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
+  function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = VD().filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
   const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
@@ -225,7 +312,7 @@
     return `<a class="item${isLive(r) ? ' live' : ''}" href="#/r/${r.id}">
       <div class="top"><span class="id">🚛 ${esc(r.truck)}</span>${isLive(r) ? `<span class="timer${m > 60 ? ' slow' : ''}" data-timer="${r.id}">${clock(m)}</span>` : `<span>${badges(r)}</span>`}</div>
       <div class="ttl">${esc(its[0] ? its[0].desc : '')}${its.length > 1 ? ` <small class="il">+${its.length - 1} ${t('មុខទៀត', 'more')}</small>` : ''}</div>
-      <div class="meta">${esc(r.po)} · ${esc(r.supplier)}</div>
+      <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
     </a>`;
@@ -234,54 +321,127 @@
   // ------------------------------------------------------------------ Today
   function renderHome() {
     paintTabs('home');
-    const td = DATA.filter(r => r.date === today());
-    const live = td.filter(isLive), done = td.filter(r => r.end);
+    const td = VD().filter(r => r.date === today());
+    const live = VD().filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
-    view(`
+    view(siteBar() + tomorrowBar() + `
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
-        <div class="stat"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></div>
-        <div class="stat"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></div>
-        <div class="stat"><small>${t('បានទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></div>
-        <div class="stat"><small>${t('រយៈពេលមធ្យម', 'Avg time')}</small><b>${avg == null ? '–' : fmt(avg)}<em>${t('នាទី', 'min')}</em></b></div>
+        <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
+        <a class="stat go" href="#/log" data-go="live"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></a>
+        <a class="stat go" href="#/log" data-go="todaydone"><small>${t('បានទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
+        <a class="stat go" href="#/log" data-go="todaydone"><small>${t('រយៈពេលមធ្យម', 'Avg time')}</small><b>${avg == null ? '–' : fmt(avg)}<em>${t('នាទី', 'min')}</em></b></a>
       </div>
       <div class="head2"><h2>⏱ ${t('កំពុងទម្លាក់ឥឡូវនេះ', 'Unloading now')}</h2></div>
       <div class="list">${live.length ? live.map(itemHTML).join('') : `<div class="empty">${t('គ្មានឡានកំពុងទម្លាក់', 'No truck unloading')}</div>`}</div>
       <div class="head2"><h2>✅ ${t('រួចរាល់ថ្ងៃនេះ', 'Done today')}</h2><a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')} ›</a></div>
       <div class="list">${done.length ? done.slice().reverse().map(itemHTML).join('') : `<div class="empty">${t('មិនទាន់មាន', 'None yet')}</div>`}</div>`);
     $('#newBtn').onclick = () => { location.hash = '#/new'; };
+    bindGo();
   }
 
   // ------------------------------------------------------------------ Log
-  let LQ = '', LF = 'all';
+  let LQ = '', LF = 'all', LFROM = '', LTO = '';   // Log date range (Kim, 6 Nov 2026)
   function renderLog() {
     paintTabs('log');
     const q = LQ.toLowerCase();
-    const F = { all: () => true, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess };
-    const rows = DATA.filter(F[LF]).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
+    const F = { all: () => true, today: r => r.date === today(), todaydone: r => r.date === today() && !!r.end, live: isLive, done: r => !!r.end, dmg: isDamaged, less: isLess,
+      period: r => !!r.end && r.date >= sumFrom() };
+    const rows = VD().filter(F[LF]).filter(r => (!LFROM || r.date >= LFROM) && (!LTO || r.date <= LTO)).filter(r => !q || [r.po, r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.owner, r.remark].concat((r.items || []).map(i => i.material + ' ' + i.desc)).join(' ').toLowerCase().includes(q))
       .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
     let last = '', html = '';
     rows.forEach(r => { if (r.date !== last) { last = r.date; html += `<div class="daylabel">${r.date === today() ? t('ថ្ងៃនេះ', 'Today') + ' · ' : ''}${showDate(r.date)}</div>`; } html += itemHTML(r); });
-    const chip = (k, km, en) => `<button class="chip${LF === k ? ' on' : ''}" data-f="${k}">${t(km, en)}</button>`;
-    view(`
-      <input class="in search-in" id="q" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'))}" value="${esc(LQ)}">
-      <div class="filters">${chip('all', 'ទាំងអស់', 'All')}${chip('live', '⏱ កំពុងទម្លាក់', '⏱ Unloading')}${chip('done', '✅ រួចរាល់', '✅ Done')}${chip('dmg', '⚠️ ខូចខាត', '⚠️ Damaged')}${chip('less', '⬇ ទទួលខ្វះ', '⬇ Received less')}</div>
+    // Option D filter header, same as the Truck Scale Report (Kim, 13 Nov 2026)
+    const chips = [['all', t('ទាំងអស់', 'All')], ['today', t('ថ្ងៃនេះ', 'Today')]].concat(LF === 'todaydone' ? [['todaydone', t('✅ ថ្ងៃនេះ', '✅ Today')]] : [], LF === 'period' ? [['period', '📊 ' + sumLabel()]] : [],
+      [['live', t('⏱ កំពុងទម្លាក់', '⏱ Unloading')], ['done', t('✅ រួចរាល់', '✅ Done')], ['dmg', t('⚠️ ខូចខាត', '⚠️ Damaged')], ['less', t('⬇ ទទួលខ្វះ', '⬇ Received less')]]);
+    view(`<div class="fb-wrap">${FB.head('log', `📋 ${t('កំណត់ត្រាទទួលទំនិញ', 'Receiving log')}`, `<button class="fb-btn" id="xls" type="button">${FB.xl} Excel</button>`, () => { LQ = ''; LF = 'all'; LFROM = LTO = ''; renderLog(); })}
+      ${FB.panel('log', FB.range('lFrom', 'lTo', LFROM, LTO) + FB.show('lGo') + FB.seg(chips, LF, 'f', true) + FB.search('q', t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'), LQ))}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
-      <button class="btn" id="xls">⬇️ ${t('ទាញយក Excel', 'Download Excel')}</button>`);
+`);
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
-    $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : exportCsv(rows));
+    $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
+    $('#lTo').onchange = e => { LTO = e.target.value; if (LFROM && LTO < LFROM) LFROM = LTO; renderLog(); };
+    $('#lGo').onclick = () => { LFROM = $('#lFrom').value; LTO = $('#lTo').value; if (LFROM && LTO && LFROM > LTO) { const x = LFROM; LFROM = LTO; LTO = x; } renderLog(); };
+    // Download Excel = Kim's summary report template filled for the dates shown (Kim, 6 Nov 2026); old Apps Script: the CSV log
+    $('#xls').onclick = () => (DEMO ? toast(t('សាកល្បង៖ កម្មវិធីពិតនឹងទាញយក Excel', 'Demo: the real app downloads Excel')) : sumReport(rows.filter(r => r.end), 'xlsx', $('#xls'), () => exportCsv(rows)));
+  }
+  // Summary report for the selected dates (Kim, 6 Nov 2026), in the style of the IB Goods Receipt Report:
+  // navy headings, ISI STEEL logo, bilingual section titles. Opens a print page; "Save as PDF" makes the file.
+  // Made by the Apps Script from Kim's Excel template in the report template folder (Kim, 6 Nov 2026).
+  // Demo, or an Apps Script without the 'summary' action: the built-in print page below.
+  async function sumReport(rows, fmt, b, old) {
+    if (!rows.length) { toast(t('គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ', 'No finished trucks in these dates')); return; }
+    if (DEMO) { rangeReport(rows); return; }
+    busy(b, true, t('កំពុងធ្វើរបាយការណ៍… (10–30 វិនាទី)', 'Making the report… (10–30 s)'));
+    try {
+      const x = await api('summary', { ids: rows.map(r => r.id), from: LFROM, to: LTO, site: SITE || '', fmt });
+      const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: x.mime || (fmt === 'pdf' ? 'application/pdf' : 'application/octet-stream') }));
+      const a = document.createElement('a'); a.href = url; a.download = x.name; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      if (/Unknown action/i.test(e.message || '')) { toast(t('Apps Script ចាស់៖ ទាញយក CSV ជំនួស', 'Old Apps Script: downloading the CSV instead')); (old || (() => rangeReport(rows)))(); }
+      else toast('⚠️ ' + oldScript(e));
+    }
+    busy(b, false);
+  }
+  function rangeReport(rows) {
+    if (!rows.length) { toast(t('គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ', 'No finished trucks in these dates')); return; }
+    rows = rows.slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+    const two = (km, en) => `${km} · ${en}`, v = x => (x === '' || x == null ? '-' : esc(x));
+    const ds = rows.map(r => r.date).sort(), from = LFROM || ds[0], to = LTO || ds[ds.length - 1];
+    const tn = rows.reduce((s, r) => s + tons(r), 0), arr = rows.reduce((s, r) => s + tot(r, 'arrQty'), 0) / 1000, po = rows.reduce((s, r) => s + tot(r, 'poQty'), 0) / 1000;
+    const dmgR = rows.filter(isDamaged), lessR = rows.filter(isLess), isi = rows.filter(r => r.owner === 'ISI').length;
+    const short = lessR.reduce((s, r) => s + (r.items || []).filter(isLessItem).reduce((a, i) => a + (+i.arrQty - +i.grQty), 0), 0) / 1000;
+    const avgM = rows.reduce((s, r) => s + spentMin(r), 0) / rows.length;
+    const tr = rows.filter(r => prod(r) != null), manH = tr.reduce((s, r) => s + spentMin(r) / 60 * r.manpower, 0);
+    const avgP = manH ? tr.reduce((s, r) => s + tons(r), 0) / manH : null;
+    const sup = {}; rows.forEach(r => { const k = r.supplier || '-'; const o = sup[k] || (sup[k] = { n: 0, t: 0, d: 0 }); o.n++; o.t += tons(r); if (isDamaged(r)) o.d++; });
+    const kv = q => `<table class="kv">${q.map(x => `<tr><th>${x[0]}</th><td>${x[1]}</td><th>${x[2]}</th><td>${x[3]}</td></tr>`).join('')}</table>`;
+    const dmgItems = [].concat.apply([], dmgR.map(r => (r.items || []).filter(i => +i.dmgQty > 0).map(i => ({ r, i }))));
+    const logo = 'https://isteel-app.pages.dev/icons/isi-steel-logo.png', trk = n => n + (n === 1 ? ' truck' : ' trucks');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Goods Receipt Summary ${showDate(from)} - ${showDate(to)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;700&display=swap" rel="stylesheet">
+<style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:11px/1.45 Arial,'Noto Sans Khmer',sans-serif;color:#011e41;margin:0;padding:16px}
+.head{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #011e41;padding-bottom:8px;margin-bottom:10px}.head b{font-size:16px}.head img{height:46px}
+h4{background:#011e41;color:#fff;padding:4px 8px;margin:14px 0 6px;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #b9c3cf;padding:3px 6px;text-align:left;vertical-align:top}
+.kv th{background:#d4e1f5;width:20%}.kv td{width:30%}.lst th{background:#d4e1f5;font-size:10px}.lst td{font-size:10px}.n{text-align:right}.tot td{font-weight:bold;background:#f2f5f9}
+.bad{color:#b3261e;font-weight:bold}.foot{margin-top:14px;color:#6b7a8c;font-size:9px;text-align:center}.noprint{text-align:right;margin-bottom:8px}.noprint button{font:inherit;font-size:13px;padding:6px 14px;background:#011e41;color:#fff;border:0;border-radius:6px;cursor:pointer}
+@media print{.noprint{display:none}body{padding:0}}</style></head><body>
+<div class="noprint"><button onclick="print()">🖨 Print / Save as PDF</button></div>
+<div class="head"><div><b>ISI STEEL · GOODS RECEIPT SUMMARY REPORT</b><br>របាយការណ៍សង្ខេបការទទួលទំនិញ<br>${showDate(from)} – ${showDate(to)}${SITE ? ' · ' + esc(SITE) : ''}</div><img src="${logo}" alt="ISI STEEL"></div>
+<h4>A. ${two('សង្ខេប', 'SUMMARY')}</h4>${kv([
+      [two('ឡានទទួលរួច', 'Trucks received'), rows.length, two('ឡាន ISI / 3PL', 'ISI / 3PL trucks'), isi + ' / ' + (rows.length - isi)],
+      [two('បរិមាណ PO', 'PO qty'), fmt(po, 1) + ' t', two('បរិមាណមកដល់', 'Arrival qty'), fmt(arr, 1) + ' t'],
+      [two('បរិមាណទទួល', 'Received (GR)'), fmt(tn, 1) + ' t', two('ទទួលខ្វះ', 'Received less'), lessR.length ? trk(lessR.length) + ' · ' + fmt(short, 1) + ' t' : 'None'],
+      [two('ខូចខាត', 'Damaged'), dmgR.length ? trk(dmgR.length) : 'None', two('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck'), fmt(avgM) + ' min'],
+      [two('ផលិតភាពមធ្យម', 'Avg productivity'), avgP == null ? '-' : fmt(avgP, 2) + ' t/person/h', two('អ្នកផ្គត់ផ្គង់', 'Suppliers'), Object.keys(sup).length]])}
+<h4>B. ${two('បញ្ជីឡានទទួល', 'RECEIPTS')} (${rows.length})</h4>
+<table class="lst"><tr><th>#</th><th>Receipt No.</th><th>Date</th><th>PO</th><th>Supplier</th><th>Truck</th><th>Owner</th><th class="n">Arrival (t)</th><th class="n">GR (t)</th><th class="n">Damaged</th><th class="n">Min</th><th>Remark</th></tr>
+${rows.map((r, n) => `<tr><td>${n + 1}</td><td>${esc(r.id)}</td><td>${showDate(r.date)}</td><td>${v(r.po)}</td><td>${v(r.supplier)}</td><td>${v(r.truck)}</td><td>${r.owner === 'ISI' ? 'ISI' : esc(r.carrier || r.owner || '-')}</td><td class="n">${fmt(tot(r, 'arrQty') / 1000, 2)}</td><td class="n">${fmt(tons(r), 2)}${isLess(r) ? ' ⬇' : ''}</td><td class="n${isDamaged(r) ? ' bad' : ''}">${isDamaged(r) ? fmt(tot(r, 'dmgQty')) + ' ' + esc(r.uom || '') : '-'}</td><td class="n">${spentMin(r)}</td><td>${v(r.remark)}</td></tr>`).join('')}
+<tr class="tot"><td></td><td colspan="6">${two('សរុប', 'Total')}</td><td class="n">${fmt(arr, 2)}</td><td class="n">${fmt(tn, 2)}</td><td class="n">${dmgR.length || '-'}</td><td class="n">${fmt(avgM)}</td><td></td></tr></table>
+<h4>C. ${two('តាមអ្នកផ្គត់ផ្គង់', 'BY SUPPLIER')}</h4>
+<table class="lst"><tr><th>Supplier</th><th class="n">Trucks</th><th class="n">GR (t)</th><th class="n">Damaged trucks</th></tr>
+${Object.keys(sup).sort((a, b) => sup[b].t - sup[a].t).map(k => `<tr><td>${esc(k)}</td><td class="n">${sup[k].n}</td><td class="n">${fmt(sup[k].t, 2)}</td><td class="n">${sup[k].d || '-'}</td></tr>`).join('')}</table>
+${dmgItems.length ? `<h4>D. ${two('ទំនិញខូចខាត', 'DAMAGED ITEMS')}</h4><table class="lst"><tr><th>Receipt No.</th><th>Date</th><th>Material</th><th>Description</th><th class="n">Damaged</th><th>Type</th></tr>
+${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><td>${v(x.i.material)}</td><td>${v(x.i.desc)}</td><td class="n">${fmt(x.i.dmgQty)} ${esc(x.i.dmgUom || x.r.uom || '')}</td><td>${v(dmgEn(x.i.dmgType))}</td></tr>`).join('')}</table>` : ''}
+<div class="foot">Generated ${showDate(today())} ${new Date().toTimeString().slice(0, 5)}${USER && USER.name ? ' by ' + esc(USER.name) : ''} · This is a computer-generated document. No signature is required.</div>
+<script>window.onload=function(){setTimeout(function(){print()},600)}<\/script></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast(t('សូមអនុញ្ញាត pop-up ដើម្បីបើករបាយការណ៍', 'Allow pop-ups to open the report')); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   }
   // one row per item, in the order of Kim's GOODS RECEIPT LOG
   function exportCsv(rows) {
-    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Remark'];
+    const H = ['PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description', 'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage UoM', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time', 'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', 'Entrance', 'Remark', 'Warehouse'];
     const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [H.map(q).join(',')];
     rows.forEach(r => (r.items || []).forEach(i => lines.push([
-      r.po, r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG.find(d => d[0] === i.dmgType)[3] : '', isLessItem(i) ? 'Yes' : '', r.uom,
+      itemPo(i, r), i.inbound || r.inbound, r.ref, r.supplier, showDate(r.eta), r.dn3pl, i.material, i.desc, r.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, +i.dmgQty > 0 ? i.dmgUom || r.uom : '', dmgEn(i.dmgType), isLessItem(i) ? 'Yes' : '', r.uom,
       showDate(r.date), r.start, r.end, r.end ? spentMin(r) : '', prod(r) == null ? '' : fmt(prod(r), 2), r.manpower,
-      r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.remark,
+      r.owner === 'ISI' ? 'ISI Truck' : r.owner ? '3PL Truck' + (r.carrier ? ' (' + r.carrier + ')' : '') : '', r.warehouse || '', r.remark,
     ].map(q).join(','))));
     try {
       const a = document.createElement('a');
@@ -299,13 +459,20 @@
     ['load', '📦', 'រូបថតទំនិញពេញឡាន', 'Full load on the truck'],
     ['doc', '📄', 'រូបថតឯកសារ (Packing List)', 'Shipping document (Packing List)'],
   ];
-  function blank() { return { id: '', po: '', inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', ph: {} }; }
+  function blank() { return { id: '', po: '', pos: [], inbound: '', ref: '', supplier: '', eta: '', dn3pl: '', truck: '', items: [], uom: 'Kg', date: today(), start: '', end: '', manpower: '', owner: '', carrier: '', remark: '', warehouse: '', site: SITE || '', ph: {} }; }
   const pickBtn = (id, v, cls, isNew) => `<button type="button" class="picker${cls || ''}" id="${id}"><span class="${v ? '' : 'pph'}">${esc(v || t('— ជ្រើសរើស —', '— Select —'))}${v && isNew ? ` <small class="new-tag">${t('ថ្មី', 'New')}</small>` : ''}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`;
+  // entrances of one warehouse (Warehouse List tab: Warehouse | Entrance | Description); old tabs have no warehouse = all
+  const ents = site => WAREHOUSES.filter(w => !w.site || !site || w.site === site);
+  const whName = c => { const w = WAREHOUSES.find(x => x.code === c); return c ? c + (w && w.desc ? ' · ' + w.desc : '') : ''; };
+  // voice note on the remark (Kim, 30 Oct 2026: kept for Khmer transcription later). F.voice = new recording (data URL) or the saved file id.
+  const voiceHTML = r => r.voice
+    ? `<div class="vrow"><button type="button" class="btn sm" id="vPlay">▶️ ${t('ស្តាប់សំឡេង', 'Play voice note')}</button><button type="button" class="btn sm ghost" id="vDel">🗑 ${t('លុប', 'Delete')}</button></div><audio id="vAudio" controls hidden></audio>`
+    : `<button type="button" class="btn sm" id="vRec">🎤 ${t('ថតសំឡេង', 'Record voice')}</button> <small class="il" id="vTime"></small>`;
   const grey = (lbl, v) => `<div class="field"><label class="f">${lbl}</label><input class="in ro" value="${esc(v)}" readonly tabindex="-1" placeholder="—"></div>`;
   const phImg = (v, ic) => !v ? `<span class="sam">${ic}<small>${t('ថត', 'Take')}</small></span>`
-    : /^data:/.test(v) ? `<img src="${v}" alt="">`
+    : /^data:/.test(v) ? `<img src="${v}" alt="" data-zoom>`
     : v === 'sample' ? `<span class="sam">${ic}<small>${t('គំរូ', 'sample')}</small></span>`
-    : THUMBS[v] ? `<img src="${THUMBS[v]}" alt="">` : `<span class="sam" data-fid="${esc(v)}">${ic}<small>⏳</small></span>`;
+    : THUMBS[v] ? `<img src="${THUMBS[v]}" alt="" data-zoom data-full="${esc(v)}">` : `<span class="sam" data-fid="${esc(v)}">${ic}<small>⏳</small></span>`;
   function phTile(k, ic, km, en) {
     const v = F.ph && F.ph[k];
     return `<label class="shot${v ? ' has' : ''}"><input type="file" accept="image/*" capture="environment" data-ph="${k}" hidden><div class="ph">${phImg(v, v ? ic : '📷')}</div><small>${ic} ${t(km, en)} <span class="req">*</span></small></label>`;
@@ -313,14 +480,20 @@
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
-    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="${k === 'grQty' ? esc(i.arrQty) : k === 'dmgQty' ? '0' : ''}">`
+    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0">`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
+    const mp = multi(r); let lastPo = null;
     const rows = r.items.map((i, n) => {
       const less = isLessItem(i), dm = +i.dmgQty > 0;
+      let head = '';
+      if (mp && itemPo(i, r) !== lastPo) {
+        lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
+        head = `<tr class="porow"><td colspan="5"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
+      }
       let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c1">${cell(i, n, 'poQty', false)}</td>
-        <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr')}</td>
+        <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
         <td class="n c4">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
         <td class="u c5"><span class="qro">${esc(r.uom)}</span></td></tr>`;
@@ -330,11 +503,13 @@
           <div class="dmgbox">
             <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
             ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
+            <label class="f mt">📏 ${t('ឯកតាខូចខាត', 'Damage UoM')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
+            ${mode === 'fin' ? pickBtn('du' + n, i.dmgUom || '') : `<b>${esc(fmt(i.dmgQty) + ' ' + (i.dmgUom || r.uom))}</b>`}
             <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
-            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" capture="environment" data-dph="${n}" hidden>📷</label>` : ''}</div>
+            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
           </div></td></tr>`;
       }
-      return out;
+      return head + out;
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl">
@@ -343,27 +518,31 @@
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
+  const siteLocked = r => !!(r.site && (r.id ? !(USER && (USER.admin || USER.reviewer)) && !DEMO : SITE));
   function renderForm(id) {
     paintTabs('');
-    if (!F || F.id !== (id || '')) F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+    if (!F || F.id !== (id || '')) {
+      F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
+      // Finish unloading: Actual GR Qty starts with the Arrival Qty (Kim, 31 Oct 2026)
+      if (id && isLive(F)) F.items.forEach(i => { if (i.grQty === '' || i.grQty == null) i.grQty = i.arrQty; });
+    }
     const r = F, started = !!r.start, editing = !!r.id;
-    const m = r.start ? spentMin(r) : null, p = prod(r);
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
-    const pend = r.po ? pendingLines(r.po, r.id) : [];
+    const pend = [].concat.apply([], posOf(r).map(po => pendingLines(po, r.id)));
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}</section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
-        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('តែ PO មិនទាន់ទទួលគ្រប់', 'pending POs only')}</small></label>
+        <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
         ${r.po ? `
         <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey('Ref. No.', r.ref)}</div>
-        <div class="row2">${grey(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier)}${grey('ETA', showEta(r.eta))}</div>
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
-        ${r.items.length ? itemsTable(r, mode) : ''}` : `<p class="hint">${t('ជ្រើស PO ដើម្បីបង្ហាញព័ត៌មានពីផែនការដោយស្វ័យប្រវត្តិ។', 'Choose a PO to fill the details from the plan automatically.')}</p>`}
-      </section>
+        ${r.items.length ? itemsTable(r, mode) : ''}` : ''}
+      </section>`}
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
         <div class="row2">
@@ -374,27 +553,21 @@
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
+      ${ents(r.site).length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
+        ${siteOn() ? `<div class="field"><label class="f">${t('ឃ្លាំង', 'Warehouse')} <span class="req">*</span></label>${siteLocked(r) ? `<div class="in ro locked">🏭 ${esc(r.site)} <span>🔒</span></div>` : pickBtn('site', r.site)}</div>` : ''}
+        ${ents(r.site).length ? `<div class="field"><label class="f">${t('ច្រកចូល', 'Entrance')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div>` : ''}</section>` : ''}
 
       ${started ? `
-      <section class="card"><h2>👷 ${t('ឡាន និងកម្មករ', 'Truck owner and manpower')}</h2>
+      <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
         <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
           <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
         ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
-        <div class="field"><label class="f">${t('ចំនួនកម្មករលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
+        <div class="field"><label class="f">${t('ចំនួនបុគ្គលិកឃ្លាំងលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
           <div class="stepper" id="mpBox"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower || '–')}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
       </section>
 
-      <section class="card"><h2>⏱ ${t('ម៉ោងទម្លាក់', 'Unloading time')}</h2>
-        <div class="timebox">
-          <div class="tbox ro"><small>▶ ${t('ម៉ោងចាប់ផ្តើម', 'Start time')}</small><b>${esc(r.start)}</b></div>
-          <div class="tbox ro"><small>⏹ ${t('ម៉ោងបញ្ចប់', 'End time')}</small><b>${esc(r.end || '– – : – –')}</b></div>
-        </div>
-        <div class="calc">
-          <div class="tbox"><small>${t('រយៈពេល', 'Time spent')}</small><b>${showSpent(m)}</b></div>
-          <div class="tbox"><small>${t('ផលិតភាព', 'Productivity')}</small><b>${p == null ? '–' : fmt(p, 1)}</b><small>${p == null ? t('គណនាពេលបញ្ចប់', 'Shown at finish') : esc(prodUnit())}</small></div>
-        </div>
-      </section>
-      <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea></section>` : `
+      <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea>
+        <div class="voice" id="voiceBox">${voiceHTML(r)}</div></section>` : `
       <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ បរិមាណទទួលជាក់ស្តែង និងខូចខាត បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. Actual GR qty and damaged qty are filled at finish.')}</p>`}
 
       ${!started ? `<button class="btn ok big bigstart" id="startBtn">▶ ${t('ចាប់ផ្តើមទម្លាក់ឥឡូវ', 'Start unloading now')}</button>`
@@ -407,17 +580,54 @@
     ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
     $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
   }
-  function pickPO(po) {
+  function pickPOs(list) {
     const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower };
-    const b = blank(); const l = PLAN.find(x => x.po === po);
-    F = Object.assign(b, l ? header(l) : {}, keep);
-    const pend = pendingLines(po, F.id);
-    if (pend.length === 1) F.items = [Object.assign(item(pend[0]), { arrQty: left(pend[0], F.id) })];
+    const old = F.items || [], was = F;
+    const b = blank(); const l = PLAN.find(x => x.po === list[0]);
+    F = Object.assign(b, list.length ? headerOf(list) : {}, keep);
+    if (l && l.site) F.site = l.site;   // the PO's warehouse from the packing list
+    // items already chosen stay; a PO with one pending line gets it at once
+    list.forEach(po => { const had = old.filter(i => itemPo(i, was) === po), pend = pendingLines(po, F.id); F.items = F.items.concat(had.length ? had : pend.length === 1 ? [item(pend[0])] : []); });
   }
   // photos are shrunk on the phone (long side 1280 px, JPEG) so saving stays fast on 4G
+  // photo stamp like the Fuel app (Kim, 2 Nov 2026): navy band under the photo, receipt no. left, ISI STEEL + date/time right
+  const TAKEN = new Map();
+  function watermark(dataUrl, id, at) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth, h = img.naturalHeight, band = Math.max(36, Math.round(w * 0.07));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h + band;
+        const x = c.getContext('2d');
+        x.drawImage(img, 0, 0);
+        x.fillStyle = '#011e41'; x.fillRect(0, h, w, band);
+        const d = new Date((at || Date.now()) + 7 * 3600 * 1000), p = n => String(n).padStart(2, '0');
+        const when = p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear() + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+        const pad = Math.round(band * 0.35), mid = h + band / 2;
+        x.textBaseline = 'middle'; x.fillStyle = '#fff';
+        x.font = `700 ${Math.round(band * 0.5)}px system-ui, sans-serif`;
+        x.textAlign = 'left'; x.fillText(id, pad, mid);
+        x.font = `400 ${Math.round(band * 0.4)}px system-ui, sans-serif`;
+        x.textAlign = 'right'; x.fillText('ISI STEEL · ' + when, w - pad, mid);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => reject(new Error('bad image'));
+      img.src = dataUrl;
+    });
+  }
+  // a copy of the receipt with the photos taken in this form stamped; saved photos are left as they are
+  async function stamped(r, id) {
+    const c = JSON.parse(JSON.stringify(r));
+    const one = v => TAKEN.has(v) ? watermark(v, id, TAKEN.get(v)).catch(() => v) : Promise.resolve(v);
+    if (c.ph) for (const k of Object.keys(c.ph)) c.ph[k] = await one(c.ph[k]);
+    for (const i of c.items || []) if (i.dmgPh) i.dmgPh = await Promise.all(i.dmgPh.map(one));
+    return c;
+  }
   function shrink(file, done) {
     const rd = new FileReader();
-    rd.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); done(c.toDataURL('image/jpeg', 0.72)); }; im.onerror = () => done(rd.result); im.src = rd.result; };
+    const at = Date.now();
+    rd.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1280 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); const u = c.toDataURL('image/jpeg', 0.72); TAKEN.set(u, at); done(u); }; im.onerror = () => done(rd.result); im.src = rd.result; };
     rd.readAsDataURL(file);
   }
   // tick several items at once (same look as the picker)
@@ -458,10 +668,11 @@
     mark($('#items'), r.po && !r.items.length);
     mark($('#truck'), !r.truck);
     mark($('#dn3pl'), !r.dn3pl);
+    mark($('#wh'), ents(r.site).length && !r.warehouse);
     $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
     $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
       mark(el, k === 'arrQty' ? !(+i.arrQty > 0) : k === 'grQty' ? (i.grQty === '' || i.grQty == null) : false); });
-    r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
+    r.items.forEach((i, n) => { if (+i.dmgQty > 0) { mark($('#dt' + n), !i.dmgType); mark($('#du' + n), !i.dmgUom); mark($(`[data-dph="${n}"]`) && $(`[data-dph="${n}"]`).closest('.ph'), !(i.dmgPh || []).length); } });
     mark($('.seg[data-seg="own"]'), fin && !r.owner);
     mark($('#mpBox'), fin && !(+r.manpower > 0));
   }
@@ -472,19 +683,33 @@
     $$('[data-it]').forEach(el => { el.oninput = live; });
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
-    pk('po', () => ({ title: t('លេខ PO (មិនទាន់ទទួលគ្រប់)', 'PO Number (pending only)'), value: F.po,
-      groups: [{ items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }) }],
-      onPick: v => { pickPO(v); re(); } }));
+    const pob = $('#po');
+    if (pob && !pob.classList.contains('off')) pob.onclick = () => { collect(); openMulti({ title: t('លេខ PO (ជ្រើសបានច្រើន)', 'PO Number (one or more)'), value: posOf(F),
+      items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
+      onDone: v => { pickPOs(v); re(); } }); };
     const it = $('#items');
-    if (it) it.onclick = () => { collect(); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(i => i.material),
-      items: pendingLines(F.po, F.id).map(x => ({ value: x.material, label: x.desc, sub: x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })),
-      onDone: mats => { const had = {}; F.items.forEach(i => { had[i.material] = i; }); F.items = mats.map(mt => had[mt] || Object.assign(item(lineOf(F.po, mt)), { arrQty: left(lineOf(F.po, mt), F.id) })); re(); } }); };
+    if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material; openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
+      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: po + '|' + x.material, label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
+      onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
+        F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
     $$('[data-it]').forEach(el => { el.onchange = re; });
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
-      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })) }],
+      groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })).concat(dmgCustom().map(x => ({ value: x }))) }],
+      addNew: { label: t('បន្ថែមប្រភេទខូចខាតថ្មី', 'Add new damage type'), clean: v => String(v || '').trim().slice(0, 40) },
       onPick: v => { const d = DMG.find(x => x[1] + ' ' + t(x[2], x[3]) === v); i.dmgType = d ? d[0] : v; re(); } })));
-    $$('[data-dph]').forEach(inp => { inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; collect(); const i = F.items[+inp.dataset.dph]; shrink(f, url => { i.dmgPh = (i.dmgPh || []).concat(url).slice(0, MAX_DMG_PH); re(); }); }; });
+    F.items.forEach((i, n) => pk('du' + n, () => ({ title: t('ឯកតាខូចខាត', 'Damage UoM'), value: i.dmgUom || '',
+      groups: [{ items: dmgUoms().map(x => ({ value: x })) }],
+      addNew: { label: t('បន្ថែមឯកតាថ្មី', 'Add new unit'), clean: v => String(v || '').trim().slice(0, 15) },
+      onPick: v => { i.dmgUom = v; re(); } })));
+    // camera or gallery; several photos at once, up to MAX_DMG_PH per item (Kim, 30 Oct 2026)
+    $$('[data-dph]').forEach(inp => { inp.onchange = () => {
+      collect(); const i = F.items[+inp.dataset.dph], room = MAX_DMG_PH - (i.dmgPh || []).length;
+      const files = Array.from(inp.files || []).slice(0, Math.max(0, room)); if (!files.length) return;
+      if ((inp.files || []).length > room) toast('⚠️ ' + t('រូបថតអតិបរមា ', 'Up to ') + MAX_DMG_PH + t(' សន្លឹក', ' photos'));
+      let left = files.length; const urls = [];
+      files.forEach((f, k) => shrink(f, url => { urls[k] = url; if (--left === 0) { i.dmgPh = (i.dmgPh || []).concat(urls.filter(Boolean)).slice(0, MAX_DMG_PH); re(); } }));
+    }; });
     $$('[data-delph]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, j] = b.dataset.delph.split(':'); F.items[+n].dmgPh.splice(+j, 1); re(); }; });
     const plate = v => String(v || '').toUpperCase().replace(/\s+/g, '');
     pk('truck', () => { const used = Array.from(new Set(DATA.map(r => r.truck).concat(PLATES))); return { title: t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck number / trailer'), value: F.truck,
@@ -493,6 +718,11 @@
     pk('carrier', () => ({ title: t('ក្រុមហ៊ុន 3PL', '3PL company'), value: F.carrier,
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
+    pk('site', () => ({ title: t('ឃ្លាំង', 'Warehouse'), value: F.site, groups: [{ items: SITES.map(x => ({ value: x })) }], onPick: v => { F.site = v; if (!ents(v).some(w => w.code === F.warehouse)) F.warehouse = ''; re(); } }));
+    pk('wh', () => ({ title: t('ច្រកចូល', 'Entrance'), value: whName(F.warehouse),
+      groups: [{ items: ents(F.site).map(w => ({ value: whName(w.code), key: w.code })) }],
+      onPick: v => { const w = WAREHOUSES.find(x => whName(x.code) === v); F.warehouse = w ? w.code : v; re(); } }));
+    bindVoice(re);
     $$('[data-own]').forEach(b => { b.onclick = () => { F.owner = b.dataset.own; if (F.owner === 'ISI') F.carrier = ''; re(); }; });
     const mm = $('#mpm'); if (mm) mm.onclick = () => { F.manpower = +F.manpower > 1 ? +F.manpower - 1 : F.manpower; $('#mp').textContent = F.manpower || '–'; markNeed(); };
     const mp = $('#mpp'); if (mp) mp.onclick = () => { F.manpower = (+F.manpower || 0) + 1; $('#mp').textContent = F.manpower; markNeed(); };
@@ -504,6 +734,8 @@
       if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
       else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
       if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
+      if (siteOn() && !F.site) miss.push(t('ឃ្លាំង', 'Warehouse'));
+      if (ents(F.site).length && !F.warehouse) miss.push(t('ច្រកចូល', 'Entrance'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
       return miss;
     };
@@ -513,9 +745,10 @@
       F.items.forEach(i => { if (i.dmgQty === '' || i.dmgQty == null) i.dmgQty = 0; });
       const dm = F.items.filter(i => +i.dmgQty > 0);
       if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
+      if (dm.some(i => !i.dmgUom)) miss.push(t('ឯកតាខូចខាត', 'Damage UoM'));
       if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
       if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
-      if (!(+F.manpower > 0)) miss.push(t('ចំនួនកម្មករ', 'Manpower'));
+      if (!(+F.manpower > 0)) miss.push(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'));
       return miss;
     };
     const st = $('#startBtn');
@@ -523,18 +756,46 @@
       collect(); const miss = need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('start', st); if (rec) { toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + rec.start); location.hash = '#/today'; } return; }
       F.date = today(); F.start = nowHM(); F.id = 'IB' + F.date.slice(2).replace(/-/g, '') + '-' + pad(DATA.length + 1); F.by = t('អ្នក (សាកល្បង)', 'You (demo)');
-      DATA.push(JSON.parse(JSON.stringify(F))); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/today';
+      DATA.push(await stamped(F, F.id)); TAKEN.clear(); save(); F = null; toast('▶ ' + t('បានចាប់ផ្តើម ', 'Started ') + nowHM()); location.hash = '#/today';
     };
     const en = $('#endBtn');
     if (en) en.onclick = async () => {
       collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); location.hash = '#/r/' + rec.id; } return; }
-      F.end = nowHM(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
+      F.end = nowHM(); F = await stamped(F, F.id); TAKEN.clear(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
     if (sv) sv.onclick = async () => { collect(); const miss = F.end ? needFin() : need(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
       if (!DEMO) { const rec = await send('save', sv); if (rec) { toast('💾 ' + t('បានរក្សាទុក', 'Saved')); location.hash = '#/r/' + rec.id; } return; }
-      store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+      F = await stamped(F, F.id); TAKEN.clear(); store(); toast('💾 ' + t('បានរក្សាទុក', 'Saved')); const id = F.id; F = null; location.hash = '#/r/' + id; };
+  }
+  let REC = null;
+  function bindVoice(re) {
+    const rec = $('#vRec'), play = $('#vPlay'), del = $('#vDel');
+    if (rec) rec.onclick = async () => {
+      if (REC) { REC.stop(); return; }
+      if (!navigator.mediaDevices || !window.MediaRecorder) return toast('⚠️ ' + t('ទូរស័ព្ទនេះថតសំឡេងមិនបាន', 'This phone cannot record here'));
+      let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { return toast('⚠️ ' + t('សូមអនុញ្ញាតមីក្រូហ្វូន', 'Allow the microphone')); }
+      const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(x => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(x)) || '';
+      const mr = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined), parts = [], t0 = Date.now();
+      REC = mr;
+      const tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000), el = $('#vTime'); if (el) el.textContent = '🔴 ' + Math.floor(s / 60) + ':' + pad(s % 60) + ' / 3:00'; if (s >= 180) mr.stop(); }, 500);
+      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      mr.onstop = () => { clearInterval(tick); stream.getTracks().forEach(x => x.stop()); REC = null;
+        const blob = new Blob(parts, { type: (mr.mimeType || type || 'audio/webm').split(';')[0] }), rd = new FileReader();
+        rd.onload = () => { collect(); F.voice = rd.result; re(); }; rd.readAsDataURL(blob); };
+      mr.start(1000);
+      rec.innerHTML = '⏹ ' + t('ឈប់ថត', 'Stop');
+    };
+    if (play) play.onclick = () => playVoice(F, play);
+    if (del) del.onclick = () => { collect(); F.voice = ''; re(); };
+  }
+  async function playVoice(r, b) {
+    const a = $('#vAudio');
+    if (/^data:/.test(r.voice) || r.voice === 'sample') { if (r.voice === 'sample') return toast('🧪 ' + t('សាកល្បង', 'Demo')); a.src = r.voice; a.hidden = false; a.play(); return; }
+    busy(b, true, t('កំពុងទាញ…', 'Loading…'));
+    try { const x = await api('voice', { id: r.id }); a.src = x.url; a.hidden = false; a.play(); } catch (e) { toast('⚠️ ' + oldScript(e)); }
+    finally { busy(b, false); }
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
@@ -582,7 +843,11 @@
     sending = true;
     const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> ' + t('កំពុងរក្សាទុក…', 'Saving…');
     try {
-      const rec = await api(action, { receipt: F });
+      if (action === 'start' && !F.resId) F.resId = await api('reserve').then(d => d && d.id).catch(() => '');
+      const id = action === 'start' ? F.resId || F.po : F.id;   // old Apps Script has no reserve: PO no. instead
+      const body = await stamped(F, id); if (action === 'start') body.id = F.resId || '';
+      const rec = await api(action, { receipt: body });
+      TAKEN.clear();
       const i = DATA.findIndex(x => x.id === rec.id); if (i >= 0) DATA[i] = rec; else DATA.push(rec);
       save(); F = null;
       return rec;
@@ -603,26 +868,48 @@
       <div class="head2"><h2>🚛 ${esc(r.truck)}</h2><a class="link" href="#/today">✕</a></div>
       <div style="margin:-4px 2px 12px">${badges(r)}</div>
       <section class="card"><div class="kvs">
-        ${kv(t('លេខ PO', 'PO Number'), esc(r.po))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
+        ${kv(t('លេខ PO', 'PO Number'), esc(posOf(r).join(", ")))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
         ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
+        ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
       <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
       <section class="card"><div class="kvs">
-        ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនកម្មករ', 'Manpower'), '👷 ' + esc(r.manpower))}
+        ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
         ${kv(t('រយៈពេល', 'Time spent'), (isLive(r) ? '⏱ ' : '') + showSpent(m))}${kv(t('ផលិតភាព', 'Productivity'), p == null ? '–' : fmt(p, 1) + ' <small>' + esc(prodUnit()) + '</small>')}
-        ${kv(t('សំគាល់', 'Remark'), esc(r.remark || '–'), 1)}
+        ${kv(t('សំគាល់', 'Remark'), esc(r.remark || '–') + (r.voice ? ` <button type="button" class="btn sm" id="vPlay">▶️ ${t('ស្តាប់សំឡេង', 'Play voice note')}</button><audio id="vAudio" controls hidden></audio>` : ''), 1)}
         ${kv(t('កត់ត្រាដោយ', 'Recorded by'), esc(r.by || '–'), 1)}
       </div>
       <div class="shots mt">${PHOTOS.map(x => `<div class="shot has"><div class="ph">${phImg(ph[x[0]], x[1])}</div><small>${x[1]} ${t(x[2], x[3])}</small></div>`).join('')}</div>
       </section>
-      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>` : `
+      ${isLive(r) ? `<button class="btn big bigstart endbtn" id="fin">⏹ ${t('បញ្ចប់ការទម្លាក់', 'Finish unloading')}</button>${USER && USER.admin || DEMO ? `<button class="btn danger mt" id="delBtn">🗑 ${t('លុបកំណត់ត្រានេះ', 'Delete this record')}</button><div id="delBox"></div>` : ''}` : `
       <section class="card rep"><h2>📄 ${t('របាយការណ៍', 'Report')}</h2>
         <div class="rep2"><button class="btn ok big" id="pdfBtn">📄 ${t('បង្កើតរបាយការណ៍ PDF', 'Generate Report (PDF)')}</button>
         <button class="btn big" id="mailBtn">✉️ ${t('ផ្ញើអ៊ីមែល', 'Send Email')}</button></div><div id="mailBox"></div></section>
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
+    if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
+    // Admin removes a pending unloading record, e.g. a truck started twice (Kim, 3 Nov 2026); a copy stays in the IB Deleted tab
+    if ($('#delBtn')) $('#delBtn').onclick = () => {
+      $('#delBtn').hidden = true;
+      $('#delBox').innerHTML = `<div class="delbox"><b>🗑 ${t('លុប ', 'Delete ')}${esc(r.id)} · ${esc(r.truck)}?</b>
+        <label class="f" for="delWhy">${t('មូលហេតុ', 'Reason')} <span class="req">*</span></label><input class="in" id="delWhy" placeholder="${t('ឧ. ចុចចាប់ផ្តើមពីរដង', 'e.g. started twice')}">
+        <div class="delrow"><button class="btn" id="delNo">${t('បោះបង់', 'Cancel')}</button><button class="btn danger" id="delYes">🗑 ${t('លុប', 'Delete')}</button></div></div>`;
+      $('#delWhy').focus();
+      $('#delNo').onclick = () => { $('#delBox').innerHTML = ''; $('#delBtn').hidden = false; };
+      $('#delYes').onclick = async () => {
+        const why = $('#delWhy').value.trim();
+        if (!why) { $('#delWhy').classList.add('bad'); toast('⚠️ ' + t('សូមសរសេរមូលហេតុ', 'Write the reason')); return; }
+        if (DEMO) { DATA = DATA.filter(x => x.id !== r.id); save(); }
+        else {
+          const b = $('#delYes'); busy(b, true, t('កំពុងលុប…', 'Deleting…'));
+          try { await api('delete', { id: r.id, reason: why }); DATA = DATA.filter(x => x.id !== r.id); save(); }
+          catch (e) { busy(b, false); toast('⚠️ ' + oldScript(e)); return; }
+        }
+        toast('🗑 ' + t('បានលុប ', 'Deleted ') + r.id); location.hash = '#/today';
+      };
+    };
     if (!isLive(r)) {
       $('#pdfBtn').onclick = () => makePdf(r, $('#pdfBtn'));
       $('#mailBtn').onclick = () => paintMail(r);
@@ -644,7 +931,7 @@
       const x = await api('pdf', { id: r.id });
       const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url; a.download = x.name || r.id + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.pdf'; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { toast('⚠️ ' + oldScript(e)); }
     busy(b, false);
@@ -653,22 +940,115 @@
     const box = $('#mailBox');
     if (box.innerHTML) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="mailbox"><b>✉️ ${t('ផ្ញើរបាយការណ៍តាមអ៊ីមែល', 'Email the report')}</b>
-      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}"> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
+      ${LISTS.length ? `<p class="hint">${t('បញ្ជីអ៊ីមែល (កំណត់ក្នុង Sheet)', 'Email lists (set in the Sheet)')}</p>` + LISTS.map((l, i) => `<label class="check"><input type="checkbox" data-list="${i}" checked> <span><b>${esc(l.name)}</b> <small class="il">${l.count} ${t('នាក់', 'people')}</small></span></label>`).join('')
         : `<p class="hint">${t('មិនទាន់មានបញ្ជីអ៊ីមែលទេ (Email Lists ក្នុង Sheet)', 'No email lists yet (Email Lists tab in the Sheet)')}</p>`}
       <label class="f mt" for="mailExtra">${t('អ៊ីមែលផ្សេងទៀត (បើមាន)', 'Other emails (optional)')}</label><input class="in" id="mailExtra" type="email" multiple placeholder="name@isisteel.com">
       <label class="f" for="mailNote">${t('សារ', 'Message')}</label><textarea class="in" id="mailNote" rows="14"></textarea>
       <p class="hint">✏️ ${t('អាចកែសារខាងលើមុនផ្ញើ', 'You can edit the message before sending')}</p>
-      <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF', 'The PDF report is attached')}</p>
-      <button class="btn ok big" id="mailSend">📤 ${t('ផ្ញើ', 'Send')}</button></div>`;
+      <p class="hint">📎 ${t('ភ្ជាប់របាយការណ៍ PDF · បើកក្នុង Outlook ដើម្បីកែ អ្នកផ្ញើ អ្នកទទួល ឬសារ មុនផ្ញើ', 'The PDF report is attached · opens in Outlook so you can change the sender, recipients or text before sending')}</p>
+      ${get('ib_olhelper') === '1' ? '' : `<p class="hint olhint">⚡ <a href="outlook-helper/" target="_blank" rel="noopener">${t('ដំឡើង Outlook helper ម្តង', 'Install the Outlook helper once')}</a> ${t('ដើម្បីបើក Outlook ភ្លាម ជាមួយ PDF (កុំព្យូទ័រ)', 'so Outlook opens straight away with the PDF (computer)')}</p>`}
+      <button class="btn ok big" id="mailSend">📧 ${t('បើកក្នុង Outlook', 'Open in Outlook')}</button><div id="mailMsg"></div></div>`;
     $('#mailNote').value = mailDraft(r);
     $('#mailSend').onclick = async () => {
-      const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = $('#mailExtra').value.trim();
-      if (!lists.length && !extra) { toast('⚠️ ' + t('សូមធីកបញ្ជី ឬវាយអ៊ីមែល', 'Tick a list or type an email')); return; }
-      if (DEMO) { const n = LISTS.filter(l => lists.indexOf(l.name) >= 0).reduce((s, l) => s + l.count, 0) + (extra ? extra.split(/[\s,;]+/).length : 0); toast('🧪 ' + t('សាកល្បង៖ នឹងផ្ញើទៅ ', 'Demo: would send to ') + n + t(' នាក់', ' people')); box.innerHTML = ''; return; }
-      const b = $('#mailSend'); busy(b, true, t('កំពុងផ្ញើ…', 'Sending…'));
-      try { const x = await api('email', { id: r.id, lists, extra, note: $('#mailNote').value }); toast('✅ ' + t('បានផ្ញើទៅ ', 'Sent to ') + x.sent + t(' នាក់', ' people')); box.innerHTML = ''; }
-      catch (e) { toast('⚠️ ' + oldScript(e)); busy(b, false); }
+      // keep only the addresses, so Outlook-style "Name" <name@x.com>, pastes work
+      const raw = $('#mailExtra').value.trim(), found = raw.match(/[^\s<>()[\],;:"']+@[^\s<>()[\],;:"']+\.[^\s<>()[\],;:"']+/g) || [];
+      const lists = $$('[data-list]').filter(x => x.checked).map(x => LISTS[+x.dataset.list].name), extra = found.join(', ');
+      const say = (ok, msg) => { $('#mailMsg').innerHTML = `<div class="mailres ${ok ? 'ok' : 'bad'}">${msg}</div>`; toast((ok ? '✅ ' : '⚠️ ') + $('#mailMsg').textContent); };
+      if (raw && !found.length) { say(false, t('រកមិនឃើញអ៊ីមែលក្នុងប្រអប់ "អ៊ីមែលផ្សេងទៀត"', 'No email address found in "Other emails"')); return; }
+      // Kim, 6 Nov 2026: the email opens in Outlook as a draft instead of being sent by the app, so the sender,
+      // recipients and text can be changed there. Computer: an .eml draft (X-Unsent) with the PDF attached, which Outlook
+      // opens ready to edit. Phone: the PDF is downloaded and Outlook opens through mailto (attach the PDF there).
+      const b = $('#mailSend'); busy(b, true, t('កំពុងរៀបចំ PDF… (10–20 វិនាទី)', 'Preparing the PDF… (10–20 s)')); $('#mailMsg').innerHTML = '';
+      try {
+        let to = found.slice();
+        if (lists.length) {
+          if (DEMO) to = to.concat(lists.map(n => n.toLowerCase() + '@isisteel.com'));
+          else {
+            try { to = to.concat((await api('mailTo', { lists })).emails || []); }
+            catch (e) { if (!/Unknown action/i.test(e.message)) throw e; say(false, t('Apps Script ចាស់៖ សូមវាយអ៊ីមែលអ្នកទទួលក្នុង Outlook', 'Old Apps Script: add the list recipients in Outlook')); }
+          }
+        }
+        to = to.filter((x, i) => to.indexOf(x) === i);
+        const subject = mailSubject(r), body = $('#mailNote').value;
+        const pdf = DEMO ? { name: r.id + '.pdf', b64: btoa('%PDF-1.4 demo') } : await api('pdf', { id: r.id });
+        pdf.name = fileName(r) + '.pdf';
+        if (matchMedia('(pointer: coarse)').matches && innerWidth < 900) {
+          savePdf(pdf);
+          location.href = 'mailto:' + to.map(encodeURIComponent).join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+          say(true, t('បានបើក Outlook · PDF ត្រូវបានទាញយក សូមភ្ជាប់វាក្នុងអ៊ីមែល', 'Outlook opened · the PDF was downloaded, attach it to the email'));
+        } else {
+          const html = mailHtml(r, body);
+          const eml = emlDraft(to, subject, body, pdf, html);
+          const url = URL.createObjectURL(new Blob([eml], { type: 'message/rfc822' }));
+          setTimeout(() => URL.revokeObjectURL(url), 600000);
+          // With the Outlook helper on this PC (Kim, 6 Nov 2026): hand the email over through the clipboard and
+          // open isteel-outlook:, so Outlook shows the draft with the PDF attached and nothing is downloaded
+          let viaHelper = false;
+          if (get('ib_olhelper') === '1' && navigator.clipboard) {
+            const S = '\n#ISTEEL#\n';
+            try { await navigator.clipboard.writeText(['ISTEEL-DRAFT-1', to.join('; '), subject, pdf.name, pdf.b64, html].join(S)); viaHelper = true; } catch (e) { /* page not focused: use the .eml */ }
+          }
+          if (viaHelper) {
+            location.href = 'isteel-outlook:draft';
+            say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + `<small>${t('មិនបើកទេ? ', 'Did not open? ')}<a href="${url}" download="${esc(fileName(r))}.eml">${t('ទាញយក .eml', 'Download the .eml')}</a></small>`);
+            busy(b, false); return;
+          }
+          const a = document.createElement('a'); a.href = url; a.download = fileName(r) + '.eml'; document.body.appendChild(a); a.click(); a.remove();
+          say(true, t('កំពុងបើក Outlook… ', 'Opening Outlook… ') + '<small>' + t('បើ Outlook មិនបើកខ្លួនឯង៖ ចុចលើ ', 'If Outlook does not open by itself: click ') + esc(fileName(r)) + '.eml ' +
+            t('នៅផ្នែកទាញយក រួចជ្រើស "Always open files of this type" (ធ្វើតែម្តង)', 'in the downloads, then pick "Always open files of this type" (one time only)') + '</small>');
+        }
+      } catch (e) { say(false, esc(oldScript(e))); }
+      busy(b, false);
     };
+  }
+  // File name for the PDF and the email (Kim, 6 Nov 2026): IB-261106-14 PO 5100013709 3A-3057
+  const fileName = r => [r.id, posOf(r).length ? 'PO ' + posOf(r).map(x => x.replace(/^PO\s*/i, '')).join('+') : '', r.truck].filter(String).join(' ').replace(/[\\/:*?"<>|]/g, '-');
+  const mailSubject = r => 'Goods receipt ' + r.id + ': ' + r.po + ' · ' + r.truck + ((r.items || []).some(i => +i.dmgQty > 0) ? ' · DAMAGED' : '') + ((r.items || []).some(isLessItem) ? ' · RECEIVED LESS' : '');
+  function savePdf(x) {
+    const bytes = Uint8Array.from(atob(x.b64), ch => ch.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a'); a.href = url; a.download = x.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  // An unsent e-mail file: Outlook opens it as a new draft (X-Unsent: 1) with the PDF already attached
+  function emlDraft(to, subject, body, pdf, html) {
+    const b64 = str => btoa(unescape(encodeURIComponent(str)));
+    const wrap = x => x.replace(/.{1,76}/g, '$&\r\n');
+    const k = 'isteel-' + Date.now().toString(36), a = k + '-alt';
+    return ['To: ' + to.join(', '), 'Subject: =?UTF-8?B?' + b64(subject) + '?=', 'X-Unsent: 1', 'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="' + k + '"', '', '--' + k,
+      'Content-Type: multipart/alternative; boundary="' + a + '"', '', '--' + a,
+      'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(body)), '--' + a,
+      'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' + html + '</body></html>')), '--' + a + '--', '--' + k,
+      'Content-Type: application/pdf; name="' + pdf.name + '"', 'Content-Disposition: attachment; filename="' + pdf.name + '"',
+      'Content-Transfer-Encoding: base64', '', wrap(pdf.b64), '--' + k + '--', ''].join('\r\n');
+  }
+  // The email body for Outlook: the navy banner, then the message, where "- Label: value" lines become a table.
+  // Tables with bgcolor (not div backgrounds) so classic Outlook keeps the colours.
+  function mailHtml(r, text) {
+    const font = "font-family:Arial,'Noto Sans Khmer',sans-serif;";
+    const banner = `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px"><tr><td bgcolor="#011e41" style="background:#011e41;padding:12px 16px;${font}color:#ffffff">` +
+      `<div style="font-size:12px;color:#c9d3e0">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>` +
+      `<div style="font-size:18px;font-weight:bold;color:#ffffff">${esc(r.id)} · ${esc(r.truck)}</div>` +
+      `<div style="font-size:12px;color:#d9e1eb">${esc([r.site, r.po, r.supplier, showDate(r.date) + ' ' + r.start + '–' + r.end].filter(String).join(' · '))}</div></td></tr></table>`;
+    const cell = 'padding:5px 10px;border:1px solid #d6dee8;font-size:13px;' + font;
+    const out = [];
+    let rows = [], para = [];
+    const flushRows = () => { if (rows.length) out.push('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:4px 0 12px;min-width:420px">' + rows.join('') + '</table>'); rows = []; };
+    const flushPara = () => { if (para.length) out.push('<p style="margin:0 0 12px">' + para.join('<br>') + '</p>'); para = []; };
+    String(text || '').split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*[-*•]\s+(.*)$/);
+      if (m) {
+        flushPara();
+        const kv = m[1].match(/^([^:]{1,60}):\s*(.*)$/);
+        rows.push(kv ? `<tr><td bgcolor="#f2f5f9" style="${cell}background:#f2f5f9;font-weight:bold;white-space:nowrap">${esc(kv[1])}</td><td style="${cell}">${esc(kv[2])}</td></tr>`
+          : `<tr><td colspan="2" style="${cell}">${esc(m[1])}</td></tr>`);
+      } else if (!line.trim()) { flushRows(); flushPara(); }
+      else if (/:\s*$/.test(line) && line.length < 40) { flushRows(); flushPara(); out.push(`<p style="margin:0 0 4px;font-weight:bold">${esc(line.trim().replace(/:$/, ''))}</p>`); }
+      else { flushRows(); para.push(esc(line)); }
+    });
+    flushRows(); flushPara();
+    return `<div style="${font}font-size:14px;line-height:1.5;color:#011e41;max-width:680px">${banner}${out.join('')}</div><br>`;
   }
   // Ready-made English email text for the receipt; the user can edit it before sending
   function mailDraft(r) {
@@ -681,6 +1061,8 @@
       `- Receipt No.: ${r.id}`,
       `- Truck: ${r.truck}${r.owner === 'ISI' ? ' (ISI truck)' : r.owner === '3PL' ? ' (3PL' + (r.carrier ? ' · ' + r.carrier : '') + ')' : ''}`];
     if (r.dn3pl) l.push(`- 3PL DN No.: ${r.dn3pl}`);
+    if (r.site) l.push(`- Warehouse: ${r.site}`);
+    if (r.warehouse) l.push(`- Entrance: ${whName(r.warehouse)}`);
     l.push(`- Items: ${(r.items || []).length} ${(r.items || []).length === 1 ? 'line' : 'lines'}`,
       `- PO Qty: ${kg(tot(r, 'poQty'))}`,
       `- Arrival Qty: ${kg(tot(r, 'arrQty'))}`,
@@ -691,7 +1073,7 @@
     if (r.remark) l.push(`- Remark: ${r.remark}`);
     if (dmgItems.length) {
       l.push('', 'Damaged items:');
-      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${kg(i.dmgQty)}${i.dmgType ? ' (' + (DMG.find(d => d[0] === i.dmgType) || [, , , i.dmgType])[3] + ')' : ''}`));
+      dmgItems.forEach(i => l.push(`- ${i.material} ${i.desc}: ${fmt(i.dmgQty)} ${i.dmgUom || r.uom}${i.dmgType ? ' (' + dmgEn(i.dmgType) + ')' : ''}`));
     }
     l.push('', `The full Goods Receipt Report (PDF), including photos, is attached for your reference.`,
       dmgItems.length || lessItems.length ? 'Kindly review the damaged / short-received quantities and advise on the next steps.' : 'All goods were received in good condition.',
@@ -707,12 +1089,12 @@
     box.innerHTML = `<div class="pbar"><b>📄 ${esc(r.id)}.pdf</b><button type="button" class="btn sm" id="pvX">✕</button></div><div class="page">
       <div class="phead"><div><b>ISI STEEL · GOODS RECEIPT REPORT</b><br>របាយការណ៍ទទួលទំនិញ<br>${esc(r.id)} · ${showDate(r.date)} · Done</div><img class="plogo" src="../icons/isi-steel-logo.png" alt="ISI STEEL"></div>
       <h4>A. ${two('ព័ត៌មានទទួល', 'RECEIPT')}</h4>${kv([[two('លេខ PO', 'PO Number'), r.po, two('លេខ Inbound', 'Inbound No.'), r.inbound], ['Ref. No.', r.ref, two('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
-        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : '']])}
+        ['ETA', showEta(r.eta), two('លេខ DN 3PL', '3PL DN No.'), r.dn3pl], [two('ឡាន', 'Truck / trailer'), r.truck, two('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? ownerTxt(r) : ''], [two('ឃ្លាំង', 'Warehouse'), r.site || '', two('ច្រកចូល', 'Entrance'), whName(r.warehouse)]])}
       <h4>B. ${two('បរិមាណទំនិញ', 'ITEMS')} (${r.items.length})</h4>
       <table class="pit"><tr><th>#</th><th>${two('សម្ភារៈ', 'Material')}</th><th class="c1">${two('ចំនួន (PO)', 'PO Qty')}</th><th class="c2">${two('ចំនួន (ដល់)', 'Arrival')}</th><th class="c3">${two('ទទួល', 'GR Qty')}</th><th class="c4">${two('ខូច', 'Damaged')}</th><th class="c5">${two('ឯកតា', 'UoM')}</th></tr>
-        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc((DMG.find(d => d[0] === i.dmgType) || [, , , ''])[3]) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
+        ${r.items.map((i, n) => `<tr><td>${n + 1}</td><td>${esc(i.material)}<br>${esc(i.desc)}${multi(r) ? '<br><small>' + esc(itemPo(i, r)) + '</small>' : ''}${isLessItem(i) ? '<br><b>⬇ Received less</b>' : ''}${+i.dmgQty > 0 ? '<br><b>⚠ ' + esc(dmgEn(i.dmgType)) + '</b>' : ''}</td><td class="n">${fmt(i.poQty)}</td><td class="n">${fmt(i.arrQty)}</td><td class="n">${fmt(i.grQty)}</td><td class="n">${fmt(i.dmgQty || 0)}</td><td>${esc(r.uom)}</td></tr>`).join('')}
         <tr class="tot"><td></td><td>${two('សរុប', 'Total')}</td><td class="n">${fmt(tot(r, 'poQty'))}</td><td class="n">${fmt(tot(r, 'arrQty'))}</td><td class="n">${fmt(tot(r, 'grQty'))}</td><td class="n">${fmt(tot(r, 'dmgQty'))}</td><td>${esc(r.uom)}</td></tr></table>
-      <h4>C. ${two('ពេលវេលា និងកម្មករ', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('កម្មករ', 'Manpower'), r.manpower],
+      <h4>C. ${two('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER')}</h4>${kv([[two('ចាប់ផ្តើម', 'Start'), r.start, two('បញ្ចប់', 'End'), r.end], [two('រយៈពេល', 'Time spent'), spentMin(r) + ' min', two('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
         [two('ផលិតភាព', 'Productivity'), prod(r) == null ? '' : fmt(prod(r), 2) + ' t/person/h', two('សំគាល់', 'Remark'), r.remark]])}
       <h4>D. ${two('រូបថតឡាន', 'TRUCK PHOTOS')}</h4><div class="pph">${PHOTOS.map(x => `<div>${phImg(ph[x[0]], x[1])}</div>`).join('')}</div>
       ${dp.length ? `<h4>E. ${two('រូបថតខូចខាត', 'DAMAGE PHOTOS')} (${dp.length})</h4><div class="pph sm">${dp.map(x => `<div>${phImg(x, '⚠️')}</div>`).join('')}</div>` : ''}
@@ -725,10 +1107,40 @@
 
   // ------------------------------------------------------------------ Summary
   let SP = '7';
+  function sumFrom() { const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (SP === '1' ? 0 : SP === '7' ? 6 : from.getDate() - 1)); return ymd(from); }
+  const sumLabel = () => (SP === '1' ? t('ថ្ងៃនេះ', 'Today') : SP === '7' ? t('៧ ថ្ងៃ', '7 days') : t('ខែនេះ', 'This month'));
+  // the number boxes open the Log with the matching filter (Kim, 30 Oct 2026)
+  function bindGo() { $$('[data-go]').forEach(a => { a.onclick = () => { LF = a.dataset.go; LQ = ''; }; }); }
+  // Incoming schedule (Kim, 2 Nov 2026): POs still to receive by ETA, for this warehouse
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
+  function schedule() {
+    return pendingPOs().map(po => { const ls = pendingLines(po), h = poHead(po), kg = ls.reduce((n, x) => n + left(x), 0);
+      const eta = ls.map(x => etaOf(x.eta)).filter(e => /^\d{4}-\d\d-\d\d$/.test(e)).sort()[0] || '';   // earliest line still to come
+      return { po, eta, supplier: h.supplier || '', site: h.site || '', kg, trucks: Math.max(1, Math.ceil(kg / 40000)) }; })
+      .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || a.po.localeCompare(b.po));
+  }
+  function schedHTML() {
+    const td = today(), tm = addDays(td, 1), all = schedule();
+    const DOW = [['អាទិត្យ', 'Sun'], ['ច័ន្ទ', 'Mon'], ['អង្គារ', 'Tue'], ['ពុធ', 'Wed'], ['ព្រហស្បតិ៍', 'Thu'], ['សុក្រ', 'Fri'], ['សៅរ៍', 'Sat']];
+    const days = []; all.forEach(o => { const k = o.eta || ''; if (days.indexOf(k) < 0) days.push(k); });
+    const row = o => `<a class="schr" href="#/plan/${encodeURIComponent(o.po)}">
+      <span class="scht"><b>${esc(o.po)}${!SITE && o.site ? ` <span class="whtag">🏭 ${esc(o.site)}</span>` : ''}</b><small>${esc(o.supplier || '–')}</small></span>
+      <span class="schn"><b>${fmt(o.kg / 1000, 1)} t</b><small>~${o.trucks} 🚛</small></span></a>`;
+    const body = days.map(d => { const l = all.filter(o => (o.eta || '') === d), w = d ? DOW[new Date(d + 'T00:00:00').getDay()] : null;
+      const cls = !d ? 'none' : d < td ? 'late' : d === td ? 'today' : d === tm ? 'tom' : '';
+      const tag = !d ? '' : d < td ? '⏰ ' + t('យឺត', 'Late') : d === td ? '📍 ' + t('ថ្ងៃនេះ', 'Today') : d === tm ? '🔔 ' + t('ស្អែក', 'Tomorrow') : '';
+      return `<div class="schg ${cls}"><h3><span>${d ? t(w[0], w[1]) + ' ' + showEta(d) : t('គ្មាន ETA', 'No ETA')}${tag ? ` <em>${tag}</em>` : ''}</span><small>${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t · ~${l.reduce((n, o) => n + o.trucks, 0)} 🚛</small></h3>${l.map(row).join('')}</div>`; }).join('');
+    return `<section class="card sched"><h2>📅 ${t('កាលវិភាគទំនិញចូល', 'Incoming schedule')}</h2>${body || `<div class="empty">${t('គ្មាន PO រង់ចាំ', 'No POs waiting')}</div>`}
+      <p class="hint">🔔 ${t('Telegram ជូនដំណឹងមួយថ្ងៃមុន', 'Telegram alert one day before')}</p></section>`;
+  }
+  // home: a reminder of tomorrow's arrivals
+  function tomorrowBar() {
+    const tm = addDays(today(), 1), l = schedule().filter(o => o.eta === tm);
+    return l.length ? `<a class="tombar" href="#/sum">🔔 <b>${t('ស្អែក', 'Tomorrow')}: ${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</b><span>${t('មើល', 'View')} ›</span></a>` : '';
+  }
   function renderSum() {
     paintTabs('sum');
-    const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (SP === '1' ? 0 : SP === '7' ? 6 : from.getDate() - 1));
-    const rows = DATA.filter(r => r.end && r.date >= ymd(from));
+    const rows = VD().filter(r => r.end && r.date >= sumFrom());
     const tn = rows.reduce((s, r) => s + (tons(r) || 0), 0);
     const avgM = rows.length ? rows.reduce((s, r) => s + spentMin(r), 0) / rows.length : null;
     const tr = rows.filter(r => prod(r) != null);
@@ -742,17 +1154,18 @@
     const isi = rows.filter(r => r.owner === 'ISI').length, pl = rows.length - isi;
     const by = {}; rows.forEach(r => { const k = r.owner === 'ISI' ? 'ISI' : (r.carrier || '3PL'); const o = by[k] || (by[k] = { n: 0, t: 0, m: 0 }); o.n++; o.t += tons(r) || 0; o.m += spentMin(r); });
     const chip = (k, km, en) => `<button class="chip${SP === k ? ' on' : ''}" data-p="${k}">${t(km, en)}</button>`;
-    view(`
+    view(`<div class="ibdash">
+      ${schedHTML()}
       <div class="filters">${chip('1', 'ថ្ងៃនេះ', 'Today')}${chip('7', '៧ ថ្ងៃ', '7 days')}${chip('m', 'ខែនេះ', 'This month')}</div>
-      <div class="stats">
-        <div class="stat"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></div>
-        <div class="stat"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></div>
-        <div class="stat"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></div>
+      <div class="stats dash-kpis">
+        <a class="stat go" href="#/log" data-go="period"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></a>
+        <a class="stat go" href="#/log" data-go="period"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
+        <a class="stat go" href="#/log" data-go="period"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></a>
         <div class="stat"><small>${t('ផលិតភាពមធ្យម', 'Avg productivity')}</small><b>${avgP == null ? '–' : fmt(avgP, 1)}<em>${t('ត/នាក់/ម៉', 't/person/h')}</em></b></div>
-        <div class="stat"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></div>
-        <div class="stat"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></div>
+        <a class="stat go" href="#/log" data-go="dmg"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></a>
+        <a class="stat go" href="#/log" data-go="less"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></a>
       </div>
-      <section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
+      <div class="dgrid"><section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
         <div class="bars">${dk.map(k => `<div class="barrow"><span>${showDate(k).slice(0, 5)}</span><div class="tr"><i style="width:${days[k] / mx * 100}%"></i></div><span>${fmt(days[k], 1)} t</span></div>`).join('') || `<div class="empty">–</div>`}</div>
       </section>
       <section class="card"><h2>🚚 ${t('ឡាន ISI ធៀប 3PL', 'ISI vs 3PL trucks')}</h2>
@@ -761,9 +1174,10 @@
         <table class="tb mt"><tr><th>${t('ម្ចាស់ឡាន', 'Owner')}</th><th class="n">${t('ឡាន', 'Trucks')}</th><th class="n">${t('តោន', 'Tonnes')}</th><th class="n">${t('នាទី/ឡាន', 'Min/truck')}</th></tr>
           ${Object.keys(by).sort((a, b) => by[b].n - by[a].n).map(k => `<tr><td>${esc(k)}</td><td class="n">${by[k].n}</td><td class="n">${fmt(by[k].t, 1)}</td><td class="n">${fmt(by[k].m / by[k].n)}</td></tr>`).join('')}
         </table>
-      </section>
-      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនកម្មករ', 'Productivity = qty received ÷ hours ÷ manpower')}</p>`);
+      </section></div>
+      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p></div>`);
     $$('[data-p]').forEach(b => { b.onclick = () => { SP = b.dataset.p; renderSum(); }; });
+    bindGo();
   }
 
   // ------------------------------------------------------------------ start menu (Kim, 28 Oct 2026): Receive goods | Incoming Plan
@@ -771,14 +1185,14 @@
   function renderMenu() {
     paintTabs('');
     const open = pendingPOs().length;
-    view(`
+    view(siteBar() + tomorrowBar() + `
       <div class="menu2">
         <a class="mtile" href="#/today"><span class="mi">🚛</span><b>${t('ទទួលទំនិញ', 'Receive goods')}</b>
           <small>${t('កត់ត្រាឡានមកដល់ ទម្លាក់ និងទទួល', 'Record trucks arriving, unloading and received')}</small>
-          <em>${DATA.filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
+          <em>${VD().filter(isLive).length} ${t('កំពុងទម្លាក់', 'unloading')} · ${open} PO ${t('កំពុងរង់ចាំ', 'pending')}</em></a>
         <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
-          <small>${t('ផ្ទុក Excel Packing List ឬបន្ថែម PO', 'Upload the Excel packing list or add a PO')}</small>
-          <em>${POS.length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
+          <small>${t('ផ្ទុកផែនការទំនិញចូល', 'Upload the Incoming Plan')}</small>
+          <em>${VPOS().length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
       </div>`);
   }
 
@@ -786,7 +1200,7 @@
   const planKg = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + (+x.kg || 0), 0);
   const poRecvd = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + recvd(x.po, x.material), 0);
   const poHead = po => PLAN.find(x => x.po === po) || {};
-  const hasTrucks = po => DATA.some(r => r.po === po);
+  const hasTrucks = po => DATA.some(r => posOf(r).indexOf(po) >= 0);
   function poStatus(po) {
     const k = planKg(po), r = poRecvd(po);
     if (!r) return `<span class="badge live">🕓 ${t('មិនទាន់មក', 'Not arrived')}</span>`;
@@ -798,25 +1212,34 @@
     paintTabs('plan');
     if (!canPlan()) return view(`<div class="card done"><div class="emoji">🔒</div><h2>${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</h2></div>`);
     const q = PQ.toLowerCase();
-    const pos = POS.filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
-      .sort((a, b) => String(poHead(b).eta).localeCompare(String(poHead(a).eta)));
-    view(`
-      <label class="btn ok big new-btn upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុក Excel Packing List', 'Upload Excel packing list')}</label>
-      <button class="btn" id="addPo" style="width:100%;margin-bottom:14px">✍️ ${t('បន្ថែម PO ដោយដៃ', 'Add a PO by hand')}</button>
-      <input class="in search-in" id="pq" type="search" placeholder="🔎 ${esc(t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'))}" value="${esc(PQ)}">
+    const pos = VPOS().filter(po => { const h = poHead(po); return !q || [po, h.inbound, h.ref, h.supplier].concat(PLAN.filter(x => x.po === po).map(x => x.material + ' ' + x.desc)).join(' ').toLowerCase().includes(q); })
+      .sort((a, b) => String(etaOf(poHead(b).eta) || '').localeCompare(String(etaOf(poHead(a).eta) || '')));
+    // Grouped by ETA year and month (Kim, 6 Nov 2026): a header per month with the PO count and tonnes
+    const MON = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+    const ym = po => { const m = String(etaOf(poHead(po).eta) || '').match(/^(\d{4})-(\d\d)/); return m ? m[1] + '-' + m[2] : ''; };
+    const ymTxt = k => k ? MON[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : t('គ្មាន ETA', 'No ETA');
+    let lastYm = null;
+    view(siteBar() + `
+      <div class="upl2"><label class="btn ok big upl"><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden>⬆️ ${t('ផ្ទុកផែនការទំនិញចូល', 'Upload Incoming Plan')}</label>
+      <a class="btn big tmpl" href="packing-list-template.xlsx" download target="_blank" rel="noopener">⬇️ ${t('ទាញយកគំរូ Excel', 'Download template')}</a></div>
+      <div class="fb-wrap">${FB.head('plan', `📑 ${t('ផែនការទំនិញចូល', 'Incoming plan')}`, '', () => { PQ = ''; renderPlan(); })}
+      ${FB.panel('plan', FB.search('pq', t('ស្វែងរក៖ PO, អ្នកផ្គត់ផ្គង់, សម្ភារៈ', 'Search: PO, supplier, material'), PQ))}</div>
       <div class="list">${pos.map(po => {
-        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length;
-        return `<a class="item" href="#/plan/${encodeURIComponent(po)}">
-          <div class="top"><span class="id">📑 ${esc(po)}</span>${poStatus(po)}</div>
+        const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length, g = ym(po);
+        let head = '';
+        if (g !== lastYm) { lastYm = g; const grp = pos.filter(x => ym(x) === g); head = `<div class="daylabel ymlabel">📅 ${esc(ymTxt(g))} · ${grp.length} PO · ${fmt(grp.reduce((s, x) => s + planKg(x), 0) / 1000, 1)} t</div>`; }
+        return head + `<a class="item" href="#/plan/${encodeURIComponent(po)}">
+          <div class="top"><span class="id">📑 ${esc(po)}${!SITE && h.site ? ` <span class="whtag">🏭 ${esc(h.site)}</span>` : ''}</span>${poStatus(po)}</div>
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
           <div class="prog"><i style="width:${k ? Math.min(100, r / k * 100) : 0}%"></i></div>
-          <div class="meta">${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</div></a>`;
+          <div class="meta pmeta"><span>${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</span><b class="pct">${pctTxt(r, k)}</b></div></a>`;
       }).join('') || `<div class="empty">${t('មិនទាន់មាន PO', 'No PO yet')}</div>`}</div>`);
     $('#xfile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
-    $('#addPo').onclick = () => { location.hash = '#/plan-new'; };
     const qi = $('#pq'); qi.oninput = () => { PQ = qi.value; const p = qi.selectionStart; renderPlan(); const n = $('#pq'); n.focus(); n.setSelectionRange(p, p); };
   }
+  // % of completion (Kim, 1 Nov 2026); floor so a nearly done PO never shows 100%
+  function pctTxt(r, k) { if (!k) return '–'; const p = r / k * 100; return (p >= 100 ? Math.round(p) : Math.floor(p)) + '%'; }
   function renderPo(po) {
     paintTabs('plan');
     const lines = PLAN.filter(x => x.po === po); if (!lines.length) { location.hash = '#/plan'; return; }
@@ -828,6 +1251,7 @@
         ${kv(t('លេខ Inbound', 'Inbound Number'), esc(h.inbound || '–'))}${kv('Ref. No.', esc(h.ref || '–'))}
         ${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(h.supplier || '–'))}${kv('ETA', esc(showEta(h.eta) || '–'))}
         ${kv(t('ផែនការ', 'Planned'), fmt(planKg(po)) + ' Kg')}${kv(t('បានទទួល', 'Received'), fmt(poRecvd(po)) + ' Kg')}
+        ${kv(t('ភាគរយបញ្ចប់', '% Completion'), pctTxt(poRecvd(po), planKg(po)))}
       </div></section>
       <section class="card"><h2>📦 ${t('មុខទំនិញ', 'Lines')} (${lines.length})</h2>
         <table class="tb pl"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ផែនការ', 'Plan')}</th><th class="n">${t('ទទួល', 'Recv.')}</th><th class="n">${t('នៅសល់', 'Left')}</th></tr>
@@ -846,17 +1270,20 @@
   // title rows or moved columns are fine.
   let UP = null;   // { file, lines, skipped, missing }
   const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['kg'], pcs: ['pcs'],
-    po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'] };
+    po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'], site: ['warehouse', 'wh', 'site'] };
   const NEED = ['material', 'kg', 'po'];
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve();
     return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
   }
+  const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   const etaOf = v => {
     if (v instanceof Date) return ymd(new Date(v.getTime() + 12 * 3600000));   // dates come in at UTC midnight: keep the day
     const s = String(v == null ? '' : v).trim(); let m;
     if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + '-' + pad(m[2]) + '-' + pad(m[3]);
     if ((m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) return m[3] + '-' + pad(m[2]) + '-' + pad(m[1]);
+    const mo = (m = s.match(/^(\d{1,2})[\s./-]*([A-Za-z]{3})[A-Za-z]*[\s.,/-]*(\d{4})$/)) && MON3.indexOf(m[2].toLowerCase());   // 31-Oct-2026
+    if (mo >= 0 && mo !== null && m) return m[3] + '-' + pad(mo + 1) + '-' + pad(m[1]);
     return s;
   };
   async function readExcel(f) {
@@ -878,8 +1305,8 @@
         if (!r.some(c => String(c).trim())) return;
         const l = { po: String(v(r, 'po')).replace(/\s+/g, '').toUpperCase(), material: String(v(r, 'material')).trim(), desc: String(v(r, 'desc')).trim(),
           plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, pcs: String(v(r, 'pcs')).trim(),
-          inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim() };
-        if (l.po && !/^PO/.test(l.po)) l.po = 'PO' + l.po;
+          inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim(), site: String(v(r, 'site')).trim() || SITE || '' };
+        l.po = npo(l.po);
         if (!l.po || !l.material || !l.kg) skipped.push(hi + i + 2); else lines.push(l);
       });
       if (!lines.length) throw new Error(t('គ្មានជួរដែលមាន PO, Material និង Kg', 'No rows with PO, Material and Kg'));
@@ -946,11 +1373,11 @@
     $$('[data-rm]').forEach(b => { b.onclick = () => { grab(); NP.lines.splice(+b.dataset.rm, 1); renderPlanNew(); }; });
     $('#saveNp').onclick = async () => {
       grab();
-      let po = NP.po.replace(/\s+/g, '').toUpperCase(); if (po && !/^PO/.test(po)) po = 'PO' + po;
+      let po = npo(NP.po);
       const ls = NP.lines.filter(l => l.material && +String(l.kg).replace(/,/g, '') > 0);
       if (!po || !ls.length) { toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); return; }
       if (POS.indexOf(po) >= 0) { toast('⚠️ ' + po + t(' មានរួចហើយ', ' already exists')); return; }
-      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs }));
+      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs, site: SITE || '' }));
       if (!DEMO) { if (!await planCall('planSave', { lines: add }, $('#saveNp'))) return; } else { setPlan(PLAN.concat(add)); save(); } toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + po); NP = null; location.hash = '#/plan/' + encodeURIComponent(po);
     };
   }
@@ -958,6 +1385,8 @@
   // ------------------------------------------------------------------ router
   function screen() {
     const h = location.hash.replace(/^#\/?/, '');
+    document.body.classList.toggle('wide', h === 'sum');   // summary is a wide dashboard on computers
+    if (h === 'site' || (siteOn() && SITE === null)) return renderSite();
     if (h === 'new') return renderForm('');
     if (h.indexOf('edit/') === 0) return renderForm(h.slice(5));
     if (h.indexOf('r/') === 0) return renderOne(h.slice(2));
@@ -969,6 +1398,19 @@
     if (h.indexOf('plan/') === 0) return renderPo(decodeURIComponent(h.slice(5)));
     if (h === 'today' || !canPlan()) return renderHome();
     return renderMenu();
+  }
+  // choose the warehouse (people with several, or All); the choice is remembered on the phone
+  function renderSite() {
+    paintTabs('');
+    const card = (code, sub, on) => {
+      const rs = DATA.filter(r => !code || r.site === code), live = rs.filter(isLive).length;
+      const pos = POS.filter(po => PLAN.some(x => x.po === po && (!code || x.site === code)) && pendingLines(po).length).length;
+      return `<a class="item whcard${on ? ' on' : ''}" href="#/" data-site="${esc(code)}"><span class="whico">${code ? '🏭' : '🌐'}</span>
+        <span class="whtx"><b>${code ? esc(code) : t('ទាំងអស់', 'All warehouses')}</b><small>⏱ ${live} ${t('កំពុងទម្លាក់', 'unloading')} · 📑 ${pos} PO ${t('មិនទាន់ទទួលគ្រប់', 'pending')}</small></span><span class="whgo">›</span></a>`;
+    };
+    view(`<h2 class="whh">🏭 ${t('ជ្រើសឃ្លាំង', 'Choose your warehouse')}</h2><p class="hint">${t('កម្មវិធីនឹងចាំការជ្រើសរើសនេះ។', 'The app remembers your choice.')}</p>
+      <div class="list">${SITES.map(s => card(s, '', s === SITE)).join('')}${ALLS ? card('', '', SITE === '') : ''}</div>`);
+    $$('[data-site]').forEach(a => { a.onclick = e => { e.preventDefault(); setSite(a.dataset.site); location.hash = '#/'; screen(); }; });
   }
   // live timers tick every 20 s without redrawing the screen
   setInterval(() => { $$('[data-timer]').forEach(el => { const r = byId(el.dataset.timer); if (r) { const m = spentMin(r); el.textContent = clock(m); el.classList.toggle('slow', m > 60); } }); }, 20000);
@@ -984,6 +1426,6 @@
   load(); paintStatic(); window.addEventListener('hashchange', screen);
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { screen(); refresh(); }
-  // screens refresh when the phone comes back to the app (not while a form is open)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !formOpen()) refresh(); });
+  // screens refresh in the background every minute and when the phone comes back to the app (not while a form is open)
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), every: 30000, busy: formOpen });
 })();

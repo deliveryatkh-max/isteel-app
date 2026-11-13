@@ -1,0 +1,527 @@
+/* Truck Scale: built on ../overtime/ot.css (ISI colours, cards, buttons). Wide layout for the scale PC. */
+body.wide main { max-width: 1400px; }
+@media (min-width: 900px) { body.wide main { max-width: 1400px; } }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.mt { margin-top: 12px; }
+.r { text-align: right; }
+.cnt { color: var(--muted); font-weight: 600; font-size: 14px; }
+.req { color: var(--bad); }
+.in.need, .dnbox.need { border-color: var(--bad) !important; background: var(--bad-soft); }
+
+/* live weight */
+.lcd { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: #07111e; color: #b8c7dc;
+  border-radius: 16px; padding: 12px 20px; margin-bottom: 14px; border: 3px solid #23354d; }
+.lcd .num { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; font-size: clamp(48px, 9vw, 96px); line-height: 1.05; color: #3dff9a;
+  letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.lcd .num span { font-size: .32em; margin-left: 10px; color: #8fb3a0; }
+.lcd .side { display: grid; gap: 6px; justify-items: end; text-align: right; font-size: 14px; }
+.lcd .st { font-weight: 800; letter-spacing: .08em; padding: 4px 14px; border-radius: 99px; font-size: 15px; background: #1d2b3d; }
+.lcd.ok { border-color: #1e7b46; } .lcd.ok .st { background: #1e7b46; color: #fff; }
+.lcd.move .num { color: #ffc46b; } .lcd.move .st { background: #8a5a00; color: #fff; }
+.lcd.off .num { color: #4a5a70; } .lcd.off .st { background: #3a1c1a; color: #f28b82; }
+.lcd.manual { border-color: #b3261e; } .lcd.manual .num { color: #f28b82; } .lcd.manual .st { background: #b3261e; color: #fff; }
+.lcd .err { color: #f28b82; max-width: 420px; }
+.lcd .btn.conn { min-height: 40px; background: #0b76a0; border-color: #0b76a0; color: #fff; }
+
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 980px) { .grid2 { grid-template-columns: 1fr; } }
+.grid2 > .card { margin-bottom: 0; }
+.grid2 + .card { margin-top: 14px; }
+.fgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.fgrid .span2 { grid-column: 1 / -1; }
+@media (max-width: 560px) { .fgrid { grid-template-columns: 1fr; } }
+.fgrid .field { margin-bottom: 12px; }
+.fgrid input.in, .fgrid select.in { min-height: 44px; font-size: 16px; }
+.seg { display: flex; gap: 8px; }
+.seg .chip { flex: 1; min-height: 44px; text-align: center; font-size: 15px; }
+.sugg .opt { display: flex; justify-content: space-between; gap: 10px; grid-template-columns: none; }
+.sugg .opt small { color: var(--muted); font-size: 12.5px; }
+.sugg .opt.add { color: var(--brand); }
+.sugg .opt.none { color: var(--muted); cursor: default; }
+
+.dnbox { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 48px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--field); cursor: text; }
+.dnbox input { flex: 1; min-width: 160px; border: 0; outline: none; background: transparent; font-size: 16px; padding: 4px; }
+.dn { display: inline-flex; align-items: center; gap: 4px; background: var(--soft); color: var(--brand); border-radius: 99px; padding: 3px 4px 3px 12px; font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.dn button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 17px; line-height: 1; padding: 0 6px; }
+
+.w3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 12px; }
+.w3 > div { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; min-width: 0; }
+.w3 b { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 24px; font-variant-numeric: tabular-nums; }
+.w3 .src { font-style: normal; font-size: 12px; color: var(--bad); font-weight: 700; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn.big { width: auto; flex: 1; min-width: 220px; }
+.btn.wait { opacity: .55; }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn.warnbtn { background: var(--warn); border-color: var(--warn); color: #fff; }
+.alert.big { font-size: 15.5px; font-weight: 600; display: grid; gap: 6px; }
+.alert.big .btns { margin-top: 6px; }
+.manual { margin-top: 10px; }
+.manform { display: grid; grid-template-columns: 140px 1fr auto; gap: 8px; margin-top: 8px; }
+@media (max-width: 560px) { .manform { grid-template-columns: 1fr; } }
+.donebox { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--ok-soft); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card.soft { background: var(--soft); box-shadow: none; }
+
+/* tables */
+.tbl { overflow-x: auto; }
+.tbl table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tbl th, .tbl td { padding: 8px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; vertical-align: top; }
+.tbl th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.tbl th.r, .tbl td.r { text-align: right; }
+.tbl td small { display: block; }
+.tbl tr.pick { cursor: pointer; }
+.tbl tr.pick:hover, .tbl tr.on { background: var(--soft); }
+.tbl tr.void td { color: var(--muted); text-decoration: line-through; }
+.tbl tr.void td:first-child { text-decoration: none; }
+.tbl tr.errrow { background: var(--bad-soft); }
+.tbl td.nw span { margin-left: 2px; }
+.need-t { color: var(--bad); font-weight: 700; }
+.tt td:nth-child(3) { white-space: normal; min-width: 120px; max-width: 220px; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 10px; }
+.filters label { display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.filters input.in { min-height: 44px; font-size: 15px; width: auto; }
+.filters .grow { flex: 1; min-width: 200px; }
+.sumline { margin: 4px 2px 10px; }
+
+/* settings */
+.setwrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 760px) { .setwrap { grid-template-columns: 1fr; } }
+.setnav { display: grid; gap: 4px; position: sticky; top: 70px; }
+@media (max-width: 760px) { .setnav { position: static; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); } }
+.setnav a { padding: 10px 12px; border-radius: 10px; text-decoration: none; color: var(--text); background: var(--card); border: 1px solid var(--line); font-weight: 600; font-size: 14.5px; }
+.setnav a.on { background: var(--soft); color: var(--brand); border-color: var(--accent); }
+.setbody h3 { font-size: 15.5px; margin: 16px 0 6px; }
+.setbody .head2 { flex-wrap: wrap; gap: 10px; }
+.raw { background: #07111e; color: #3dff9a; border-radius: 10px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow: auto; }
+.rawkg { font-size: 15px; }
+input[type=range] { flex: 1; min-width: 180px; }
+.emp .kv b { overflow-wrap: anywhere; }
+
+.syncdot { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: #fff3d6; color: #8a5a00; white-space: nowrap; }
+.syncdot.bad { background: #fbe9e7; color: #b3261e; }
+
+/* printing: only the ticket picture, one A4 page */
+#printArea { display: none; }
+@media print {
+  @page { size: A4; margin: 0; }
+  body.printing > *:not(#printArea) { display: none !important; }
+  body.printing { padding: 0 !important; background: #fff; }
+  body.printing #printArea { display: block; }
+  body.printing #printArea img { width: 210mm; height: 297mm; display: block; }
+}
+.sitesearch { min-height: 44px; font-size: 16px; margin-bottom: 8px; }
+/* Word template drawn on this PC (docx-preview): print the page as it is */
+@media print {
+  body.printing #printArea .tplbox section.docx { margin: 0 !important; box-shadow: none !important; page-break-after: avoid; }
+  body.printing #printArea .tplbox section.docx + section.docx { display: none; }
+}
+.lcd .lcdbtns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.lcd .btn.conn2 { min-height: 40px; width: auto; background: transparent; border-color: #3a5170; color: #b8c7dc; }
+/* "New truck" on the 2nd weigh card: a clear button, right of the title */
+#formCard > h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn.newtruck { margin-left: auto; width: auto; min-height: 42px; padding: 6px 16px; font-size: 15px; font-weight: 700; background: #0b4ea2; border-color: #0b4ea2; color: #fff; }
+/* 2nd weigh: live weight, 1st weight and net in three boxes (Kim's option C) */
+.lcd .nums { display: flex; align-items: stretch; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+.lcd .cell { padding: 2px 20px; border-right: 1px solid #22344d; min-width: 0; }
+.lcd .cell:first-child { padding-left: 0; }
+.lcd .cell.net { border-right: 0; background: #10231a; border-radius: 10px; padding: 6px 20px; }
+.lcd .cell .lab { font-size: 15px; color: #b8c7dc; }
+.lcd .cell .sub { font-size: 13px; color: #8fb3a0; margin-top: 2px; }
+.lcd .cell .num { font-size: clamp(40px, 6vw, 80px); }
+.lcd .num.n1 { font-size: clamp(30px, 4.2vw, 56px); color: #e8fff2; }
+.lcd .num.nn { font-size: clamp(36px, 5.2vw, 70px); color: #ffc46b; }
+.fitnw, .fitnw * { white-space: nowrap !important; }
+
+/* turnaround per truck company */
+.tatbar { position: relative; min-width: 140px; height: 24px; background: var(--soft, #eef3fb); border-radius: 6px; overflow: hidden; }
+.tatbar i { position: absolute; inset: 0 auto 0 0; background: #b9d3f5; border-radius: 6px; }
+.tatbar i.bad { background: #ffc46b; }
+.tatbar span { position: relative; padding: 0 8px; line-height: 24px; font-weight: 700; font-size: 13.5px; white-space: nowrap; }
+h3.mt { margin: 18px 2px 8px; font-size: 16px; }
+
+/* ticket page: print preview instead of the details list */
+.tprev { background: #fff; border: 1px solid var(--line, #d4e1f5); border-radius: 12px; padding: 12px; overflow: auto; min-height: 120px; }
+.tprev .tplbox, .tprev .tplbox section.docx { background: #fff !important; }
+.tprev .tplbox section.docx { margin: 0 auto !important; box-shadow: none; }
+.tprev .tplbox section.docx + section.docx { display: none; }
+.tprev .tprevimg { display: block; width: 100%; max-width: 760px; margin: 0 auto; background: #fff; }
+/* all bottom tabs on one row (Weigh, Tickets, Turnaround, Settings) */
+.tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 1fr; }
+
+/* Debit Note check (Kim, 6 Nov 2026): the filters stay on top while the table scrolls */
+.dncf { position: sticky; top: 58px; z-index: 4; }
+.dncf .filters { margin-bottom: 0; }
+.dncf .head2 h2 { margin: 0 0 8px; }
+.dcards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.dcard { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); display: grid; gap: 2px; }
+.dcard b { font-size: 22px; }
+.dcard small { color: var(--muted); font-size: 12.5px; }
+.dcard.ok b { color: var(--ok); } .dcard.warn b { color: var(--warn); } .dcard.bad b { color: var(--bad); }
+.dtabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.tbl tr.warnrow { background: var(--warn-soft); }
+.dnct td.dd { white-space: normal; min-width: 220px; font-size: 13px; }
+.dnct td.dd small { display: block; }
+.dnct td:nth-child(3) { min-width: 0; white-space: nowrap; }
+.dnct { font-size: 13.5px; }
+.dlist { margin: 6px 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.in.sm { min-height: 34px; padding: 4px 6px; font-size: 13.5px; }
+.spin-s { width: 14px; height: 14px; border: 2.5px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -2px; }
+.alist { display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.arow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.arow[hidden] { display: none; }
+@media (max-width: 900px) {
+  .dcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dncf { position: static; }
+}
+
+/* The scale display stays on top while the page scrolls (Kim, 8 Nov 2026) */
+.lcd { position: sticky; top: var(--barh, 58px); z-index: 4; box-shadow: 0 6px 16px rgba(1, 30, 65, .18); }
+.dncf { top: var(--barh, 58px); }
+
+.jobchips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.jobchips .chip input { margin-right: 4px; }
+
+/* a picker that only takes values from its list looks like a dropdown */
+.in.ddl { padding-right: 34px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size: 6px 6px; background-repeat: no-repeat; cursor: pointer; }
+.jobchips.need .chip { border-color: var(--bad, #b3261e); background: var(--bad-soft, #fdecea); }
+
+/* Weigh form: every label has an emoji and its own colour, easy to find at a glance (Kim, 8 Nov 2026) */
+#formCard .f { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+#formCard .f.lc-blue { background: #e3f0ff; color: #0b4f9c; }
+#formCard .f.lc-teal { background: #dff6f3; color: #0b6b60; }
+#formCard .f.lc-navy { background: #e6ebf5; color: #011e41; }
+#formCard .f.lc-purple { background: #efe6fb; color: #5b2a9c; }
+#formCard .f.lc-orange { background: #fff0dc; color: #9a4b00; }
+#formCard .f.lc-green { background: #e2f6e6; color: #1b6b2f; }
+#formCard .f.lc-pink { background: #fde6ef; color: #9c1f55; }
+#formCard .f.lc-grey { background: #eef1f4; color: #3c4a5a; }
+:root[data-theme="dark"] #formCard .f { filter: brightness(.85) saturate(1.2); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #formCard .f { filter: brightness(.85) saturate(1.2); } }
+#formCard .f .req { color: #c62828; }
+
+/* Picked destinations above the dropdown (Kim, 8 Nov 2026) */
+.destbox { min-height: 0; margin-bottom: 6px; cursor: default; border-style: dashed; }
+
+/* Destination list with tick boxes (Kim, 8 Nov 2026) */
+.sugg.msel .mopt { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
+.sugg.msel .mopt input { width: 20px; height: 20px; accent-color: #1b6b2f; }
+.sugg.msel .mopt.on { background: #e2f6e6; font-weight: 700; }
+
+/* Waiting list scrolls inside its card; the header row stays on top (Kim, 8 Nov 2026) */
+#site .tbl { overflow-y: auto; }
+#site .tbl th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+
+/* Ticket list: quick date chips, smaller search box (Kim, 8 Nov 2026) */
+.filters .qchips { display: flex; gap: 6px; flex-wrap: wrap; align-self: flex-end; padding-bottom: 2px; }
+.filters .qchips .chip { min-height: 40px; padding: 6px 14px; font-weight: 600; cursor: pointer; }
+.filters .qchips .chip.on { background: var(--soft); color: var(--brand); border-color: var(--accent); }
+.filters input.in.lq { width: 240px; flex: 0 1 240px; min-width: 160px; }
+
+/* Weigh screen frozen on the scale PC: the page fits the window; the form and the waiting list scroll inside (Kim, 8 Nov 2026) */
+@media (min-width: 981px) {
+  body.freeze { overflow: hidden; }
+  body.freeze main#view { display: flex; flex-direction: column; overflow: hidden; padding-top: 12px; padding-bottom: 0; box-sizing: border-box; }
+  body.freeze main#view > .lcd { position: static; flex: 0 0 auto; margin-bottom: 12px; }
+  body.freeze .grid2 { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+  body.freeze .grid2 > .card { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  body.freeze #formCard { overflow-y: auto; display: block; }
+  body.freeze #site { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  body.freeze #site .tbl { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+
+/* Load / Unload (and Covered / Not covered) stay on one row (Kim, 8 Nov 2026): the first row sizes to its chips */
+#formCard .fgrid.toprow { grid-template-columns: auto auto; justify-content: start; gap: 0 18px; }
+#formCard .jobchips { flex-wrap: nowrap; gap: 5px; }
+#formCard .jobchips .chip { white-space: nowrap; padding: 5px 9px; flex: 0 0 auto; font-size: 13.5px; }
+#formCard .jobchips .chip input { margin: 0 3px 0 0; }
+@media (max-width: 560px) { #formCard .fgrid.toprow { grid-template-columns: 1fr; } }
+
+/* Frozen headers everywhere (Kim, 8 Nov 2026): every table header row sticks to the top of its scroll box,
+   long tables scroll inside a box that ends at the window bottom, filter bars stay on top */
+.tbl th { position: sticky; top: 0; background: var(--card); z-index: 2; box-shadow: inset 0 -1px 0 var(--line); }
+.tbl.fit, .tbl.dncfit { overflow: auto; }
+.tbl.dncfit { max-height: calc(100vh - var(--barh, 58px) - 230px); min-height: 280px; }
+.card > .filters { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); padding-top: 4px; }
+/* Option D filter header (Kim, 12 Nov 2026): title + actions, Filter button opens/closes a soft panel */
+.card > .fwrap { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); padding-top: 4px; margin-bottom: 10px; }
+.fhead { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.fhead h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); flex: 1; min-width: 180px; }
+.facts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fwrap { --fh: 38px; --fr: 8px; --navy: #011e41; --hi: #e8f1fb; }
+.facts .btn { min-height: var(--fh); height: var(--fh); padding: 0 14px; font-size: 14px; font-weight: 600; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: var(--fr); display: inline-flex; align-items: center; gap: 6px; }
+.facts .btn.ok { background: var(--navy); color: #fff; border-color: var(--navy); }
+.facts .xl { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: #1e7b46; color: #fff; font: 800 11px/1 sans-serif; margin-right: 2px; }
+.facts .fbtn { color: var(--navy); border-color: #9ec3ea; }
+.facts .fbtn.on { background: var(--hi); }
+.fpanel { background: var(--hi); border: 1px solid #cfe0f3; border-radius: 10px; padding: 8px 10px; margin-bottom: 0; gap: 8px 10px; align-items: end; }
+.fpanel label { font-weight: 600; color: var(--text); font-size: 12.5px; }
+.fpanel .in, .fpanel select.in, .filters.fpanel input.in { min-height: var(--fh); height: var(--fh); padding: 0 10px; font-size: 14px; background: var(--field); border: 1px solid var(--line); border-radius: var(--fr); }
+.frange > span { display: flex; align-items: center; gap: 6px; }
+.frange i { font-style: normal; color: var(--muted); }
+.fsearch { position: relative; flex: 1; min-width: 220px; }
+.fsearch .ico { position: absolute; left: 10px; bottom: 10px; font-size: 13px; opacity: .6; pointer-events: none; }
+.fsearch input.in, .filters.fpanel .fsearch input.in { width: 100%; padding-left: 32px; }
+.fpanel .fsp { flex: 1; }
+.fpanel .fshow { min-height: var(--fh); height: var(--fh); padding: 0 18px; font-size: 14px; font-weight: 700; background: var(--navy); color: #fff; border: 0; border-radius: var(--fr); }
+.fpanel .qchips .chip, .filters.fpanel .qchips .chip { min-height: var(--fh); height: var(--fh); padding: 0 12px; font-size: 13.5px; border-radius: var(--fr); }
+.fpanel .qchips .chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fwrap { --navy: #61cbf4; --hi: #10263d; } :root:not([data-theme="light"]) .fpanel { border-color: var(--line); } :root:not([data-theme="light"]) .fpanel .fshow, :root:not([data-theme="light"]) .fpanel .qchips .chip.on, :root:not([data-theme="light"]) .facts .btn.ok { color: #011e41; } }
+:root[data-theme="dark"] .fwrap { --navy: #61cbf4; --hi: #10263d; } :root[data-theme="dark"] .fpanel .fshow, :root[data-theme="dark"] .fpanel .qchips .chip.on { color: #011e41; }
+@media (max-width: 640px) { .fhead h2 { font-size: 16px; min-width: 100%; } .facts { width: 100%; } .facts .btn { flex: 1 1 auto; justify-content: center; padding: 0 10px; } .fpanel > * { flex: 1 1 100%; } .frange > span input { flex: 1; min-width: 0; } .fpanel .fshow { width: 100%; } }
+.dncf .fwrap { position: static; margin-bottom: 0; }
+
+/* Truck info + photo under the weigh form (Kim, 8 Nov 2026) */
+.tinfo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--card); }
+.ti-head { font-size: 15px; margin-bottom: 6px; }
+.ti-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.ti-row span { color: var(--muted, #667); }
+.ti-row b { text-align: right; font-weight: 600; }
+.ti-row.warn b { color: #b45309; }
+.ti-row.bad b { color: #c0262d; }
+.ti-rules { margin-top: 8px; background: #fff7e6; border: 1px solid #f5c26b; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: #6b4300; }
+.ti-rules ul { margin: 4px 0 0; padding-left: 18px; }
+.ti-photo { display: flex; flex-direction: column; gap: 8px; align-items: stretch; justify-content: center; min-height: 160px; }
+.ti-photo img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px; background: #0001; }
+.ti-nophoto { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 2px dashed var(--line); border-radius: 8px; color: var(--muted, #667); font-size: 13px; min-height: 140px; }
+.ti-add { align-self: center; cursor: pointer; font-size: 13px; }
+.ti-add.busy { opacity: .5; pointer-events: none; }
+[data-theme="dark"] .ti-rules { background: #3a2a0a; color: #f8d48a; border-color: #7a5a1a; }
+@media (max-width: 600px) { .tinfo { grid-template-columns: 1fr; } }
+
+/* Truck info: four lines only (Kim, 8 Nov 2026) */
+.ti-w3 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 6px 0; }
+.ti-w3 > div { border: 1px solid var(--line); border-radius: 8px; padding: 5px 7px; min-width: 0; }
+.ti-w3 span { display: block; font-size: 11.5px; color: var(--muted, #667); line-height: 1.25; }
+.ti-w3 b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ti-rules.none { background: transparent; border-style: dashed; color: var(--muted, #667); }
+
+/* Clear (✕) button inside the Truck No box (Kim, 8 Nov 2026) */
+.clrwrap { position: relative; }
+.clrwrap .in { padding-right: 40px; }
+.clrwrap .clr { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--soft, #eef3fb); color: var(--muted, #667); font-size: 14px; cursor: pointer; z-index: 3; }
+.clrwrap .clr:hover { background: var(--bad-soft, #fdecea); color: var(--bad, #b3261e); }
+
+/* Over weight box in the scale display at the 2nd weigh (Kim, 8 Nov 2026): red when over, green when not */
+.lcd .cell.ow { border-right: 0; border-radius: 10px; padding: 6px 18px; margin-left: 10px; min-width: 0; flex: 0 1 auto; }
+@media (min-width: 981px) { .lcd .nums { flex-wrap: nowrap; } .lcd .cell { padding-left: 14px; padding-right: 14px; } }
+.lcd .cell.ow .owv { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; font-size: clamp(26px, 3.4vw, 46px); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.lcd .cell.ow.over { background: #b3261e; color: #fff; animation: owpulse 1.2s ease-in-out infinite; }
+.lcd .cell.ow.over .lab, .lcd .cell.ow.over .sub { color: #ffe1de; font-weight: 700; }
+.lcd .cell.ow.ok { background: #10231a; }
+.lcd .cell.ow.ok .lab { color: #7ee2a8; font-weight: 700; } .lcd .cell.ow.ok .owv { color: #3dff9a; }
+.lcd .cell.ow.none { background: #141f2e; } .lcd .cell.ow.none .owv { color: #4a5a70; }
+@keyframes owpulse { 50% { background: #e0362b; } }
+.lcd .num, .lcd .cell.ow .owv { white-space: nowrap; }
+.lcd .nums:has(.ow) .cell .num { font-size: clamp(30px, 3.9vw, 60px); }
+.lcd .nums:has(.ow) .cell .num.n1 { font-size: clamp(26px, 3.1vw, 46px); }
+.lcd .nums:has(.ow) .cell .num.nn { font-size: clamp(28px, 3.5vw, 54px); }
+.lcd .cell.ow .owv { font-size: clamp(24px, 2.8vw, 42px); }
+
+/* DN used before: message box (Kim, 9 Nov 2026) */
+.popwrap { position: fixed; inset: 0; background: #011e4199; display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+.popbox { background: #fff; color: #0d1b2a; border-radius: 16px; padding: 18px 20px; max-width: 460px; width: 100%; border-top: 6px solid #b3261e; box-shadow: 0 12px 40px #0006; font-size: 16px; }
+.popbox p { margin: 0 0 10px; line-height: 1.5; }
+.popbox .btns { margin-top: 8px; }
+.popbox .mono { white-space: nowrap; }
+
+/* Scale again (Kim's option A, 9 Nov 2026) */
+.btn.againbtn { background: #fff; border: 2px solid #7a3fc4; color: #5b2a9c; font-weight: 700; }
+.btn.againbtn.wait { opacity: .55; }
+.agrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; padding: 8px 12px; border: 1.5px solid #cdb6ee; background: #f6f0fd; border-radius: 10px; color: #4a2380; font-size: 14px; }
+.agrow b.mono { font-size: 16px; }
+.agrow .agnow { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.agd { border-radius: 99px; padding: 2px 10px; font-weight: 700; font-size: 13px; background: #eef2f7; color: #334; }
+.agd.same { background: #e2f6e6; color: #1b6b2f; } .agd.heavy { background: #fdecea; color: #b3261e; } .agd.light { background: #fff4e0; color: #8a5300; }
+.agpill { display: inline-block; border-radius: 99px; padding: 1px 8px; font-size: 12px; font-weight: 700; background: #efe6fb; color: #5b2a9c; white-space: nowrap; }
+.lcd .cell.ag { background: #2a1a4a; border-radius: 10px; padding: 6px 12px; margin-left: 8px; }
+.lcd .cell.ag .lab, .lcd .cell.ag .sub { color: #d9c6f5; }
+.lcd .cell.ow.light { background: #3a2a10; } .lcd .cell.ow.light .lab { color: #ffd38a; font-weight: 700; } .lcd .cell.ow.light .owv { color: #ffc46b; }
+.lcd .nums:has(.ag) .cell .num { font-size: clamp(26px, 3.2vw, 50px); }
+.lcd .nums:has(.ag) .cell .num.n1 { font-size: clamp(22px, 2.6vw, 38px); }
+.lcd .nums:has(.ag) .cell .num.nn { font-size: clamp(24px, 2.9vw, 44px); }
+.lcd .nums:has(.ag) .owv { font-size: clamp(22px, 2.4vw, 34px); }
+.lcd .nums:has(.ag) .cell { padding-left: 10px; padding-right: 10px; }
+
+/* Weigh form as one list, label on the left (Kim's option C, 9 Nov 2026) */
+#formCard .fgrid, #formCard .fgrid.toprow { display: block; border: 1px solid var(--line); border-radius: 12px; margin: 0; }
+#formCard .fgrid.toprow { border-bottom: 0; border-radius: 12px 12px 0 0; }
+#formCard .fgrid.toprow + .fgrid { border-radius: 0 0 12px 12px; }
+#formCard .fgrid .field { display: grid; grid-template-columns: 150px minmax(0, 1fr); margin: 0; border-bottom: 1px solid var(--line); min-height: 52px; align-items: center; }
+#formCard .fgrid .field:last-child { border-bottom: 0; }
+#formCard .fgrid .field > .f { grid-column: 1; grid-row: 1 / span 8; align-self: stretch; margin: 0; padding: 8px 12px; border-radius: 0; background: rgba(1, 30, 65, .045); color: var(--text); font-size: 14.5px; font-weight: 700; filter: none; display: flex; align-items: center; gap: 6px; }
+#formCard .fgrid .field > :not(.f) { grid-column: 2; margin: 0; padding: 5px 10px; min-width: 0; }
+#formCard .fgrid .field > .hint { padding-top: 0; font-size: 12.5px; }
+#formCard .fgrid .field .in { min-height: 42px; }
+#formCard .fgrid .field .jobchips { flex-wrap: wrap; }
+#formCard .fgrid .field:has(.need) > .f { background: #fdecea; color: #b3261e; }
+#formCard .fgrid.toprow .field:first-child > .f { border-top-left-radius: 11px; }
+#formCard .fgrid.toprow + .fgrid .field:last-child > .f { border-bottom-left-radius: 11px; }
+:root[data-theme="dark"] #formCard .fgrid .field > .f { background: rgba(255, 255, 255, .05); filter: none; }
+:root[data-theme="dark"] #formCard .fgrid .field:has(.need) > .f { background: rgba(179, 38, 30, .28); color: #ff9a92; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #formCard .fgrid .field > .f { background: rgba(255, 255, 255, .05); filter: none; }
+  :root:not([data-theme="light"]) #formCard .fgrid .field:has(.need) > .f { background: rgba(179, 38, 30, .28); color: #ff9a92; }
+}
+@media (max-width: 560px) { #formCard .fgrid .field { grid-template-columns: 112px minmax(0, 1fr); } #formCard .fgrid .field > .f { font-size: 13.5px; padding: 8px; } }
+#formCard .fgrid .field > input.in, #formCard .fgrid .field > .dnbox { margin: 5px 10px; width: auto; padding: 8px 12px; }
+#formCard .fgrid + #warnBox + .btns, #formCard .fgrid ~ .btns { margin-top: 12px; }
+/* Truck number locked at the 2nd weigh (Kim, 9 Nov 2026) */
+#formCard .in.locked { background: rgba(1, 30, 65, .04); font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; cursor: not-allowed; }
+#formCard .clrwrap .lockic { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 15px; opacity: .7; pointer-events: none; }
+
+/* Admin edit / delete on the waiting list (Kim, 9 Nov 2026) */
+#site .rowacts { text-align: right; }
+#site .rowic { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 3px 7px; margin-left: 4px; cursor: pointer; font-size: 14px; line-height: 1.2; }
+#site .rowic:hover { border-color: var(--accent); }
+#site .rowic.del:hover { border-color: #b3261e; background: #fdecea; }
+
+/* DN kg check at the 2nd weigh (Kim, 10 Nov 2026) */
+.dnkg{margin-top:10px}
+.dnkg table{width:100%;max-width:520px;border-collapse:collapse;font-size:15px}
+.dnkg th{text-align:left;font-size:13px;color:var(--muted,#64748b);font-weight:600;padding:4px 6px;border-bottom:1px solid #d0d7e2}
+.dnkg td{padding:4px 6px;border-bottom:1px solid #eef1f5}
+.dnkg .r{text-align:right}
+.dnkg .dkin{width:150px;text-align:right;padding:6px 10px;font-size:17px}
+.dnkg tr.tot td{font-weight:700;border-bottom:0;padding-top:8px}
+.dncmp{margin-top:10px;max-width:720px;border-radius:12px;padding:10px 12px;display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+.dncmp.wait{background:#f1f5f9;color:#475569;font-size:14px}
+.dncmp>div{flex:1 1 110px;background:#fff;border-radius:8px;padding:6px 10px;display:flex;flex-direction:column}
+.dncmp small{font-size:12px;color:#64748b}
+.dncmp b{font-size:20px;font-family:ui-monospace,Consolas,monospace}
+.dncmp .vd b{font-family:inherit;font-size:18px}
+.dncmp.ok{background:#dcfce7;border:2px solid #16a34a}
+.dncmp.ok .vd b{color:#15803d}
+.dncmp.bad{background:#fee2e2;border:2px solid #dc2626}
+.dncmp.bad .vd b{color:#b91c1c}
+/* Scale again + Finish buttons stay in view while the form scrolls (Kim, 10 Nov 2026) */
+#formCard > .btns { position: sticky; bottom: -16px; z-index: 3; background: var(--card); margin: 12px -4px 0; padding: 10px 4px 26px; box-shadow: 0 -8px 12px -8px rgba(1, 30, 65, .25); }
+
+/* Weighbridge webcam above the waiting list (Kim's option B, 10 Nov 2026) */
+.cambox{margin:0 0 14px;padding-bottom:14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.camhead{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:16px}
+.campill{margin-left:auto;font-size:12.5px;font-weight:700;border-radius:999px;padding:3px 10px}
+.campill.on{background:#fdecea;color:#c62828}
+.campill.off{background:#eef1f4;color:#5b6b7f}
+.camview{position:relative;aspect-ratio:16/9;max-height:min(300px,30vh);width:100%;background:#0b1626;border-radius:12px;overflow:hidden;border:2px solid #39d98a;display:flex;align-items:center;justify-content:center}
+.camview.small{max-width:480px}
+.camview .camvid{width:100%;height:100%;object-fit:cover;display:block}
+.camerr{color:#cfe3ff;font-size:14px;padding:16px;text-align:center}
+.camcap{position:absolute;right:10px;bottom:10px;border:0;border-radius:999px;padding:7px 14px;font-weight:700;font-size:14px;background:rgba(255,255,255,.94);color:#011e41;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;font-family:inherit}
+.camcap:disabled{opacity:.5;cursor:default}
+.camths{display:flex;gap:10px;margin-top:10px}
+.camth{margin:0;flex:1 1 0;min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card);cursor:zoom-in}
+.camth img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.camth figcaption{font-size:12.5px;font-weight:600;padding:5px 8px}
+.camth.none{border-style:dashed;cursor:default;display:flex;align-items:center;justify-content:center;min-height:44px;color:var(--muted,#64748b);font-size:12.5px;text-align:center;padding:8px}
+.campop{display:block;max-width:min(88vw,960px);max-height:70vh;border-radius:10px;margin:0 auto 6px}
+.popbox:has(.campop){max-width:min(92vw,1000px)}
+@media (min-width: 981px) { body.freeze .grid2 > .card:has(> #camBox:not([hidden])) { overflow-y: auto; } body.freeze .grid2 > .card:has(> #camBox:not([hidden])) #site .tbl { min-height: 180px; } }
+/* Phone (Kim, 10 Nov 2026): the frozen weight bar is small and the page fits the screen width */
+@media (max-width: 640px) {
+  .grid2 > * { min-width: 0; }
+  nav.tabs { max-width: 100vw; box-sizing: border-box; overflow-x: auto; }
+  #formCard .jobchips { flex-wrap: wrap; }
+  .dnkg .dkin { width: 100%; max-width: 120px; min-width: 70px; font-size: 16px; }
+  .dnkg th, .dnkg td { padding: 4px 3px; }
+  .dnkg th { white-space: normal; }
+  .lcd { padding: 8px 10px; gap: 6px; border-radius: 12px; }
+  .lcd .nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; width: 100%; flex: 1 1 100%; }
+  .lcd .nums > .num { grid-column: 1 / -1; font-size: 44px; }
+  .lcd .cell, .lcd .cell.net, .lcd .cell.ow, .lcd .cell.ag { padding: 4px 6px; margin: 0; border-right: 0; border-radius: 8px; min-width: 0; }
+  .lcd .cell:first-child { padding-left: 6px; }
+  .lcd .cell .lab, .lcd .cell .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lcd .cell .lab { font-size: 11px; }
+  .lcd .cell .sub { font-size: 10.5px; margin-top: 0; }
+  .lcd .nums .cell .num, .lcd .nums .cell .num.n1, .lcd .nums .cell .num.nn { font-size: 20px; }
+  .lcd .nums:has(.ow) .cell .num, .lcd .nums:has(.ag) .cell .num, .lcd .nums:has(.ow) .cell .num.n1, .lcd .nums:has(.ow) .cell .num.nn { font-size: 20px; }
+  .lcd .cell.ow .owv { font-size: 18px; }
+  .lcd .cell .num span { font-size: .5em; margin-left: 3px; }
+  .lcd .side { display: flex; flex-wrap: wrap; align-items: center; justify-items: start; text-align: left; gap: 6px; width: 100%; font-size: 12px; }
+  .lcd .st { font-size: 12px; padding: 3px 10px; }
+  .lcd .lcdbtns { justify-content: flex-start; gap: 6px; }
+  .lcd .btn.conn, .lcd .btn.conn2 { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+}
+/* Phones and tablets have the menu bar at the bottom: the frozen buttons sit just above it, side by side */
+@media (max-width: 899px) {
+  #formCard > .btns { bottom: 63px; padding-bottom: 10px; flex-wrap: nowrap; }
+  #formCard > .btns .btn.big { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; }
+}
+@media (max-width: 640px) {
+  #formCard > .btns .btn.big { font-size: 15px; min-height: 48px; }
+  .lcd .cell .sub { display: none; }
+}
+
+/* Two fields side by side in one row (Kim, 12 Nov 2026): Load/Unload with Canvas or Empty truck, and Truck No with Truck company.
+   In a pair, the label sits on top of its box so each half keeps a full-width input. */
+#formCard .fgrid.toprow, #formCard .frow2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; justify-content: stretch; border-bottom: 1px solid var(--line); }
+#formCard .fgrid.toprow > .field, #formCard .frow2 > .field { display: flex; flex-direction: column; align-items: stretch; border-bottom: 0; min-height: 0; }
+#formCard .fgrid.toprow > .field > .f, #formCard .frow2 > .field > .f { padding: 6px 12px; border-radius: 0 !important; width: 100%; box-sizing: border-box; }
+#formCard .fgrid.toprow > .field > :not(.f), #formCard .frow2 > .field > :not(.f) { padding: 6px 10px; }
+#formCard .fgrid.toprow > .field > .hint, #formCard .frow2 > .field > .hint { padding-top: 0; }
+#formCard .fgrid.toprow > .field .jobchips { flex-wrap: wrap; }
+#formCard .fgrid.toprow > .field + .field, #formCard .frow2 > .field + .field { border-left: 1px solid var(--line); }
+#formCard .fgrid.toprow > .field:only-child { grid-column: 1 / -1; }
+#formCard .fgrid.toprow + .fgrid { border-top: 0; }
+#formCard .fgrid.toprow > .field:first-child > .f { border-top-left-radius: 11px !important; }
+#formCard .fgrid.toprow > .field:last-child > .f { border-top-right-radius: 11px !important; }
+@media (max-width: 420px) {
+  #formCard .fgrid.toprow, #formCard .frow2 { grid-template-columns: 1fr; }
+  #formCard .fgrid.toprow > .field + .field, #formCard .frow2 > .field + .field { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+/* Truck info weights as a table: label | value, 4 rows (Kim, 12 Nov 2026) */
+.ti-tbl { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.ti-tbl th, .ti-tbl td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: middle; }
+.ti-tbl th { text-align: left; font-weight: 600; color: var(--muted, #667); background: rgba(1, 30, 65, .04); line-height: 1.3; }
+.ti-tbl td { text-align: right; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
+
+/* Truck photo opens big on click (Kim, 12 Nov 2026) */
+.ti-photo img { cursor: zoom-in; }
+.phbox { position: fixed; inset: 0; z-index: 9999; background: rgba(0, 0, 0, .85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; cursor: zoom-out; }
+.phbox img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 8px; background: #fff; }
+.phbox .phbar { display: flex; gap: 14px; align-items: center; color: #fff; font-size: 15px; }
+.phbox .phbar a { color: #9cc8ff; }
+
+/* Ticket page: Back / Print / PDF / Edit / Cancel on top, frozen while scrolling (Kim, 12 Nov 2026) */
+.tbtns { position: sticky; top: var(--barh, 58px); z-index: 5; background: var(--card); margin: 0 -4px 10px; padding: 8px 4px; box-shadow: 0 8px 12px -10px rgba(1, 30, 65, .25); }
+
+/* Report grand total row stays at the bottom of the table box (Kim, 12 Nov 2026) */
+.rep tr.gtot th { position: sticky; bottom: 0; top: auto; background: var(--soft, #e8eef8); color: var(--text); font-weight: 700; z-index: 2; box-shadow: inset 0 1px 0 var(--line); cursor: default; }
+
+/* Report columns: drag a header (admins) and the Columns dialog (Kim, 12 Nov 2026) */
+.rep th[draggable="true"] { cursor: grab; }
+.rep th.dragging { opacity: .45; }
+.rep th.dropto, .colrow.dropto { box-shadow: inset 3px 0 0 var(--orange, #f39200); }
+.colsdlg { max-width: 460px; width: calc(100% - 32px); max-height: 86vh; display: flex; flex-direction: column; }
+.colsdlg .collist { overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.colrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--card); }
+.colrow[draggable="true"] { cursor: grab; }
+.colrow.off { opacity: .6; }
+.colrow .grip { width: 14px; color: var(--muted); }
+.colrow label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.colrow .sp, .colsdlg .btns .sp { flex: 1; }
+.colrow .btn.sm { padding: 2px 8px; min-height: 0; }
+.colbar { display: flex; justify-content: flex-end; margin: 4px 0; }
+.colbar .btn.sm { padding: 3px 10px; min-height: 0; font-size: 13px; }
+.tt th[draggable="true"] { cursor: grab; }
+.tt th.dragging { opacity: .45; }
+.tt th.dropto { box-shadow: inset 3px 0 0 var(--orange, #f39200); }
+
+/* compact: quick dates as one segmented control, fixed widths so the panel fits one or two lines */
+.fpanel .qchips { gap: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--fr); overflow: hidden; background: var(--field); flex-wrap: nowrap; }
+.fpanel .qchips .chip, .filters.fpanel .qchips .chip { border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; padding: 0 10px; font-weight: 600; white-space: nowrap; }
+.fpanel .qchips .chip:first-child { border-left: 0; }
+.filters.fpanel .frange input.in { width: 138px; }
+.fpanel select.in { width: auto; min-width: 110px; max-width: 220px; }
+@media (max-width: 640px) { .filters.fpanel .frange input.in { width: 0; flex: 1; min-width: 0; } .fpanel .qchips .chip { flex: 1; padding: 0 4px; } .fpanel select.in { max-width: none; width: 100%; } }
+.filters.fpanel .qchips .chip.on { background: var(--navy); color: #fff; }
+:root[data-theme="dark"] .filters.fpanel .qchips .chip.on { color: #011e41; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .filters.fpanel .qchips .chip.on { color: #011e41; } }
+.fpanel .fsearch { min-width: 170px; }
+
+.fpanel .fclr { min-height: var(--fh); height: var(--fh); padding: 0 12px; font-size: 14px; font-weight: 600; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: var(--fr); }
+.fpanel .fclr:hover { border-color: var(--navy); }
+@media (max-width: 640px) { .fpanel .fclr { width: 100%; } }
+
+.facts .fclr:hover { border-color: var(--navy); }
+.fpanel .fshow { margin-right: 6px; }

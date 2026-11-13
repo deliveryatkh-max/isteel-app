@@ -20,30 +20,52 @@
  *   IB_FOLDER_ID       made by setup(); Drive folder "Inbound Photos"
  */
 
-const SH = { PLAN: 'Incoming Plan', LOG: 'GR Log', REC: 'Receipts', SET: 'IB Settings', MAIL: 'Email Lists' };
+const SH = { PLAN: 'Incoming Plan', LOG: 'GR Log', REC: 'Receipts', SET: 'IB Settings', MAIL: 'Email Lists', WH: 'Warehouse List', GR: 'GR Export' };
+const WH_COLS = ['Warehouse Code', 'Warehouse Description'];
 const MAIL_COLS = ['List', 'Emails', 'Active'];
 const MAIL_SEED = [['Warehouse', '', 'Yes'], ['Procurement', '', 'Yes'], ['Finance', '', 'Yes']];
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 'PCS', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier'];
+const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 'PCS', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier', 'Warehouse'];
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
+// Warehouses (Kim, 2 Nov 2026): each team sees only its own. A person's warehouses come from the Users tab column
+// "Inbound Warehouse" (set in 👥 User Management); empty or "All" = every warehouse. IB Settings WAREHOUSES can change the list.
+// The old Warehouse List codes (A1, I1, ...) are now the Entrance.
+const SITES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
+const WH_USER_COL = 'Inbound Warehouse';
 const STATUS = { live: 'Unloading', done: 'Done' };
 const PHOTOS = ['front', 'load', 'doc'];
-const MAX_DMG_PHOTOS = 6;
+const MAX_DMG_PHOTOS = 10;
+const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 const MAX_ITEMS = 60;
 const DMG = { dent: 'Dent', rust: 'Rust', wet: 'Wet / water', edge: 'Edge damage', scratch: 'Scratch', bent: 'Bent / out of shape',
   coat: 'Coating peeled', pack: 'Packing torn', wrong: 'Wrong item', other: 'Other' };
 
 // ---------------------------------------------------------------- web entry points
-function doGet() { return json_({ ok: true, app: 'Inbound' }); }
+function doGet(e) {
+  const q = (e && e.parameter) || {};
+  // Kim's PC asks for new Goods Receipt PDFs to save in OneDrive (gr-sync.ps1, see grSync_ below)
+  if (q.action === 'grSync') {
+    try { return json_({ ok: true, data: grSync_(q) }); } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
+  }
+  return json_({ ok: true, app: 'Inbound' });
+}
+
+// Kim, 5 Nov 2026: "Inbound takes a long time to refresh". The settings tab, the Warehouse List tab and a person's
+// warehouses were read again for every plan line and every receipt (hundreds of sheet reads per refresh).
+// They are now read once per request.
+// Only inside a request (doPost); triggers and editor runs read fresh each time.
+let memo_ = null;
+const memo = (k, fn) => (!memo_ ? fn() : Object.prototype.hasOwnProperty.call(memo_, k) ? memo_[k] : (memo_[k] = fn()));
 
 function doPost(e) {
+  memo_ = {};
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
@@ -55,20 +77,30 @@ function doPost(e) {
     const msg = String(err && err.message || err);
     if (!/^[A-Z_]+:/.test(msg)) console.error(body.action + ' failed: ' + (err && err.stack || msg));
     return json_({ ok: false, error: /^[A-Z_]+:/.test(msg) ? msg : 'SERVER: ' + msg });
-  }
+  } finally { memo_ = null; }
 }
 
 function route_(action, p, user) {
   switch (action) {
     case 'boot': return boot_(user);
     case 'start': return start_(p.receipt || {}, user);
+    case 'reserve': return { id: withLock_(reserve_) };   // receipt no. for the photo stamp (Kim, 2 Nov 2026)
     case 'finish': return update_(p.receipt || {}, user, true);
     case 'save': return update_(p.receipt || {}, user, false);
     case 'photos': return photos_(p.ids);
+    case 'photo': return { url: photos_([p.id], true)[String(p.id)] || '' };   // full size, tap to open (Kim, 2 Nov 2026)
+    case 'voice': return voice_(p.id);
     case 'pdf': return pdf_(p, user);
+    case 'summary': return summary_(p, user);   // Log date range report from the Excel template (Kim, 6 Nov 2026)
     case 'email': return email_(p, user);
+    case 'mailTo': {   // addresses of the chosen lists, for an Outlook draft made on the phone or computer (Kim, 6 Nov 2026)
+      const names = Array.isArray(p.lists) ? p.lists.map(String) : [], out = [];
+      mailLists_().filter(l => l.active && names.indexOf(l.name) >= 0).forEach(l => l.emails.forEach(e => { if (out.indexOf(e) < 0) out.push(e); }));
+      return { emails: out };
+    }
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
+    case 'delete': return withLock_(() => del_(p.id, p.reason, user));   // admin removes a pending unloading record (Kim, 3 Nov 2026)
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -134,8 +166,10 @@ function setup() {
     ['PDF_TEMPLATE_LINK', '', 'Drive link to the report template: a Word file, a Google Doc or a folder (the newest file in it is used). Edit the template and the next report uses it. Empty = built-in layout.'],
     ['PDF_FONT', 'Kantumruy Pro', 'Font for the report text (Google can only print Google fonts). - = keep the template fonts.'],
     ['DAYS_SHOWN', '90', 'How many days of receipts the app loads (receipts of POs still in Incoming Plan always load)'],
+    ['ETA_ALERT_HOUR', '15', 'Hour (0-23) of the daily Telegram alert listing POs due tomorrow. Run setupAlert once after changing it.'],
   ]);
   sheet_(SH.MAIL, MAIL_COLS, MAIL_SEED);
+  sheet_(SH.WH, WH_COLS);
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('IB_FOLDER_ID')) props.setProperty('IB_FOLDER_ID', DriveApp.createFolder('Inbound Photos').getId());
   const first = ss_().getSheets()[0];
@@ -201,7 +235,7 @@ function authenticate_(token) {
   const u = usersCached_().find(x => x.email === email && x.ok);
   if (!u) fail_('NOACCESS', email + ' has no Inbound access. Ask the admin to tick ' + APP_COL + ' in Users.',
     email + ' មិនទាន់មានសិទ្ធិប្រើ ' + APP_COL + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
-  return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, session: session };
+  return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, wh: u.wh || [], session: session };
 }
 
 /** The one user list: the Users tab of the Fuel Refill sheet. Active = Yes and ទទួលទំនិញ ticked (Fuel admins always). */
@@ -213,38 +247,42 @@ function users_() {
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   const head = v[0].map(h => String(h).trim());
   const c = n => head.indexOf(n);
-  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL);
+  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL), w = c(WH_USER_COL);
   return v.slice(1).filter(x => x[e]).map(x => {
     const role = r >= 0 ? text_(x[r]) : '';
     const admin = /admin/i.test(role);
-    return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', admin: admin, reviewer: admin || /review/i.test(role),
-      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))) };
+    return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', admin: admin, reviewer: admin || /review|supervis/i.test(role),
+      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))),
+      wh: w >= 0 ? String(x[w] || '').split(',').map(s => s.trim()).filter(Boolean) : [] };
   });
 }
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('ib_users');
+  const hit = cache.get('ib_users2');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('ib_users', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('ib_users2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
 // ---------------------------------------------------------------- lists
-function setting_(k) { const r = objs_(SH.SET, SET_COLS).find(o => o.Setting === k); return r ? r.Value : ''; }
+function setting_(k) { const r = memo('set', () => objs_(SH.SET, SET_COLS)).find(o => o.Setting === k); return r ? r.Value : ''; }
 function plates_() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get('ib_plates');
   if (hit) return JSON.parse(hit);
   const out = [];
   try {
-    const sh = SpreadsheetApp.openById(prop_('USERS_SHEET_ID')).getSheetByName('Driver & Truck');
-    if (sh && sh.getLastRow() > 1) {
+    // Plates from the "Truck" tab (one row per plate, Kim 8 Nov 2026), plus any usual truck still only in "Driver & Truck".
+    const ss = SpreadsheetApp.openById(prop_('USERS_SHEET_ID'));
+    ['Truck', 'Driver & Truck'].forEach(name => {
+      const sh = ss.getSheetByName(name);
+      if (!sh || sh.getLastRow() < 2) return;
       const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       const ip = v[0].map(h => String(h).trim()).indexOf('CODE');
       if (ip >= 0) v.slice(1).forEach(r => { const p = String(r[ip]).trim(); if (p && p !== '0' && out.indexOf(p) < 0) out.push(p); });
-      out.sort();
-    }
+    });
+    out.sort();
   } catch (e) { /* no Driver & Truck tab: plates are typed */ }
   try { cache.put('ib_plates', JSON.stringify(out), 600); } catch (e) { /* too big */ }
   return out;
@@ -259,41 +297,59 @@ function plan_() {
   const c = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
   const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('kg', 'qty'),
     iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
-    iPlant = c('plant'), iSloc = c('sloc');
+    iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   const cell = (r, i) => (i < 0 ? '' : r[i] instanceof Date ? fmt_(r[i], 'yyyy-MM-dd') : String(r[i] == null ? '' : r[i]).trim());
+  const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], p2 = n => ('0' + n).slice(-2);
+  const eta = v => { let m; const t = String(v || '');   // 31-Oct-2026, 31.10.2026, 31/10/2026 typed as text → 2026-10-31
+    if ((m = t.match(/^(\d{1,2})[\s./-]*([A-Za-z]{3})[A-Za-z]*[\s.,/-]*(\d{4})$/)) && MON.indexOf(m[2].toLowerCase()) >= 0) return m[3] + '-' + p2(MON.indexOf(m[2].toLowerCase()) + 1) + '-' + p2(m[1]);
+    if ((m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) return m[3] + '-' + p2(m[2]) + '-' + p2(m[1]);
+    return t; };
   const seen = {};
   return v.slice(1).map(r => ({
-    po: cell(r, iPo), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: cell(r, iEta), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc),
+    // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
+    po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
+    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
 
 // ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
 function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'Only a Supervisor or Admin can change the Incoming Plan.', 'មានតែ Supervisor ឬ Admin ទេដែលអាចកែផែនការបាន។'); }
-const poOf_ = v => { const s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return s && !/^PO/.test(s) ? 'PO' + s : s; };
+/** the POs of a receipt: rec.pos, or the "PO1, PO2" text of older ones */
+const posOf_ = r => (Array.isArray(r.pos) && r.pos.length ? r.pos : String(r.po || '').split(',')).map(poOf_).filter(Boolean);
+const itemPo_ = (i, r) => poOf_(i.po) || posOf_(r)[0] || '';
+// PO number as in Kim's Excel: no "PO" in front (Kim, 13 Nov 2026); "PO 5100013709" and "PO5100013709" both become 5100013709
+const poOf_ = v => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, '');
 /** kg arrived (still unloading) or received per PO|material */
 function recvdMap_() {
   const m = {};
-  receipts_().forEach(r => (r.items || []).forEach(i => { const k = r.po + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
+  receipts_().forEach(r => (r.items || []).forEach(i => { const k = itemPo_(i, r) + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
   return m;
 }
 /** Rewrites the Incoming Plan tab: rows of other POs stay as they are (all columns). */
 function planWrite_(keep, add) {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
   const width = Math.max(sh.getLastColumn(), PLAN_COLS.length);
-  const head = sh.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+  let head = sh.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+  if (!head.some(h => /^(warehouse|wh|site)$/i.test(h))) {   // older tab: add the Warehouse column (Kim, 2 Nov 2026)
+    sh.getRange(1, width + 1).setValue('Warehouse').setFontWeight('bold');
+    head = head.concat('Warehouse'); keep = keep.map(r => r.concat(''));
+  }
+  const W = head.length;
   const rows = keep.concat(add.map(l => head.map(h => {
     switch (h.toLowerCase().replace(/\.$/, '')) {
       case 'material': return l.material; case 'description': case 'material description': return l.desc; case 'plant': return l.plant; case 'sloc': return l.sloc;
       case 'kg': return l.kg; case 't': return Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return Math.ceil(l.kg / 1000 / 40);
       case 'po number': case 'po': return l.po; case 'inbound no': case 'inbound number': return l.inbound; case 'ref. no': case 'ref no': return l.ref;
-      case 'eta': return l.eta; case 'supplier': return l.supplier; default: return '';
+      case 'eta': return l.eta; case 'supplier': return l.supplier; case 'warehouse': case 'wh': case 'site': return l.site || ''; default: return '';
     }
   })));
   const iNo = head.indexOf('No');
   if (iNo >= 0) rows.forEach((r, i) => { r[iNo] = i + 1; });
-  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, width).clearContent();
-  if (rows.length) sh.getRange(2, 1, rows.length, width).setNumberFormat('@').setValues(rows.map(r => r.map(v => (v == null ? '' : String(v)))));
+  // ETA written the way Kim types it: dd-mmm-yyyy (2 Nov 2026)
+  const iEta = head.findIndex(h => /^eta$/i.test(h)), MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (iEta >= 0) rows.forEach(r => { const m = String(r[iEta] == null ? '' : r[iEta]).match(/^(\d{4})-(\d\d)-(\d\d)$/); if (m) r[iEta] = m[3] + '-' + MON[+m[2] - 1] + '-' + m[1]; });
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, W).setNumberFormat('@').setValues(rows.map(r => head.map((h, k) => (r[k] == null ? '' : String(r[k])))));
 }
 function planRows_() {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
@@ -301,15 +357,17 @@ function planRows_() {
   const v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), width).getValues();
   const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
   const iPo = Math.max(head.indexOf('po number'), head.indexOf('po')), iMat = head.indexOf('material');
-  return v.slice(1).filter(r => r.some(c => String(c).trim())).map(r => ({ po: poOf_(r[iPo]), material: String(r[iMat]).trim(), row: r.map(c => (c instanceof Date ? fmt_(c, 'yyyy-MM-dd') : c)) }));
+  return v.slice(1).filter(r => r.some(c => String(c).trim())).map(r => ({ po: poOf_(r[iPo]), material: String(r[iMat]).trim(), row: r.map(c => (c instanceof Date ? fmt_(c, 'yyyy-MM-dd') : c)) }));   // planWrite_ turns ETA into dd-mmm-yyyy
 }
 /** Upload (Excel or by hand): each PO in the upload replaces its lines; lines already received and not in the upload stay. */
 function planSave_(lines, user) {
   planner_(user);
   const add = [], seen = {};
+  const us = userSites_(user), mine = !us.all && us.list.length === 1 ? us.list[0] : '';   // one warehouse: filled in for them (Kim, 2 Nov 2026)
   (Array.isArray(lines) ? lines : []).slice(0, 2000).forEach(l => {
     const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg),
-      pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80) };
+      pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80),
+      site: site_(l.site, user) || mine };
     if (!x.po || !x.material || !(x.kg > 0)) return;
     const k = x.po + '|' + x.material; if (seen[k]) { seen[k].kg += x.kg; return; }   // same material twice in a PO: one line
     seen[k] = x; add.push(x);
@@ -317,16 +375,18 @@ function planSave_(lines, user) {
   if (!add.length) fail_('BAD', 'No rows with PO, Material and Kg.', 'គ្មានជួរដែលមាន PO, Material និង Kg ទេ។');
   const pos = {}; add.forEach(x => { pos[x.po] = 1; });
   const got = recvdMap_();
+  const old = plan_(); old.forEach(x => { if (pos[x.po] && !siteOk_(user, x.site)) fail_('DENIED', x.po + ' belongs to ' + x.site + '.', x.po + ' ជារបស់ ' + x.site + '។'); });
   const keep = planRows_().filter(r => !pos[r.po] || (got[r.po + '|' + r.material] > 0 && !seen[r.po + '|' + r.material])).map(r => r.row);
   planWrite_(keep, add);
-  return plan_();
+  return plan_().filter(x => siteOk_(user, x.site));
 }
 function planDel_(po, user) {
   planner_(user);
   po = poOf_(po);
-  if (receipts_().some(r => r.po === po)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
+  if (plan_().some(x => x.po === po && !siteOk_(user, x.site))) fail_('DENIED', 'This PO belongs to another warehouse.', 'PO នេះជារបស់ឃ្លាំងផ្សេង។');
+  if (receipts_().some(r => posOf_(r).indexOf(po) >= 0)) fail_('BAD', 'Trucks were received on ' + po + ', so it cannot be deleted.', 'មានឡានទទួលលើ ' + po + ' រួចហើយ មិនអាចលុបបានទេ។');
   planWrite_(planRows_().filter(r => r.po !== po).map(r => r.row), []);
-  return plan_();
+  return plan_().filter(x => siteOk_(user, x.site));
 }
 
 // ---------------------------------------------------------------- receipts
@@ -335,31 +395,126 @@ function recRows_() {
   if (sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, REC_COLS.length).getDisplayValues();
 }
+/** Receipts from before the warehouse split have no warehouse: take it from their entrance (A1, I1… belong to WH IB). */
+function siteFix_(rec, ents) {
+  if (rec && !rec.site && rec.warehouse) { const w = (ents || warehouses_()).find(x => x.code === rec.warehouse && x.site); if (w) rec.site = w.site; }
+  return rec;
+}
 function receipts_() {
-  return recRows_().map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).filter(Boolean);
+  const ents = warehouses_();
+  return recRows_().map(r => { try { return siteFix_(JSON.parse(r[5]), ents); } catch (e) { return null; } }).filter(Boolean);
 }
 function boot_(user) {
-  const plan = plan_();
+  const us = userSites_(user);
+  const plan = plan_().filter(x => siteOk_(user, x.site));
   const pos = {}; plan.forEach(x => { pos[x.po] = 1; });
   const days = Math.max(1, num_(setting_('DAYS_SHOWN')) || 90);
   const from = fmt_(new Date(Date.now() - days * 86400000), 'yyyy-MM-dd');
-  const recs = receipts_().filter(r => r.date >= from || pos[r.po]);
+  const recs = receipts_().filter(r => (r.date >= from || posOf_(r).some(x => pos[x])) && siteOk_(user, r.site));
   const carriers = setting_('THREEPL_COMPANIES').split(',').map(s => s.trim()).filter(Boolean);
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
+    warehouses: warehouses_(), sites: us.list, allSites: us.all,
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
+/** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */
+/** Entrances from the Warehouse List tab. Old layout: Code | Description. New layout (Kim, 2 Nov 2026):
+ *  Warehouse Code | Entrance Code | Description, so each entrance belongs to a warehouse (site). */
+function whRows_() { return memo('wh', whRead_); }
+function whRead_() {
+  const sh = ss_().getSheetByName(SH.WH);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getDisplayValues().map(r => r.map(x => String(x).trim()));
+  const iEnt = v[0].findIndex(h => /^entr/i.test(h));
+  return { iEnt: iEnt, rows: v.slice(1) };
+}
+function warehouses_() {
+  const w = whRows_();
+  if (!w) return [];
+  if (w.iEnt < 0) return w.rows.map(r => ({ code: r[0], desc: r[1] || '', site: '' })).filter(x => x.code);
+  const iDesc = w.iEnt === 1 ? 2 : 1;
+  return w.rows.map(r => ({ code: r[w.iEnt], desc: r[iDesc] || '', site: r[0] })).filter(x => x.code);
+}
+/** Warehouses named in column A of the new-layout Warehouse List tab (in sheet order), or [] */
+function whSites_() {
+  const w = whRows_();
+  if (!w || w.iEnt < 0) return [];
+  return w.rows.map(r => r[0]).filter((x, i, a) => x && a.indexOf(x) === i);
+}
+function warehouse_(v, need, site) {
+  const all = warehouses_(), code = clip_(v, 40);
+  const list = site ? all.filter(w => !w.site || w.site === site) : all;   // only this warehouse's entrances
+  if (!all.length) return code;
+  if (!list.length) return '';   // e.g. WH OB has no entrances: nothing to choose
+  if (!code) { if (need) fail_('BAD', 'Choose the entrance.', 'សូមជ្រើសច្រកចូល។'); return ''; }
+  if (!list.some(w => w.code === code)) fail_('BAD', 'Entrance ' + code + ' is not in the Warehouse List.', 'ច្រកចូល ' + code + ' មិនមានក្នុងបញ្ជីទេ។');
+  return code;
+}
+function sites_() {
+  const v = String(setting_('WAREHOUSES') || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (v.length) return v;
+  const tab = whSites_();
+  return tab.length ? tab : SITES;
+}
+/** The warehouses a person works in; all = sees every warehouse (admins, reviewers, nobody ticked, or "All"). */
+function userSites_(user) { return memo('us|' + user.email, () => userSitesRead_(user)); }
+function userSitesRead_(user) {
+  const wh = (user.wh || []).filter(x => x !== 'All');
+  // Admins see every warehouse. Anyone else (reviewers too, Kim 2 Nov 2026) sees only the warehouses ticked in 👥 Users;
+  // nothing ticked or "All" ticked = every warehouse.
+  const all = !!(user.admin || !wh.length || (user.wh || []).indexOf('All') >= 0);
+  return { all: all, list: all ? sites_() : wh };
+}
+const siteOk_ = (user, site) => !site || userSites_(user).all || userSites_(user).list.indexOf(site) >= 0;
+function site_(v, user) {
+  const site = clip_(v, 30);
+  if (!site) return '';
+  if (sites_().indexOf(site) < 0 && !userSites_(user).all) fail_('BAD', 'Warehouse ' + site + ' is not in the list.', 'ឃ្លាំង ' + site + ' មិនមានក្នុងបញ្ជីទេ។');
+  if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
+  return site;
+}
+/** Voice note of a receipt as a data URL (only the receipt's own file). */
+function voice_(id) {
+  const rec = find_(id).rec;
+  if (!rec.voice) fail_('NOTFOUND', 'No voice note.', 'គ្មានសំឡេង។');
+  const b = DriveApp.getFileById(rec.voice).getBlob();
+  return { url: 'data:' + (b.getContentType() || 'audio/webm') + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+}
+function saveVoice_(folder, dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(audio\/(webm|mp4|ogg|mpeg|aac|x-m4a|wav))(?:;[^,]*)?;base64,(.+)$/);
+  if (!m) return null;
+  const bytes = Utilities.base64Decode(m[3]);
+  if (bytes.length > MAX_VOICE_BYTES) fail_('BIG', 'The voice note is too long.', 'សំឡេងវែងពេក។');
+  const ext = { webm: 'webm', mp4: 'm4a', ogg: 'ogg', mpeg: 'mp3', aac: 'aac', 'x-m4a': 'm4a', wav: 'wav' }[m[2]];
+  return folder.createFile(Utilities.newBlob(bytes, m[1], 'remark-voice-' + fmt_(new Date(), 'yyMMdd-HHmm') + '.' + ext)).getId();
+}
+
 function find_(id) {
   const rows = recRows_();
   const i = rows.findIndex(r => r[0] === String(id || ''));
   if (i < 0) fail_('NOTFOUND', 'Receipt not found.', 'រកមិនឃើញការទទួលនេះទេ។');
-  return { row: i + 2, rec: JSON.parse(rows[i][5]) };
+  return { row: i + 2, rec: siteFix_(JSON.parse(rows[i][5])) };
 }
-function nextId_() {
+function nextId_(res) {
   const day = fmt_(new Date(), 'yyMMdd');
   let n = 0;
-  recRows_().forEach(r => { const m = String(r[0]).match(/^IB-(\d{6})-(\d+)$/); if (m && m[1] === day) n = Math.max(n, +m[2]); });
+  recRows_().map(r => String(r[0])).concat(Object.keys(res || {})).forEach(v => { const m = v.match(/^IB-(\d{6})-(\d+)$/); if (m && m[1] === day) n = Math.max(n, +m[2]); });
   return 'IB-' + day + '-' + String(n + 1).padStart(2, '0');
+}
+// Receipt numbers handed out before Start, so the phone can stamp the photos with them. Kept 3 hours.
+function reserved_() {
+  let res = {};
+  try { res = JSON.parse(prop_('IB_RESERVED') || '{}'); } catch (e) { res = {}; }
+  const now = Date.now();
+  Object.keys(res).forEach(k => { if (!(res[k] > now)) delete res[k]; });
+  return res;
+}
+function saveReserved_(res) { PropertiesService.getScriptProperties().setProperty('IB_RESERVED', JSON.stringify(res)); }
+function reserve_() {
+  const res = reserved_(), id = nextId_(res);
+  res[id] = Date.now() + 3 * 3600 * 1000;
+  saveReserved_(res);
+  return id;
 }
 
 // ---------------------------------------------------------------- photos (one Drive folder per receipt)
@@ -381,7 +536,7 @@ function photo_(folder, v, keep, name) {
   return keep.indexOf(v) >= 0 ? v : null;
 }
 /** Small thumbnails for the app. Only files inside the Inbound Photos folder are read. */
-function photos_(ids) {
+function photos_(ids, full) {
   const rootId = root_().getId();
   const out = {};
   (Array.isArray(ids) ? ids : []).slice(0, 20).forEach(id => {
@@ -391,7 +546,7 @@ function photos_(ids) {
       const parent = p.hasNext() ? p.next() : null;
       const gp = parent && parent.getParents();
       if (!gp || !gp.hasNext() || gp.next().getId() !== rootId) return;
-      const b = f.getThumbnail() || f.getBlob();
+      const b = (!full && f.getThumbnail()) || f.getBlob();
       out[id] = 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
     } catch (e) { /* gone */ }
   });
@@ -399,36 +554,57 @@ function photos_(ids) {
 }
 
 // ---------------------------------------------------------------- arrival
+// One truck can bring several POs (Kim, 11 Nov 2026): p.pos lists them, each item says its PO; rec.po = "PO1, PO2" for display.
 function start_(p, user) {
-  const plan = plan_().filter(x => x.po === String(p.po || ''));
-  if (!plan.length) fail_('BAD', 'This PO is not in the Incoming Plan.', 'PO នេះមិនមានក្នុងផែនការទំនិញចូលទេ។');
+  const asked = [];
+  (Array.isArray(p.pos) && p.pos.length ? p.pos : String(p.po || '').split(',')).map(poOf_).forEach(x => { if (x && asked.indexOf(x) < 0) asked.push(x); });
+  const plan = plan_().filter(x => asked.indexOf(x.po) >= 0);
+  const gone = asked.filter(x => !plan.some(l => l.po === x));
+  if (!asked.length || gone.length) fail_('BAD', (gone[0] || 'This PO') + ' is not in the Incoming Plan.', (gone[0] || 'PO នេះ') + ' មិនមានក្នុងផែនការទំនិញចូលទេ។');
+  if (asked.length > 10) fail_('BAD', 'Up to 10 POs per truck.', 'ច្រើនបំផុត 10 PO ក្នុងមួយឡាន។');
   const items = (Array.isArray(p.items) ? p.items : []).slice(0, MAX_ITEMS).map(i => {
-    const line = plan.find(x => x.material === String(i.material || ''));
-    if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on this PO.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ PO នេះទេ។');
+    const ipo = poOf_(i.po) || (asked.length === 1 ? asked[0] : '');
+    const line = plan.find(x => x.po === ipo && x.material === String(i.material || ''));
+    if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on ' + (ipo || 'this PO') + '.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ ' + (ipo || 'PO នេះ') + ' ទេ។');
     const arr = num_(i.arrQty);
     if (!(arr > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
-    return { material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+    return { po: line.po, inbound: line.inbound, material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
   });
   if (!items.length) fail_('BAD', 'Choose the items on this truck.', 'សូមជ្រើសទំនិញលើឡាននេះ។');
+  const pos = asked.filter(x => items.some(i => i.po === x));   // a PO with no item on the truck is left out
+  items.sort((a, b) => pos.indexOf(a.po) - pos.indexOf(b.po));
+  const heads = pos.map(x => plan.find(l => l.po === x));
+  const join = k => heads.map(l => l[k]).filter((v, n, a) => v && a.indexOf(v) === n).join(', ');
   const truck = clip_(p.truck, 20).toUpperCase().replace(/\s+/g, '');
   if (!truck) fail_('BAD', 'Truck number is missing.', 'សូមបញ្ចូលផ្លាកលេខឡាន។');
   const dn = clip_(p.dn3pl, 40);
   if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
+  const us = userSites_(user);
+  const site = site_(p.site, user) || heads[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
+  const wh = warehouse_(p.warehouse, true, site);
+  if (!siteOk_(user, site)) fail_('DENIED', 'You are not set up for ' + site + '.', 'អ្នកមិនមានសិទ្ធិលើ ' + site + ' ទេ។');
   const ph = p.ph || {};
   if (PHOTOS.some(k => !/^data:image\//.test(String(ph[k] || '')))) fail_('BAD', 'Take the 3 photos first.', 'សូមថតរូប ៣ ជាមុនសិន។');
   return withLock_(() => {
-    const id = nextId_();
+    // the same truck pressed Start twice (slow network, a retry): give back the first record, no second Telegram post
+    const same = recRows_().filter(r => r[1] === STATUS.live && r[4] === truck && r[3] === pos.join(', '))
+      .map(r => { try { return JSON.parse(r[5]); } catch (e) { return null; } }).find(x => x && x.dn3pl === dn);
+    if (same) return same;
+    const res = reserved_(), want = String(p.id || '');
+    const id = res[want] && !recRows_().some(r => String(r[0]) === want) ? want : nextId_(res);
+    if (res[want]) { delete res[want]; saveReserved_(res); }
     const folder = folder_(id);
     const now = new Date();
-    const l = plan[0];
+    const l = heads[0];
     const rec = {
-      id: id, status: STATUS.live, po: l.po, inbound: l.inbound, ref: l.ref, supplier: l.supplier, eta: l.eta, dn3pl: dn, truck: truck,
-      items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
+      id: id, status: STATUS.live, po: pos.join(', '), pos: pos, inbound: join('inbound'), ref: join('ref'), supplier: join('supplier'), eta: l.eta, dn3pl: dn, truck: truck,
+      site: site, warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
+    const tg = telegramArrived_(rec);
+    if (tg && tg.ok && tg.result) rec.tg = tg.result.message_id;   // the finish post replies to it
     store_(rec);
-    telegramArrived_(rec);
     return rec;
   });
 }
@@ -441,18 +617,26 @@ function update_(p, user, finish) {
     const live = rec.status === STATUS.live;
     if (!live && !(user.admin || user.reviewer || rec.byEmail === user.email)) fail_('DENIED', 'Only the person who recorded it or an admin can change it.', 'មានតែអ្នកកត់ត្រា ឬ Admin ទេដែលអាចកែបាន។');
     if (finish && !live) fail_('BAD', 'This truck is already finished.', 'ឡាននេះបានបញ្ចប់រួចហើយ។');
+    if (!siteOk_(user, rec.site)) fail_('DENIED', 'This truck belongs to ' + rec.site + '.', 'ឡាននេះជារបស់ ' + rec.site + '។');
     const folder = folder_(rec.id);
     const sent = Array.isArray(p.items) ? p.items : [];
     rec.items.forEach(i => {
-      const s = sent.find(x => String(x.material) === i.material) || {};
+      const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po)) || {};
       const gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);
       const dm = s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
       if (gr !== '' && !(gr >= 0)) fail_('BAD', 'Actual GR Qty must be a number.', 'បរិមាណទទួលត្រូវតែជាលេខ។');
       if (!(dm >= 0)) fail_('BAD', 'Damaged Qty must be a number.', 'បរិមាណខូចខាតត្រូវតែជាលេខ។');
+      // reviewers and admins can correct the Arrival Qty after arrival (Kim, 31 Oct 2026)
+      if ((user.admin || user.reviewer) && s.arrQty !== undefined && s.arrQty !== '') {
+        const arr = num_(s.arrQty);
+        if (!(arr > 0)) fail_('BAD', 'Arrival Qty must be more than 0 for ' + i.desc + '.', 'បរិមាណមកដល់ត្រូវធំជាង 0 សម្រាប់ ' + i.desc + '។');
+        i.arrQty = arr;
+      }
       if (finish && gr === '') fail_('BAD', 'Actual GR Qty is missing for ' + i.desc + '.', 'សូមបញ្ចូលបរិមាណទទួលសម្រាប់ ' + i.desc + '។');
       i.grQty = gr;
       i.dmgQty = gr === '' && !dm ? '' : dm;
       i.dmgType = dm > 0 ? (DMG[s.dmgType] ? s.dmgType : clip_(s.dmgType, 40)) : '';
+      i.dmgUom = dm > 0 ? clip_(s.dmgUom, 15) || i.dmgUom || rec.uom : '';   // unit of the damaged qty (Kim, 31 Oct 2026)
       const keep = i.dmgPh || [];
       i.dmgPh = dm > 0 ? (Array.isArray(s.dmgPh) ? s.dmgPh : []).slice(0, MAX_DMG_PHOTOS)
         .map((v, n) => photo_(folder, v, keep, 'damage-' + i.material + '-' + (n + 1) + '.jpg')).filter(Boolean) : [];
@@ -467,9 +651,17 @@ function update_(p, user, finish) {
     const mp = num_(p.manpower);
     rec.manpower = mp > 0 ? Math.round(mp) : rec.manpower;
     rec.remark = clip_(p.remark, 500);
+    if (p.site !== undefined && (user.admin || user.reviewer)) rec.site = site_(p.site, user) || rec.site || '';
+    if (p.warehouse !== undefined) rec.warehouse = warehouse_(p.warehouse, false, rec.site) || (p.site !== undefined ? '' : rec.warehouse) || '';
+    if (p.voice !== undefined) {
+      if (/^data:audio\//.test(String(p.voice))) {
+        const id = saveVoice_(folder, p.voice);
+        if (id) { if (rec.voice) { try { DriveApp.getFileById(rec.voice).setTrashed(true); } catch (e) { /* gone */ } } rec.voice = id; }
+      } else if (!p.voice && rec.voice) { try { DriveApp.getFileById(rec.voice).setTrashed(true); } catch (e) { /* gone */ } rec.voice = ''; }
+    }
     if (finish) {
       if (!rec.owner) fail_('BAD', 'Choose ISI or 3PL truck.', 'សូមជ្រើសឡាន ISI ឬ 3PL។');
-      if (!(rec.manpower > 0)) fail_('BAD', 'Manpower is missing.', 'សូមបញ្ចូលចំនួនកម្មករ។');
+      if (!(rec.manpower > 0)) fail_('BAD', 'Manpower is missing.', 'សូមបញ្ចូលចំនួនបុគ្គលិកឃ្លាំង។');
       rec.end = fmt_(new Date(), 'HH:mm');
       rec.status = STATUS.done;
       rec.finishedBy = user.name;
@@ -477,6 +669,7 @@ function update_(p, user, finish) {
     rec.updated = now_();
     store_(rec, f.row);
     if (finish) telegramDone_(rec);
+    if (rec.status === STATUS.done) grQueue_();   // its PDF goes to the Goods Receipt Report folder about a minute later
     return rec;
   });
 }
@@ -497,10 +690,11 @@ function store_(rec, row) {
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
-  const rows = rec.items.map(i => [rec.id, rec.status, rec.po, rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
+  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Entrance, Voice Note, Damage UoM, Warehouse)
+  const rows = rec.items.map(i => [rec.id, rec.status, itemPo_(i, rec), i.inbound || rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
@@ -513,33 +707,121 @@ function writeLog_(rec) {
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, LOG_COLS.length).setNumberFormat('@').setValues(rows);
 }
 
+/** Admin only, and only while the truck is still unloading: the row leaves Receipts and GR Log; a copy goes to the IB Deleted tab. */
+function del_(id, reason, user) {
+  if (!user.admin) fail_('DENIED', 'Only an admin can delete a record.', 'មានតែ Admin ទេដែលអាចលុបបាន។');
+  const f = find_(id);
+  if (f.rec.status !== STATUS.live) fail_('BAD', 'Only a record that is still unloading can be deleted.', 'អាចលុបបានតែកំណត់ត្រាដែលកំពុងទម្លាក់ប៉ុណ្ណោះ។');
+  sheet_('IB Deleted', ['Deleted At', 'Deleted By', 'Reason', 'Receipt ID', 'Truck', 'PO Number', 'Data'])
+    .appendRow([now_(), user.name || user.email, clip_(reason, 300), f.rec.id, f.rec.truck, f.rec.po, JSON.stringify(f.rec)].map(String));
+  sheet_(SH.REC, REC_COLS).deleteRow(f.row);
+  const log = sheet_(SH.LOG, LOG_COLS), last = log.getLastRow();
+  const ids = last > 1 ? log.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
+  ids.map((x, n) => (x === f.rec.id ? n + 2 : 0)).filter(Boolean).reverse().forEach(r => log.deleteRow(r));
+  return { deleted: f.rec.id };
+}
+
 // ---------------------------------------------------------------- Telegram
-function telegram_(payload) {
+function telegram_(payload, moved) {
   const token = prop_('TELEGRAM_BOT_TOKEN'), chat = setting_('TELEGRAM_CHAT_ID');
   if (!token || !chat) return null;
   try {
-    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'post', payload: Object.assign({ chat_id: chat, parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'post', payload: Object.assign({ chat_id: String(chat), parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
     const out = JSON.parse(res.getContentText() || '{}');
+    const to = out.parameters && out.parameters.migrate_to_chat_id;
+    if (!out.ok && to && !moved) {   // the group became a supergroup: save the new id and send again
+      setSetting_('TELEGRAM_CHAT_ID', String(to));
+      return telegram_(payload, true);
+    }
     if (!out.ok) console.error('telegram: ' + res.getContentText());
     return out;
   } catch (e) { console.error('telegram: ' + e); return null; }
 }
 function button_(r) { const u = setting_('APP_URL'); return u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Open · បើក', url: u + '#/r/' + encodeURIComponent(r.id) }]] }) } : {}; }
 const kg_ = n => Number(n || 0).toLocaleString('en-US');
+const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
+const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
 function telegramArrived_(r) {
-  telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start),
+  return telegram_(Object.assign({ text: ['🚛 <b>Truck arrived ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
     '📦 ' + r.items.length + ' item(s) · ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)].join('\n') }, button_(r)));
 }
-/** Posted when a truck finishes with damage or a short quantity. */
+/** Posted for every finished truck (Kim, 3 Nov 2026), as a reply to its arrival post; damage and short lines are added. */
 function telegramDone_(r) {
-  const dmg = r.items.filter(i => Number(i.dmgQty) > 0), less = r.items.filter(isLess_);
-  if (!dmg.length && !less.length) return;
-  const lines = ['⚠️ <b>Receipt ' + esc_(r.id) + '</b> · ' + esc_(r.truck) + ' · ' + esc_(r.po)];
+  const dmg = r.items.filter(i => Number(i.dmgQty) > 0), less = r.items.filter(isLess_), bad = dmg.length || less.length;
+  const lines = [(bad ? '⚠️' : '✅') + ' <b>Finished ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + '–' + esc_(r.end) + ' · ' + spent_(r) + ' min' + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
+    '📄 ' + esc_(r.po) + ' · ' + esc_(r.id) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
+    '📦 Received ' + kg_(tot_(r, 'grQty')) + ' / ' + kg_(tot_(r, 'arrQty')) + ' ' + esc_(r.uom) + ' · 👷 ' + esc_(r.manpower)];
+  if (posOf_(r).length > 1) posOf_(r).forEach(x => { const its = r.items.filter(i => itemPo_(i, r) === x); lines.push('   • ' + esc_(x) + ': ' + kg_(its.reduce((s, i) => s + (Number(i.grQty) || 0), 0)) + ' ' + esc_(r.uom)); });
   less.forEach(i => lines.push('⬇ Received less: ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
-  dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
+  dmg.forEach(i => lines.push('💥 Damaged: ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
-  telegram_(Object.assign({ text: lines.join('\n') }, button_(r)));
+  const reply = r.tg ? { reply_to_message_id: String(r.tg), allow_sending_without_reply: 'true' } : {};
+  telegram_(Object.assign({ text: lines.join('\n') }, reply, button_(r)));
+}
+
+// ---------------------------------------------------------------- incoming alert, one day ahead (Kim, 2 Nov 2026)
+/** POs still to receive, grouped by PO: { po, site, supplier, eta, kg left, lines }. */
+function pendingPOs_() {
+  const got = recvdMap_(), by = {};
+  plan_().forEach(x => {
+    const left = Math.max(0, x.kg - (got[x.po + '|' + x.material] || 0));
+    if (!(left > 0)) return;
+    const o = by[x.po] || (by[x.po] = { po: x.po, site: x.site, supplier: x.supplier, eta: x.eta, inbound: x.inbound, kg: 0, lines: 0 });
+    o.kg += left; o.lines++;
+  });
+  return Object.keys(by).map(k => by[k]);
+}
+/** The Telegram text for POs due on `day` (yyyy-MM-dd); null when there are none. Overdue POs are added at the end. */
+const etaTxt_ = d => { const m = String(d || '').match(/^(\d{4})-(\d\d)-(\d\d)$/); return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : String(d || ''); };
+function incomingText_(day, today) {
+  const all = pendingPOs_(), due = all.filter(o => o.eta === day), late = all.filter(o => o.eta && o.eta < today);
+  if (!due.length && !late.length) return null;
+  const t = n => (n / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const line = o => '• ' + (o.site ? '🏭 ' + esc_(o.site) + ' · ' : '') + esc_(o.po) + ' · ' + esc_(o.supplier || '–') + ' · ' + t(o.kg) + ' t (~' + Math.max(1, Math.ceil(o.kg / 40000)) + ' 🚛)';
+  const sort = (a, b) => (a.site + a.po).localeCompare(b.site + b.po);
+  const out = [];
+  if (due.length) out.push('📅 <b>Incoming tomorrow ' + etaTxt_(day) + '</b> · ' + due.length + ' PO · ' + t(due.reduce((n, o) => n + o.kg, 0)) + ' t', due.sort(sort).map(line).join('\n'));
+  if (late.length) out.push('⏰ <b>Late, not yet received</b> · ' + late.length + ' PO', late.sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 15).map(o => line(o) + ' · ETA ' + etaTxt_(o.eta)).join('\n'));
+  return out.join('\n\n');
+}
+/** Runs every day (setupAlert): tells the Telegram group what arrives tomorrow. */
+function alertTomorrow() {
+  const now = new Date(), today = fmt_(now, 'yyyy-MM-dd'), day = fmt_(new Date(now.getTime() + 86400000), 'yyyy-MM-dd');
+  const text = incomingText_(day, today);
+  if (!text) return 'Nothing due tomorrow.';
+  const u = setting_('APP_URL');
+  telegram_(Object.assign({ text: text }, u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Schedule · កាលវិភាគ', url: u + '#/sum' }]] }) } : {}));
+  return text;
+}
+/** Run once from the editor after adding the bot to the Inbound Telegram group and sending any message there:
+ *  finds that group, saves its id in IB Settings › TELEGRAM_CHAT_ID, says hello in it, and switches on the daily alert. */
+function telegramConnect() {
+  const token = prop_('TELEGRAM_BOT_TOKEN');
+  if (!token) throw new Error('Add TELEGRAM_BOT_TOKEN in Project Settings › Script properties first (copy it from the Fuel app).');
+  const api = (m, p) => JSON.parse(UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + m, { method: 'post', payload: p || {}, muteHttpExceptions: true }).getContentText() || '{}');
+  const me = api('getMe');
+  if (!me.ok) throw new Error('The bot token is not right: ' + (me.description || ''));
+  const up = api('getUpdates', { limit: '100' });
+  if (!up.ok) throw new Error(/webhook/i.test(up.description || '') ? 'This bot has a webhook, so it cannot list groups. Put the group id in IB Settings › TELEGRAM_CHAT_ID by hand.' : (up.description || 'getUpdates failed'));
+  let chat = null;
+  (up.result || []).forEach(u => { const m = u.message || u.my_chat_member || u.channel_post || u.edited_message; const c = m && m.chat;
+    if (c && (c.type === 'group' || c.type === 'supergroup')) chat = c; });   // the newest group wins
+  if (!chat) throw new Error('No group found. Add @' + me.result.username + ' to the Inbound group, send a message there (e.g. /start@' + me.result.username + '), then run telegramConnect again.');
+  setSetting_('TELEGRAM_CHAT_ID', String(chat.id));
+  api('sendMessage', { chat_id: String(chat.id), parse_mode: 'HTML', text: '✅ <b>Inbound · ទទួលទំនិញ</b>\nក្រុមនេះនឹងទទួល៖ ឡានមកដល់ ការខូចខាត/ខ្វះ និងទំនិញចូលថ្ងៃស្អែក។\nThis group gets: trucks arriving, damage/short receipts, and tomorrow\'s incoming POs (daily).' });
+  const msg = 'Connected to "' + chat.title + '" (' + chat.id + '). ' + setupAlert();
+  console.log(msg);
+  return msg;
+}
+/** Run once from the editor: the alert goes out every day at ETA_ALERT_HOUR (IB Settings, default 15 = 3 pm). */
+function setupAlert() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'alertTomorrow').forEach(t => ScriptApp.deleteTrigger(t));
+  const h = Math.min(23, Math.max(0, parseInt(setting_('ETA_ALERT_HOUR'), 10) || 15));
+  ScriptApp.newTrigger('alertTomorrow').timeBased().everyDays(1).atHour(h).inTimezone(TZ).create();
+  const msg = 'Incoming alert set: every day around ' + h + ':00 to the Telegram group.';
+  console.log(msg);
+  return msg;
 }
 
 // ---------------------------------------------------------------- PDF report and email (Kim, 28 Oct 2026)
@@ -597,8 +879,9 @@ function noteHtml_(note) {
 
 function email_(p, user) {
   const rec = doneRec_(p.id);
-  const extra = String(p.extra || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
-  const bad = extra.filter(x => !EMAIL_RE.test(x));
+  // only the addresses count, so Outlook pastes like "Name" <name@x.com>, work
+  const rawExtra = String(p.extra || '').trim(), extra = (rawExtra.match(/[^\s<>()[\],;:"']+@[^\s<>()[\],;:"']+/g) || []).map(x => x.toLowerCase());
+  const bad = rawExtra && !extra.length ? [rawExtra] : extra.filter(x => !EMAIL_RE.test(x));
   if (bad.length) fail_('BAD', 'Check these email addresses: ' + bad.join(', '), 'សូមពិនិត្យអ៊ីមែលទាំងនេះ៖ ' + bad.join(', '));
   const names = Array.isArray(p.lists) ? p.lists.map(String) : [];
   const to = [];
@@ -613,7 +896,7 @@ function email_(p, user) {
   const note = clip_(p.note, 4000);
   const card = '<div style="background:#011e41;color:#fff;padding:12px 16px;border-radius:8px;margin-bottom:14px"><div style="font-size:12px;opacity:.8">ISI STEEL · Goods Receipt Report · របាយការណ៍ទទួលទំនិញ</div>' +
     '<div style="font-size:18px;font-weight:700">' + esc_(rec.id) + ' · ' + esc_(rec.truck) + '</div><div style="font-size:12px;opacity:.85">' +
-    esc_([rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>';
+    esc_([rec.site, rec.po, rec.supplier, showDate_(rec.date) + ' ' + rec.start + '–' + rec.end].filter(String).join(' · ')) + '</div></div>';
   // With a message, the message carries the summary; without one, a details table is shown instead
   const table = '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
     row('Inbound / Ref.', [rec.inbound, rec.ref].filter(String).join(' · ')) + row('3PL DN', rec.dn3pl) + row('Items', rec.items.length) +
@@ -633,6 +916,135 @@ function email_(p, user) {
   return { sent: to.length };
 }
 
+// ---- Summary report for a date range (Kim, 6 Nov 2026). The layout is the newest Excel file (or Google Sheet) in the
+// PDF_TEMPLATE_LINK folder, the same folder as the Word receipt template. {{placeholders}} are filled; the rows holding
+// {{id}} (receipts), {{supplier}} (by supplier) and {{material}} (damaged items) are repeated per record, the bold-less
+// sample row above each is removed, and SUM/COUNT formulas just below a block are stretched over it.
+// The standard file is web/inbound/summary-report-template.xlsx; an empty folder gets a copy.
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', GSHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+const SUM_TEMPLATE_URL = 'https://isteel-app.pages.dev/inbound/summary-report-template.xlsx';
+function sumTemplate_() {
+  const link = String(setting_('PDF_TEMPLATE_LINK') || '').trim();
+  const m = link.match(/\/d\/([-\w]{20,})|\/folders\/([-\w]{20,})|[?&]id=([-\w]{20,})|^([-\w]{20,})$/);
+  if (!m) fail_('SETUP', 'Set PDF_TEMPLATE_LINK (IB Settings) to the template folder.', 'សូមដាក់ Link Folder គំរូក្នុង IB Settings (PDF_TEMPLATE_LINK)។');
+  let folder;
+  if (m[2]) folder = DriveApp.getFolderById(m[2]);
+  else { const ps = DriveApp.getFileById(m[1] || m[3] || m[4]).getParents(); folder = ps.hasNext() ? ps.next() : root_(); }
+  let best = null;
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.isTrashed() || [XLSX_MIME, GSHEET_MIME].indexOf(f.getMimeType()) < 0) continue;
+    if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f;
+  }
+  const src = best || folder.createFile(UrlFetchApp.fetch(SUM_TEMPLATE_URL).getBlob().setName('Summary Report Template.xlsx').setContentType(XLSX_MIME));
+  if (src.getMimeType() === GSHEET_MIME) return src.getId();
+  const stamp = src.getId() + '@' + src.getLastUpdated().getTime(), old = setting_('SUM_TEMPLATE_ID');
+  if (old && setting_('SUM_TEMPLATE_STAMP') === stamp) { try { if (!DriveApp.getFileById(old).isTrashed()) return old; } catch (e) { /* gone: convert again */ } }
+  const b = 'ibsum' + Date.now();
+  const meta = { name: 'Summary Report Template (made from ' + src.getName() + ')', mimeType: GSHEET_MIME, parents: [root_().getId()] };
+  const bytes = x => Utilities.newBlob(x).getBytes();
+  const payload = bytes('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + XLSX_MIME + '\r\n\r\n')
+    .concat(src.getBlob().getBytes(), bytes('\r\n--' + b + '--'));
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+    method: 'post', contentType: 'multipart/related; boundary=' + b, payload, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error('summary template upload ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+  const id = JSON.parse(r.getContentText()).id;
+  if (old && old !== id) { try { DriveApp.getFileById(old).setTrashed(true); } catch (e) { /* already gone */ } }
+  setSetting_('SUM_TEMPLATE_ID', id);
+  setSetting_('SUM_TEMPLATE_STAMP', stamp);
+  return id;
+}
+const dmy_ = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : String(s || ''); };
+const r2_ = n => Math.round(n * 100) / 100;
+/** Values for the summary report: global keys, plus one object per receipt / supplier / damaged item. */
+function sumValues_(rows, p, user) {
+  const ton = (r, k) => tot_(r, k) / 1000, isDmg = r => r.items.some(i => Number(i.dmgQty) > 0), less = rows.filter(r => r.items.some(isLess_));
+  const sup = {}, dmgItems = [];
+  rows.forEach(r => {
+    const o = sup[r.supplier || '-'] || (sup[r.supplier || '-'] = { supplier: r.supplier || '-', trucks: 0, gr: 0, dmgTrucks: 0 });
+    o.trucks++; o.gr = r2_(o.gr + ton(r, 'grQty')); if (isDmg(r)) o.dmgTrucks++;
+    r.items.filter(i => Number(i.dmgQty) > 0).forEach(i => dmgItems.push({ id: r.id, date: dmy_(r.date), material: i.material, desc: i.desc, dmgQty: Number(i.dmgQty), dmgUom: dmgUom_(i, r), dmgType: DMG[i.dmgType] || i.dmgType || '' }));
+  });
+  const mins = rows.map(spent_).filter(x => x !== ''), pr = rows.filter(r => prod_(r) !== '');
+  const manH = pr.reduce((s, r) => s + spent_(r) / 60 * r.manpower, 0);
+  const g = {
+    from: dmy_(p.from || rows[0].date), to: dmy_(p.to || rows[rows.length - 1].date), warehouse: p.site || 'All warehouses',
+    trucks: rows.length, isiTrucks: rows.filter(r => r.owner === 'ISI').length, plTrucks: rows.filter(r => r.owner !== 'ISI').length,
+    poQty: r2_(rows.reduce((s, r) => s + ton(r, 'poQty'), 0)), arrQty: r2_(rows.reduce((s, r) => s + ton(r, 'arrQty'), 0)), grQty: r2_(rows.reduce((s, r) => s + ton(r, 'grQty'), 0)),
+    lessTrucks: less.length, lessQty: r2_(less.reduce((s, r) => s + r.items.filter(isLess_).reduce((a, i) => a + (Number(i.arrQty) - Number(i.grQty)), 0), 0) / 1000),
+    dmgTrucks: rows.filter(isDmg).length, avgMin: mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : '',
+    avgProd: manH ? r2_(pr.reduce((s, r) => s + ton(r, 'grQty'), 0) / manH) : '', suppliers: Object.keys(sup).length,
+    generated: fmt_(new Date(), 'dd-MMM-yyyy HH:mm'), user: user.name || user.email || '',
+  };
+  const rec = rows.map(r => ({ id: r.id, date: dmy_(r.date), po: r.po, supplier: r.supplier, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI' : (r.carrier || r.owner || ''),
+    arrival: r2_(ton(r, 'arrQty')), gr: r2_(ton(r, 'grQty')), damaged: isDmg(r) ? kg_(tot_(r, 'dmgQty')) + ' ' + r.uom : '', min: spent_(r), remark: r.remark || '' }));
+  return { g, rec, sup: Object.keys(sup).sort((a, b) => sup[b].gr - sup[a].gr).map(k => sup[k]), dmg: dmgItems };
+}
+/** Put values into one cell's text: a cell that is just {{key}} keeps a number as a number. */
+function sumCell_(v, vals) {
+  if (typeof v !== 'string' || v.indexOf('{{') < 0) return v;
+  const one = v.match(/^\s*\{\{(\w+)\}\}\s*$/);
+  if (one && one[1] in vals) return vals[one[1]] === '' || vals[one[1]] == null ? '' : vals[one[1]];
+  return v.replace(/\{\{(\w+)\}\}/g, (a, k) => (k in vals ? String(vals[k] == null ? '' : vals[k]) : a));
+}
+function summary_(p, user) {
+  const ids = Array.isArray(p.ids) ? p.ids.map(String).slice(0, 1000) : [];
+  const want = {}; ids.forEach(x => { want[x] = 1; });
+  const rows = receipts_().filter(r => want[r.id] && r.status === STATUS.done && siteOk_(user, r.site)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  if (!rows.length) fail_('BAD', 'No finished trucks in these dates.', 'គ្មានឡានទទួលរួចក្នុងថ្ងៃទាំងនេះ។');
+  const V = sumValues_(rows, p, user);
+  const copy = DriveApp.getFileById(sumTemplate_()).makeCopy('Summary report (temp)', root_());
+  try {
+    const book = SpreadsheetApp.openById(copy.getId());
+    // every sheet is filled (Kim's template has Summary / By Truck / Damage / By Supplier); the "How to use" sheet is left out
+    book.getSheets().filter(x => /how to use/i.test(x.getName())).forEach(x => { if (book.getSheets().length > 1) book.deleteSheet(x); });
+    book.getSheets().forEach(sh => sumSheet_(sh, V));
+    SpreadsheetApp.flush();
+    const sh = book.getSheets()[0];
+    const fmt = p.fmt === 'pdf' ? 'pdf' : 'xlsx';
+    const url = 'https://docs.google.com/spreadsheets/d/' + copy.getId() + '/export?format=' + fmt +
+      (fmt === 'pdf' ? '&gid=' + sh.getSheetId() + '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&pagenum=CENTER&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4' : '');
+    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) throw new Error('summary export ' + res.getResponseCode());
+    const name = 'GR Summary ' + V.g.from + ' to ' + V.g.to + (p.site ? ' ' + p.site : '') + '.' + fmt;
+    return { name, b64: Utilities.base64Encode(res.getBlob().getBytes()), mime: fmt === 'pdf' ? 'application/pdf' : XLSX_MIME };
+  } finally {
+    copy.setTrashed(true);
+  }
+}
+/** Fill one sheet of the summary template. */
+function sumSheet_(sh, V) {
+    const W = sh.getLastColumn(), H = sh.getLastRow();
+    if (!W || !H) return;
+    const kind = row => { const t = row.join('\u0001'); return /\{\{(material|dmgType|dmgQty)\}\}/.test(t) ? 'dmg' : /\{\{id\}\}/.test(t) ? 'rec' : /\{\{supplier\}\}/.test(t) ? 'sup' : ''; };
+    let vals = sh.getRange(1, 1, H, W).getValues();
+    const blocks = [];
+    vals.forEach((row, i) => { const k = kind(row); if (k) blocks.push({ k, row: i + 1 }); });
+    blocks.sort((a, b) => b.row - a.row).forEach(bk => {   // bottom up, so rows above keep their numbers
+      const list = V[bk.k], n = list.length, tplRow = sh.getRange(bk.row, 1, 1, W), tpl = tplRow.getValues()[0];
+      if (n > 1) { sh.insertRowsAfter(bk.row, n - 1); tplRow.copyTo(sh.getRange(bk.row + 1, 1, n - 1, W)); }
+      const out = n ? list.map(o => tpl.map(c => sumCell_(c, o))) : [tpl.map(c => (typeof c === 'string' && c.indexOf('{{') >= 0 ? '' : c))];
+      sh.getRange(bk.row, 1, out.length, W).setValues(out);
+      let first = bk.row, last = bk.row + out.length - 1;
+      // SUM / COUNT / AVERAGE formulas in the row just below now cover every record
+      const fr = sh.getRange(last + 1, 1, 1, W), fs = fr.getFormulas()[0];
+      // the sample row (no placeholders, not bold) just above the block is removed
+      if (bk.row > 1) {
+        const above = sh.getRange(bk.row - 1, 1, 1, W), av = above.getValues()[0];
+        const col = tpl.findIndex(c => typeof c === 'string' && c.indexOf('{{') >= 0) + 1;
+        const bold = col > 0 && sh.getRange(bk.row - 1, col).getFontWeight() === 'bold';
+        if (!bold && av.some(c => c !== '') && !av.some(c => typeof c === 'string' && c.indexOf('{{') >= 0)) { sh.deleteRow(bk.row - 1); first--; last--; }
+      }
+      if (fs.some(Boolean)) sh.getRange(last + 1, 1, 1, W).setFormulas([fs.map(f => (f ? f.replace(/([A-Z]+)\d+:([A-Z]+)\d+/g, (a, c1, c2) => c1 + first + ':' + c2 + last) : f))]);
+      // keep plain cells in that row that are not formulas
+      fs.forEach((f, i) => { if (!f) { const c = sh.getRange(last + 1, i + 1); const v = c.getValue(); if (typeof v === 'string' && v.indexOf('{{') >= 0) c.setValue(sumCell_(v, V.g)); } });
+    });
+    // the rest: one value per {{key}}
+    const rng = sh.getDataRange(), all = rng.getValues(), fm = rng.getFormulas();
+    all.forEach((row, i) => row.forEach((c, j) => { if (!fm[i][j] && typeof c === 'string' && c.indexOf('{{') >= 0) sh.getRange(i + 1, j + 1).setValue(sumCell_(c, V.g)); }));
+}
+
 // ---- Word template for the PDF (same idea as the Incident app). IB Settings PDF_TEMPLATE_LINK = a Drive link to a Word file,
 // a Google Doc or a folder (newest file in it). A Word file is turned into a Google Doc again whenever it changes
 // (PDF_TEMPLATE_ID / PDF_TEMPLATE_STAMP). An empty folder gets a copy of the standard template (web/inbound/ib-template.docx).
@@ -640,6 +1052,7 @@ const TEMPLATE_URL = 'https://isteel-app.pages.dev/inbound/ib-template.docx';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const GDOC_MIME = 'application/vnd.google-apps.document';
 function setSetting_(k, v) {
+  if (memo_) delete memo_.set;
   const sh = ss_().getSheetByName(SH.SET), n = sh.getLastRow(), vals = n ? sh.getRange(1, 1, n, 1).getValues() : [];
   for (let i = 1; i < vals.length; i++) if (vals[i][0] === k) { sh.getRange(i + 1, 2).setValue(v); return; }
   sh.getRange(n + 1, 1, 1, 3).setValues([[k, v, 'Kept by the app']]);
@@ -693,7 +1106,8 @@ function pdfValues_(r) {
     dn3pl: r.dn3pl, truck: r.truck, owner: r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '',
     itemCount: r.items.length, totPo: kg_(tot_(r, 'poQty')), totArr: kg_(tot_(r, 'arrQty')), totGr: kg_(tot_(r, 'grQty')), totDmg: kg_(tot_(r, 'dmgQty')), uom: r.uom,
     start: r.start, end: r.end, spent: sp === '' ? '' : sp + ' min', manpower: r.manpower, productivity: pr === '' ? '' : pr + ' t/person/h', remark: r.remark,
-    by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '',
+    warehouse: [r.site, r.warehouse].filter(Boolean).join(' · '), site: r.site || '', entrance: r.warehouse || '', voice: r.voice ? 'Voice note saved in the receipt folder / សំឡេងរក្សាទុកក្នុង Folder' : '',
+    by: r.by, finishedBy: r.finishedBy, truckPhotos: '', damagePhotos: '', barcode: r.id, inboundBarcode: r.inbound,
   };
 }
 function templatePdf_(r, folder, name) {
@@ -705,6 +1119,10 @@ function templatePdf_(r, folder, name) {
     itemRows_(body, r);
     images_(body, '{{truckPhotos}}', PHOTOS.map(k => (r.ph || {})[k]).filter(Boolean), 170, 120);
     images_(body, '{{damagePhotos}}', [].concat.apply([], r.items.map(i => i.dmgPh || [])).slice(0, 12), 125, 90);
+    [body, doc.getHeader(), doc.getFooter()].filter(Boolean).forEach(el => {
+      put_(el, '{{barcode}}', [barcodePng_(r.id)], 190, 40);
+      if (r.inbound) put_(el, '{{inboundBarcode}}', [barcodePng_(r.inbound)], 190, 40);
+    });
     const v = pdfValues_(r);
     const parts = [body, doc.getHeader(), doc.getFooter()].filter(Boolean);
     parts.forEach(el => Object.keys(v).forEach(k => fill_(el, '{{' + k + '}}', v[k])));
@@ -738,15 +1156,17 @@ function itemRows_(body, r) {
   const table = row.getParentTable(), at = table.getChildIndex(row);
   r.items.forEach((i, n) => {
     const nr = table.insertTableRow(at + 1 + n, row.copy());
-    const mat = i.material + ' ' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
-    [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', kg_(i.dmgQty || 0)], ['uom', r.uom]]
+    const mat = i.material + ' ' + i.desc + (posOf_(r).length > 1 ? '\n' + itemPo_(i, r) : '') + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || 'Damaged') : '');
+    [['no', n + 1], ['material', mat], ['poQty', kg_(i.poQty)], ['arrQty', kg_(i.arrQty)], ['grQty', kg_(i.grQty)], ['dmgQty', dmgQ_(i, r)], ['uom', r.uom]]
       .forEach(x => fill_(nr, '{{item.' + x[0] + '}}', x[1]));
   });
   row.removeFromParent();
 }
 /** Pictures where the placeholder is; with none, the placeholder is left for fill_ ("-"). */
 function images_(body, key, ids, w, h) {
-  const blobs = ids.map(id => { try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; } }).filter(Boolean);
+  put_(body, key, ids.map(id => { try { return DriveApp.getFileById(id).getBlob(); } catch (e) { return null; } }).filter(Boolean), w, h);
+}
+function put_(body, key, blobs, w, h) {
   if (!blobs.length) return;
   const f = body.findText(pat_(key));
   if (!f) return;
@@ -757,6 +1177,56 @@ function images_(body, key, ids, w, h) {
   while (p && p.getType() !== DocumentApp.ElementType.PARAGRAPH) p = p.getParent();
   if (!p) return;
   blobs.forEach(b => { try { fit_(p.appendInlineImage(b), w, h); p.appendText(' '); } catch (e) { /* not an image */ } });
+}
+
+// ---- Barcode for {{barcode}}: Code 128 (set B) drawn as a black-and-white PNG, made here so no outside service is needed.
+const C128 = ('212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 ' +
+  '221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 ' +
+  '231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 ' +
+  '314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 ' +
+  '111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 ' +
+  '114131 311141 411131 211412 211214 211232 2331112').split(' ');
+/** Bar widths (modules) for text in Code 128 B: start, data, check, stop. */
+function code128_(text) {
+  const codes = [104];
+  String(text).split('').forEach(ch => { const c = ch.charCodeAt(0); if (c >= 32 && c <= 126) codes.push(c - 32); });
+  codes.push(codes.reduce((s, c, i) => s + c * (i || 1), 0) % 103, 106);
+  return codes.map(c => C128[c]).join('').split('').map(Number);
+}
+/** PNG (8-bit grey, no compression) of the barcode: 2 px per module, 10-module quiet zone each side. */
+function barcodePng_(text, h) {
+  const widths = code128_(text), px = 2, quiet = 10 * px;
+  const bars = [];
+  widths.forEach((w, i) => { for (let k = 0; k < w * px; k++) bars.push(i % 2 ? 255 : 0); });
+  const w = bars.length + 2 * quiet;
+  h = h || 60;
+  const line = [0];   // filter byte
+  for (let x = 0; x < quiet; x++) line.push(255);
+  bars.forEach(v => line.push(v));
+  for (let x = 0; x < quiet; x++) line.push(255);
+  let raw = [];
+  for (let y = 0; y < h; y++) raw = raw.concat(line);
+  // zlib with stored (uncompressed) blocks of up to 65535 bytes
+  const z = [0x78, 0x01];
+  for (let i = 0; i < raw.length; i += 65535) {
+    const part = raw.slice(i, i + 65535), last = i + 65535 >= raw.length ? 1 : 0, n = part.length;
+    z.push(last, n & 255, n >> 8, ~n & 255, (~n >> 8) & 255);
+    for (let j = 0; j < n; j++) z.push(part[j]);
+  }
+  let a = 1, b = 0;
+  raw.forEach(v => { a = (a + v) % 65521; b = (b + a) % 65521; });
+  z.push(b >> 8, b & 255, a >> 8, a & 255);
+  const crcT = [];
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT.push(c >>> 0); }
+  const u32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  const chunk = (type, data) => {
+    const td = type.split('').map(c => c.charCodeAt(0)).concat(data);
+    let c = 0xffffffff;
+    td.forEach(v => { c = crcT[(c ^ v) & 255] ^ (c >>> 8); });
+    return u32(data.length).concat(td, u32((c ^ 0xffffffff) >>> 0));
+  };
+  const png = [137, 80, 78, 71, 13, 10, 26, 10].concat(chunk('IHDR', u32(w).concat(u32(h), [8, 0, 0, 0, 0])), chunk('IDAT', z), chunk('IEND', []));
+  return Utilities.newBlob(png.map(v => (v > 127 ? v - 256 : v)), 'image/png', 'barcode.png');
 }
 
 const NAVY = '#011e41', SOFT = '#d4e1f5', LINE = '#b9c3cf', PAGE_W = 539, LABEL_W = 92;
@@ -788,12 +1258,13 @@ function makePdf_(r, folder, name) {
     kv_(body, [[two_('លេខ PO', 'PO Number'), r.po, two_('លេខ Inbound', 'Inbound No.'), r.inbound],
       ['Ref. No.', r.ref, two_('អ្នកផ្គត់ផ្គង់', 'Supplier'), r.supplier],
       ['ETA', showDate_(r.eta), two_('លេខ DN 3PL', '3PL DN No.'), r.dn3pl],
-      [two_('ឡាន', 'Truck / trailer'), r.truck, two_('ម្ចាស់ឡាន', 'Truck owner'), r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : '']]);
+      [two_('ឡាន', 'Truck / trailer'), r.truck, two_('ម្ចាស់ឡាន', 'Truck owner'), r.owner === 'ISI' ? 'ISI Truck' : r.owner === '3PL' ? '3PL Truck' + (r.carrier ? ' · ' + r.carrier : '') : ''],
+      [two_('ឃ្លាំង', 'Warehouse'), [r.site, r.warehouse].filter(Boolean).join(' · '), two_('សំឡេង', 'Voice note'), r.voice ? two_('មាន', 'Saved in the receipt folder') : '']]);
 
     section_(body, 'B. ' + two_('បរិមាណទំនិញ', 'ITEMS') + ' (' + r.items.length + ')');
     const rows = [['#', two_('សម្ភារៈ', 'Material'), two_('ចំនួន (PO)', 'PO Qty'), two_('ចំនួន (ដល់)', 'Arrival'), two_('ទទួល', 'GR Qty'), two_('ខូច', 'Damaged'), two_('ឯកតា', 'UoM')]];
-    r.items.forEach((i, n) => rows.push([String(n + 1), i.material + '\n' + i.desc + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || '') : ''),
-      kg_(i.poQty), kg_(i.arrQty), kg_(i.grQty), kg_(i.dmgQty || 0), r.uom]));
+    r.items.forEach((i, n) => rows.push([String(n + 1), i.material + '\n' + i.desc + (posOf_(r).length > 1 ? '\n' + itemPo_(i, r) : '') + (isLess_(i) ? '\n⬇ Received less' : '') + (Number(i.dmgQty) > 0 ? '\n⚠ ' + (DMG[i.dmgType] || i.dmgType || '') : ''),
+      kg_(i.poQty), kg_(i.arrQty), kg_(i.grQty), dmgQ_(i, r), r.uom]));
     rows.push(['', two_('សរុប', 'Total'), kg_(tot_(r, 'poQty')), kg_(tot_(r, 'arrQty')), kg_(tot_(r, 'grQty')), kg_(tot_(r, 'dmgQty')), r.uom]);
     const t = body.appendTable(rows);
     t.setBorderColor(LINE);
@@ -809,10 +1280,10 @@ function makePdf_(r, folder, name) {
     const last = t.getRow(rows.length - 1);
     for (let j = 0; j < 7; j++) last.getCell(j).setBackgroundColor('#f2f5f9').editAsText().setBold(true);
 
-    section_(body, 'C. ' + two_('ពេលវេលា និងកម្មករ', 'TIME AND MANPOWER'));
+    section_(body, 'C. ' + two_('ពេលវេលា និងបុគ្គលិកឃ្លាំង', 'TIME AND MANPOWER'));
     const pr = prod_(r);
     kv_(body, [[two_('ចាប់ផ្តើម', 'Start'), r.start, two_('បញ្ចប់', 'End'), r.end],
-      [two_('រយៈពេល', 'Time spent'), spent_(r) === '' ? '' : spent_(r) + ' min', two_('កម្មករ', 'Manpower'), r.manpower],
+      [two_('រយៈពេល', 'Time spent'), spent_(r) === '' ? '' : spent_(r) + ' min', two_('បុគ្គលិកឃ្លាំង', 'Manpower'), r.manpower],
       [two_('ផលិតភាព', 'Productivity'), pr === '' ? '' : pr + ' t/person/h', two_('សំគាល់', 'Remark'), r.remark]]);
 
     const ph = PHOTOS.map(k => (r.ph || {})[k]).filter(Boolean);
@@ -859,6 +1330,118 @@ function kv_(body, rows) {
   const vw = (PAGE_W - LABEL_W * 2) / 2;
   for (let j = 0; j < 4; j++) t.setColumnWidth(j, j % 2 ? vw : LABEL_W);
   compact_(t);
+}
+
+// ---------------------------------------------------------------- Goods Receipt Report PDFs for OneDrive (Kim, 5 Nov 2026)
+// "auto generate the Goods Receipt Report in pdf and save to my drive path every time user finish the loading".
+// About a minute after a truck is finished (and again when a finished receipt is edited), its PDF is copied to
+// Drive › Goods Receipt Report › Goods Receipt Report YYYY › GR YYYY-MM, named "GR YYYY-MM <PO> <GR no.> <Supplier>.pdf"
+// (GR number = the receipt number IB-...). The work runs in a trigger, so finishing a truck stays fast.
+// Kim's PC (apps-script-inbound/gr-sync/gr-sync.ps1, every 10 minutes) asks doGet ?action=grSync&key=... for new files
+// and saves them in the same folders under ...\00. Data Warehouse\Goods Receipt Report. The key is Script property GR_SYNC_KEY (grSyncKey).
+const GR_COLS = ['Receipt ID', 'Path', 'File Name', 'Drive File ID', 'Receipt Updated', 'Exported', 'Replaces'];
+const GR_RUN_MS = 240000;   // one run stops after 4 minutes; the rest go in the next run
+
+function grName_(rec) {
+  const ym = /^\d{4}-\d{2}/.test(String(rec.date || '')) ? String(rec.date).slice(0, 7) : fmt_(new Date(), 'yyyy-MM');
+  const clean = v => String(v == null ? '' : v).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim();
+  const name = ['GR ' + ym, clean(rec.po), clean(rec.id), clean(rec.supplier).slice(0, 60)].filter(Boolean).join(' ').replace(/[. ]+$/, '');
+  return { year: 'Goods Receipt Report ' + ym.slice(0, 4), month: 'GR ' + ym, path: 'Goods Receipt Report ' + ym.slice(0, 4) + '\\GR ' + ym, name: name + '.pdf' };
+}
+function grFolder_(year, month) {
+  const props = PropertiesService.getScriptProperties();
+  let top = null;
+  const id = props.getProperty('GR_FOLDER_ID');
+  if (id) { try { top = DriveApp.getFolderById(id); if (top.isTrashed()) top = null; } catch (e) { top = null; } }
+  if (!top) { top = DriveApp.createFolder('Goods Receipt Report'); props.setProperty('GR_FOLDER_ID', top.getId()); }
+  const sub = (f, n) => { const it = f.getFoldersByName(n); return it.hasNext() ? it.next() : f.createFolder(n); };
+  return sub(sub(top, year), month);
+}
+function grSheet_() {
+  const sh = sheet_(SH.GR, GR_COLS);
+  sh.getRange(1, 1, sh.getMaxRows(), GR_COLS.length).setNumberFormat('@');   // times stay text, never turned into dates
+  return sh;
+}
+// Sheets may turn "2026-11-01 08:49" into a date shown as "2026-11-01 8:49": compare the numbers only.
+function grSame_(a, b) { const n = v => (String(v == null ? '' : v).match(/\d+/g) || []).map(x => x.padStart(2, '0')).join('-'); return n(a) === n(b); }
+function grRows_(sh) { return sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, GR_COLS.length).getDisplayValues() : []; }
+
+/** After a receipt is finished or edited: one run of grExport about a minute later (plus an hourly run that catches anything missed).
+ *  Never stops the save if Google refuses a trigger. */
+function grQueue_() {
+  try {
+    const props = PropertiesService.getScriptProperties(), now = Date.now();
+    if (+props.getProperty('GR_NEXT') > now - 10 * 60000) return;   // a run is already on its way
+    props.setProperty('GR_NEXT', String(now));
+    const all = ScriptApp.getProjectTriggers(), hourly = props.getProperty('GR_HOURLY');
+    if (!hourly || !all.some(t => t.getUniqueId() === hourly)) {
+      props.setProperty('GR_HOURLY', ScriptApp.newTrigger('grExport').timeBased().everyHours(1).create().getUniqueId());
+    }
+    ScriptApp.newTrigger('grExport').timeBased().after(60 * 1000).create();
+  } catch (e) { console.error('GR queue: ' + (e && e.message || e)); }
+}
+
+/** Copies the PDF of every finished receipt that is new or changed since its last copy. Runs from the triggers above;
+ *  can also be run from the editor (the first run copies all finished receipts, 4 minutes at a time). */
+function grExport() {
+  const lock = LockService.getUserLock();   // not the script lock: saving trucks must not wait for PDFs
+  if (!lock.tryLock(1000)) return 'Another copy is running.';
+  memo_ = {};
+  try {
+    const props = PropertiesService.getScriptProperties(), hourly = props.getProperty('GR_HOURLY');
+    ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'grExport' && t.getUniqueId() !== hourly) ScriptApp.deleteTrigger(t); });
+    props.deleteProperty('GR_NEXT');
+    const t0 = Date.now(), sh = grSheet_(), rows = grRows_(sh), at = {};
+    rows.forEach((r, i) => { at[r[0]] = i; });
+    let done = 0, left = 0, lastMs = 0;
+    const stamp = () => new Date(lastMs = Math.max(lastMs + 1, Date.now())).toISOString();   // never two files with the same time (the PC asks 'newer than')
+    receipts_().filter(r => r.status === STATUS.done).forEach(rec => {
+      const i = at[rec.id], old = i == null ? null : rows[i];
+      if (old && grSame_(old[4], rec.updated)) return;
+      if (Date.now() - t0 > GR_RUN_MS) { left++; return; }
+      try {
+        const g = grName_(rec), folder = grFolder_(g.year, g.month);
+        const f = folder.createFile(pdfFile_(rec).getBlob().setName(g.name));
+        if (old && old[3]) { try { DriveApp.getFileById(old[3]).setTrashed(true); } catch (e) { /* gone */ } }
+        const moved = old && (old[1] + '\\' + old[2]) !== (g.path + '\\' + g.name) ? old[1] + '\\' + old[2] : '';
+        const row = [rec.id, g.path, g.name, f.getId(), String(rec.updated || ''), stamp(), moved];
+        if (old) { sh.getRange(i + 2, 1, 1, row.length).setValues([row]); rows[i] = row; }
+        else { sh.appendRow(row); at[rec.id] = rows.push(row) - 1; }
+        done++;
+      } catch (e) { console.error('GR export ' + rec.id + ': ' + (e && e.stack || e)); }
+    });
+    if (left) grQueue_();
+    const msg = done + ' PDF copied' + (left ? ', ' + left + ' in the next run' : '') + '.';
+    console.log(msg);
+    return msg;
+  } finally { memo_ = null; lock.releaseLock(); }
+}
+
+/** Run once from the editor: makes the key for Kim's PC (Script property GR_SYNC_KEY), shows it in the log to paste into the
+ *  "Install GR auto-save" window, and starts copying the PDFs of the receipts already finished. */
+function grSyncKey() {
+  let k = prop_('GR_SYNC_KEY');
+  if (!k) { k = 'gr-' + Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 10); PropertiesService.getScriptProperties().setProperty('GR_SYNC_KEY', k); }
+  grQueue_();
+  console.log('Key for the PC (paste it in the Install GR auto-save window): ' + k);
+  return k;
+}
+/** doGet ?action=grSync&key=...&since=<Exported of the last file the PC has>: the next files, oldest first (8 at a time). */
+function grSync_(q) {
+  const key = String(prop_('GR_SYNC_KEY') || '').trim();
+  if (key.length < 20 || String(q.key || '') !== key) fail_('DENIED', 'Wrong key.', 'Wrong key.');
+  const since = String(q.since || '');
+  const list = grRows_(grSheet_()).filter(r => r[3] && r[5] > since).sort((a, b) => (a[5] < b[5] ? -1 : a[5] > b[5] ? 1 : 0));
+  const files = [];
+  let bytes = 0;
+  for (const r of list) {
+    if (files.length >= 8 || bytes > 8e6) break;
+    let b64 = '';
+    try { b64 = Utilities.base64Encode(DriveApp.getFileById(r[3]).getBlob().getBytes()); } catch (e) { /* trashed by hand: skipped */ }
+    bytes += b64.length;
+    files.push({ path: r[1], name: r[2], replaces: r[6] || '', exported: r[5], b64 });
+  }
+  return { files, more: list.length > files.length };
 }
 
 const LOGO_B64 = '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';

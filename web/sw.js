@@ -6,16 +6,20 @@
 const VERSION = 'steel-v1';
 const FONTS = 'steel-fonts-v1';
 const SHELL = [
-  './', 'home.css', 'home.js', 'sidenav.css', 'lang.js', 'request.js', 'config.js', 'manifest.webmanifest',
+  './', 'home.css', 'home.js', 'live.js', 'sidenav.css', 'lang.js', 'request.js', 'config.js', 'manifest.webmanifest',
   'icons/isi-logo.png', 'icons/isi-white.png', 'icons/banner-pattern.png', 'icons/favicon.png', 'icons/app-192.png', 'icons/flag-kh.svg', 'icons/flag-gb.svg',
-  'icons/meeting.svg', 'icons/incident.svg', 'icons/inbound.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg', 'icons/users.svg',
+  'icons/meeting.svg', 'icons/incident.svg', 'icons/inbound.svg', 'icons/fuel.svg', 'icons/transport.svg', 'icons/overtime.svg', 'icons/location.svg', 'icons/dashboard.svg', 'icons/home.svg', 'icons/users.svg', 'icons/gallery.svg', 'icons/adsmgr.svg', 'icons/dataentry.svg', 'icons/safety.svg', 'icons/scale.svg', 'ads.js', 'ads.css', 'table-sort.js',
   'fuel/', 'fuel/app.js', 'fuel/styles.css',
   'minutes/', 'minutes/mm.js', 'minutes/mm.css', 'minutes/config.js',
   'incident/', 'incident/ir.js', 'incident/ir.css', 'incident/config.js', 'incident/texts.js',
+  'scale/', 'scale/sc.js', 'scale/sc.css', 'scale/config.js', 'scale/scale-core.js', 'vendor/jszip.min.js', 'vendor/docx-preview.min.js', 'vendor/html2canvas.min.js',
+  'safety/', 'safety/sf.js', 'safety/sf.css', 'safety/config.js', 'safety/defaults.json',
   'inbound/', 'inbound/ib.js', 'inbound/ib.css', 'inbound/config.js',
+  'dataentry/', 'dataentry/de.js', 'dataentry/de.css', 'dataentry/config.js', 'dataentry/ticket-ocr.js', 'vendor/xlsx.mini.min.js',
   'overtime/', 'overtime/ot.js', 'overtime/ot.css', 'overtime/config.js', 'vendor/jsQR.min.js',
   'delivery/', 'delivery/delivery.js', 'delivery/delivery.css', 'delivery/config.js', 'vendor/qrcode.min.js',
   'users/', 'users/um.js', 'users/um.css',
+  'gallery/', 'gallery/ga.js', 'gallery/ga.css',
   'dashboard/', 'dashboard/assets/dashboard.js', 'dashboard/assets/dashboard.css', 'dashboard/glass.css',
   'dashboard/vendor/react.production.min.js', 'dashboard/vendor/react-dom.production.min.js',
   'dashboard/vendor/prop-types.min.js', 'dashboard/vendor/Recharts.js',

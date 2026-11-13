@@ -178,8 +178,10 @@
     $('#view').innerHTML = `
       <form id="form" novalidate autocomplete="off">
         ${c.needDept && state.dept ? `<div class="deptbar">🏢 <span>${t('ផ្នែក', 'Department')}: <b>${esc(state.dept.name)}</b></span><button type="button" class="link" id="rescan">${t('ស្កេនម្តងទៀត', 'Scan again')}</button></div>` : ''}
+        ${c.needGps ? `<div class="gpsbox">${gpsHtml(c)}</div>` : ''}
         <section class="card">
           <h2><span class="n">1</span>${t('បុគ្គលិក', 'Employee')}</h2>
+          ${state.emp ? empHtml(state.emp, d) : `
           <label class="f" for="empId">${t('លេខកាត ឬឈ្មោះបុគ្គលិក', 'Employee ID or name')} <span class="req">*</span></label>
           <div class="idrow">
             <div class="search">
@@ -188,15 +190,7 @@
             </div>
             <button type="button" class="btn" id="findBtn" ${state.lookingUp ? 'disabled' : ''}>${state.lookingUp ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
           </div>
-          ${state.lookupErr ? `<div class="msg-err" role="alert">${esc(state.lookupErr)}</div>` : ''}
-          ${state.emp ? `
-          <div class="emp" aria-live="polite">
-            <div class="kv"><span>${t('ឈ្មោះ (អង់គ្លេស)', 'Name (English)')}</span><b>${esc(state.emp.en)}</b></div>
-            <div class="kv"><span>${t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)')}</span><b>${esc(state.emp.kh || '—')}</b></div>
-            <div class="kv"><span>${t('អ្នកគ្រប់គ្រងផ្ទាល់', 'Line manager')}</span><b>${esc(state.emp.manager || '—')}</b></div>
-            <div class="lock">🔒 ${t('ព័ត៌មាននេះមកពីបញ្ជីបុគ្គលិក មិនអាចកែបានទេ។', 'From the employee list. It cannot be changed here.')}</div>
-          </div>
-          ${state.emp.ready ? '' : `<div class="alert warn">${t('អ្នកគ្រប់គ្រងរបស់អ្នកមិនទាន់ភ្ជាប់ Telegram ទេ។ សំណើនឹងត្រូវរក្សាទុក ហើយផ្ញើទៅពេលក្រោយ។', "Your line manager is not connected to Telegram yet. Your request will be saved and sent once they are.")}</div>`}` : ''}
+          ${state.lookupErr ? `<div class="msg-err" role="alert">${esc(state.lookupErr)}</div>` : ''}`}
         </section>
 
         <section class="card">
@@ -250,16 +244,16 @@
             </select>` : ''}
             <textarea class="in" id="otReason" maxlength="500" ${reasons.length && d.pick !== '__other' ? 'hidden' : ''} placeholder="${esc(t('សរសេរមូលហេតុ ឬការងារដែលធ្វើ', 'Type the reason or work done'))}">${esc(d.pick && d.pick !== '__other' ? '' : (d.reason || ''))}</textarea>
           </div>
-          ${c.needGps ? `<div class="hint">📍 ${t('ត្រូវការទីតាំងរបស់អ្នក ហើយអ្នកត្រូវនៅក្នុងចម្ងាយ', 'Your location is needed. You must be within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការរបស់អ្នក។', 'of your workplace.')}</div>` : ''}
         </section>
 
         ${state.sendErr ? `<div class="alert bad" role="alert" style="margin:0 0 12px">${esc(state.sendErr)}</div>` : ''}
-        <button type="submit" class="btn ok big" id="sendBtn" ${state.sending ? 'disabled' : ''}>
+        <button type="submit" class="btn ok big" id="sendBtn" ${state.sending || gpsFar(c) ? 'disabled' : ''}>
           ${state.sending ? `<span class="sp"></span> ${t('កំពុងផ្ញើ…', 'Submitting…')}` : `📨 ${t('ផ្ញើសំណើថែមម៉ោង', 'Submit OT Request')}`}
         </button>
       </form>`;
 
     const idEl = $('#empId');
+    if (idEl) {
     // Nothing is searched while typing: results appear only after the Search button (or Enter).
     idEl.addEventListener('input', () => {
       const v = idEl.value.trim();
@@ -280,6 +274,15 @@
     $('#sugg').addEventListener('mousedown', e => e.preventDefault());   // keep focus so the tap lands
     $('#sugg').addEventListener('click', e => { const o = e.target.closest('.opt'); if (o) pick(o.dataset.id); });
     $('#findBtn').onclick = () => find(null);
+    }
+    if ($('#notMe')) $('#notMe').onclick = () => { state.emp = null; d.kh = ''; saveDraft(); state.lookupErr = ''; set(K.id, null); renderNew(); const el = $('#empId'); if (el) { el.value = ''; el.focus(); } };
+    const khEl = $('#khName');
+    if (khEl) khEl.addEventListener('input', () => {
+      d.kh = khEl.value; saveDraft();
+      const v = khEl.value.trim(), bad = v && !/^[\u1780-\u17FF\u19E0-\u19FF ]+$/.test(v);
+      khEl.classList.toggle('need', !v); khEl.classList.toggle('err', !!bad);
+      $('#khErr').hidden = !bad;
+    });
     if ($('#rescan')) $('#rescan').onclick = () => { setDept(null); renderNew(); };
     $('#form').addEventListener('click', e => { if (!e.target.closest('.idrow')) hideSugg(); });
 
@@ -302,32 +305,69 @@
     });
     $('#form').onsubmit = e => { e.preventDefault(); submit(); };
   }
+  // After the scan the person's details from Employee & Approver are shown greyed out (Kim, 2026-10-30).
+  // A missing Khmer name is typed once (Khmer letters only) and saved to the sheet with the request.
+  const KH_RE = /^[\u1780-\u17FF\u19E0-\u19FF ]+$/;
+  const khOk = s => KH_RE.test(s) && s.replace(/ /g, '').length >= 2 && s.length <= 60;
+  function empHtml(e, d) {
+    const ro = (lbl, v, id) => `<div class="field"><label class="f">${lbl} 🔒</label><div class="in ro"${id ? ` id="${id}"` : ''}>${esc(v || '—')}</div></div>`;
+    const kv = String(d.kh || ''), bad = kv.trim() && !KH_RE.test(kv.trim());
+    return `<div class="empro" aria-live="polite">
+      ${ro(t('លេខកាតបុគ្គលិក', 'Employee ID'), e.id, 'roId')}
+      ${ro(t('ឈ្មោះ (អង់គ្លេស)', 'Name (English)'), e.en, 'roEn')}
+      ${e.kh ? ro(t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)'), e.kh, 'roKh') : `<div class="field">
+        <label class="f" for="khName">${t('ឈ្មោះ (ខ្មែរ)', 'Name (Khmer)')} <span class="req">*</span></label>
+        <input class="in${kv.trim() ? '' : ' need'}${bad ? ' err' : ''}" id="khName" lang="km" autocomplete="off" spellcheck="false" maxlength="60" placeholder="${esc(t('វាយឈ្មោះជាអក្សរខ្មែរ', 'Type your name in Khmer'))}" value="${esc(kv)}">
+        <div class="msg-err" id="khErr" role="alert" ${bad ? '' : 'hidden'}>❌ ${t('សូមវាយជាអក្សរខ្មែរតែប៉ុណ្ណោះ (មិនអនុញ្ញាតអក្សរអង់គ្លេស ឬលេខ)។', 'Khmer letters only (no English letters or numbers).')}</div>
+        <div class="hint">⌨️ ${t('មិនទាន់មានឈ្មោះខ្មែរក្នុងបញ្ជី។ សូមវាយជាអក្សរខ្មែរតែប៉ុណ្ណោះ។ ឈ្មោះនេះនឹងរក្សាទុកក្នុង Sheet។', 'Your Khmer name is not in the list yet. Type it in Khmer letters only. It will be saved to the sheet.')}</div>
+      </div>`}
+      ${ro(t('ប្រធានផ្នែក (អ្នកអនុម័ត)', 'Line manager (approver)'), e.manager, 'roMgr')}
+      <div class="lock">🔒 ${t('ព័ត៌មាននេះមកពីសន្លឹក Employee & Approver មិនអាចកែបានទេ។', 'From the Employee & Approver sheet. It cannot be changed here.')}</div>
+      <button type="button" class="link" id="notMe">${t('មិនមែនខ្ញុំ? ប្តូរលេខកាត', 'Not me? Change ID')}</button>
+    </div>
+    ${e.ready ? '' : `<div class="alert warn">${t('អ្នកគ្រប់គ្រងរបស់អ្នកមិនទាន់ភ្ជាប់ Telegram ទេ។ សំណើនឹងត្រូវរក្សាទុក ហើយផ្ញើទៅពេលក្រោយ។', "Your line manager is not connected to Telegram yet. Your request will be saved and sent once they are.")}</div>`}`;
+  }
   function placeCaret() { const el = $('#empId'); if (el) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* number input */ } } }
 
   // ---------- department QR (scanned before the form opens) ----------
   // The printed QR holds the form link with the department code (…/overtime/?d=D-XXXXXX). It can be scanned
   // here, or opened with the phone camera. The server checks the code on every submission too.
+  // The QR must be scanned every time the form is opened (Kim, 30 Oct 2026): a scan counts only for this visit.
   const DEPT_HOURS = 2;
   function deptOk() {
+    if (!state.scanned) return false;
     if (!state.dept) state.dept = getJ(K.dept, null);
     if (state.dept && Date.now() - (state.dept.at || 0) > DEPT_HOURS * 3600000) setDept(null);
     return !!state.dept;
   }
-  function setDept(d) { state.dept = d; set(K.dept, d ? JSON.stringify(d) : null); }
+  function setDept(d) { state.dept = d; state.scanned = !!d; set(K.dept, d ? JSON.stringify(d) : null); }
   // Same reading of the scan as the server: the bare ID or the whole link with ?d=.
   const deptCodeOf = raw => { const s = String(raw || '').trim(), m = s.match(/[?&]d=([A-Za-z0-9-]+)/); return (m ? m[1] : s).toUpperCase().slice(0, 30); };
   async function sha256hex(s) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  async function checkDept(text) {
+  // Every QR scan starts a clean form: last request's times, reason and ID are cleared (Kim, 2026-10-30).
+  // A signed-in person's own ID (from the home menu) is kept.
+  function resetForm() {
+    state.draft = {}; set(K.draft, null);
+    state.result = null; state.sendErr = ''; state.lookupErr = ''; state.emp = null; state.gps = null;
+    const me = getJ('steel_me', null); set(K.id, (me && me.id) || null);
+  }
+  function freshForm() {
+    resetForm();
+    if (state.tab !== 'new') return;
+    renderNew();
+    if (get(K.id)) pick(get(K.id));
+  }
+  async function checkDept(text, cleared) {
     // Instant: the code is matched against the department fingerprints saved with the settings.
     // Only a code not found there (e.g. a department added a minute ago) asks the server.
     const keys = cfg && cfg.deptKeys, code = deptCodeOf(text);
     if (keys && code && window.crypto && crypto.subtle) {
       try {
         const name = keys[await sha256hex(code)];
-        if (name) { setDept({ code, name, at: Date.now() }); state.deptErr = ''; toast('✅ ' + name); if (state.tab === 'new' && !state.result) renderNew(); return; }
+        if (name) { setDept({ code, name, at: Date.now() }); state.deptErr = ''; toast('✅ ' + name); if (!cleared) freshForm(); else if (state.tab === 'new' && !state.result) renderNew(); return; }
       } catch (e) { /* fall back to the server */ }
     }
     state.deptChecking = true; state.deptErr = ''; if (state.tab === 'new') renderNew();
@@ -335,6 +375,7 @@
       const d = await api('dept', { code: String(text || '').slice(0, 300) });
       setDept({ code: d.code, name: d.name, at: Date.now() });
       toast('✅ ' + d.name);
+      if (!cleared) { state.deptChecking = false; freshForm(); return; }
     } catch (e) {
       setDept(null);
       state.deptErr = e.code === 'BAD_QR' || e.code === '' ? t(ERR_KM.BAD_QR, 'Wrong QR code. Please scan your department QR code again.') : niceError(e);
@@ -514,21 +555,53 @@
     }
   }
 
-  function getGps() {
+  // Site check on the form (Kim, 30 Oct 2026): the phone's distance to SITE_LATLONG is shown as soon as the form
+  // opens, and Submit stays off while it is outside SITE_RADIUS_M. The server checks it again on submit.
+  function distM(a, b, c, d) {
+    const r = x => x * Math.PI / 180, R = 6371000;
+    const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const gpsFar = c => !!(c && c.needGps && c.site && state.gps && state.gps.st === 'far');
+  function checkGps() {
+    const c = cfg || {};
+    if (!c.needGps || !c.site) return;
+    state.gps = { st: 'checking' };
+    getGps(0).then(p => {
+      const m = Math.round(distM(p.lat, p.lng, c.site.lat, c.site.lng));
+      state.gps = { st: m <= c.radius ? 'ok' : 'far', m };
+    }, e => { state.gps = { st: 'err', msg: e.message }; })
+      .then(() => { if (state.tab === 'new' && !state.result) renderNew(true); });
+  }
+  function gpsHtml(c) {
+    const rule = `${t('អាចស្នើបានតែនៅក្នុងចម្ងាយ', 'OT can only be requested within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការ។', 'of the site.')}`;
+    if (!c.site) return `<div class="hint">📍 ${t('ត្រូវការទីតាំងរបស់អ្នក ហើយអ្នកត្រូវនៅក្នុងចម្ងាយ', 'Your location is needed. You must be within')} ${esc(c.radius)} m ${t('ពីកន្លែងធ្វើការរបស់អ្នក។', 'of your workplace.')}</div>`;
+    const g = state.gps;
+    if (!g) { setTimeout(checkGps, 0); return `<div class="alert gps">📍 ${t('កំពុងពិនិត្យទីតាំងរបស់អ្នក…', 'Checking your location…')}</div>`; }
+    if (g.st === 'checking') return `<div class="alert gps">📍 ${t('កំពុងពិនិត្យទីតាំងរបស់អ្នក…', 'Checking your location…')}</div>`;
+    if (g.st === 'ok') return `<div class="alert ok">📍 ${t('អ្នកនៅក្នុងកន្លែងធ្វើការ', 'You are at the site')} (${g.m} m)</div>`;
+    const again = `<button type="button" class="btn gps-again" id="gpsAgain">🔄 ${t('ពិនិត្យម្តងទៀត', 'Check again')}</button>`;
+    if (g.st === 'far') return `<div class="alert bad" role="alert">❌ ${t('អ្នកនៅឆ្ងាយពីកន្លែងធ្វើការ ' + g.m + ' ម៉ែត្រ។', 'You are ' + g.m + ' m from the site.')} ${rule}${again}</div>`;
+    return `<div class="alert bad" role="alert">❌ ${esc(g.msg)} ${rule}${again}</div>`;
+  }
+  document.addEventListener('click', e => { if (e.target && e.target.id === 'gpsAgain') { checkGps(); renderNew(true); } });
+
+  function getGps(maxAge) {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error(t('ទូរស័ព្ទនេះមិនអាចរកទីតាំងបានទេ។', 'This phone cannot share its location.')));
       navigator.geolocation.getCurrentPosition(p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
         () => reject(new Error(t('សូមអនុញ្ញាតទីតាំង ហើយព្យាយាមម្តងទៀត។', 'Please allow location and try again.'))),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: maxAge == null ? 30000 : maxAge });
     });
   }
 
   async function submit() {
     if (state.sending) return;   // double tap
     const d = state.draft, c = cfg || {};
-    const idNow = $('#empId').value.trim();
     const problems = [];
-    if (!state.emp || state.emp.id !== idNow) problems.push(t('សូមស្វែងរកលេខកាតបុគ្គលិករបស់អ្នកជាមុន។', 'Please find your Employee ID first.'));
+    if (!state.emp) problems.push(t('សូមស្វែងរកលេខកាតបុគ្គលិករបស់អ្នកជាមុន។', 'Please find your Employee ID first.'));
+    const khTyped = String(d.kh || '').trim().replace(/\s+/g, ' ');
+    if (state.emp && !state.emp.kh && !khOk(khTyped)) problems.push(t('សូមវាយឈ្មោះរបស់អ្នកជាអក្សរខ្មែរ។', 'Please type your name in Khmer letters.'));
     const auto = c.timeMode === 'auto', ac = auto ? autoCalc(state.emp) : null;
     const shNow = myShift();
     if (shiftList().length && !shNow) problems.push(t(ERR_KM.NOSHIFT, 'Please choose your shift.'));
@@ -550,9 +623,15 @@
     try {
       const tm = auto ? ac : d;   // in Auto the server sets the date and times itself
       const payload = { key: d.key, id: state.emp.id, date: tm.date, start: tm.start, end: tm.end, reason: String(d.reason).trim(), dept: state.dept ? state.dept.code : '', shift: shNow ? shNow.name : '' };
+      if (!state.emp.kh && khTyped) payload.kh = khTyped;
       if (c.needGps) Object.assign(payload, await getGps());
       const r = await api('submit', payload);
       remember(state.emp.id, r.reqId);
+      if (payload.kh) {   // shown greyed next time, before the list refreshes
+        state.emp = Object.assign({}, state.emp, { kh: payload.kh });
+        const p = people().find(x => x.id === state.emp.id); if (p && !p.kh) { p.kh = payload.kh; set(K.people, JSON.stringify({ at: Date.now(), list: state.people })); }
+        Object.keys(lookupCache).forEach(k => delete lookupCache[k]);
+      }
       if (shNow) chooseShift(shNow.name);   // remembered for this Employee ID next time
       state.shiftPick = '';                 // the next person on this phone starts from their own last shift
       // A new reason typed under Other is added to the sheet's list by the server; show it here at once too.
@@ -604,7 +683,7 @@
         </div>
       </section>`;
     $('#copy').onclick = () => { try { navigator.clipboard.writeText(r.reqId); toast(t('បានចម្លង', 'Copied')); } catch (e) { /* old phone */ } };
-    $('#again').onclick = () => { state.result = null; renderNew(); };
+    $('#again').onclick = () => { state.result = null; state.scanned = false; renderNew(); };
     $('#toMine').onclick = () => { state.result = null; renderMine(); };
   }
 
@@ -633,7 +712,9 @@
     const f = state.sumF || { from: monthStart(today), to: today };
     fetchSummary(me, f.from, f.to).catch(() => { /* shown when the tab opens */ });
   }
-  async function renderMine() {
+  // quiet = background refresh: draws again only when the numbers changed, and keeps the scroll position
+  async function renderMine(quiet) {
+    quiet = quiet === true;
     scanner.stop();
     state.tab = 'mine'; paintTabs();
     // Only the person using the phone now (the last Employee ID found on the form, or checked below) is shown,
@@ -694,14 +775,16 @@
       $('#qBtn').onclick = check;
     };
     redraw = () => draw(getJ(cacheKey(), null), false);
-    if (!ids.length) return draw(null, false);
+    if (!ids.length) return quiet ? undefined : draw(null, false);
     const cached = getJ(cacheKey(), null);
-    draw(cached, true);
+    if (!quiet) draw(cached, true);
     const key = cacheKey();
     try {
       const res = await fetchSummary(f.id, f.from, f.to);
-      if (state.tab === 'mine' && key === cacheKey()) draw(res, false);
+      if (quiet && JSON.stringify(res) === JSON.stringify(cached)) return;
+      if (state.tab === 'mine' && key === cacheKey()) { if (quiet) LIVE.keep(() => draw(res, false)); else draw(res, false); }
     } catch (e) {
+      if (quiet) throw e;
       if (state.tab === 'mine' && key === cacheKey()) draw(cached, false, niceError(e));
     }
   }
@@ -732,6 +815,106 @@
     finally { if ($('#qBtn')) $('#qBtn').disabled = false; }
   }
 
+  // ---------- start menu (Kim, 30 Oct 2026): Overtime | Sign up as OT approver ----------
+  function openForm() { if (state.tab !== 'new') state.scanned = false; renderNew(); if (get(K.id) && !state.emp) pick(get(K.id)); }
+  function renderMenu() {
+    state.tab = 'menu'; paintTabs(); redraw = renderMenu; stopSignupPoll();
+    $('#view').innerHTML = `
+      <div class="menu2">
+        <button type="button" class="mtile" id="mOt"><span class="mi">⏱️</span><b>${t('ថែមម៉ោង', 'Overtime')}</b>
+          <small>${t('ស្កេន QR របស់ផ្នែក ហើយស្នើសុំថែមម៉ោង', 'Scan your department QR and request OT')}</small></button>
+        <button type="button" class="mtile" id="mSign"><span class="mi">📲</span><b>${t('ចុះឈ្មោះជាអ្នកអនុម័ត OT', 'Sign up as OT approver')}</b>
+          <small>${t('សម្រាប់ប្រធានផ្នែក៖ ភ្ជាប់ Telegram ដើម្បីអនុម័តថែមម៉ោង', 'For line managers: link your Telegram to approve OT')}</small></button>
+      </div>`;
+    $('#mOt').onclick = openForm;
+    $('#mSign').onclick = () => renderSignup();
+  }
+
+  // Sign up as OT approver: type your Line Manager ID, open Telegram, press Start. The bot saves the chat ID and
+  // username in "OT Approvers"; this screen watches for it and shows what was saved. No list of names is shown (Kim, 30 Oct 2026).
+  const su = { id: '', err: '', job: null, status: null, timer: 0, until: 0 };
+  function stopSignupPoll() { clearTimeout(su.timer); su.timer = 0; }
+  function renderSignup() {
+    state.tab = 'signup'; paintTabs(); redraw = renderSignup;
+    const back = `<button type="button" class="btn back" id="suBack">← ${t('ត្រឡប់', 'Back')}</button>`;
+    if (su.job && !su.job.loading) return renderSignupJob(back);
+    const busy = !!(su.job && su.job.loading);
+    // Signed in on the home menu: the ID is filled in and greyed out, so the manager just taps Search (Kim, 30 Oct 2026).
+    const me = getJ('steel_me', null), myId = me && /^\d{6}$/.test(String(me.id || '')) ? String(me.id) : '';
+    if (myId) su.id = myId;
+    $('#view').innerHTML = `${back}
+      <section class="card">
+        <h2><span class="n">1</span>${t('លេខកាតសំគាល់ខ្លួនបុគ្គលិក', 'Employee ID')}</h2>
+        <div class="idrow">
+          <input class="in${su.err ? ' err' : ''}${myId ? ' locked' : ''}" id="suId" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="${esc(t('ឧ. 123456', 'e.g. 123456'))}" value="${esc(su.id)}" ${myId ? 'readonly aria-readonly="true"' : ''}>
+          <button type="button" class="btn ok" id="suFind" ${busy ? 'disabled' : ''}>${busy ? '<span class="sp"></span>' : '🔎'} ${t('ស្វែងរក', 'Search')}</button>
+        </div>
+        ${myId ? `<div class="hint">🔒 ${t('លេខកាតរបស់អ្នក (បានចូលគណនី)។ ចុចស្វែងរក។', 'Your ID (signed in). Tap Search.')}</div>` : ''}
+        ${su.err ? `<p class="msg-err" role="alert">${esc(su.err)}</p>` : ''}
+      </section>`;
+    const inp = $('#suId');
+    const go = () => { su.id = inp.value.trim(); startSignup(su.id); };
+    $('#suFind').onclick = go;
+    inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+    $('#suBack').onclick = () => { su.err = ''; renderMenu(); };
+  }
+  async function startSignup(id) {
+    if (!/^\d{6}$/.test(id)) { su.err = t('សុំបញ្ចូលលេខកាត៦ខ្ទង់។', 'Please enter your 6-digit ID.'); return renderSignup(); }
+    su.err = ''; su.job = { loading: true }; su.status = null; renderSignup();
+    try { su.job = await api('signup', { id }); su.until = Date.now() + 14 * 60000; pollSignup(); }
+    catch (e) {
+      su.job = null;
+      su.err = e.code === 'NOTFOUND' ? t('រកមិនឃើញ៖ លេខកាតនេះមិនមែនជាប្រធានផ្នែកទេ។ សូមប្រាប់ Admin។', 'Not found: this ID is not a line manager. Please ask the admin.')
+        : /unknown action|manager/i.test(e.message) && !e.code ? t('Admin ត្រូវធ្វើបច្ចុប្បន្នភាព OT script ជាមុនសិន។', 'The admin needs to update the OT script first.')
+        : niceError(e);
+    }
+    if (state.tab === 'signup') renderSignup();
+  }
+  function pollSignup(ms) {
+    stopSignupPoll();
+    su.timer = setTimeout(async () => {
+      if (state.tab !== 'signup' || !su.job || !su.job.code) return;
+      if (Date.now() > su.until) { su.status = { expired: true }; return renderSignup(); }
+      try { su.status = await api('signupStatus', { code: su.job.code }); } catch (e) { /* try again */ }
+      const st = su.status || {};
+      if (st.ok || st.err || st.expired) { return renderSignup(); }
+      pollSignup();
+    }, ms == null ? 2500 : ms);
+  }
+  function renderSignupJob(back) {
+    const j = su.job, st = su.status || {};
+    const again = `<button type="button" class="btn big" id="suAgain">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button>`;
+    let body;
+    if (j.loading) body = '<div class="spinner" aria-label="Loading"></div>';
+    else if (st.ok) body = `
+      <div class="alert ok">✅ ${t('បានចុះឈ្មោះរួចរាល់! សំណើថែមម៉ោងពីក្រុមរបស់អ្នកនឹងផ្ញើមក Telegram នេះ។', 'Signed up! OT requests from your team will come to this Telegram.')}</div>
+      <div class="sudone">
+        <div><small>${t('ឈ្មោះ', 'Name')}</small><b>${esc(j.manager)}</b></div>
+        <div><small>Telegram</small><b>${esc(st.tgName || '—')}</b></div>
+        <div><small>Username</small><b>${esc(st.username || '—')}</b></div>
+        <div><small>Chat ID</small><b>${esc(st.chatId)}</b></div>
+      </div>`;
+    else if (st.err) body = `<div class="alert bad" role="alert">❌ ${st.err === 'MISMATCH'
+      ? esc(t('Telegram នេះមិនត្រូវនឹងគណនីក្នុង Sheet (' + st.expect + ') ទេ។ សូមប្រើ Telegram នោះ ឬប្រាប់ Admin ឱ្យកែ។', 'This Telegram is not the one in the sheet (' + st.expect + '). Use that Telegram, or ask the admin to correct it.'))
+      : st.err === 'TAKEN' ? t('ឈ្មោះនេះបានចុះឈ្មោះជាមួយ Telegram ផ្សេងរួចហើយ។ សូមប្រាប់ Admin។', 'This name is already signed up with another Telegram. Please ask the admin.')
+      : esc(st.err)}</div>${again}`;
+    else if (st.expired) body = `<div class="alert warn">${t('តំណផុតកំណត់ហើយ។ សូមព្យាយាមម្តងទៀត។', 'The link has expired. Please try again.')}</div>${again}`;
+    else body = `
+      <p class="hint">${t('ចុចប៊ូតុងខាងក្រោម ដើម្បីបើក Telegram រួចចុច <b>Start</b>។ បន្ទាប់មកត្រឡប់មកទីនេះវិញ។', 'Tap the button below to open Telegram, then press <b>Start</b>. Then come back here.')}</p>
+      <a class="btn ok big" id="suTg" href="${esc(j.link)}" target="_blank" rel="noopener">📲 ${t('បើក Telegram', 'Open Telegram')}</a>
+      <p class="hint center suwait"><span class="sp"></span> ${t('កំពុងរង់ចាំអ្នកចុច Start…', 'Waiting for you to press Start…')}</p>
+      ${j.ready ? `<div class="alert warn">${t('ឈ្មោះនេះបានចុះឈ្មោះរួចហើយ។ ចុះឈ្មោះម្តងទៀតតែពី Telegram ដដែលប៉ុណ្ណោះ។', 'This name is already signed up. Sign up again only from the same Telegram.')}</div>` : ''}`;
+    $('#view').innerHTML = `${back}
+      <section class="card">
+        <h2><span class="n">2</span>${esc(j.manager)}</h2>
+        ${body}
+      </section>`;
+    $('#suBack').onclick = () => { su.job = null; stopSignupPoll(); renderSignup(); };
+    if ($('#suAgain')) $('#suAgain').onclick = () => { su.job = null; su.status = null; renderSignup(); };
+  }
+  // Coming back from Telegram: check at once instead of waiting for the next tick.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && state.tab === 'signup' && su.timer) pollSignup(0); });
+
   // ---------- chrome ----------
   function paintTabs() {
     document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
@@ -742,7 +925,7 @@
     $('#themeBtn').title = t('ពន្លឺ / ងងឹត', 'Light / Dark');
     if (DEMO) { $('#demo').hidden = false; $('#demo').textContent = t('DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុក ហើយមិនផ្ញើ Telegram ទេ', 'DEMO · nothing is saved and no Telegram message is sent'); }
   }
-  document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => (b.dataset.tab === 'mine' ? renderMine() : renderNew()));
+  document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => { stopSignupPoll(); return b.dataset.tab === 'mine' ? renderMine() : openForm(); });
 
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
   function paintTheme() { const th = document.documentElement.getAttribute('data-theme') || (prefersDark() ? 'dark' : 'light'); $('#themeBtn').textContent = th === 'dark' ? '☀️' : '🌙'; }
@@ -768,6 +951,8 @@
         holidays: [{ date: '2026-10-10', en: 'Phcum Ben Festival', kh: 'ពិធីបុណ្យភ្ជុំបិណ្ឌ' }, { date: '2026-10-15', en: "Commemoration Day of King's Father", kh: 'ទិវាប្រារព្ធពិធីគោរពព្រះវិញ្ញាណក្ខន្ធ ព្រះករុណា ព្រះបាទសម្តេចព្រះ នរោត្តម សីហនុ' }], list: p.withEmployees ? Object.values(EMP) : undefined };
       if (action === 'dept') { const c = String(p.code || '').replace(/^.*[?&]d=/, '').toUpperCase(); if (c !== 'D-DEMO01') throw Object.assign(new Error('Wrong QR code.'), { code: 'BAD_QR' }); return { code: c, name: 'Warehouse (demo)' }; }
       if (action === 'employees') return { list: Object.values(EMP) };
+      if (action === 'signup') { const m = { 107598: 'KIM SOPHEAKDEY', 100825: 'ENG SONGPHLY' }[p.id]; if (!m) throw Object.assign(new Error('This ID is not a line manager.'), { code: 'NOTFOUND' }); return { code: 'DEMO', link: 'https://t.me/', manager: m, ready: false }; }
+      if (action === 'signupStatus') { const n = +(get('ot_demo_su') || 0) + 1; set('ot_demo_su', n > 2 ? null : String(n)); return n > 2 ? { ok: true, username: '@demo_manager', tgName: 'Demo Manager', chatId: '123456789' } : {}; }
       if (action === 'lookup') { const e = EMP[p.id]; if (!e) throw Object.assign(new Error('Employee ID not found.'), { code: 'NOTFOUND' }); return e; }
       if (action === 'submit') {
         if (db['k_' + p.key]) return { reqId: db['k_' + p.key], status: 'Pending', repeated: true };
@@ -794,10 +979,12 @@
   // Opened from the printed QR with the phone camera: check that code, then tidy the address bar.
   const urlDept = new URLSearchParams(location.search).get('d');
   if (urlDept) { try { history.replaceState(null, '', location.pathname); } catch (e) { /* old phone */ } }
-  renderNew();
-  if (urlDept) checkDept(urlDept);
+  // Opened from the home menu: the two-choice menu. Opened from a QR scan: straight to the form.
+  if (urlDept) { resetForm(); renderNew(); checkDept(urlDept, true); } else renderMenu();
   loadConfig();
   loadPeople();
-  if (get(K.id) && !state.emp) pick(get(K.id));
+  if (urlDept && get(K.id) && !state.emp) pick(get(K.id));
   setTimeout(preloadSummary, 1500);   // My requests then opens with fresh numbers
+  // My requests refreshes in the background every minute, so approvals show without pressing Refresh
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => renderMine(true), busy: () => state.tab !== 'mine' });
 })();

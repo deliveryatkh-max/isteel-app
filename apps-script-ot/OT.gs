@@ -9,6 +9,7 @@
  *   - "Working Shift"        Shift ID, From Time, To Time; staff pick their shift on the form (it can change every month)
  * Tabs this script adds (nothing existing is moved or overwritten):
  *   - "OT Approvers"         each manager's verified Telegram chat, saved when they press Start on the bot
+ *   - "OT Approver Sign-up"  one Telegram sign-up link per line manager (sheet menu OT App → Approver sign-up links)
  *   - "OT Log"               audit trail of every submission, notification and decision
  *   - "OT App Settings"      optional rules (max hours, date window, site GPS check); blank = not enforced
  *
@@ -29,6 +30,7 @@ const OT = {
   SETTINGS: 'OT App Settings',
   DEPTS: 'OT Departments',
   SHIFTS: 'Working Shift',
+  SIGNUP: 'OT Approver Sign-up',
   FORM_URL: 'https://isteel-app.pages.dev/overtime/',
   RELAY_URL: 'https://isteel-app.pages.dev/tg/ot',
 };
@@ -43,6 +45,9 @@ const NEW_DATA_COLS = ['Request ID', 'Status', 'Approver', 'Decision Time', 'Rej
 const SHIFT_COLS = ['Shift ID', 'From Time', 'To Time', 'Break'];
 
 const DEPT_COLS = ['Department', 'Department ID', 'QR Link', 'Print QR', 'QR Code', 'Active'];
+
+// Each line manager's own sign-up link: opening it and pressing Start saves their chat ID, username and name.
+const SIGNUP_COLS = ['Line Manager ID', 'Line Manager', 'Sign-up Code', 'Sign-up Link', 'QR Code', 'Status', 'Telegram'];
 
 const APPROVER_COLS = ['Telegram Username', 'Manager Name', 'Chat ID', 'Telegram Name', 'Registered At', 'Active'];
 const LOG_COLS = ['Time', 'Request ID', 'Event', 'By', 'Detail', 'Key'];
@@ -87,6 +92,8 @@ function doPost(e) {
       case 'submit': return json_({ ok: true, data: submit_(p) });
       case 'status': return json_({ ok: true, data: statusFor_(p) });
       case 'summary': return json_({ ok: true, data: summary_(p) });
+      case 'signup': return json_({ ok: true, data: signupStart_(p) });
+      case 'signupStatus': return json_({ ok: true, data: signupStatus_(p) });
       default: return json_({ ok: false, error: 'Unknown action' });
     }
   } catch (err) {
@@ -192,7 +199,7 @@ function publicConfig_() {
   }
   return {
     reasons, maxHours: s.maxHours, maxPast: s.maxPast, maxFuture: s.maxFuture, overnight: s.overnight,
-    needGps: !!s.site, radius: s.site ? s.site.radius : null, today: todayYmd_(), holidays: holidays_(),
+    needGps: !!s.site, radius: s.site ? s.site.radius : null, site: s.site ? { lat: s.site.lat, lng: s.site.lng } : null, today: todayYmd_(), holidays: holidays_(),
     needDept: Object.keys(depts_()).length > 0, deptKeys: deptKeys_(),
     timeMode: s.timeMode, serverNow: now_().getTime(), maxAutoHours: AUTO_MAX_HOURS,
     shifts: shifts_().map(x => ({ name: x.name, time: x.time, otStart: hhmm24_(x.end) })),
@@ -276,13 +283,15 @@ function readEmployees_() {
   const col = test => keys.findIndex(test);
   const c = {
     id: col(k => k === 'idno' || k === 'employeeid' || k === 'id'),
-    en: col(k => k === 'name' || k === 'englishname' || k === 'employeename'),
+    // "Full Name" first (Kim renamed it, 31 Oct 2026); the old "Name" header still works.
+    en: [col(k => k === 'fullname'), col(k => k === 'englishname' || k === 'employeename'), col(k => k === 'name')].find(i => i >= 0),
     kh: col(k => k === 'khmername'),
     mgr: col(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0),
     tg: col(k => k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0),
     shift: col(k => k === 'shift' || k === 'shiftname'),
     shiftTime: col(k => k.indexOf('workingtime') >= 0 || k === 'shifttime' || k === 'shifthours'),
   };
+  if (c.en === undefined) c.en = -1;
   if (c.id < 0 || c.en < 0 || c.mgr < 0) fail_('SETUP', '"' + OT.EMP + '" needs ID No., Name and Direct Manager (Approver) columns.');
   const byId = {};
   for (let r = 1; r < values.length; r++) {
@@ -334,6 +343,7 @@ function readApprovers_() {
   }));
   return list;
 }
+const normName_ = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 const normUser_ = u => String(u || '').trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^@/, '').toLowerCase();
 
 /**
@@ -348,8 +358,10 @@ function resolveApprover_(id, employees, approvers) {
   const emp = recs[0];
   if (!emp.manager) return { ok: false, code: 'NOMANAGER', msg: 'No line manager is set for this employee.', emp };
   const username = normUser_(emp.telegram);
-  if (!username) return { ok: false, code: 'NOTELEGRAM', msg: 'The line manager has no Telegram username in "' + OT.EMP + '".', emp, manager: emp.manager };
-  const matches = approvers.filter(a => a.username === username && a.active && a.chatId);
+  let matches = username ? approvers.filter(a => a.username === username && a.active && a.chatId) : [];
+  // A manager who signed up with their own link is matched by their name in "Direct Manager (Approver)".
+  if (!matches.length) { const mk = normName_(emp.manager); matches = approvers.filter(a => a.active && a.chatId && normName_(a.manager) === mk); }
+  if (!matches.length && !username) return { ok: false, code: 'NOTELEGRAM', msg: 'Line manager ' + emp.manager + ' has not signed up on the OT bot yet (sheet menu OT App → Approver sign-up links).', emp, manager: emp.manager };
   if (!matches.length) return { ok: false, code: 'NOTREGISTERED', msg: 'Line manager @' + username + ' has not pressed Start on the OT bot yet.', emp, manager: emp.manager };
   const chats = Array.from(new Set(matches.map(a => a.chatId)));
   if (chats.length > 1) return { ok: false, code: 'AMBIGUOUS', msg: '@' + username + ' is registered with more than one Telegram account in "' + OT.APPROVERS + '".', emp, manager: emp.manager };
@@ -655,6 +667,23 @@ function findOverlap_(ds, id, v) {
   return null;
 }
 
+// Khmer letters (and spaces) only, at least 2 of them.
+const isKhmerName_ = s => /^[\u1780-\u17FF\u19E0-\u19FF ]+$/.test(s) && s.replace(/ /g, '').length >= 2 && s.length <= 60;
+// Writes a typed Khmer name into an empty "Khmer Name" cell of that employee's row (never over an existing name).
+function saveKhmerName_(emp, kh) {
+  try {
+    const sh = sheet_(OT.EMP);
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(norm_);
+    const col = head.indexOf('khmername');
+    if (col < 0 || !emp.row) return;
+    const cell = sh.getRange(emp.row, col + 1);
+    if (String(cell.getValue()).trim()) return;
+    cell.setValue(kh);
+    CacheService.getScriptCache().remove('emp_v2');
+    log_('', 'KHMER_NAME', emp.id + ' ' + emp.en, kh);
+  } catch (e) { console.error('Khmer name save failed: ' + e); }
+}
+
 function submit_(p) {
   const key = String(p.key || '');
   if (!/^[A-Za-z0-9-]{12,64}$/.test(key)) fail_('INVALID', 'Please reload the page and try again.');
@@ -700,7 +729,14 @@ function submit_(p) {
 
     const reqId = newRequestId_(ds);
     const now = new Date();
-    const kh = emp.kh || khmerFromHistory_()[emp.id] || '';
+    let kh = emp.kh || khmerFromHistory_()[emp.id] || '';
+    // No Khmer name on file yet: the employee typed it on the form (Khmer letters only). Kept for next time.
+    const typedKh = String(p.kh || '').trim().replace(/\s+/g, ' ');
+    if (!kh && typedKh) {
+      if (!isKhmerName_(typedKh)) fail_('INVALID', 'Please type your name in Khmer letters only.');
+      kh = typedKh;
+      saveKhmerName_(emp, kh);
+    }
     const last = ds.sh.getLastRow();
     const row = last + 1;
     const vals = new Array(ds.width).fill('');
@@ -938,6 +974,9 @@ function registerApprover_(m) {
   const from = m.from || {};
   const chatId = String(m.chat.id);
   const username = normUser_(from.username);
+  const payload = String(m.text || '').trim().split(/\s+/)[1] || '';
+  if (/^ap_/i.test(payload)) return registerFromLink_(m, payload);
+  if (/^su_[A-Za-z0-9]{16}$/.test(payload)) return registerFromApp_(m, payload.slice(3));
   if (!username) {
     return tg_('sendMessage', { chat_id: chatId, text: 'Please set a Telegram username first (Settings → Username), then press /start again.' });
   }
@@ -946,7 +985,7 @@ function registerApprover_(m) {
   Object.keys(employees).some(k => employees[k].some(e => { if (normUser_(e.telegram) === username) { manager = e.manager; return true; } return false; }));
   if (!manager) {
     log_('', 'REGISTER_REFUSED', '@' + username + ' (' + chatId + ')', 'Not listed as an approver');
-    return tg_('sendMessage', { chat_id: chatId, text: '@' + username + ' is not listed as a line manager in the OT system. Ask HR to put your Telegram username in "' + OT.EMP + '".' });
+    return tg_('sendMessage', { chat_id: chatId, text: '@' + username + ' is not listed as a line manager in the OT system. Ask the admin for your personal OT sign-up link.' });
   }
   const result = withLock_(() => {
     const sh = ensureSheet_(OT.APPROVERS, APPROVER_COLS);
@@ -968,6 +1007,223 @@ function registerApprover_(m) {
   log_('', 'REGISTERED', '@' + username + ' (' + chatId + ')', manager);
   tg_('sendMessage', { chat_id: chatId, text: '✅ Registered. OT requests from your team (' + manager + ') will come here for approval.' });
   resendFollowUps_();
+}
+
+// The manager opened their own sign-up link (t.me/<bot>?start=ap_…): the link says who they are,
+// so no Telegram username needs to be typed into the sheet first.
+// "OT Approver Sign-up" is read by its headings, so columns the admin adds or moves (e.g. Line Manager ID) stay as they are.
+function signupTab_() {
+  const sh = ensureSheet_(OT.SIGNUP, SIGNUP_COLS);
+  const head = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0].map(norm_);
+  SIGNUP_COLS.forEach(c => {   // add a missing heading at the end
+    if (head.indexOf(norm_(c)) >= 0) return;
+    const col = head.length + 1;
+    if (sh.getMaxColumns() < col) sh.insertColumnsAfter(sh.getMaxColumns(), 1);
+    sh.getRange(1, col).setValue(c).setFontWeight('bold');
+    head.push(norm_(c));
+  });
+  const at = name => head.indexOf(norm_(name));
+  const col = { id: at('Line Manager ID'), name: at('Line Manager'), code: at('Sign-up Code'), link: at('Sign-up Link'), qr: at('QR Code'), status: at('Status'), tg: at('Telegram') };
+  const last = sh.getLastRow();
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, head.length).getValues() : [];
+  return { sh, col, rows };
+}
+
+function registerFromLink_(m, code) {
+  const tab = signupTab_(), c = tab.col;
+  const at = tab.rows.findIndex(r => String(r[c.code]).trim() === code);
+  const manager = at >= 0 ? String(tab.rows[at][c.name]).trim() : '';
+  if (!manager) {
+    const from = m.from || {};
+    log_('', 'REGISTER_REFUSED', (from.username ? '@' + from.username : '') + ' (' + m.chat.id + ')', 'Unknown sign-up link ' + code.slice(0, 40));
+    return tg_('sendMessage', { chat_id: String(m.chat.id), text: 'This sign-up link is old or wrong. Please ask the admin for your new OT sign-up link.' });
+  }
+  registerManager_(m, manager, 'sign-up link', who => markSignedUp_(tab, at, who));
+}
+function markSignedUp_(tab, i, who) {
+  tab.sh.getRange(i + 2, tab.col.status + 1).setValue('Registered ' + Utilities.formatDate(new Date(), 'Asia/Phnom_Penh', 'd-MMM-yy h:mm a'));
+  tab.sh.getRange(i + 2, tab.col.tg + 1).setValue(who);
+}
+
+// The manager tapped "Sign up as OT approver" in the OT app, picked their name and pressed Start (t.me/<bot>?start=su_…).
+// The code lives 15 minutes in the cache; the app watches it to show the saved chat ID and username.
+function registerFromApp_(m, code) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('su_' + code);
+  const chatId = String(m.chat.id);
+  if (!hit) return tg_('sendMessage', { chat_id: chatId, text: 'This sign-up link has expired. Open the OT app → Sign up as OT approver and try again.' });
+  const job = JSON.parse(hit);
+  const done = res => { try { cache.put('su_' + code, JSON.stringify(Object.assign(job, res)), 900); } catch (e) { /* page shows a timeout */ } };
+  // If HR already typed this manager's Telegram username, only that Telegram account may sign up as them.
+  const username = normUser_((m.from || {}).username);
+  const employees = readEmployees_();
+  const typed = Array.from(new Set([].concat.apply([], Object.keys(employees).map(k => employees[k]))
+    .filter(e => normName_(e.manager) === normName_(job.manager)).map(e => normUser_(e.telegram)).filter(Boolean)));
+  if (typed.length && typed.indexOf(username) < 0) {
+    log_('', 'REGISTER_REFUSED', (username ? '@' + username : '') + ' (' + chatId + ')', job.manager + ': Telegram does not match ' + typed.map(u => '@' + u).join(', '));
+    done({ err: 'MISMATCH', expect: typed.map(u => '@' + u).join(', ') });
+    return tg_('sendMessage', { chat_id: chatId, text: 'The OT sheet lists ' + job.manager + ' with Telegram ' + typed.map(u => '@' + u).join(', ') + '. Please sign up from that Telegram account, or ask the admin to correct "' + OT.EMP + '".' });
+  }
+  const r = registerManager_(m, job.manager, 'OT app sign-up', who => {
+    const tab = signupTab_(), i = tab.rows.findIndex(x => normName_(x[tab.col.name]) === normName_(job.manager));
+    if (i >= 0) markSignedUp_(tab, i, who);
+  });
+  done(r.ok ? { ok: true, username: r.username, tgName: r.tgName, chatId: r.chatId } : { err: r.code });
+}
+
+/** Saves one manager's Telegram chat in "OT Approvers" and answers them in Telegram. Returns { ok, code?, username, tgName, chatId }. */
+function registerManager_(m, manager, how, after) {
+  const from = m.from || {};
+  const chatId = String(m.chat.id);
+  const username = normUser_(from.username);
+  const tgName = [from.first_name, from.last_name].filter(Boolean).join(' ');
+  const who = (username ? '@' + username + ' · ' : '') + tgName + ' · ' + chatId;
+  const result = withLock_(() => {
+    const sh = ensureSheet_(OT.APPROVERS, APPROVER_COLS);
+    const mk = normName_(manager);
+    const list = readApprovers_();
+    const other = list.find(a => a.active && a.chatId && a.chatId !== chatId && (normName_(a.manager) === mk || (username && a.username === username)));
+    if (other) return 'conflict';
+    const same = list.find(a => a.chatId === chatId && normName_(a.manager) === mk) || list.find(a => normName_(a.manager) === mk && !a.chatId);
+    const row = same ? same.row : sh.getLastRow() + 1;
+    ensureRows_(sh, row);
+    sh.getRange(row, 3).setNumberFormat('@');
+    sh.getRange(row, 1, 1, APPROVER_COLS.length).setValues([[username ? '@' + username : '', manager, chatId, tgName, new Date(), 'Yes']]);
+    let filled = { filled: 0, other: 0 };
+    try { if (username) filled = fillManagerTelegram_(manager, username); } catch (e) { console.error('Telegram fill failed: ' + e); }
+    try { if (after) after(who); } catch (e) { console.error('Sign-up tab update failed: ' + e); }
+    CacheService.getScriptCache().remove('emp_v2');
+    return filled;
+  });
+  if (result === 'conflict') {
+    log_('', 'REGISTER_REFUSED', who, manager + ' is already registered to another Telegram account');
+    tg_('sendMessage', { chat_id: chatId, text: manager + ' is already registered to another Telegram account. Ask the admin to set Active = No on the old row in "' + OT.APPROVERS + '", then try again.' });
+    return { ok: false, code: 'TAKEN' };
+  }
+  log_('', 'REGISTERED', who, manager + ' (' + how + (result.filled ? ', Telegram filled for ' + result.filled + ' staff' : '') + (result.other ? ', ' + result.other + ' rows have another Telegram' : '') + ')');
+  tg_('sendMessage', { chat_id: chatId, text: '✅ Registered as ' + manager + '. OT requests from your team will come here for approval.' });
+  resendFollowUps_();
+  return { ok: true, username: username ? '@' + username : '', tgName, chatId };
+}
+
+// ---- OT app: "Sign up as OT approver" screen
+// Every line manager in "Employee & Approver" and whether they are signed up yet.
+function managersPublic_() {
+  const employees = employeesCached_(), approvers = readApprovers_();
+  const seen = {};
+  Object.keys(employees).forEach(k => employees[k].forEach(e => {
+    const key = normName_(e.manager);
+    if (!key || seen[key]) return;
+    seen[key] = { name: e.manager, ready: resolveApprover_(e.id, employees, approvers).ok };
+  }));
+  return { list: Object.keys(seen).map(k => seen[k]).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+function botUsername_() {
+  const cache = CacheService.getScriptCache();
+  let u = cache.get('bot_user');
+  if (!u) { u = tg_('getMe', {}).username; cache.put('bot_user', u, 21600); }
+  return u;
+}
+// The manager types their Line Manager ID (from "OT Approver Sign-up", or their own row in "Employee & Approver").
+function signupStart_(p) {
+  const id = idText_(p.id);
+  if (!/^[A-Za-z0-9-]{1,20}$/.test(id)) fail_('INVALID', 'Please enter your Line Manager ID.');
+  const tab = signupTab_(), c = tab.col;
+  const row = tab.rows.find(r => idText_(r[c.id]) === id && String(r[c.name]).trim());
+  let name = row ? String(row[c.name]).trim() : '';
+  const employees = employeesCached_();
+  if (!name && employees[id] && employees[id].length === 1) name = employees[id][0].en;
+  const pick = name && managersPublic_().list.find(x => normName_(x.name) === normName_(name));
+  if (!pick) fail_('NOTFOUND', 'This ID is not a line manager.');
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let code = '';
+  for (let i = 0; i < 16; i++) code += abc[Math.floor(Math.random() * abc.length)];
+  CacheService.getScriptCache().put('su_' + code, JSON.stringify({ manager: pick.name }), 900);
+  return { code, link: 'https://t.me/' + botUsername_() + '?start=su_' + code, manager: pick.name, ready: pick.ready };
+}
+function signupStatus_(p) {
+  const code = String(p.code || '');
+  if (!/^[A-Za-z0-9]{16}$/.test(code)) fail_('INVALID', 'Bad code.');
+  const hit = CacheService.getScriptCache().get('su_' + code);
+  if (!hit) return { expired: true };
+  const j = JSON.parse(hit);
+  return { ok: !!j.ok, err: j.err || '', expect: j.expect || '', username: j.username || '', tgName: j.tgName || '', chatId: j.chatId || '' };
+}
+
+// After a link sign-up: writes the manager's @username into the empty Telegram cells of their staff in
+// "Employee & Approver". Cells that already hold a username are left as they are (only counted).
+function fillManagerTelegram_(manager, username) {
+  const sh = sheet_(OT.EMP);
+  const lastCol = sh.getLastColumn(), last = sh.getLastRow();
+  const head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(norm_);
+  const mgr = head.findIndex(k => k.indexOf('manager') >= 0 || k.indexOf('approver') >= 0);
+  let tg = head.findIndex(k => k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0);
+  if (mgr < 0 || last < 2) return { filled: 0, other: 0 };
+  if (tg < 0) {   // no Telegram column yet: add one at the end
+    tg = lastCol;
+    if (sh.getMaxColumns() < tg + 1) sh.insertColumnsAfter(sh.getMaxColumns(), 1);
+    sh.getRange(1, tg + 1).setValue('Telegram Username').setFontWeight('bold');
+  }
+  const mk = normName_(manager);
+  const names = sh.getRange(2, mgr + 1, last - 1, 1).getValues();
+  const cells = sh.getRange(2, tg + 1, last - 1, 1);
+  const vals = cells.getValues();
+  let filled = 0, other = 0;
+  names.forEach((r, i) => {
+    if (normName_(r[0]) !== mk) return;
+    const cur = normUser_(vals[i][0]);
+    if (!cur) { vals[i][0] = '@' + username; filled++; } else if (cur !== username) other++;
+  });
+  if (filled) cells.setValues(vals);
+  return { filled, other };
+}
+
+/** Sheet menu OT App → Approver sign-up links. One personal link per line manager in "Employee & Approver". */
+function makeApproverLinks() {
+  const me = tg_('getMe', {});
+  const tab = signupTab_(), c = tab.col, sh = tab.sh;
+  const employees = readEmployees_(), approvers = readApprovers_();
+  const managers = {}, byName = {};
+  Object.keys(employees).forEach(k => employees[k].forEach(e => {
+    if (e.manager && !managers[normName_(e.manager)]) managers[normName_(e.manager)] = e;
+    if (e.en && !byName[normName_(e.en)]) byName[normName_(e.en)] = e.id;
+  }));
+  const rows = tab.rows;
+  const width = Math.max(1, sh.getLastColumn());
+  const have = {};
+  rows.forEach((r, i) => { const k = normName_(r[c.name]); if (k && !(k in have)) have[k] = i; });
+  Object.keys(managers).forEach(k => {
+    if (k in have) return;
+    const r = new Array(width).fill('');
+    r[c.name] = managers[k].manager;
+    have[k] = rows.length; rows.push(r);
+  });
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let made = 0, waiting = 0;
+  rows.forEach(r => {
+    const name = String(r[c.name]).trim();
+    if (!name) return;
+    if (!String(r[c.id]).trim() && byName[normName_(name)]) r[c.id] = byName[normName_(name)];   // the manager's own Employee ID when listed
+    let code = String(r[c.code]).trim();
+    if (!/^ap_[A-Za-z0-9]{10,}$/.test(code)) { code = 'ap_'; for (let i = 0; i < 12; i++) code += abc[Math.floor(Math.random() * abc.length)]; made++; }
+    const link = 'https://t.me/' + me.username + '?start=' + code;
+    const emp = managers[normName_(name)];
+    const ok = !!(emp && resolveApprover_(emp.id, employees, approvers).ok);
+    if (!ok) waiting++;
+    r[c.code] = code; r[c.link] = link;
+    r[c.qr] = '=IMAGE("https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' + encodeURIComponent(link) + '")';
+    r[c.status] = !emp ? 'Not a line manager in "' + OT.EMP + '"' : ok ? (String(r[c.status]).indexOf('Registered') === 0 ? r[c.status] : 'Registered') : 'Waiting: send this link to ' + name;
+  });
+  if (rows.length) {
+    ensureRows_(sh, rows.length + 1);
+    // Write only the columns this menu fills, one column at a time, so the admin's own columns are untouched.
+    sh.getRange(2, c.id + 1, rows.length, 1).setNumberFormat('@');
+    ['id', 'name', 'code', 'link', 'qr', 'status'].forEach(k => sh.getRange(2, c[k] + 1, rows.length, 1).setValues(rows.map(r => [r[c[k]] == null ? '' : String(r[c[k]]) === r[c[k]] ? r[c[k]] : (k === 'id' ? idText_(r[c[k]]) : r[c[k]])])));
+    sh.setRowHeights(2, rows.length, 110);
+  }
+  sh.setColumnWidth(c.link + 1, 330); sh.setColumnWidth(c.qr + 1, 120); sh.setColumnWidth(c.status + 1, 260);
+  const msg = rows.length + ' line managers, ' + waiting + ' not signed up yet' + (made ? ', ' + made + ' new links made' : '') + '.\n\nManagers can sign up themselves in the OT app (Sign up as OT approver) with their Line Manager ID, or you can send them their Sign-up Link.';
+  try { ss_().setActiveSheet(sh); SpreadsheetApp.getUi().alert('OT App · Approver sign-up links', msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) { console.log(msg); }
 }
 
 function onButton_(q) {
@@ -1221,6 +1477,7 @@ function onOpen() {
       .addItem('Manual entry', 'useManualTime'))
     .addSeparator()
     .addItem('🏢 Make department QR codes', 'makeDepartmentQR')
+    .addItem('📲 Approver sign-up links', 'makeApproverLinks')
     .addItem('✅ Check data', 'showCheckData')
     .addToUi();
 }
@@ -1256,17 +1513,17 @@ function checkData() {
   CacheService.getScriptCache().remove('shifts');
   const shifts = shifts_();
   const users = Array.from(new Set(one.map(e => normUser_(e.telegram)).filter(Boolean)));
-  const unreg = users.filter(u => !approvers.some(a => a.username === u && a.active && a.chatId));
+  const unreg = Array.from(new Set(one.filter(e => e.manager && !resolveApprover_(e.id, employees, approvers).ok).map(e => e.manager)));
   const lines = [
     'Employees: ' + ids.length,
     'Duplicate IDs: ' + (dup.join(', ') || 'none'),
     'Missing English name: ' + (noEn.join(', ') || 'none'),
     'Missing Khmer name (none in old OT rows either): ' + noKh.length,
     'Missing line manager: ' + (noMgr.join(', ') || 'none'),
-    'Missing manager Telegram: ' + (noTg.join(', ') || 'none'),
+    'No manager Telegram typed (fine if the manager signs up with their link): ' + (noTg.join(', ') || 'none'),
     'Working Shift (staff pick one on the form): ' + (shifts.map(x => x.name + ' ' + x.time).join(', ') || 'none — add rows to the Working Shift tab'),
     'Approver Telegram accounts: ' + users.map(u => '@' + u).join(', '),
-    'Not yet registered on the bot: ' + (unreg.map(u => '@' + u).join(', ') || 'none'),
+    'Line managers not yet signed up on the bot: ' + (unreg.join(', ') || 'none') + (unreg.length ? ' (OT App → Approver sign-up links)' : ''),
   ];
   return lines.join('\n');
 }

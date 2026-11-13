@@ -4,7 +4,8 @@
 (function () {
   'use strict';
   const CFG = window.APP_CONFIG || {};
-  const DEMO = !CFG.API_URL;
+  // ?demo opens sample people (nothing is read from or saved to the Sheet), so the screens can be tried safely.
+  const DEMO = !CFG.API_URL || /[?&]demo\b/.test(location.search);
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const t = (km, en) => (window.LANG ? LANG.t(km, en) : km);
@@ -17,11 +18,21 @@
   const APP_NAMES = {
     fuel: ['ចាក់សាំង', 'Fuel Refill'], transport: ['ដឹកជញ្ជូន', 'Transport'], overtime: ['ថែមម៉ោង', 'Overtime'],
     location: ['ទីតាំងថ្មី', 'New Location'], meeting: ['ប្រជុំ', 'Meetings'], incident: ['គ្រោះថ្នាក់', 'Incident Report'],
-    inbound: ['ទទួលទំនិញ', 'Inbound'], dashboard: ['Dashboard', 'Fuel Dashboard'],
+    inbound: ['ទទួលទំនិញ', 'Inbound'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Agent Data Entry'], safety: ['សុវត្ថិភាព & 5S', 'Safety & 5S'], scale: ['ជញ្ជីងឡាន', 'Truck Scale'],
+    dashboard: ['Dashboard', 'Fuel Dashboard'],
   };
   const appName = a => { const n = APP_NAMES[a.key]; return n ? t(n[0], n[1]) : a.col; };
   const appIcon = (key, size) => `<img src="../icons/${esc(key)}.svg" alt="" width="${size}" height="${size}">`;
-  const ROLES = [['user', 'អ្នកប្រើ', 'User'], ['reviewer', 'អ្នកពិនិត្យ', 'Reviewer'], ['admin', 'Admin', 'Admin']];
+  // One Role column for every app (Kim, 30 Oct 2026). The job roles say which Delivery steps a person records.
+  const ROLES = [['user', 'អ្នកប្រើ', 'User', 'ប្រើកម្មវិធី', 'Uses the apps'],
+    ['driver', 'តៃកុង', 'Driver', 'ដឹកជញ្ជូន៖ ជំហានតៃកុង', 'Delivery: driver steps'],
+    ['security', 'សន្តិសុខ', 'Security', 'ដឹកជញ្ជូន៖ ចូល/ចេញ ថ្លឹង', 'Delivery: gate in and out'],
+    ['warehouse', 'ឃ្លាំង', 'Warehouse', 'ដឹកជញ្ជូន៖ ជំហានឃ្លាំង', 'Delivery: loading steps'],
+    ['logistics', 'ភស្តុភារ', 'Logistics', 'ដឹកជញ្ជូន៖ ជំហានភស្តុភារ', 'Delivery: logistics steps'],
+    ['reviewer', 'អ្នកពិនិត្យ', 'Reviewer', 'ពិនិត្យការចាក់សាំង គ្រោះថ្នាក់ ទទួលទំនិញ', 'Checks Fuel, Incident and Inbound entries'],
+    ['supervisor', 'ប្រធាន', 'Supervisor', 'ពិនិត្យ + គ្រប់ជំហានដឹកជញ្ជូន', 'Checks entries + every Delivery step'],
+    ['admin', 'Admin', 'Admin', 'គ្រប់យ៉ាង', 'Everything']];
+  const isChecker = r => r === 'reviewer' || r === 'supervisor';
   const roleName = r => { const x = ROLES.find(y => y[0] === r) || ROLES[0]; return t(x[1], x[2]); };
   const COLORS = ['#0B76A0', '#084F6A', '#7a5af8', '#d9480f', '#2b8a3e', '#c2255c', '#5c7cfa', '#e67700', '#0c8599', '#9c36b5'];
   const color = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
@@ -33,18 +44,26 @@
   const isWaiting = u => !u.active && !u.offAt;
 
   // ------------------------------------------------------------------ data
-  let D = null;        // { me, users, apps, depts, dRoles, log }
+  let D = null;        // { me, users, apps, depts, log }
   let OT = null;       // OT line managers, loaded when an edit screen needs them
   let otBusy = null;
-  const sel = new Set();   // selected people in the computer table
-  const F = { q: '', chip: 'all' };
+  const sel = new Set();   // selected people (computer table, or phone "Select" mode)
+  let PICK = false;        // phone: tap rows to select several people, then change them together (Kim, 2 Nov 2026)
+  const F = { q: '', chip: 'all', dept: '' };   // dept: '' = every department, '-' = no department
   const TOKEN_KEY = 'fr_id_token';
   const claims = () => { try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; } };
   const signedIn = () => { const c = claims(); return !!(c && c.exp * 1000 > Date.now() + 60000); };
   const bootKey = () => 'um_boot_' + ((claims() || {}).email || 'demo');
   const save = () => { if (!DEMO && D) set(bootKey(), JSON.stringify(D)); };
   const byEmail = e => D.users.find(u => u.email === e);
-  function merge(users) { (users || []).forEach(u => { const i = D.users.findIndex(x => x.email === u.email); if (i >= 0) D.users[i] = u; else D.users.push(u); }); }
+  function merge(users, gone) {
+    (users || []).forEach(u => { if (!u) return; const i = D.users.findIndex(x => x.email === u.email); if (i >= 0) D.users[i] = u; else D.users.push(u); });
+    (gone || []).forEach(e => { D.users = D.users.filter(x => x.email !== e); });
+  }
+  // A person with two Gmails is two lines on one row: a save sends back every line of that row.
+  const mergeSave = r => merge(r.users && r.users.length ? r.users : [r.user], r.gone);
+  const empOf = id => (D.emps || []).find(e => e.id === String(id || '').trim());
+  let photos = {};   // card photos already loaded (email → data URL)
   function addLog(log) { if (log && log.length) D.log = log.concat(D.log).slice(0, 100); }
 
   // The server's messages are "English / ខ្មែរ": show the half for the chosen language.
@@ -66,6 +85,100 @@
     }
     if (data.session) set(TOKEN_KEY, data.session);
     return data.data;
+  }
+
+  // ------------------------------------------------------------------ menus (Kim, 13 Nov 2026, option C)
+  // One big table: people down, every app's menus across. Ticked = the person sees that menu. The server keeps
+  // the unticked ones per person ("Hidden Menus"); the list of menus is ../menus.js. Admins always see everything.
+  const MF = { q: '', dept: '', app: '', role: '' };
+  let MP = {};   // changes not saved yet: email → menus hidden
+  const MENU_ALL = () => (window.MENUS && MENUS.all) || {};
+  const mOff = u => MP[u.email] || u.menusOff || [];
+  const sameList = (a, b) => a.slice().sort().join(',') === b.slice().sort().join(',');
+  const mChanged = () => D.users.filter(u => MP[u.email] && !sameList(MP[u.email], u.menusOff || []));
+  function mPeople() {
+    const q = MF.q.trim().toLowerCase();
+    return D.users.filter(u => u.active && (!MF.dept || (MF.dept === '-' ? !u.dept : u.dept === MF.dept))
+      && (!MF.app || u.role === 'admin' || u.apps[MF.app])
+      && (!MF.role || u.role === MF.role)
+      && (!q || [u.name, u.email, u.empId, u.dept].join(' ').toLowerCase().indexOf(q) >= 0))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+  }
+  const mApps = () => D.apps.filter(a => MENU_ALL()[a.key] && (!MF.app || a.key === MF.app));
+
+  function renderMenus() {
+    paintTabs('menus');
+    const ALL = MENU_ALL();
+    view(`<div class="um-head"><h1>🔐 ${t('ម៉ឺនុយ', 'Menus')}</h1></div>
+      <p class="mx-hint">${t('ធីក = អ្នកនោះឃើញម៉ឺនុយ។ ចុចឈ្មោះម៉ឺនុយ ដើម្បីធីក ឬដកធីកទាំងជួរ។ Admin ឃើញគ្រប់ម៉ឺនុយ។', 'Ticked = the person sees the menu. Tap a menu name to tick or untick the whole column. Admins see every menu.')}</p>
+      <div class="fb-wrap">${FB.head('menus', '', '', () => { MF.q = ''; MF.dept = ''; MF.app = ''; MF.role = ''; renderMenus(); })}
+      ${FB.panel('menus', FB.field(t('កម្មវិធី', 'App'), `<select id="mApp"><option value="">${t('គ្រប់កម្មវិធី', 'All apps')}</option>${D.apps.filter(a => ALL[a.key]).map(a => `<option value="${a.key}" ${MF.app === a.key ? 'selected' : ''}>${esc(appName(a))}</option>`).join('')}</select>`) +
+        FB.field(t('ផ្នែក', 'Department'), `<select id="mDept"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${MF.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${MF.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.field(t('តួនាទី', 'Role'), `<select id="mRole"><option value="">${t('គ្រប់តួនាទី', 'All roles')}</option>${ROLES.filter(x => D.users.some(u => u.active && u.role === x[0])).map(x => `<option value="${x[0]}" ${MF.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))} (${D.users.filter(u => u.active && u.role === x[0]).length})</option>`).join('')}</select>`) +
+        FB.search('mQ', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID…', 'Search name, email, ID…'), MF.q))}</div>
+      <div id="mres"></div><div id="msave"></div>`);
+    $('#mApp').onchange = e => { MF.app = e.target.value; drawMenus(); };
+    $('#mDept').onchange = e => { MF.dept = e.target.value; drawMenus(); };
+    $('#mRole').onchange = e => { MF.role = e.target.value; drawMenus(); };
+    $('#mQ').oninput = e => { MF.q = e.target.value; clearTimeout(renderMenus.h); renderMenus.h = setTimeout(drawMenus, 120); };
+    drawMenus();
+  }
+
+  function drawMenus() {
+    const box = $('#mres');
+    if (!box) return;
+    const ALL = MENU_ALL(), apps = mApps(), list = mPeople();
+    if (!apps.length) { box.innerHTML = `<div class="empty">${t('មិនទាន់មានម៉ឺនុយ', 'No menus yet')}</div>`; return; }
+    if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawMenuSave(); return; }
+    const cell = (u, a, m) => {
+      const k = a.key + '.' + m[0];
+      if (u.role === 'admin') return `<td class="mx-c adm" title="Admin">✓</td>`;
+      if (!u.apps[a.key]) return `<td class="mx-c na" title="${esc(t('មិនមានកម្មវិធីនេះ', 'No access to this app'))}">–</td>`;
+      const on = mOff(u).indexOf(k) < 0, was = (u.menusOff || []).indexOf(k) < 0;
+      return `<td class="mx-c${on !== was ? ' chg' : ''}"><input type="checkbox" data-u="${esc(u.email)}" data-k="${k}"${on ? ' checked' : ''} aria-label="${esc(u.name + ' · ' + t(m[1], m[2]))}"></td>`;
+    };
+    box.innerHTML = `<div class="tbl-wrap mx-wrap"><table class="tbl mx" data-nosort data-nocols><thead>
+      <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th>${apps.map((a, i) => `<th colspan="${ALL[a.key].length}" class="mx-app${i % 2 ? ' alt' : ''}">${appIcon(a.key, 18)} ${esc(appName(a))}</th>`).join('')}</tr>
+      <tr>${apps.map((a, i) => ALL[a.key].map((m, j) => `<th class="mx-m${i % 2 ? ' alt' : ''}${j === 0 ? ' first' : ''}" data-col="${a.key}.${m[0]}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(t(m[1], m[2]))}</th>`).join('')).join('')}</tr></thead>
+      <tbody>${list.map(u => `<tr><td class="mx-name"><b>${esc(u.name)}</b><small>${esc(u.dept || u.email)}</small></td>${apps.map(a => ALL[a.key].map(m => cell(u, a, m)).join('')).join('')}</tr>`).join('')}</tbody></table></div>`;
+    box.querySelector('tbody').onchange = e => {
+      const cb = e.target; if (!cb.dataset || !cb.dataset.u) return;
+      const u = byEmail(cb.dataset.u); if (!u) return;
+      const off = mOff(u).filter(k => k !== cb.dataset.k);
+      if (!cb.checked) off.push(cb.dataset.k);
+      MP[u.email] = off;
+      cb.parentElement.classList.toggle('chg', cb.checked !== ((u.menusOff || []).indexOf(cb.dataset.k) < 0));
+      drawMenuSave();
+    };
+    $$('th[data-col]', box).forEach(th => th.onclick = () => {
+      const k = th.dataset.col, app = k.split('.')[0];
+      const who = list.filter(u => u.role !== 'admin' && u.apps[app]);
+      if (!who.length) return;
+      const tick = who.some(u => mOff(u).indexOf(k) >= 0);   // any unticked → tick all, else untick all
+      who.forEach(u => { const off = mOff(u).filter(x => x !== k); if (!tick) off.push(k); MP[u.email] = off; });
+      drawMenus();
+    });
+    drawMenuSave();
+  }
+
+  function drawMenuSave() {
+    const bar = $('#msave'); if (!bar) return;
+    const n = mChanged().length;
+    bar.className = n ? 'mx-save' : '';
+    bar.innerHTML = n ? `<span>✏️ ${t(`កែ ${n} នាក់ មិនទាន់រក្សាទុក`, `${n} ${n === 1 ? 'person' : 'people'} changed, not saved`)}</span>
+      <button type="button" class="btn" id="mUndo">↶ ${t('បោះបង់', 'Undo')}</button>
+      <button type="button" class="btn ok" id="mSave">💾 ${t('រក្សាទុក', 'Save')}</button>` : '';
+    if (!n) return;
+    $('#mUndo').onclick = () => { MP = {}; drawMenus(); };
+    $('#mSave').onclick = async () => {
+      const b = $('#mSave'); b.disabled = true; b.textContent = '⏳ ' + t('កំពុងរក្សាទុក…', 'Saving…');
+      try {
+        const r = await api('umMenus', { changes: mChanged().map(u => ({ email: u.email, menusOff: MP[u.email] })) });
+        merge(r.users); addLog(r.log); MP = {}; save();
+        toast('✓ ' + t('បានរក្សាទុក', 'Saved'));
+        drawMenus();
+      } catch (e) { toast(e.message); b.disabled = false; b.textContent = '💾 ' + t('រក្សាទុក', 'Save'); }
+    };
   }
 
   // ------------------------------------------------------------------ chrome
@@ -93,6 +206,7 @@
     if (h === 'req') return renderReq();
     if (h === 'dept') return renderDept();
     if (h === 'log') return renderLog();
+    if (h === 'menus') return renderMenus();
     if (h === 'new') return renderEdit(null);
     if (h.indexOf('u/') === 0) return renderEdit(h.slice(2));
     return renderList();
@@ -100,11 +214,13 @@
   const go = h => { if (location.hash === h) screen(); else location.hash = h; };
 
   // ------------------------------------------------------------------ list
+  const inDept = u => !F.dept || (F.dept === '-' ? !u.dept : u.dept === F.dept);
+  function deptNames() { const n = D.depts.map(d => d.name); D.users.forEach(u => { if (u.dept && n.indexOf(u.dept) < 0) n.push(u.dept); }); return n.sort((a, b) => a.localeCompare(b)); }
   function chipList() {
-    const us = D.users;
+    const us = D.users.filter(inDept);
     const c = [['all', t('ទាំងអស់', 'All'), us.filter(u => !isWaiting(u)).length],
       ['admin', 'Admin', us.filter(u => u.role === 'admin').length],
-      ['reviewer', t('អ្នកពិនិត្យ', 'Reviewer'), us.filter(u => u.role === 'reviewer').length],
+      ['reviewer', t('អ្នកពិនិត្យ', 'Reviewer'), us.filter(u => isChecker(u.role)).length],
       ['off', t('បិទ', 'Off'), us.filter(u => !u.active && u.offAt).length]];
     D.apps.forEach(a => c.push(['app:' + a.key, appName(a), us.filter(u => u.active && u.apps[a.key]).length, a.key]));
     return c;
@@ -112,13 +228,14 @@
   function filtered() {
     const q = F.q.trim().toLowerCase();
     return D.users.filter(u => {
+      if (!inDept(u)) return false;
       if (F.chip === 'all' && isWaiting(u)) return false;
       if (F.chip === 'admin' && u.role !== 'admin') return false;
-      if (F.chip === 'reviewer' && u.role !== 'reviewer') return false;
+      if (F.chip === 'reviewer' && !isChecker(u.role)) return false;
       if (F.chip === 'off' && !(!u.active && u.offAt)) return false;
       if (F.chip.indexOf('app:') === 0 && !(u.active && u.apps[F.chip.slice(4)])) return false;
       if (!q) return true;
-      return [u.name, u.email, u.empId, u.dept, u.dRole, roleName(u.role)].join(' ').toLowerCase().indexOf(q) >= 0;
+      return [u.name, u.email, u.empId, u.dept, roleName(u.role)].join(' ').toLowerCase().indexOf(q) >= 0;
     }).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
   }
   const pill = u => `<span class="rp ${u.role}">${esc(roleName(u.role))}</span>${isWaiting(u) ? ` <span class="rp wait">${t('រង់ចាំ', 'Waiting')}</span>` : ''}`;
@@ -128,15 +245,20 @@
     paintTabs('list');
     const us = D.users, waiting = us.filter(isWaiting).length;
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
-        <a class="btn ok add" href="#/new">＋ ${t('បន្ថែមអ្នកប្រើ', 'Add user')}</a></div>
+        <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
+        <a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
       <div class="stats"><div><b>${us.filter(u => u.active).length}</b><small>${t('សកម្ម', 'Active')}</small></div>
         <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
         <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
       ${waiting ? `<a class="reqbar" href="#/req">📨 <b>${t('សំណើថ្មី', 'New requests')} ${waiting}</b><span>${t('មើល', 'Open')} ›</span></a>` : ''}
-      <div class="filters"><input class="in q" id="q" type="search" placeholder="🔍 ${t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…')}" value="${esc(F.q)}">
-        <div class="chips">${chipList().map(c => `<button type="button" class="chip${F.chip === c[0] ? ' on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''}${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div></div>
+      <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; sel.clear(); renderList(); })}
+      ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q) +
+        `<div class="fb-seg wrap" style="flex-basis:100%">${chipList().map(c => `<button type="button" class="${F.chip === c[0] ? 'on' : ''}" data-chip="${c[0]}">${c[3] ? appIcon(c[3], 16) : ''} ${esc(c[1])} <small>${c[2]}</small></button>`).join('')}</div>`)}</div>
       <div id="bulk"></div><div id="res"></div>`);
+    const pb = $('#pickBtn'); if (pb) pb.onclick = () => { PICK = !PICK; if (!PICK) sel.clear(); renderList(); };
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
+    $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
     $$('[data-chip]').forEach(b => b.onclick = () => { F.chip = b.dataset.chip; $$('[data-chip]').forEach(x => x.classList.toggle('on', x === b)); drawResults(); });
     drawResults();
   }
@@ -149,13 +271,13 @@
     if (wide()) {
       box.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
         <th><input type="checkbox" id="selAll" aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}></th>
-        <th>${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th><th>Delivery Role</th>
+        <th>${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th>
         ${D.apps.map(a => `<th class="tk" title="${esc(appName(a))}">${appIcon(a.key, 22)}<small>${esc(appName(a))}</small></th>`).join('')}
         <th>${t('សកម្ម', 'Active')}</th><th></th></tr></thead><tbody>${list.map(u => `
         <tr class="${u.active ? '' : 'off'}${sel.has(u.email) ? ' pick' : ''}" data-row="${esc(u.email)}">
           <td><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
           <td><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></span></a></td>
-          <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td><td>${esc(u.dRole || '–')}</td>
+          <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td>
           ${D.apps.map(a => `<td class="tk"><button type="button" class="tick${u.apps[a.key] ? ' on' : ''}" data-tick="${esc(u.email)}" data-app="${a.key}" aria-pressed="${!!u.apps[a.key]}" aria-label="${esc(appName(a))}">${u.apps[a.key] ? '✓' : ''}</button></td>`).join('')}
           <td>${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</td>
           <td><a class="ed" href="#/u/${encodeURIComponent(u.email)}" aria-label="${t('កែ', 'Edit')}">✏️</a></td></tr>`).join('')}</tbody></table></div>
@@ -164,12 +286,18 @@
       $$('[data-sel]').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); c.closest('tr').classList.toggle('pick', c.checked); drawBulk(); });
       $$('[data-tick]').forEach(b => b.onclick = () => quickApp(b.dataset.tick, b.dataset.app));
     } else {
-      box.innerHTML = `<div class="card ulist">${list.map(u => `
-        <div class="urow${u.active ? '' : ' off'}"><a class="um" href="#/u/${encodeURIComponent(u.email)}">${avatar(u)}
+      box.innerHTML = (PICK ? `<label class="pkall"><input type="checkbox" id="selAll" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}> ${t('ជ្រើសទាំងអស់ដែលបង្ហាញ', 'Select all shown')} (${list.length})</label>` : '') + `<div class="card ulist${PICK ? ' picking' : ''}">${list.map(u => `
+        <div class="urow${u.active ? '' : ' off'}${PICK && sel.has(u.email) ? ' pick' : ''}">${PICK ? `<input type="checkbox" class="pkc" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}">` : ''}<a class="um" href="#/u/${encodeURIComponent(u.email)}"${PICK ? ` data-pk="${esc(u.email)}"` : ''}>${avatar(u)}
           <span class="ut"><span class="l1"><b>${esc(u.name || u.email)}</b>${pill(u)}</span>
           <small>${esc([u.dept, u.empId && 'ID ' + u.empId].filter(Boolean).join(' · ') || u.email)}</small>
           <span class="apps">${D.apps.map(a => `<span class="ai${u.apps[a.key] ? '' : ' no'}" title="${esc(appName(a))}">${appIcon(a.key, 20)}</span>`).join('')}</span></span></a>
-          ${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</div>`).join('')}</div>`;
+          ${PICK ? '' : sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</div>`).join('')}</div>`;
+      if (PICK) {
+        const flip = (email, on) => { on ? sel.add(email) : sel.delete(email); drawResults(); };
+        $('#selAll').onchange = e => { list.forEach(u => e.target.checked ? sel.add(u.email) : sel.delete(u.email)); drawResults(); };
+        $$('[data-sel]').forEach(c => c.onchange = () => flip(c.dataset.sel, c.checked));
+        $$('[data-pk]').forEach(a => a.onclick = e => { e.preventDefault(); flip(a.dataset.pk, !sel.has(a.dataset.pk)); });
+      }
     }
     $$('[data-act]').forEach(b => b.onclick = () => quickActive(b.dataset.act));
     drawBulk();
@@ -181,7 +309,7 @@
     const on = !u.apps[key];
     const old = JSON.parse(JSON.stringify(u));
     u.apps[key] = on; drawResults();
-    try { const r = await api('umSave', { email, apps: { [key]: on } }); merge([r.user]); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
+    try { const r = await api('umSave', { email, apps: { [key]: on } }); mergeSave(r); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
     catch (e) { merge([old]); toast(e.message); }
     drawResults();
   }
@@ -191,7 +319,7 @@
     if (!on && !confirm(t(`បិទ ${u.name || u.email}? គាត់នឹងចូលកម្មវិធីណាមួយមិនបាន (ប្រវត្តិនៅដដែល)។`, `Switch off ${u.name || u.email}? They can't open any app (their history stays).`))) { drawResults(); return; }
     const old = JSON.parse(JSON.stringify(u));
     u.active = on; if (!on) u.offAt = Date.now(); drawResults();
-    try { const r = await api('umSave', { email, active: on }); merge([r.user]); addLog(r.log); save(); toast(on ? t('បានបើក', 'Switched on') : t('បានបិទ', 'Switched off')); }
+    try { const r = await api('umSave', { email, active: on }); mergeSave(r); addLog(r.log); save(); toast(on ? t('បានបើក', 'Switched on') : t('បានបិទ', 'Switched off')); }
     catch (e) { merge([old]); toast(e.message); }
     if (/^#\/?$|^$/.test(location.hash)) drawResults(); else screen();
   }
@@ -201,16 +329,19 @@
     const box = $('#bulk');
     if (!box) return;
     const n = Array.from(sel).filter(byEmail).length;
-    if (!wide() || !n) { box.innerHTML = ''; return; }
+    if (!n || !(wide() || PICK)) { box.innerHTML = ''; return; }
+    const whs = D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
     box.innerHTML = `<div class="bulk"><b>☑ ${t('បានជ្រើស', 'Selected')} ${n}</b>
       <select class="in sm" id="bApp"><option value="">${t('បើក/បិទកម្មវិធី…', 'Tick an app…')}</option>${D.apps.map(a => `<option value="${a.key}:1">✓ ${esc(appName(a))}</option><option value="${a.key}:0">✗ ${esc(appName(a))}</option>`).join('')}</select>
       <select class="in sm" id="bRole"><option value="">${t('ប្តូរតួនាទី…', 'Set role…')}</option>${ROLES.map(r => `<option value="${r[0]}">${esc(t(r[1], r[2]))}</option>`).join('')}</select>
+      <select class="in sm" id="bWh"><option value="">🏭 ${t('ឃ្លាំង Inbound…', 'Inbound warehouse…')}</option>${whs.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="All">🌐 ${t('ទាំងអស់', 'All')}</option><option value="-">${t('គ្មាន (ឃើញទាំងអស់)', 'None (sees all)')}</option></select>
       <select class="in sm" id="bDept"><option value="">${t('ប្តូរផ្នែក…', 'Department…')}</option>${D.depts.map(d => `<option>${esc(d.name)}</option>`).join('')}</select>
       <button type="button" class="btn sm" id="bOn">${t('បើក', 'Switch on')}</button>
       <button type="button" class="btn sm bad" id="bOff">${t('បិទ', 'Switch off')}</button>
       <button type="button" class="link" id="bClear">${t('លុបការជ្រើស', 'Clear')}</button></div>`;
     $('#bApp').onchange = e => { const [k, v] = e.target.value.split(':'); if (k) bulk({ apps: { [k]: v === '1' } }, (v === '1' ? '✓ ' : '✗ ') + appName(D.apps.find(a => a.key === k))); };
     $('#bRole').onchange = e => { if (e.target.value) bulk({ role: e.target.value }, roleName(e.target.value)); };
+    $('#bWh').onchange = e => { const v = e.target.value; if (v) bulk({ ibWh: v === '-' ? [] : [v] }, '🏭 ' + (v === '-' ? t('គ្មានឃ្លាំង', 'No warehouse') : v)); };
     $('#bDept').onchange = e => { if (e.target.value) bulk({ dept: e.target.value }, e.target.value); };
     $('#bOn').onclick = () => bulk({ active: true }, t('បើក', 'Switch on'));
     $('#bOff').onclick = () => bulk({ active: false }, t('បិទ', 'Switch off'));
@@ -237,9 +368,10 @@
     if (!E || E.key !== key) {
       const u = isNew ? null : byEmail(email);
       if (!isNew && !u) { view(`<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`); return; }
-      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, dRole: '', offNote: '' };
+      const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '', ibWh: [] };
       if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'location', 'incident'].indexOf(a.key) >= 0; });
       const orig = JSON.parse(JSON.stringify(u || blank));
+      if (!orig.ibWh) orig.ibWh = [];
       E = { key, isNew, orig, f: JSON.parse(JSON.stringify(orig)), ot: null, otOrig: null, tried: false };
     }
     const f = E.f, me = !isNew && f.email === D.me;
@@ -250,30 +382,40 @@
     view(`<a class="back" href="${isWaiting(E.orig) && !isNew ? '#/req' : '#/'}">‹ ${t('ថយក្រោយ', 'Back')}</a>
       <div class="prof">${avatar(Object.assign({}, f, { email: f.email || f.name || '?' }), 'big')}<div>
         <h1>${esc(f.name || (isNew ? t('អ្នកប្រើថ្មី', 'New user') : f.email))}</h1>
-        ${isNew ? '' : `<small>${esc(f.email)}</small>`}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>
+        ${isNew ? '' : `<small>${esc(f.email)}${(E.orig.others || []).length ? ' · ' + t('Gmail ផ្សេង', 'also') + ' ' + esc(E.orig.others.join(', ')) : ''}</small>`}
+        ${!isNew && (E.orig.fullName || E.orig.kh) ? `<small>${esc([E.orig.fullName, E.orig.kh].filter(Boolean).join(' · '))}${E.orig.manager ? ' · ' + t('ប្រធាន', 'Manager') + ' ' + esc(E.orig.manager) : ''}</small>` : ''}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>
       <div class="card">
         ${isNew ? `<div class="field"><label class="f" for="fEmail">${t('អ៊ីមែល Google', 'Google email')} <span class="req">*</span></label>
           <input class="in${need(f.email)}" id="fEmail" type="email" inputmode="email" autocomplete="off" placeholder="name@gmail.com" value="${esc(f.email)}"></div>` : ''}
         <div class="row2"><div class="field"><label class="f" for="fName">${t('ឈ្មោះពេញ', 'Full name')} <span class="req">*</span></label>
             <input class="in${need(f.name)}" id="fName" value="${esc(f.name)}"></div>
-          <div class="field"><label class="f" for="fId">Employee ID</label><input class="in" id="fId" inputmode="numeric" placeholder="100000–190000" value="${esc(f.empId)}"></div></div>
+          <div class="field"><label class="f" for="fId">Employee ID</label><input class="in" id="fId" inputmode="numeric" list="empList" placeholder="100000–190000" value="${esc(f.empId)}">
+            ${D.emps && f.empId !== E.orig.empId && f.empId ? `<div class="hint">${empOf(f.empId) ? '→ ' + esc(empOf(f.empId).name) : '➕ ' + t('លេខថ្មី', 'New number')}</div>` : ''}</div></div>
+        ${D.emps ? `<datalist id="empList">${D.emps.map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.kh ? ' · ' + esc(e.kh) : ''}</option>`).join('')}</datalist>` : ''}
         <div class="field"><label class="f" for="fDept">${t('ផ្នែក', 'Department')}</label>
           <select class="in" id="fDept"><option value="">–</option>${deptOpts.map(d => `<option ${d === f.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
           ${!isNew && deptApps ? `<button type="button" class="link" id="useDept">${t('ប្រើកម្មវិធីតាមផ្នែកនេះ', 'Use this department\'s apps')}</button>` : ''}</div>
         <div class="field"><label class="f">${t('តួនាទី', 'Role')}</label>
-          <div class="seg">${ROLES.map(r => `<button type="button" class="${f.role === r[0] ? 'on' : ''}" data-role="${r[0]}" ${me ? 'disabled' : ''}>${esc(t(r[1], r[2]))}<small>${r[0] === 'user' ? t('ប្រើកម្មវិធី', 'Uses the apps') : r[0] === 'reviewer' ? t('ពិនិត្យការចាក់សាំង', 'Checks fuel entries') : t('គ្រប់យ៉ាង', 'Everything')}</small></button>`).join('')}</div>
+          <div class="seg roles">${ROLES.map(r => `<button type="button" class="${f.role === r[0] ? 'on' : ''}" data-role="${r[0]}" ${me ? 'disabled' : ''}>${esc(t(r[1], r[2]))}<small>${esc(t(r[3], r[4]))}</small></button>`).join('')}</div>
           ${me ? `<div class="hint">${t('អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ', 'You can\'t remove your own admin access')}</div>` : f.role === 'admin' ? `<div class="hint">${t('Admin បើកបានគ្រប់កម្មវិធី និងគ្រប់គ្រងអ្នកប្រើ', 'Admins can open every app and manage users')}</div>` : ''}</div>
         <div class="swrow"><span><b>${t('សកម្ម', 'Active')}</b><small>${t('បិទ = ចូលកម្មវិធីណាមួយមិនបាន ប្រវត្តិនៅដដែល', 'Off = can\'t open any app, history stays')}</small></span>${sw(f.active, `id="fActive" ${me ? 'disabled' : ''}`, t('សកម្ម', 'Active'))}</div>
         ${!f.active && !isNew ? `<div class="field"><label class="f" for="fNote">${t('មូលហេតុ', 'Reason')} <small class="inl">${t('ស្រេចចិត្ត', 'optional')}</small></label><input class="in" id="fNote" placeholder="${t('ឧ. ឈប់ធ្វើការ', 'e.g. Left the company')}" value="${esc(f.offNote)}"></div>` : ''}
       </div>
       <div class="sec">${t('កម្មវិធីដែលអាចប្រើ', 'Apps')}${f.role === 'admin' ? ` <small class="inl">· ${t('Admin ប្រើបានទាំងអស់', 'Admins can open all')}</small>` : ''}</div>
       <div class="card apps2">${D.apps.map(a => `<div class="aline">${appIcon(a.key, 30)}<div class="at"><b>${esc(appName(a))}</b>${appExtra(a.key)}</div>${sw(f.apps[a.key], `data-app="${a.key}"`, appName(a))}</div>`).join('')}</div>
+      ${!isNew && (E.orig.others || []).length && !me ? `<button type="button" class="link bad" id="fDrop">✕ ${t('ដក Gmail នេះចេញ', 'Remove this Gmail')} (${esc(f.email)})</button>` : ''}
       <div id="eErr"></div>
       <div class="savebar"><button type="button" class="btn ok big" id="fSave">💾 ${isNew ? t('បន្ថែម', 'Add') : t('រក្សាទុក', 'Save')}</button></div>`);
     const bind = (id, k, cb) => { const el = $(id); if (el) el.oninput = el.onchange = e => { f[k] = e.target.value; if (cb) cb(); }; };
     bind('#fEmail', 'email', () => $('#fEmail').classList.toggle('need', E.tried && !f.email.trim()));
     bind('#fName', 'name', () => $('#fName').classList.toggle('need', E.tried && !f.name.trim()));
     bind('#fId', 'empId');
+    if ($('#fId') && D.emps) $('#fId').onchange = e => { f.empId = e.target.value.trim(); renderEdit(email); };
+    if ($('#fDrop')) $('#fDrop').onclick = async () => {
+      if (!confirm(t(`ដក ${f.email} ចេញ?`, `Remove ${f.email}?`))) return;
+      try { const r = await api('umSave', { email: f.email, removeEmail: true }); mergeSave(r); addLog(r.log); save(); toast('✓ ' + f.email); E = null; go('#/'); }
+      catch (e) { toast(e.message); }
+    };
     bind('#fNote', 'offNote');
     $('#fDept').onchange = e => {
       f.dept = e.target.value;
@@ -286,18 +428,25 @@
     $$('[data-role]').forEach(b => b.onclick = () => { f.role = b.dataset.role; renderEdit(email); });
     $('#fActive').onclick = () => { if (me) return; f.active = !f.active; renderEdit(email); };
     $$('.aline [data-app]').forEach(b => b.onclick = () => { f.apps[b.dataset.app] = !f.apps[b.dataset.app]; renderEdit(email); });
-    const dr = $('#fDRole'); if (dr) dr.onchange = e => { f.dRole = e.target.value; };
+    $$('[data-ibwh]').forEach(b => b.onclick = () => {
+      const w = b.dataset.ibwh, on = f.ibWh || (f.ibWh = []), k = on.indexOf(w);
+      if (k >= 0) on.splice(k, 1); else if (w === 'All') f.ibWh = ['All']; else { on.push(w); const a = on.indexOf('All'); if (a >= 0) on.splice(a, 1); }
+      renderEdit(email);
+    });
     const om = $('#fOt'); if (om) om.onchange = e => { E.ot = e.target.value ? JSON.parse(e.target.value) : null; };
     $('#fSave').onclick = () => saveEdit(email);
     if (f.apps.overtime && !OT) loadOt().then(() => { if (E && E.key === key) renderEdit(email); });
   }
 
-  // Extra choices under some apps: Delivery Role for Transport, the line manager for Overtime.
+  // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role),
+  // the warehouse(s) for Inbound (Kim, 2 Nov 2026: each team sees only its own warehouse).
   function appExtra(key) {
     const f = E.f;
-    if (!f.apps[key]) return '';
-    if (key === 'transport') {
-      return `<div class="sub"><label for="fDRole">Delivery Role</label><select class="in sm" id="fDRole"><option value="">–</option>${D.dRoles.map(r => `<option ${r === f.dRole ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>`;
+    if (!f.apps[key] && !(key === 'inbound' && f.role === 'admin')) return '';
+    if (key === 'inbound') {
+      const list = (D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).concat('All'), on = f.ibWh || [];
+      return `<div class="sub ibwh"><span>🏭 ${t('ឃ្លាំង', 'Warehouse')}</span>${list.map(w => `<button type="button" class="whc${on.indexOf(w) >= 0 ? ' on' : ''}" data-ibwh="${esc(w)}">${on.indexOf(w) >= 0 ? '☑' : '☐'} ${w === 'All' ? '🌐 ' + t('ទាំងអស់', 'All') : esc(w)}</button>`).join('')}
+        ${on.length ? '' : `<div class="hint" style="width:100%">${t('មិនទាន់ជ្រើស = ឃើញគ្រប់ឃ្លាំង', 'None ticked = sees every warehouse')}</div>`}</div>`;
     }
     if (key === 'overtime') {
       if (!OT) return `<div class="sub hint"><span class="sp"></span> ${t('កំពុងផ្ទុកអ្នកអនុម័ត…', 'Loading approvers…')}</div>`;
@@ -322,18 +471,19 @@
     const missing = (isNew && !f.email.trim()) || !f.name.trim();
     if (missing) { renderEdit(email); $('#eErr').innerHTML = `<div class="alert bad">${t('សូមបំពេញប្រអប់ក្រហម', 'Please fill in the red boxes')}</div>`; return; }
     const p = isNew ? { isNew: true, email: f.email.trim() } : { email: o.email };
-    ['name', 'empId', 'dept', 'role', 'active', 'dRole'].forEach(k => { if (isNew || f[k] !== o[k]) p[k] = f[k]; });
+    ['name', 'empId', 'dept', 'role', 'active'].forEach(k => { if (isNew || f[k] !== o[k]) p[k] = f[k]; });
     if (!f.active && (f.active !== o.active || f.offNote !== o.offNote)) p.offNote = f.offNote;
     const apps = {};
     D.apps.forEach(a => { if (isNew || !!f.apps[a.key] !== !!o.apps[a.key]) apps[a.key] = !!f.apps[a.key]; });
     if (Object.keys(apps).length) p.apps = apps;
+    if ((f.ibWh || []).join(',') !== (o.ibWh || []).join(',')) p.ibWh = f.ibWh;
     const otChange = E.ot && E.otOrig && (E.ot.manager !== E.otOrig.manager || E.ot.tg !== E.otOrig.tg);
     if (Object.keys(p).length <= 1 && !otChange) { toast(t('គ្មានការផ្លាស់ប្តូរ', 'No changes')); return; }
     const btn = $('#fSave');
     btn.disabled = true; btn.innerHTML = `<span class="sp"></span> ${t('កំពុងរក្សាទុក…', 'Saving…')}`;
     try {
       let u = o;
-      if (Object.keys(p).length > 1) { const r = await api('umSave', p); merge([r.user]); addLog(r.log); u = r.user; }
+      if (Object.keys(p).length > 1) { const r = await api('umSave', p); mergeSave(r); addLog(r.log); u = r.user || o; if (p.empId !== undefined && D.v) refresh(true).catch(() => {}); }
       if (otChange) {
         const r = await api('umOtSave', { empId: f.empId, manager: E.ot.manager, tg: E.ot.tg, email: u.email });
         addLog(r.log); OT.byId[String(f.empId).trim()] = Object.assign({}, OT.byId[String(f.empId).trim()], { manager: r.manager, tg: r.tg });
@@ -353,31 +503,66 @@
   // ------------------------------------------------------------------ requests
   function renderReq() {
     paintTabs('req');
-    const list = D.users.filter(isWaiting);
-    view(`<div class="um-head"><h1>📨 ${t('សំណើចូលប្រើ', 'Access requests')}</h1></div>
-      <p class="hint top">${t('មកពីប៊ូតុង “ស្នើសុំទៅអ្នកគ្រប់គ្រង” · កម្មវិធីតាមផ្នែករបស់គាត់ បានធីករួច', 'From the “Request to Admin” button · the apps for their department are already ticked')}</p>
-      ${list.length ? `<div class="reqgrid">${list.map(u => `<div class="card rq">
-        <div class="rqh">${avatar(Object.assign({}, u, { active: true }))}<div><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></div></div>
-        <div class="kv"><span>Employee ID</span><b>${esc(u.empId || '–')}</b><span>${t('ផ្នែក', 'Dept')}</span><b>${esc(u.dept || '–')}</b></div>
+    const list = D.users.filter(isWaiting).sort((a, b) => (b.reqAt || 0) - (a.reqAt || 0));
+    const badge = u => u.claimed ? `<span class="rp warn">⚠️ ${t('ID មាន Gmail រួច', 'ID has a Gmail')}</span>` : !u.empId ? `<span class="rp wait">📷 ${t('គ្មាន ID', 'No ID')}</span>` : '';
+    const one = u => {
+      const owner = u.claimed ? empOf(u.claimed) : null;
+      const link = !u.empId && !u.claimed;
+      return `<div class="card rq">
+        <div class="rqh">${avatar(Object.assign({}, u, { active: true }))}<div class="grow"><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></div>${badge(u)}</div>
+        ${u.photo ? `<button type="button" class="rqphoto" data-photo="${esc(u.email)}">${photos[u.email] ? `<img src="${photos[u.email]}" alt="">` : `<span class="sp"></span>`}</button>` : ''}
+        ${link ? `<label class="f" for="lk_${esc(u.email)}">${t('ភ្ជាប់ទៅបុគ្គលិក', 'Link to employee')}</label>
+          <input class="in" id="lk_${esc(u.email)}" data-link="${esc(u.email)}" list="empList" inputmode="numeric" placeholder="🔍 ${t('វាយលេខ ID ឬឈ្មោះ…', 'Type the ID or name…')}">
+          <div class="hint" data-linkname="${esc(u.email)}">${t('ទុកទទេ = អនុញ្ញាតដោយគ្មាន ID', 'Leave empty = allow without an ID')}</div>` : ''}
+        <div class="kv">
+          ${u.claimed ? `<span>Employee ID</span><b>${esc(u.claimed)}${owner ? ' · ' + esc(owner.name) : ''}</b><span>${t('Gmail ចាស់', 'Old Gmail')}</span><b>${esc(owner ? owner.emails.join(', ') : '–')}</b>` : u.empId ? `<span>Employee ID</span><b>${esc(u.empId)}</b>` : ''}
+          <span>${t('មុខងារ', 'Function')}</span><b>${esc(u.dept || '–')}</b>
+          ${u.reqAt ? `<span>${t('ពេលផ្ញើ', 'Sent')}</span><b>${when(u.reqAt)}</b>` : ''}
+          ${u.offNote ? `<span>${t('ចំណាំ', 'Note')}</span><b>${esc(u.offNote)}</b>` : ''}</div>
         <div class="apps">${D.apps.map(a => `<span class="ai${u.apps[a.key] ? '' : ' no'}" title="${esc(appName(a))}">${appIcon(a.key, 24)}</span>`).join('')}</div>
-        <div class="rqb"><button type="button" class="btn ok" data-ok="${esc(u.email)}">✅ ${t('អនុញ្ញាត', 'Approve')}</button>
+        <div class="rqb"><button type="button" class="btn ok" data-ok="${esc(u.email)}">${u.claimed ? '➕ ' + t('បន្ថែម Gmail ទី 2', 'Add as 2nd Gmail') : '✅ ' + t('អនុញ្ញាត', 'Approve')}</button>
           <a class="btn" href="#/u/${encodeURIComponent(u.email)}">✏️ ${t('កែ', 'Edit')}</a>
-          <button type="button" class="btn bad" data-no="${esc(u.email)}">✕ ${t('បដិសេធ', 'Reject')}</button></div></div>`).join('')}</div>`
+          <button type="button" class="btn bad" data-no="${esc(u.email)}">✕ ${t('បដិសេធ', 'Reject')}</button></div></div>`;
+    };
+    view(`<div class="um-head"><h1>📨 ${t('សំណើចូលប្រើ', 'Access requests')}</h1></div>
+      <p class="hint top">${t('អ្នកដែលមានលេខ ID ត្រឹមត្រូវ ចូលប្រើបានភ្លាម។ នៅទីនេះ៖ ផ្ញើដោយកាតបុគ្គលិក ឬ ID ដែលមាន Gmail រួច', 'People with a free Employee ID get in at once. Here: requests with a card photo, or an ID that already has a Gmail')}</p>
+      ${list.length ? `<div class="reqgrid">${list.map(one).join('')}</div>`
         : `<div class="card empty">✅ ${t('គ្មានសំណើរង់ចាំ', 'No requests waiting')}</div>`}
+      <datalist id="empList">${(D.emps || []).map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.kh ? ' · ' + esc(e.kh) : ''}${e.emails.length ? ' · 📧' : ''}</option>`).join('')}</datalist>
       <div class="sec">🕘 ${t('ការផ្លាស់ប្តូរចុងក្រោយ', 'Recent changes')} <a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')}</a></div>
       ${logHTML(D.log.slice(0, 6))}`);
-    $$('[data-ok]').forEach(b => b.onclick = () => answer(b, b.dataset.ok, true));
+    $$('[data-link]').forEach(inp => inp.oninput = () => {
+      const v = inp.value.trim(), id = (v.match(/\d{4,}/) || [''])[0];
+      const e = empOf(id) || (!id && v ? (D.emps || []).find(x => (x.name + ' ' + x.kh).toLowerCase().indexOf(v.toLowerCase()) >= 0) : null);
+      const hint = $(`[data-linkname="${CSS.escape(inp.dataset.link)}"]`);
+      inp.dataset.id = e ? e.id : id;
+      hint.innerHTML = e ? `✓ <b>${esc(e.name)}</b>${e.kh ? ' · ' + esc(e.kh) : ''} · ${esc(e.dept || '–')}${e.emails.length ? ` · <span class="bad">⚠️ ${t('មាន Gmail រួច', 'already has')} ${esc(e.emails.join(', '))}</span>` : ''}`
+        : id ? `➕ ${t('លេខថ្មី · នឹងបន្ថែមជាបុគ្គលិកថ្មី', 'New number · adds a new employee')}` : t('ទុកទទេ = អនុញ្ញាតដោយគ្មាន ID', 'Leave empty = allow without an ID');
+    });
+    $$('[data-ok]').forEach(b => b.onclick = () => {
+      const u = byEmail(b.dataset.ok), inp = $(`[data-link="${CSS.escape(u.email)}"]`);
+      const id = u.claimed || (inp && inp.dataset.id) || '';
+      answer(b, u.email, true, id);
+    });
     $$('[data-no]').forEach(b => b.onclick = () => {
       const u = byEmail(b.dataset.no);
       if (confirm(t(`បដិសេធ ${u.name || u.email}?`, `Reject ${u.name || u.email}?`))) answer(b, b.dataset.no, false);
     });
+    $$('[data-photo]').forEach(b => {
+      const email = b.dataset.photo;
+      b.onclick = () => { if (photos[email]) window.open(photos[email], '_blank'); };
+      if (!photos[email]) api('umPhoto', { email }).then(r => { if (r && r.dataUrl) { photos[email] = r.dataUrl; b.innerHTML = `<img src="${r.dataUrl}" alt="">`; } else b.innerHTML = '📷 –'; }).catch(() => { b.innerHTML = '📷 –'; });
+    });
   }
-  async function answer(btn, email, ok) {
+  async function answer(btn, email, ok, id) {
     btn.disabled = true; btn.innerHTML = '<span class="sp"></span>';
     try {
-      const r = await api('umSave', ok ? { email, active: true } : { email, active: false, offNote: 'Request rejected' });
-      merge([r.user]); addLog(r.log); save();
-      toast(ok ? '✅ ' + t('បានអនុញ្ញាត', 'Approved') + ' · ' + (r.user.name || email) : t('បានបដិសេធ', 'Rejected'));
+      const p = ok ? { email, active: true } : { email, active: false, offNote: 'Request rejected' };
+      if (ok && id) p.empId = id;
+      const r = await api('umSave', p);
+      mergeSave(r); addLog(r.log); save();
+      toast(ok ? '✅ ' + t('បានអនុញ្ញាត', 'Approved') + ' · ' + ((r.user && r.user.name) || email) : t('បានបដិសេធ', 'Rejected'));
+      if (id) refresh(true).catch(() => {});
     } catch (e) { toast(e.message); }
     renderReq();
   }
@@ -392,7 +577,7 @@
         <div class="dapps">${D.apps.map(a => `<button type="button" class="dapp${d.apps[a.key] ? ' on' : ''}" data-dapp="${esc(d.name)}" data-app="${a.key}" aria-pressed="${!!d.apps[a.key]}">${appIcon(a.key, 26)}<small>${esc(appName(a))}</small></button>`).join('')}</div></div>`).join('')}</div>`
         : `<div class="card empty">${t('មិនទាន់មានផ្នែក', 'No departments yet')}</div>`}`);
     $('#dNew').onclick = async () => {
-      const name = (prompt(t('ឈ្មោះផ្នែកថ្មី', 'New department name')) || '').trim();
+      const name = (prompt(t('ផ្នែក · មុខងារ ថ្មី (ឧ. Supply Chain · QA)', 'New Department · Function (e.g. Supply Chain · QA)')) || '').trim().replace(/\s*[·|/]\s*/, ' · ');
       if (name) deptSave({ name, isNew: true });
     };
     $$('[data-dapp]').forEach(b => b.onclick = () => {
@@ -416,7 +601,7 @@
   function renderLog() {
     paintTabs('log');
     view(`<div class="um-head"><h1>🕘 ${t('ប្រវត្តិការផ្លាស់ប្តូរ', 'Change log')}</h1></div>
-      <input class="in q" id="lq" type="search" placeholder="🔍 ${t('ស្វែងរក…', 'Search…')}" value="${esc(logQ)}"><div id="lres"></div>
+      <div class="fb-wrap">${FB.head('log', '', '', () => { logQ = ''; renderLog(); })}${FB.panel('log', FB.search('lq', t('ស្វែងរក…', 'Search…'), logQ))}</div><div id="lres"></div>
       <p class="hint">${t('កត់ត្រាក្នុងតារាង “User Log” នៃ Google Sheet ចាក់សាំង', 'Kept in the “User Log” tab of the Fuel Refill Google Sheet')}</p>`);
     const draw = () => { const q = logQ.toLowerCase(); $('#lres').innerHTML = logHTML(D.log.filter(l => !q || [l.by, l.name, l.email, l.change].join(' ').toLowerCase().indexOf(q) >= 0)); };
     $('#lq').oninput = e => { logQ = e.target.value; draw(); };
@@ -424,12 +609,17 @@
   }
 
   // ------------------------------------------------------------------ start
-  async function refresh() {
+  // quiet = background refresh: redraws only when something changed, and keeps the scroll position
+  async function refresh(quiet) {
+    quiet = quiet === true;
     try {
-      D = await api('umList'); save();
-      if (!E) screen(); else paintTabs('list');
+      const d = await api('umList');
+      if (quiet && JSON.stringify(d) === JSON.stringify(D)) return;
+      D = d; save();
+      if (E) paintTabs('list'); else if (quiet) LIVE.keep(screen); else screen();
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS' || e.code === 'OLD') { set(bootKey(), null); D = null; blocked(e); return; }
+      if (quiet) throw e;
       if (!D) view(`<div class="card done"><div class="emoji">⚠️</div><p>${esc(e.message)}</p><button class="btn ok" id="retry">${t('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>`), $('#retry').onclick = refresh;
       else toast(e.message);
     }
@@ -449,6 +639,7 @@
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintDemo(); screen(); }); }
   paintDemo(); paintStatic();
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D || !!(D && mChanged().length) });
   window.ISTEEL_REFRESH = () => { if (E) { toast(t('កំពុងកែ · ចុច រក្សាទុក ឬ ថយក្រោយ', 'Editing · tap Save or Back')); return; } refresh(); };
   window.addEventListener('hashchange', () => { if (!/^#\/(u\/|new)/.test(location.hash)) E = null; screen(); window.scrollTo(0, 0); });
   let wasWide = wide();
@@ -468,10 +659,12 @@
           const out = [], logs = [];
           emails.forEach(email => {
             let u = S.users.find(x => x.email === email);
-            if (p.isNew) { if (u) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។'); u = { email, name: '', role: 'user', active: true, empId: '', dept: '', apps: {}, dRole: '', offAt: 0, offNote: '' }; S.users.push(u); }
+            if (p.isNew) { if (u) throw new Error(email + ' is already in the list. / មានក្នុងបញ្ជីរួចហើយ។'); u = { email, name: '', role: 'user', active: true, empId: '', dept: '', apps: {}, offAt: 0, offNote: '' }; S.users.push(u); }
             if (email === S.me && (patch.role && patch.role !== 'admin' || patch.active === false)) { if (action === 'umSave') throw new Error('You cannot remove your own admin access. / អ្នកមិនអាចដកសិទ្ធិ Admin របស់ខ្លួនឯងបានទេ។'); return; }
-            ['name', 'empId', 'dept', 'role', 'dRole'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
+            ['name', 'empId', 'dept', 'role'].forEach(k => { if (patch[k] !== undefined) u[k] = patch[k]; });
             if (patch.apps) Object.assign(u.apps, patch.apps);
+            if (patch.ibWh) u.ibWh = patch.ibWh.slice();
+            if (patch.active) u.claimed = '';
             if (patch.active !== undefined && (patch.active !== u.active || (!patch.active && !u.offAt))) { u.active = patch.active; u.offAt = patch.active ? 0 : Date.now(); u.offNote = patch.active ? '' : (patch.offNote || ''); }
             out.push(clone(u));
             logs.push(...log(email, u.name, p.isNew ? 'Added' : Object.keys(patch).filter(k => k !== 'email').join(', ') + ' changed'));
@@ -485,6 +678,12 @@
           if (p.active !== undefined) d.active = p.active;
           return resolve({ depts: clone(S.depts), log: log('', 'Department: ' + p.name, 'changed') });
         }
+        if (action === 'umMenus') {
+          const out = [], logs = [];
+          p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.menusOff = c.menusOff.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Menus changed')); });
+          return resolve({ users: out, log: logs });
+        }
+        if (action === 'umPhoto') return resolve({ dataUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" rx="14" fill="#f4f6f9"/><rect x="18" y="30" width="90" height="120" rx="8" fill="#b9c3cf"/><text x="128" y="60" font-family="sans-serif" font-weight="700" font-size="20" fill="#011e41">ISI STEEL</text><text x="128" y="95" font-family="sans-serif" font-size="13" fill="#546274">NAME: SOK DARA</text><text x="128" y="120" font-family="sans-serif" font-size="13" fill="#546274">ID: 108765</text></svg>') });
         if (action === 'umOt') return resolve({ ok: true, byId: { 125771: { manager: 'Sok Dara', tg: '@sokdara' }, 130452: { manager: 'Kim Sopheakdey', tg: '@pheakdey' } }, managers: [{ name: 'Kim Sopheakdey', tg: '@pheakdey' }, { name: 'Sok Dara', tg: '@sokdara' }] });
         if (action === 'umOtSave') return resolve({ manager: p.manager, tg: p.tg, log: log(p.email, '', 'OT approver → ' + p.manager) });
         reject(new Error('Unknown action'));
@@ -497,18 +696,23 @@
     return {
       me: 'admin.demo@gmail.com',
       apps: ['fuel', 'transport', 'overtime', 'location', 'meeting', 'incident', 'inbound', 'dashboard'].map(key => ({ key, col: APP_NAMES[key][0] })),
-      dRoles: ['Security', 'Logistics', 'Warehouse', 'Driver', 'Supervisor', 'Admin'],
       depts: [{ name: 'Warehouse', active: true, apps: A('10101110') }, { name: 'Transport', active: true, apps: A('11110100') }, { name: 'Security', active: true, apps: A('01100100') }, { name: 'HR', active: false, apps: A('00101100') }],
       users: [
-        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), dRole: '', offAt: 0, offNote: '' },
-        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'reviewer', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), dRole: 'Supervisor', offAt: 0, offNote: '' },
-        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'user', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), dRole: 'Driver', offAt: 0, offNote: '' },
-        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'user', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), dRole: 'Warehouse', offAt: 0, offNote: '' },
-        { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'user', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), dRole: 'Security', offAt: 0, offNote: '' },
-        { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), dRole: '', offAt: now - 2 * day, offNote: 'Left the company' },
-        { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), dRole: '', offAt: 0, offNote: '' },
-        { email: 'sovann.ly@gmail.com', name: 'Ly Sovann', role: 'user', active: false, empId: '158004', dept: 'Warehouse', apps: A('10101110'), dRole: '', offAt: 0, offNote: '' },
+        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), offAt: 0, offNote: '' },
+        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'supervisor', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), offAt: 0, offNote: '' },
+        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'driver', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), offAt: 0, offNote: '', menusOff: ['fuel.review', 'fuel.report'] },
+        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'warehouse', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
+        { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'security', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), offAt: 0, offNote: '' },
+        { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), offAt: now - 2 * day, offNote: 'Left the company' },
+        { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), offAt: 0, offNote: '' },
+        { email: 'sovann.ly@gmail.com', name: 'Ly Sovann', role: 'user', active: false, empId: '158004', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
+        { email: 'sokdara77@gmail.com', name: 'សុខ ដារ៉ា', role: 'user', active: false, empId: '', dept: 'Supply Chain · Warehouse GVM', apps: A('10101110'), offAt: 0, offNote: '', photo: true, reqAt: now - 40 * 60e3 },
+        { email: 'sokom.c@gmail.com', name: 'CHEA SOKOM', role: 'user', active: false, empId: '', claimed: '100752', dept: 'Supply Chain · Central Warehouse', apps: A('10101110'), offAt: 0, offNote: '', reqAt: now - 90 * 60e3 },
       ],
+      emps: [{ id: '100752', name: 'CHEA SOKOM', kh: 'ជា សុគុម', dept: 'Supply Chain · Central Warehouse', emails: ['chea.sokom@gmail.com'] },
+        { id: '104836', name: 'THEY SEYHA', kh: 'ថី សីហា', dept: 'Supply Chain · Transport & Fleet', emails: [] },
+        { id: '108765', name: 'SOK DARA', kh: 'សុខ ដារ៉ា', dept: 'Supply Chain · Warehouse GVM', emails: [] }],
+      v: 2,
       log: [
         { time: now - 3 * 3600e3, by: 'Demo Admin', email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', change: 'ទទួលទំនិញ ✓' },
         { time: now - day, by: 'Demo Admin', email: 'sophal.keo@gmail.com', name: 'Keo Sophal', change: 'Switched off (Left the company)' },

@@ -34,7 +34,7 @@ export async function onRequest({ request, env, params }) {
   const action = String(params.action || '');
   try {
     const ai = provider(env);
-    if (action === 'ping') return json({ ok: true, ai: !!ai, provider: ai, ticket: !!env.MM_SECRET });
+    if (action === 'ping') return json({ ok: true, ai: !!ai, provider: ai, ticket: !!env.MM_SECRET, photos: ai === 'gemini' || !!env.AI });
     if (request.method !== 'POST') return json({ ok: false, error: 'BAD: Use POST' }, 405);
     if (!ai || !env.MM_SECRET) return json({ ok: false, error: 'SETUP: GROQ_API_KEY (or GEMINI_API_KEY) or MM_SECRET is missing in Cloudflare.' }, 500);
     const who = await checkTicket(request.headers.get('X-MM-Ticket') || '', env.MM_SECRET);
@@ -192,6 +192,7 @@ export const MINUTES_SCHEMA = {
 async function generate(request, env) {
   const p = await request.json();
   if (['transcribe', 'ocr', 'minutes'].indexOf(p.kind) < 0) return json({ ok: false, error: 'BAD: kind' }, 400);
+  if (p.kind === 'minutes' && nothingToWrite(p)) return json({ ok: false, error: EMPTY }, 422);
   const name = await model(env);
   const parts = [];
   (p.files || []).slice(0, 30).forEach(f => { if (f && f.uri) parts.push({ file_data: { file_uri: String(f.uri), mime_type: String(f.mimeType || '') } }); });
@@ -236,7 +237,9 @@ const clock = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 36
  *  Pieces Whisper marks as probably not speech, or that only repeat the hint it was given, are dropped (it makes those up on silence). */
 export function whisperText(d, hint) {
   const echo = String(hint || '').toLowerCase();
-  const segs = ((d && d.segments) || []).filter(g => !(g.no_speech_prob > 0.8) && !(echo && echo.indexOf(String(g.text || '').trim().toLowerCase()) >= 0));
+  // Same rule as Whisper itself: silence only when it is probably not speech AND the words are a weak guess.
+  const silent = g => g.no_speech_prob > 0.6 && g.avg_logprob < -1;
+  const segs = ((d && d.segments) || []).filter(g => !silent(g) && !(echo && echo.indexOf(String(g.text || '').trim().toLowerCase()) >= 0));
   if (d && d.segments && d.segments.length && !segs.length) return '';
   if (!segs.length) return String((d && d.text) || '').trim();
   const lines = [];
@@ -263,10 +266,12 @@ async function groqUpload(request, env) {
   form.append('model', env.GROQ_STT_MODEL || GROQ_STT);
   form.append('response_format', 'verbose_json');
   form.append('temperature', '0');
-  const lang = request.headers.get('X-MM-Lang');
-  if (lang === 'km' || lang === 'en') form.append('language', lang);
-  // The names of the people help Whisper spell them. (A list of company words was tried: on a quiet recording Whisper wrote it back as speech.)
-  const hint = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 150).trim();
+  // "Khmer + English" is sent as Khmer: left to guess, Whisper can take Khmer for another language and spoil the whole
+  // file. A short Khmer sentence with English words in it shows the style wanted: Khmer script, English words in English.
+  const lang = request.headers.get('X-MM-Lang') === 'en' ? 'en' : 'km';
+  form.append('language', lang);
+  const names = decodeURIComponent(request.headers.get('X-MM-Hint') || '').slice(0, 120).trim();
+  const hint = ((lang === 'km' ? 'ការប្រជុំនៅ ISI Steel អំពី DN, SAP និង truck។ ' : '') + names).trim();
   if (hint) form.append('prompt', hint);
   const r = await groqFetch(env, '/audio/transcriptions', { method: 'POST', body: form });
   const text = whisperText(await r.json(), hint);
@@ -319,9 +324,33 @@ async function groqChat(env, messages, extra, kind) {
   throw last;
 }
 
+// Cloudflare Workers AI (free, the "AI" binding the Fuel app's /fc/ relay also uses) reads photos when Groq cannot.
+const WORKERS_VISION = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/google/gemma-3-12b-it'];
+async function workersRead(env, prompt, dataUrl) {
+  if (!env.AI) return { error: 'no photo reader is set up (Cloudflare Workers AI binding "AI")' };
+  const tried = [];
+  for (const model of WORKERS_VISION) {
+    try {
+      const out = await env.AI.run(model, { messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }], max_tokens: 4096, temperature: 0 });
+      const text = String((out && (out.response || (((out.choices || [])[0] || {}).message || {}).content)) || '').trim();
+      if (text) return { text, model };
+      tried.push(model.split('/').pop() + ': empty answer');
+    } catch (e) { tried.push(model.split('/').pop() + ': ' + String(e && e.message || e).slice(0, 80)); }
+  }
+  return { error: tried.join(' | ') };
+}
+
+/** True when there is nothing to write minutes from: no speech, no text read from photos, no typed notes. */
+export function nothingToWrite(p) {
+  const ocr = String(p.ocr || '').replace(/\[[^\]]*not read[^\]]*\]/g, '').trim();
+  return !String(p.transcript || '').trim() && !ocr && !String(p.notes || '').trim();
+}
+const EMPTY = 'EMPTY: Nothing could be read from the recording or photos, so there is nothing to write minutes from. Add a clearer photo, or paste the text into the box "Agenda or your own notes". || មិនអាចអានអ្វីបានពីការថត ឬរូបភាពទេ ដូច្នេះគ្មានអ្វីសរសេរកំណត់ហេតុបានទេ។ សូមបន្ថែមរូបភាពច្បាស់ជាងនេះ ឬបិទភ្ជាប់អត្ថបទក្នុងប្រអប់ «របៀបវារៈ ឬកំណត់ចំណាំ»។';
+
 async function groqGenerate(request, env) {
   const p = await request.json();
   if (['transcribe', 'ocr', 'minutes'].indexOf(p.kind) < 0) return json({ ok: false, error: 'BAD: kind' }, 400);
+  if (p.kind === 'minutes' && nothingToWrite(p)) return json({ ok: false, error: EMPTY }, 422);
   const files = (p.files || []).slice(0, 30).filter(Boolean);
   // The speech was already written out when the file was sent (Whisper), so it only comes back here.
   if (p.kind === 'transcribe') return sseOf(files.map(f => String(f.text || '')).join('\n\n').trim(), env.GROQ_STT_MODEL || GROQ_STT);
@@ -336,7 +365,12 @@ async function groqGenerate(request, env) {
       let r;
       try { r = await groqChat(env, [{ role: 'user', content }], null, 'vision'); } catch (e) {
         if (e.status !== 404 && !(e.status === 400 && MOVE_ON.test(e.message))) throw e;
-        out.push('[' + batch.length + ' photo(s) not read: ' + String(e.message).slice(0, 120) + ']');   // the minutes can still be written
+        // Groq has no photo model now (Oct 2026): Cloudflare's own free Workers AI reads them, one at a time.
+        for (let j = 0; j < batch.length; j++) {
+          const w = await workersRead(env, buildPrompt(p) + '\nThis photo is File ' + (i + j + 1) + '.', batch[j].inline);
+          out.push(w.text || '[photo ' + (i + j + 1) + ' not read: ' + w.error + ']');
+          if (w.model) model = w.model;
+        }
         continue;
       }
       out.push(r.text.trim()); model = r.model;

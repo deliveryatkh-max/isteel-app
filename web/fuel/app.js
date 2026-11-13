@@ -1,4 +1,4 @@
-/* Fuel Refill App – data collection front end (no reports). */
+/* Fuel Refill App – data collection front end, plus the Report tab (Excel for SAP). */
 (function () {
   'use strict';
 
@@ -398,6 +398,13 @@
           if (p.note) r.note = (r.note ? r.note + ' | ' : '') + 'Review: ' + p.note;
           return resolve({ id: r.id });
         }
+        if (action === 'reportCols') return resolve({ reportCols: String(p.cols || '') });
+        if (action === 'sapPost') {
+          const ids = demo.rows.filter(r => p.ids.indexOf(r.id) >= 0 && (p.undo ? r.sapStatus === 'Posted SAP' : r.status === STATUS_OK && r.sapStatus !== 'Posted SAP')).map(r => r.id);
+          const at = Date.now();
+          demo.rows.forEach(r => { if (ids.indexOf(r.id) >= 0) { r.sapStatus = p.undo ? '' : 'Posted SAP'; r.sapAt = p.undo ? null : at; } });
+          return resolve({ marked: ids.length, ids, at, undo: !!p.undo });
+        }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
         if (action === 'transcribe') return setTimeout(() => resolve({ text: 'ចាក់សាំងនៅស្ថានីយ៍ទួលគោក' }), 800);
         if (action === 'readPhoto') {
@@ -467,9 +474,10 @@
     $('#navbar').hidden = true;
     $('#who').innerHTML = '';
     $('#view').innerHTML = `
-      <div class="login">
-        <div class="big">⛽</div>
-        <h2>${L('កត់ត្រាការចាក់សាំង', 'Fuel refill record')}</h2>
+      <div class="login splash">
+        <div class="splash-mark"><img src="../icons/isi-white.png" alt="ISI" width="84" height="84"><b>STEEL</b></div>
+        <div class="splash-line"></div>
+        <h2>Warehouse &amp; Logistics</h2>
         ${expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : ''}
         ${DEMO ? `
           <p class="hint">Demo mode: choose who to sign in as.</p>
@@ -481,6 +489,7 @@
           <p class="hint">${L('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
           <div id="gsiButton"><div class="spinner"></div></div>
           <div id="loginErr"></div>`}
+        <div class="splash-foot">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
       </div>`;
     if (DEMO) {
       $$('[data-demo]').forEach(b => b.onclick = () => {
@@ -507,7 +516,7 @@
         },
       });
       $('#gsiButton').innerHTML = '';
-      google.accounts.id.renderButton($('#gsiButton'), { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
+      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
       google.accounts.id.prompt();
     }).catch(e => { $('#gsiButton').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; });
   }
@@ -517,14 +526,12 @@
     if (cached) {
       // Open straight away with the saved lists; refresh them quietly.
       state.config = cached;
-      splash.start();
       enterApp();
       api('config').then(c => {
         if (!state.config) return;
         state.config = c;
         local.set('config', c);
         showRole();
-        syncAds();
       }).catch(e => {
         if (e.code === 'NOACCESS') { local.clear(); state.config = null; start(); }
       });
@@ -544,16 +551,15 @@
       return;
     }
     local.set('config', state.config);
-    splash.start();
     enterApp();
-    syncAds();
   }
 
   // Asks the admin to add this Google account: the server adds it to the Users sheet as not active yet and tells the Telegram group.
   function requestAccess() {
     AccessRequest.open({
       call: (action, payload) => api(action, payload),
-      onDone: status => {
+      onDone: (status, o) => {
+        if (o && o.enter) { start(); return; }
         $('#reqBox').innerHTML = status === 'active'
           ? `<div class="alert ok">${L('គណនីរបស់អ្នកបានអនុញ្ញាតហើយ។ ចុច ព្យាយាមម្តងទៀត។', 'Your account is already allowed. Tap Try again.')}</div>`
           : `<div class="alert ok">✅ ${L('សំណើបានផ្ញើទៅអ្នកគ្រប់គ្រង។ សូមរង់ចាំការអនុញ្ញាត រួចចុច ព្យាយាមម្តងទៀត។', 'Request sent to the admin. Once they allow you, tap Try again.')}</div>`;
@@ -566,11 +572,11 @@
     // No name or Sign out in the bar (Kim, 2026-10-11): signing out is done from the home menu.
     $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
-    // Gallery for everyone and the ads menu for admins, once the server has them (Code.gs of 25 Oct 2026).
-    const adsOn = state.config.adsVersion !== undefined;
-    $('#galleryTab').hidden = !adsOn;
-    $('#adsTab').hidden = !(adsOn && state.config.isAdmin);
-    $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').length > 4);
+    $('#reportTab').hidden = !canCheck();
+    // Menus an admin switched off for this person in 👥 Users › Menus (../menus.js hides them).
+    if (window.MENUS && Array.isArray(u.menusOff)) MENUS.set(u.menusOff);
+    $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').filter(x => getComputedStyle(x).display !== 'none').length > 4);
+    if (state.tab && menuOff(state.tab)) show(firstMenu() || 'new');
     reviewBadge();
   }
 
@@ -607,8 +613,7 @@
   try { nav.hist = window.top === window && !!(window.history && history.pushState); } catch (e) { nav.hist = false; }
   const TITLES = {
     new: ['បញ្ចូលថ្មី', 'New'], mine: ['របស់ខ្ញុំ', 'My entries'], review: ['អ្នកត្រួតពិនិត្យ', 'Reviewer'],
-    detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
-    gallery: ['វិចិត្រសាល', 'Gallery'], ads: ['ផ្សព្វផ្សាយ', 'Ads'], adEdit: ['ផ្សព្វផ្សាយ', 'Ads'],
+    report: ['របាយការណ៍', 'Report'], detail: ['ព័ត៌មានលម្អិត', 'Detail'], edit: ['កែប្រែ', 'Edit'], success: ['បានបញ្ជូន', 'Saved'],
   };
 
   function go(screen, replace) {
@@ -652,13 +657,23 @@
     b.hidden = !n;
   }
 
+  const menuOff = tab => !!(window.MENUS && MENUS.isOff('fuel', tab));
+  const firstMenu = () => ['new', 'mine', 'review', 'report'].find(k => !menuOff(k) && !$(`.tab[data-tab="${k}"]`).hidden);
+
   /** Draws a screen without changing the history. */
   function paint(screen) {
     if (screen.s !== 'edit' && state.editing) leaveEdit();
     const tab = screen.s === 'detail' ? 'review'
       : screen.s === 'edit' ? (screen.from || 'mine')
-      : screen.s === 'success' ? 'new' : screen.s === 'adEdit' ? 'ads' : screen.s;
+      : screen.s === 'success' ? 'new' : screen.s;
+    if (menuOff(tab)) {
+      const ok = firstMenu();
+      if (ok) return show(ok);
+      $('#view').innerHTML = `<div class="card"><p>🔒 ${L('គ្មានម៉ឺនុយសម្រាប់អ្នកទេ។ សូមសួរ Admin។', 'No menus are switched on for you. Ask the admin.')}</p></div>`;
+      return;
+    }
     state.tab = tab;
+    document.body.classList.toggle('rp-wide', screen.s === 'report');
     $$('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     $('#navBack').disabled = nav.i <= 0;
     $('#navFwd').disabled = nav.i >= nav.stack.length - 1;
@@ -671,9 +686,7 @@
     else if (screen.s === 'detail') openDetail(screen.id);
     else if (screen.s === 'edit') openEdit(screen);
     else if (screen.s === 'success') renderSuccess(screen.ref);
-    else if (screen.s === 'gallery') renderGallery();
-    else if (screen.s === 'ads') renderAds();
-    else if (screen.s === 'adEdit') renderAdEdit(screen);
+    else if (screen.s === 'report') renderReport();
   }
 
   function show(tab) {
@@ -878,6 +891,51 @@
     return { errors, warnings, needNote };
   }
 
+  // ---------------- Fuel Saver of the Month ----------------
+  // The dashboard's top 3 drivers, shown to everyone under the type tiles (Kim, 1 Nov 2026).
+  // Opens from the copy on the phone at once; asks the server again at most every 30 min, in the background.
+  const SAVER_KEY = 'saver', SAVER_AGE = 30 * 60 * 1000;
+  let saverAsked = 0;
+  function drawSaver() {
+    const box = $('#saverBox');
+    if (!box) return;
+    const d = DEMO ? demoSaver() : local.get(SAVER_KEY);
+    box.innerHTML = d && d.list && d.list.length ? saverHtml(d) : '';
+    if (DEMO || Date.now() - saverAsked < SAVER_AGE || (d && Date.now() - (d.got || 0) < SAVER_AGE)) return;
+    saverAsked = Date.now();
+    callServer('saver').then(r => {
+      if (!r) return;
+      r.got = Date.now();
+      local.set(SAVER_KEY, r);
+      const b = $('#saverBox');
+      if (b) b.innerHTML = r.list && r.list.length ? saverHtml(r) : '';
+    }).catch(() => { /* old server or offline: keep what we have */ });
+  }
+  function saverHtml(d) {
+    const medals = ['🥇', '🥈', '🥉'];
+    const mon = L(KH_MONTHS[d.month], MONTHS_LONG[d.month]);
+    const n1 = x => (Math.round(x * 10) / 10).toFixed(1);
+    const km = x => Math.round(x).toLocaleString('en-US');
+    return `<div class="card saver">
+      <div class="saver-h">🏆 ${L('អ្នកសន្សំសាំងប្រចាំខែ', 'Fuel Saver of the Month')} · ${esc(mon)}</div>
+      <small>${L(`តៃកុងដែលប្រើសាំងតិចជាងឬស្មើកម្រិតធម្មតា (យ៉ាងតិច ${d.minStretches} ដង និង ${km(d.minKm)} km)។`,
+        `Drivers at or below their reference, lowest first (at least ${d.minStretches} stretches and ${km(d.minKm)} km).`)}${d.fallback ? ' ' + L('ខែនេះមិនទាន់មានអ្នកគ្រប់លក្ខខណ្ឌ ដូច្នេះបង្ហាញខែមុន។', 'Nobody qualifies yet this month, so this is last month.') : ''}</small>
+      ${d.list.slice(0, 3).map((x, i) => `<div class="saver-row"><span class="saver-m">${medals[i]}</span>
+        <span class="saver-who"><b>${esc(x.driver)}</b><small>${esc(x.plate || '')}${x.plate ? ' · ' : ''}${km(x.dist)} km · ${x.gapPct < -0.5
+          ? L(`តិចជាងកម្រិត ${Math.round(-x.gapPct)}%`, `${Math.round(-x.gapPct)}% below reference`) : L('ស្មើកម្រិត', 'at reference')}</small></span>
+        <span class="saver-l">${n1(x.l100)}<small>L/100 km</small></span></div>`).join('')}
+      ${d.clean ? `<div class="saver-f">⭐ ${L(`ទិន្នន័យពេញលេញក្នុងខែ${esc(mon)}: តៃកុង ${d.clean} នាក់ គ្មានបញ្ហាទិន្នន័យ`, `Complete Data in ${esc(mon)}: ${d.clean} drivers with no data problems`)}</div>` : ''}
+    </div>`;
+  }
+  const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function demoSaver() {
+    const m = new Date().getMonth();
+    return { month: m, fallback: false, minStretches: 3, minKm: 1000, clean: 12, list: [
+      { driver: '01.សុខ ដារា', plate: '3A-1001', dist: 4210, gapPct: -14.2, l100: 28.4 },
+      { driver: '02.ចាន់ វិចិត្រ', plate: '3B-2002', dist: 3380, gapPct: -8.6, l100: 30.1 },
+      { driver: '03.លី សុភា', plate: '3C-3003', dist: 2950, gapPct: -0.2, l100: 32.9 } ] };
+  }
+
   function renderForm() {
     const f = state.form, cfg = state.config, t = typeInfo(f.type), editing = state.editing;
     const last = lastFor(f.plate);
@@ -910,6 +968,7 @@
           </div>
         </div>
       </div>
+      ${!t && !editing ? '<div id="saverBox"></div>' : ''}
 
       ${t ? `
       <div class="card">
@@ -993,6 +1052,7 @@
       f.remembered = null;
       renderForm();
     });
+    drawSaver();
     if (!t) return;
 
     const plate = $('#plate');
@@ -1596,6 +1656,26 @@
     if (current() === me && (changed || !have) && !state.editing) drawMine();
   }
 
+  /** Background refresh (every minute while the app is on screen): My entries and the Reviewer list pick up
+   *  changes made by others without pressing Refresh. Never while an entry is being typed or edited. */
+  async function liveRefresh() {
+    const me = current();
+    if (!me || $('#tabs').hidden || state.editing) return;
+    if (me.s === 'mine') {
+      let rows = await api('mine');
+      const fresh = (state.mine || []).filter(r => Date.now() - (r.dateTime || 0) < 120000 && !rows.some(x => x.id === r.id));
+      rows = fresh.concat(rows);
+      if (sameData(rows, state.mine)) return;
+      state.mine = rows; local.set('mine', rows);
+      if (current() === me && !state.editing) LIVE.keep(drawMine);
+    } else if (me.s === 'review') {
+      const changed = await refreshRows();
+      reviewBadge();
+      if (changed && current() === me) await LIVE.keep(() => renderReview());
+    }
+  }
+  if (window.LIVE && !DEMO) LIVE.start({ run: liveRefresh, busy: () => { const c = current(); return !c || (c.s !== 'mine' && c.s !== 'review') || !!state.editing; } });
+
   // ---------------- Reviewer tab ----------------
 
   const KH_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
@@ -1920,388 +2000,405 @@
     else resetForm();
   }
 
-  // ---------------- Startup ads and Gallery (Kim, 25 Oct 2026) ----------------
-  // Each time the app opens, the newest ad that is switched on shows full screen for its 5–10 seconds, with Skip.
-  // The list is kept on the phone and only fetched again when the server says it changed (config.adsVersion);
-  // images and videos are downloaded once in the background and kept in IndexedDB, so the app never waits for them.
-
-  const ads = { list: null, version: null, syncing: null };
-  const adList = () => ads.list || (ads.list = (local.get('ads') || {}).ads || null);
-  const adActive = (a, now) => a.show && (!a.start || now >= a.start) && (!a.end || now <= a.end);
-  // Every ad that is switched on and in its dates takes turns at random (Kim, 25 Oct 2026).
-  const liveAds = () => (adList() || []).filter(a => adActive(a, Date.now()));
-  const AD_LAST = 'fr_ad_last';
-  const adsOn = () => !!state.config && state.config.adsVersion !== undefined;
-  const dayStr = ms => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
-  const dayShow = ms => { if (!ms) return ''; const d = new Date(ms); return `${pad2(d.getDate())}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
-
-  /** Ad files on this phone, by their Drive file id. */
-  const adStore = {
-    db: null,
-    open() {
-      if (this.db) return this.db;
-      return (this.db = new Promise(resolve => {
-        if (!window.indexedDB) return resolve(null);
-        try {
-          const rq = indexedDB.open('fr_ads', 1);
-          rq.onupgradeneeded = () => rq.result.createObjectStore('media', { keyPath: 'key' });
-          rq.onsuccess = () => resolve(rq.result);
-          rq.onerror = () => resolve(null);
-        } catch (e) { resolve(null); }
-      }));
-    },
-    async get(key) {
-      const db = await this.open();
-      if (!db || !key) return null;
-      return new Promise(resolve => {
-        try {
-          const rq = db.transaction('media').objectStore('media').get(key);
-          rq.onsuccess = () => resolve(rq.result ? rq.result.blob : null);
-          rq.onerror = () => resolve(null);
-        } catch (e) { resolve(null); }
-      });
-    },
-    async put(key, blob) {
-      const db = await this.open();
-      if (!db) return;
-      return new Promise(resolve => {
-        try {
-          const tx = db.transaction('media', 'readwrite');
-          tx.objectStore('media').put({ key, blob, at: Date.now() });
-          tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
-        } catch (e) { resolve(); }
-      });
-    },
-    /** Removes files of ads that were deleted or replaced. */
-    async keepOnly(keys) {
-      const db = await this.open();
-      if (!db) return;
-      try {
-        const st = db.transaction('media', 'readwrite').objectStore('media');
-        const rq = st.getAllKeys();
-        rq.onsuccess = () => (rq.result || []).forEach(k => { if (!keys.includes(k)) st.delete(k); });
-      } catch (e) { /* ignore */ }
-    },
-  };
-  const dataUrlToBlob = dataUrl => fetch(dataUrl).then(r => r.blob());
-
-  /** The ad's file: from the phone, or downloaded once and kept. */
-  async function adBlob(ad, download) {
-    let blob = await adStore.get(ad.key);
-    if (blob || !download) return blob;
-    const res = await (DEMO ? demoApi('adMedia', { id: ad.id }) : callServer('adMedia', { id: ad.id }));
-    if (!res || !res.dataUrl) return null;
-    blob = await dataUrlToBlob(res.dataUrl);
-    await adStore.put(res.key || ad.key, blob);
-    return blob;
-  }
-
-  /** Fetches the list when it changed, then downloads the file of the ad that will show next time. */
-  function syncAds(force) {
-    if (!adsOn()) return Promise.resolve();
-    if (ads.syncing) return ads.syncing;
-    const saved = local.get('ads');
-    const fresh = saved && saved.version === state.config.adsVersion && !force;
-    ads.syncing = (async () => {
-      if (!fresh) {
-        const res = await (DEMO ? demoApi('ads', {}) : callServer('ads', {}));
-        ads.list = res.ads || [];
-        local.set('ads', { version: res.version, ads: ads.list });
-        adStore.keepOnly(ads.list.map(a => a.key));
-        const c = current();
-        if (c && (c.s === 'gallery' || c.s === 'ads')) paint(c);
-      }
-      // One at a time, so a phone on 4G is never busy with several big videos at once.
-      for (const a of liveAds()) await adBlob(a, true).catch(() => {});
-    })().catch(() => { /* offline: try again next time */ }).finally(() => { ads.syncing = null; });
-    return ads.syncing;
-  }
-
-  // ---- The startup screen ----
-  const splash = {
-    shown: false,
-    async start() {
-      if (this.shown) return;
-      this.shown = true;
-      if (!adsOn()) return;
-      // Only ads already on the phone can show; one still downloading joins from a later open.
-      const ready = [];
-      for (const a of liveAds()) { const blob = await adStore.get(a.key); if (blob) ready.push({ a, blob }); }
-      if (!ready.length) return;
-      const last = storeGet(AD_LAST);
-      const pool = ready.length > 1 ? ready.filter(r => r.a.id !== last) : ready;   // never the same one twice in a row
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      storeSet(AD_LAST, pick.a.id);
-      this.show(pick.a, pick.blob);
-    },
-    show(ad, blob) {
-      const url = URL.createObjectURL(blob), secs = ad.seconds || 7;
-      const video = ad.type === 'video';
-      const el = document.createElement('div');
-      el.className = 'ad-splash';
-      el.setAttribute('role', 'dialog');
-      el.setAttribute('aria-label', L('ផ្សព្វផ្សាយ', 'Announcement'));
-      el.innerHTML = `
-        <div class="ad-top"><div class="ad-tag"><img src="../icons/isi-white.png" alt="">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
-          <button type="button" class="ad-skip">${L('រំលង', 'Skip')} <span class="ad-ring" style="--p:0"><b>${secs}</b></span></button></div>
-        <div class="ad-media">${video
-          ? `<video src="${url}" autoplay muted playsinline></video><button type="button" class="ad-mute" aria-label="${L('សំឡេង', 'Sound')}">🔇</button>`
-          : `<img src="${url}" alt="">`}</div>
-        ${ad.text ? `<div class="ad-text">${esc(ad.text)}</div>` : ''}
-        <div class="ad-sub">${L(`ចូលទៅកម្មវិធីក្នុង <b>${secs}</b> វិនាទី · ចុច រំលង ដើម្បីចូលភ្លាម`, `Opening the app in <b>${secs}</b> s · tap Skip to go now`)}</div>
-        <div class="ad-bar"><i style="${video ? 'animation:none' : `animation-duration:${secs}s`}"></i></div>`;
-      document.body.appendChild(el);
-      document.body.classList.add('ad-open');
-      let left = secs, done = false, tick = null;
-      const ring = $('.ad-ring', el), num = $('.ad-ring b', el), sub = $('.ad-sub b', el);
-      const show = (n, part) => { num.textContent = n; if (sub) sub.textContent = n; ring.style.setProperty('--p', part); };
-      // Images: the admin's 5–10 seconds. Videos play to the end, with no limit, unless Skip is tapped (Kim, 25 Oct 2026).
-      const timer = () => {
-        if (tick) return;
-        tick = setInterval(() => {
-          left--;
-          if (left <= 0) return close(false);
-          show(left, (secs - left) / secs);
-        }, 1000);
-      };
-      if (video) {
-        const v = $('video', el), bar = $('.ad-bar i', el);
-        v.ontimeupdate = () => {
-          if (!v.duration || !isFinite(v.duration)) return;
-          show(Math.max(1, Math.ceil(v.duration - v.currentTime)), v.currentTime / v.duration);
-          bar.style.width = (v.currentTime / v.duration * 100) + '%';
-        };
-        v.onended = () => close(false);
-        // A video the phone can't play falls back to the seconds, so the app never gets stuck.
-        v.onerror = () => { bar.style.animation = ''; bar.style.animationDuration = secs + 's'; timer(); };
-        const p = v.play && v.play();
-        if (p && p.catch) p.catch(() => v.onerror());
-      } else timer();
-      const close = skipped => {
-        if (done) return;
-        done = true;
-        clearInterval(tick);
-        const v = $('video', el); if (v) v.pause();
-        el.classList.add('out');
-        document.body.classList.remove('ad-open');
-        setTimeout(() => { el.remove(); URL.revokeObjectURL(url); }, 250);
-        // Counted for the admin list; never waits and never shows an error.
-        (DEMO ? demoApi('adSeen', { id: ad.id, skipped }) : callServer('adSeen', { id: ad.id, skipped })).catch(() => {});
-      };
-      $('.ad-skip', el).onclick = () => close(true);
-      $('.ad-skip', el).focus();
-      const mute = $('.ad-mute', el);
-      if (mute) mute.onclick = () => { const v = $('video', el); v.muted = !v.muted; mute.textContent = v.muted ? '🔇' : '🔊'; };
-    },
-  };
-
-  // ---- Gallery: every ad, newest first, for everyone ----
-  function adThumb(a) {
-    return `<div class="ad-tn" style="${a.thumb ? `background-image:url('${a.thumb}')` : ''}">${a.thumb ? '' : (a.type === 'video' ? '🎬' : '🖼️')}${a.type === 'video' ? '<span class="ad-play">▶</span>' : ''}</div>`;
-  }
-
-  function renderGallery() {
-    const me = current();
-    const draw = () => {
-      if (current() !== me) return;
-      const list = adList();
-      const now = Date.now();
-      $('#view').innerHTML = `<h2>🖼️ ${L('វិចិត្រសាល', 'Gallery')}</h2>` + (!list ? '<div class="spinner"></div>'
-        : list.length ? `<div class="ad-gal">${list.map(a => `
-          <button type="button" class="ad-gi" data-ad="${esc(a.id)}">${adThumb(a)}
-            ${adActive(a, now) ? `<span class="ad-new">${L('កំពុងបង្ហាញ', 'Showing')}</span>` : ''}
-            <span class="ad-gtx">${a.text ? `<b>${esc(a.text)}</b>` : ''}<small>${dayShow(a.createdAt)}</small></span></button>`).join('')}</div>`
-        : `<div class="empty"><div class="big">🖼️</div>${L('មិនទាន់មានរូបភាព ឬ វីដេអូ', 'No images or videos yet')}</div>`);
-      $$('[data-ad]').forEach(b => b.onclick = () => { const a = adList().find(x => x.id === b.dataset.ad); if (a) viewAd(a); });
-    };
-    draw();
-    syncAds(true).then(draw);
-  }
-
-  /** Full screen view of one ad from the Gallery (downloads it the first time). */
-  async function viewAd(a) {
-    const lb = document.createElement('div');
-    lb.className = 'ad-view';
-    lb.innerHTML = `<button type="button" class="ad-close" aria-label="${L('បិទ', 'Close')}">✕</button>
-      <div class="ad-media"><div class="spinner"></div></div>${a.text ? `<div class="ad-text">${esc(a.text)}</div>` : ''}<div class="ad-sub">${dayShow(a.createdAt)}</div>`;
-    document.body.appendChild(lb);
-    let url = '';
-    const close = () => { lb.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', onKey); };
-    const onKey = e => { if (e.key === 'Escape') close(); };
-    document.addEventListener('keydown', onKey);
-    $('.ad-close', lb).onclick = close;
-    try {
-      const blob = await adBlob(a, true);
-      if (!lb.isConnected) return;
-      if (!blob) { $('.ad-media', lb).innerHTML = `<div class="ad-sub">${L('មិនអាចបង្ហាញបាន', 'Not available')}</div>`; return; }
-      url = URL.createObjectURL(blob);
-      $('.ad-media', lb).innerHTML = a.type === 'video' ? `<video src="${url}" controls autoplay playsinline></video>` : `<img src="${url}" alt="">`;
-    } catch (e) { if (lb.isConnected) $('.ad-media', lb).innerHTML = `<div class="ad-sub">${esc(e.message)}</div>`; }
-  }
-
-  // ---- Admin menu: post, switch on / off, edit, delete ----
-  function renderAds() {
-    const me = current();
-    if (!(state.config && state.config.isAdmin)) { $('#view').innerHTML = `<div class="empty"><div class="big">🔒</div>${L('សម្រាប់តែ Admin', 'Admins only')}</div>`; return; }
-    const draw = () => {
-      if (current() !== me) return;
-      const list = adList(), now = Date.now();
-      const row = a => `
-        <div class="ad-li">${adThumb(a)}
-          <div class="ad-li-t">${a.text ? `<b>${esc(a.text)}</b>` : `<b class="muted">${esc(a.name || a.id)}</b>`}
-            <small>${a.type === 'video' ? L('វីដេអូ · ចាក់ដល់ចប់', 'Video · plays to the end') : `${L('រូបភាព', 'Image')} · ${a.seconds} ${L('វិ', 's')}`}${a.start || a.end ? ` · ${dayShow(a.start) || '…'} → ${dayShow(a.end) || '…'}` : ''}</small>
-            <small>👁 ${a.views || 0} · ${L('រំលង', 'skipped')} ${a.views ? Math.round((a.skips || 0) / a.views * 100) : 0}%</small>
-            <div class="ad-acts"><button type="button" class="btn small" data-edit="${esc(a.id)}">✏️ ${L('កែ', 'Edit')}</button><button type="button" class="btn small ghost" data-del="${esc(a.id)}">🗑 ${L('លុប', 'Delete')}</button></div></div>
-          <button type="button" class="ad-sw ${a.show ? 'on' : ''}" data-sw="${esc(a.id)}" role="switch" aria-checked="${a.show}" aria-label="${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}"></button>
-        </div>`;
-      const live = (list || []).filter(a => adActive(a, now));
-      const rest = (list || []).filter(a => !live.includes(a));
-      $('#view').innerHTML = `
-        <h2>📣 ${L('ផ្សព្វផ្សាយ', 'Ads')} <small style="display:inline">· ${L('សម្រាប់តែ Admin', 'Admins only')}</small></h2>
-        <button type="button" class="btn primary" id="adNew">➕ ${L('បង្ហោះថ្មី', 'Post new')}</button>
-        ${!list ? '<div class="spinner"></div>' : `
-        <div class="card" style="margin-top:14px"><div class="sec-h" style="margin:0 0 4px">${L('កំពុងបង្ហាញ', 'Showing now')} <small>(${live.length})</small></div>
-          ${live.length ? live.map(row).join('') : `<div class="hint">${L('គ្មាន · បើក មួយខាងក្រោម', 'None · switch one on below')}</div>`}
-          ${live.length > 1 ? `<div class="hint">🔀 ${L('បង្ហាញម្តងមួយ ដោយចៃដន្យ រាល់ពេលបើកកម្មវិធី', 'One of these shows at random each time the app opens')}</div>` : ''}</div>
-        ${rest.length ? `<div class="card"><div class="sec-h" style="margin:0 0 4px">${L('ផ្សេងៗ', 'Others')} <small>(${rest.length})</small></div>${rest.map(row).join('')}</div>` : ''}`}`;
-      $('#adNew').onclick = () => go({ s: 'adEdit' });
-      $$('[data-edit]').forEach(b => b.onclick = () => go({ s: 'adEdit', id: b.dataset.edit }));
-      $$('[data-sw]').forEach(b => b.onclick = async () => {
-        const a = adList().find(x => x.id === b.dataset.sw);
-        if (!a) return;
-        b.disabled = true;
-        try {
-          await api('adSave', { id: a.id, text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: !a.show });
-          toast(!a.show ? '📣 ' + L('បានបើក', 'Switched on') : L('បានបិទ', 'Switched off'));
-          await refreshAdsNow();
-        } catch (e) { toast(e.message); b.disabled = false; }
-      });
-      $$('[data-del]').forEach(b => b.onclick = async () => {
-        if (!confirm(L('លុបផ្សព្វផ្សាយនេះ? វានឹងបាត់ពី វិចិត្រសាល ដែរ។', 'Delete this ad? It also leaves the Gallery.'))) return;
-        try { await api('adDelete', { id: b.dataset.del }); toast('🗑 ' + L('បានលុប', 'Deleted')); await refreshAdsNow(); }
-        catch (e) { toast(e.message); }
-      });
-    };
-    draw();
-    syncAds(true).then(draw);
-  }
-
-  /** After an admin change: the new list right away, so the screen and the next startup are up to date. */
-  async function refreshAdsNow() {
-    state.config.adsVersion = 'x' + Date.now();   // the next config brings the real one
-    await syncAds(true);
-    const c = current();
-    if (c && c.s === 'ads') renderAds();
-  }
-
-  function renderAdEdit(screen) {
-    if (!(state.config && state.config.isAdmin)) return renderAds();
-    const a = screen.id ? (adList() || []).find(x => x.id === screen.id) : null;
-    if (screen.id && !a) { go({ s: 'ads' }, true); return; }
-    const f = screen.f || (screen.f = a
-      ? { text: a.text, seconds: a.seconds, start: dayStr(a.start), end: dayStr(a.end ? a.end - 1000 : 0), show: a.show, file: null, preview: a.thumb, type: a.type, name: '' }
-      : { text: '', seconds: 7, start: dayStr(Date.now()), end: '', show: true, file: null, preview: '', type: '', name: '' });
-    $('#view').innerHTML = `
-      <h2>📣 ${a ? L('កែផ្សព្វផ្សាយ', 'Edit ad') : L('បង្ហោះថ្មី', 'Post new')}</h2>
-      <div class="card">
-        <div class="field"><div class="label"><span>${L('រូបភាព ឬ វីដេអូ', 'Image or video')} <span class="req">*</span></span><small>JPG · PNG · MP4 ≤ 20 MB</small></div>
-          <label class="ad-drop"><input type="file" accept="image/*,video/*" hidden>
-            <span class="ad-pv" style="${f.preview ? `background-image:url('${f.preview}')` : ''}">${f.preview ? (f.type === 'video' ? '<span class="ad-play">▶</span>' : '') : '📷'}</span>
-            <span style="flex:1;min-width:0"><b>${esc(f.name || (a ? L('ឯកសារបច្ចុប្បន្ន', 'Current file') : L('ជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Choose an image or a video')))}</b>
-              <small>${f.preview ? L('ចុចដើម្បីប្តូរ', 'Tap to change') : L('ពីទូរស័ព្ទ ឬ កុំព្យូទ័រ', 'From the phone or computer')}</small></span>
-            <span class="ps-add" aria-hidden="true">${f.preview ? '↻' : '+'}</span></label>
-          <div id="adFileErr"></div></div>
-        <div class="field"><div class="label"><span>${L('អក្សរក្រហមខាងក្រោម', 'Big red text below')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div>
-          <textarea id="adText" maxlength="200" placeholder="${L('ឧ. សូមពន្លត់ម៉ាស៊ីន មុនពេលចាក់សាំង!', 'e.g. Turn off the engine before refuelling!')}">${esc(f.text)}</textarea>
-          <div class="ad-redprev" id="adPrev">${esc(f.text)}</div></div>
-        <div class="field"><div class="label"><span>${L('បង្ហាញរយៈពេល (វិនាទី)', 'Show for (seconds)')}</span></div>
-          ${f.type === 'video' ? `<div class="hint">▶ ${L('វីដេអូ ចាក់រហូតដល់ចប់ (ឬ ចុច រំលង)', 'A video plays to the end (or until Skip)')}</div>`
-            : `<div class="ad-secs">${[5, 6, 7, 8, 9, 10].map(n => `<button type="button" class="${n === f.seconds ? 'on' : ''}" data-sec="${n}">${n}</button>`).join('')}</div>`}</div>
-        <div class="field"><div class="row">
-          <div><div class="label"><span>${L('ចាប់ពី', 'From')}</span></div><input type="date" class="ad-date" id="adStart" value="${f.start}"></div>
-          <div><div class="label"><span>${L('ដល់', 'Until')}</span><small>${L('ស្រេចចិត្ត', 'Optional')}</small></div><input type="date" class="ad-date" id="adEnd" value="${f.end}"></div></div></div>
-        <label class="field ad-swrow"><span><b>${L('បង្ហាញពេលបើកកម្មវិធី', 'Show when the app opens')}</b><small>${L('បិទ = ទុកតែក្នុង វិចិត្រសាល', 'Off = only in the Gallery')}</small></span>
-          <input type="checkbox" id="adShow" ${f.show ? 'checked' : ''}><span class="ad-sw ${f.show ? 'on' : ''}" aria-hidden="true"></span></label>
-      </div>
-      <div id="adErr"></div>
-      <button type="button" class="btn primary" id="adSave">📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}</button>
-      <p class="center"><button type="button" class="btn" id="adCancel">${L('បោះបង់', 'Cancel')}</button></p>`;
-
-    $('#adText').oninput = e => { f.text = e.target.value; $('#adPrev').textContent = f.text; };
-    $$('[data-sec]').forEach(b => b.onclick = () => { f.seconds = +b.dataset.sec; $$('[data-sec]').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#adStart').onchange = e => { f.start = e.target.value; };
-    $('#adEnd').onchange = e => { f.end = e.target.value; };
-    $('#adShow').onchange = e => { f.show = e.target.checked; $('.ad-swrow .ad-sw').classList.toggle('on', f.show); };
-    $('#adCancel').onclick = back;
-    $('.ad-drop input').onchange = async e => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const err = msg => { $('#adFileErr').innerHTML = `<div class="alert bad">${msg}</div>`; };
-      $('#adFileErr').innerHTML = `<div class="hint"><span class="spin-sm"></span> ${L('កំពុងរៀបចំ…', 'Preparing…')}</div>`;
-      try {
-        if (/^video\//.test(file.type)) {
-          if (file.size > 20 * 1024 * 1024) return err(L('វីដេអូធំពេក (លើស 20 MB)។ សូមកាត់ឲ្យខ្លី។', 'The video is too big (over 20 MB). Please make it shorter.'));
-          const { thumb } = await videoInfo(file);
-          Object.assign(f, { file, type: 'video', preview: thumb, name: file.name });
-        } else if (/^image\//.test(file.type)) {
-          const thumb = await resizeImage(file, 320, 0.6);
-          Object.assign(f, { file, type: 'image', preview: thumb, name: file.name });
-        } else return err(L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video'));
-        renderAdEdit(screen);
-      } catch (x) { err(esc(x.message || L('មិនអាចអានឯកសារ', 'Could not read the file'))); }
-    };
-    $('#adSave').onclick = async () => {
-      if (!a && !f.file) { $('#adErr').innerHTML = `<div class="alert bad">${L('សូមជ្រើសរើសរូបភាព ឬ វីដេអូ', 'Please choose an image or a video')}</div>`; return; }
-      if (f.start && f.end && f.end < f.start) { $('#adErr').innerHTML = `<div class="alert bad">${L('ថ្ងៃ "ដល់" មុនថ្ងៃ "ចាប់ពី"', '"Until" is before "From"')}</div>`; return; }
-      const btn = $('#adSave');
-      btn.disabled = true; btn.innerHTML = `<span class="spinner sm" style="border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> ${L('កំពុងបង្ហោះ…', 'Uploading…')}`;
-      try {
-        const payload = { id: a ? a.id : '', text: f.text.trim(), seconds: f.seconds, start: f.start, end: f.end, show: f.show };
-        let blob = null;
-        if (f.file) {
-          // Images are made smaller first (like the refill photos); videos go as they are.
-          payload.media = f.type === 'image' ? await resizeImage(f.file, 1600, 0.82) : await blobToDataUrl(f.file);
-          payload.thumb = f.preview; payload.name = f.name;
-          blob = f.type === 'image' ? await dataUrlToBlob(payload.media) : f.file;
-        }
-        const res = await api('adSave', payload);
-        state.config.adsVersion = 'x' + Date.now();
-        await syncAds(true);
-        // The admin's own phone keeps the file it just sent, so it doesn't download it again.
-        const saved = (adList() || []).find(x => x.id === res.id);
-        if (blob && saved) await adStore.put(saved.key, blob);
-        toast('📣 ' + L('បានបោះផ្សាយ', 'Posted'));
-        go({ s: 'ads' }, true);
-      } catch (e) {
-        if (!btn.isConnected) return;
-        $('#adErr').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`;
-        btn.disabled = false; btn.innerHTML = `📣 ${a ? L('រក្សាទុក', 'Save') : L('បោះផ្សាយ', 'Post')}`;
-      }
-    };
-  }
-
-  /** Length of a video and a small picture of it (from about 1 second in). */
-  function videoInfo(file) {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file), v = document.createElement('video');
-      v.muted = true; v.playsInline = true; v.preload = 'auto';
-      const fail = () => { URL.revokeObjectURL(url); reject(new Error(L('មិនអាចអានវីដេអូនេះ', 'Could not read this video'))); };
-      v.onerror = fail;
-      v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
-      v.onseeked = () => {
-        const k = 320 / Math.max(v.videoWidth, v.videoHeight, 1), c = document.createElement('canvas');
-        c.width = Math.round(v.videoWidth * k) || 320; c.height = Math.round(v.videoHeight * k) || 180;
-        let thumb = '';
-        try { c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); thumb = c.toDataURL('image/jpeg', 0.6); } catch (e) { /* no picture */ }
-        const duration = v.duration;
-        URL.revokeObjectURL(url);
-        resolve({ duration, thumb });
-      };
-      v.src = url;
-    });
-  }
+  // Startup ads and the Gallery moved out of this app (Kim, 30 Oct 2026): ../ads.js shows the startup ad in every
+  // app, and admins manage ads in the 🖼️ Gallery Manager (../gallery/).
 
   // ---------------- Light / dark switch ----------------
+
+  // ---------------- Report tab (Kim, 12 Nov 2026: option B) ----------------
+  // Filters, 4 totals, the refill table and "Excel for SAP" (one row per refill, Qty = litres, Text = plate).
+  // "✔ Posted SAP" marks the exported rows so the SAP Status column says Posted SAP and they are not exported twice.
+  // It only reads the refills the Reviewer tab already loaded; nothing is written except the SAP Status columns.
+
+  const SAP_POSTED = 'Posted SAP';
+  const SAP_DEF_KEY = 'fr_sap_defaults';
+  const SAP_FIELDS = [['mat', 'Mat. Short Text', 'Gasline/Deisel'], ['batch', 'Batch', 'Gasoline'], ['plnt', 'Plnt', 'Chaom Chao'],
+    ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
+  const SAP_HEAD = ['Mat. Short Text', 'Qty', 'Plnt', 'Sloc', 'CC', 'GL', 'Text', 'Batch'];
+  const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month'], ['all', 'ទាំងអស់', 'All']];
+  const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
+    ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
+  const RP_SAP = [['all', 'SAP: ទាំងអស់', 'SAP: All', () => true], ['new', 'មិនទាន់ Post', 'Not posted', r => r.sapStatus !== SAP_POSTED],
+    ['posted', '✔ Posted SAP', '✔ Posted SAP', r => r.sapStatus === SAP_POSTED]];
+  const ymdOf = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const dmyOf = ms => { const d = new Date(ms); return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const hmsOf = ms => { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+  function rpRange(k) {
+    const d = new Date(), y = d.getFullYear(), m = d.getMonth(), day = n => ymdOf(new Date(y, m, d.getDate() + n));
+    if (k === 'yday') return [day(-1), day(-1)];
+    if (k === '7d') return [day(-6), day(0)];
+    if (k === 'month') return [ymdOf(new Date(y, m, 1)), day(0)];
+    if (k === 'lmonth') return [ymdOf(new Date(y, m - 1, 1)), ymdOf(new Date(y, m, 0))];
+    if (k === 'all') return ['', ''];   // every date (Kim, 12 Nov 2026)
+    return [day(0), day(0)];
+  }
+  const RP_MAX = 1500;   // rows drawn on screen, so 'All' stays fast; totals, Excel and Copy use every row
+  const rp = { from: '', to: '', status: 'all', sap: 'all', q: '', sel: new Set(), defs: null, busy: false };
+  function sapDefs() {
+    if (!rp.defs) {
+      let saved = {};
+      try { saved = JSON.parse(storeGet(SAP_DEF_KEY) || '{}') || {}; } catch (e) { saved = {}; }
+      rp.defs = {};
+      SAP_FIELDS.forEach(([k, , def]) => { rp.defs[k] = saved[k] != null && saved[k] !== '' ? String(saved[k]) : def; });
+    }
+    return rp.defs;
+  }
+  const rpRangeIs = k => { const r = rpRange(k); return rp.from === r[0] && rp.to === r[1]; };
+
+  function rpRows() {
+    const from = rp.from, to = rp.to, q = rp.q.trim().toLowerCase();
+    const st = RP_STATUS.find(x => x[0] === rp.status)[3], sp = RP_SAP.find(x => x[0] === rp.sap)[3];
+    return (rv.rows || []).filter(r => {
+      if (!r.dateTime) return false;
+      const k = ymdOf(new Date(r.dateTime));
+      if ((from && k < from) || (to && k > to)) return false;
+      if (!st(r) || !sp(r)) return false;
+      return !q || [r.id, r.type, r.plate, r.driver, r.note, r.km, r.litres].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
+  // Tick boxes (Kim, 12 Nov 2026): only the rows ticked in the table go into the SAP table. Only ✅ correct rows
+  // not posted yet can be ticked. Ticks stay while filters change; only ticked rows still shown count.
+  const sapOk = r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED;
+  const sapRows = rows => rows.filter(r => rp.sel.has(r.id) && sapOk(r));
+  // SAP Text: forklifts and the generator are saved with Khmer names; SAP gets English (Kim, 12 Nov 2026).
+  const SAP_TEXT_EN = [
+    ['អេឡេវ៉ាទ័រ T25 ក្រហម', 'Forklift T25 Red'], ['អេឡេវ៉ាទ័រ T25 លឿង', 'Forklift T25 Yellow'], ['អេឡេវ៉ាទ័រ T25 ខៀវ', 'Forklift T25 Blue'],
+    ['អេឡេវ៉ាទ័រ T30 ក្រហម', 'Forklift T30 Red'], ['អេឡេវ៉ាទ័រ T30 លឿង', 'Forklift T30 Yellow'], ['អេឡេវ៉ាទ័រ T30 ខៀវ', 'Forklift T30 Blue'],
+    ['អេឡេវ៉ាទ័រ T50', 'Forklift T50'], ['អេឡេវ៉ាទ័រ T70', 'Forklift T70'], ['ចាក់ម៉ាស៊ីនភ្លើង', 'Generator'],
+  ];
+  const sapKey = v => String(v == null ? '' : v).replace(/[\s\u200b-\u200d\ufeff]+/g, '').toLowerCase();
+  const SAP_TEXT_MAP = new Map(SAP_TEXT_EN.map(([km, en]) => [sapKey(km), en]));
+  const sapText = r => {
+    const en = SAP_TEXT_MAP.get(sapKey(r.plate));
+    if (en) return en;
+    if (!String(r.plate || '').trim() && /ម៉ាស៊ីនភ្លើង/.test(r.type)) return 'Generator';   // older generator entries without a name
+    return r.plate;
+  };
+  const sapCells = r => { const d = sapDefs(); return [d.mat, Number(r.litres) || 0, d.plnt, d.sloc, d.cc, d.gl, sapText(r), d.batch]; };
+
+  // Report columns (Kim, 12 Nov 2026): admins add, remove and drag columns on the screen (⚙️ Columns, or drag a header).
+  // Saved in the Settings sheet (FUEL_REPORT_COLS) for everyone; empty = the default list. k key · h header · td cell
+  const RC = (k, h, td, o) => Object.assign({ k, h, td }, o || {});
+  const tdTxt = v => `<td>${esc(v == null ? '' : v)}</td>`;
+  const RP_COLS = [
+    RC('id', 'ID_FR', r => `<td class="mono">${esc(r.id)}</td>`),
+    RC('type', 'ចាក់សាំងសម្រាប់', r => tdTxt(r.type)),
+    RC('plate', 'ផ្លាកលេខឡាន', r => `<td><b>${esc(r.plate || '–')}</b></td>`),
+    RC('driver', 'ឈ្មោះតៃកុង', r => tdTxt(r.driver || '–')),
+    RC('km', 'លេខកុងទ័រ (Km)', r => `<td class="n">${r.km == null ? '' : fmtNum(r.km)}</td>`, { num: 1 }),
+    RC('hour', 'Hour Meter', r => `<td class="n">${r.hour == null ? '' : fmtNum(r.hour)}</td>`, { num: 1 }),
+    RC('litres', 'ចំនួនចាក់ (លីត្រ)', r => `<td class="n"><b>${fmtNum(r.litres)}</b></td>`, { num: 1, sum: 1 }),
+    RC('date', 'Date of Record', r => tdTxt(r.dateTime ? dmyOf(r.dateTime) : '')),
+    RC('datetime', 'Date & Time of Record', r => tdTxt(r.dateTime ? `${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}` : '')),
+    RC('note', 'សំគាល់', r => `<td class="wrap">${esc(r.note)}</td>`),
+    RC('user', 'User', r => tdTxt(r.user)),
+    RC('status', 'Review Status', r => `<td>${rpStatus(r.status)}</td>`),
+    RC('reviewedby', 'Reviewed By', r => tdTxt(r.reviewedByName || r.reviewedBy)),
+    RC('reviewedat', 'Reviewed At', r => tdTxt(r.reviewedAt ? `${dmyOf(r.reviewedAt)} ${hmsOf(r.reviewedAt)}` : '')),
+    RC('sap', 'SAP Status', r => `<td>${r.sapStatus === SAP_POSTED ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>'}</td>`),
+    RC('sapat', 'SAP Posted At', r => tdTxt(r.sapAt ? `${dmyOf(r.sapAt)} ${hmsOf(r.sapAt)}` : '')),
+    RC('saptext', 'SAP Text', r => tdTxt(sapText(r))),
+    RC('latlong', 'LatLong', r => tdTxt(r.latLong)),
+  ];
+  const RP_DEF = ['id', 'type', 'plate', 'driver', 'km', 'litres', 'datetime', 'status', 'sap'];
+  const isAdminUser = () => { const c = state.config || {}; return !!c.isAdmin || ((c.user || {}).role === 'admin'); };
+  window.TC_ADMIN = isAdminUser;   // shared ⚙️ Columns tool (table-cols.js)
+  function rpCols() {
+    const saved = (state.config && state.config.reportCols) || storeGet('fr_repcols') || '';
+    const keys = String(saved).split(',').map(x => x.trim()).filter(Boolean);
+    const out = (keys.length ? keys : RP_DEF).map(k => RP_COLS.find(c => c.k === k)).filter(Boolean);
+    return out.length ? out : RP_DEF.map(k => RP_COLS.find(c => c.k === k));
+  }
+  async function saveRpCols(keys) {
+    const v = keys.join(',') === RP_DEF.join(',') ? '' : keys.join(',');
+    storeSet('fr_repcols', v || null);   // this device at once
+    if (state.config) state.config.reportCols = v;
+    paintReport();
+    try {
+      const res = await api('reportCols', { cols: v });
+      if (state.config) state.config.reportCols = res.reportCols;
+      toast(L('បានរក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Saved for everyone'));
+    } catch (e) { toast(L('រក្សាទុកតែលើឧបករណ៍នេះ (Server មិនទាន់ទទួល)', 'Saved on this device only (server not updated yet)') + ': ' + e.message); }
+  }
+  /** Admin drags a header onto another to move the column there. */
+  function rpDrag() {
+    let from = '';
+    $$('#rpTable th[data-ck]').forEach(th => {
+      th.addEventListener('dragstart', e => { from = th.dataset.ck; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } th.classList.add('dragging'); });
+      th.addEventListener('dragend', () => { th.classList.remove('dragging'); $$('#rpTable th.dropto').forEach(x => x.classList.remove('dropto')); });
+      th.addEventListener('dragover', e => { if (from && from !== th.dataset.ck) { e.preventDefault(); th.classList.add('dropto'); } });
+      th.addEventListener('dragleave', () => th.classList.remove('dropto'));
+      th.addEventListener('drop', e => {
+        e.preventDefault(); th.classList.remove('dropto');
+        const keys = rpCols().map(c => c.k), a = keys.indexOf(from), b = keys.indexOf(th.dataset.ck);
+        from = '';
+        if (a < 0 || b < 0 || a === b) return;
+        keys.splice(b, 0, keys.splice(a, 1)[0]);
+        saveRpCols(keys);
+      });
+    });
+  }
+  /** ⚙️ Columns (admins): tick the columns to show, drag or ▲▼ to order them; saved for everyone. */
+  function rpColsDialog() {
+    let keys = rpCols().map(c => c.k);
+    const sh = openSheet(L('ជួរឈររបាយការណ៍', 'Report columns'), '<div id="cdBody"></div>', 'cols-sheet');
+    const box = $('#cdBody', sh.el);
+    const draw = () => {
+      const rest = RP_COLS.filter(c => keys.indexOf(c.k) < 0);
+      box.innerHTML = `<p class="hint">${L('ធីក = បង្ហាញ · អូស ឬ ▲▼ ដើម្បីប្តូរលំដាប់ · រក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · drag or ▲▼ to change the order · saved for everyone')}</p>
+        <div class="collist">${keys.map((k, i) => { const c = RP_COLS.find(z => z.k === k); return `<div class="colrow" draggable="true" data-k="${k}"><span class="grip" aria-hidden="true">⠿</span><label><input type="checkbox" checked data-ck2="${k}"> ${esc(c.h)}</label><span class="sp"></span><button type="button" class="icon-btn" data-up="${i}" ${i ? '' : 'disabled'} aria-label="Up">▲</button><button type="button" class="icon-btn" data-dn="${i}" ${i < keys.length - 1 ? '' : 'disabled'} aria-label="Down">▼</button></div>`; }).join('')}
+        ${rest.map(c => `<div class="colrow off" data-k="${c.k}"><span class="grip" aria-hidden="true"></span><label><input type="checkbox" data-ck2="${c.k}"> ${esc(c.h)}</label></div>`).join('')}</div>
+        <div class="actions cd-btns"><button type="button" class="btn ghost" id="cdReset">↺ ${L('លំនាំដើម', 'Default')}</button><button type="button" class="btn ghost" id="cdNo">${L('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="cdOk">💾 ${L('រក្សាទុក', 'Save')}</button></div>`;
+      $$('[data-ck2]', box).forEach(cb => { cb.onchange = () => { const k = cb.dataset.ck2; keys = cb.checked ? keys.concat(k) : keys.filter(z => z !== k); if (!keys.length) keys = [k]; draw(); }; });
+      $$('[data-up]', box).forEach(b => { b.onclick = () => { const i = +b.dataset.up; keys.splice(i - 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      $$('[data-dn]', box).forEach(b => { b.onclick = () => { const i = +b.dataset.dn; keys.splice(i + 1, 0, keys.splice(i, 1)[0]); draw(); }; });
+      let from = '';
+      $$('.colrow[draggable]', box).forEach(row => {
+        row.addEventListener('dragstart', e => { from = row.dataset.k; try { e.dataTransfer.setData('text/plain', from); } catch (er) { /* old browser */ } });
+        row.addEventListener('dragover', e => { if (from && from !== row.dataset.k) { e.preventDefault(); row.classList.add('dropto'); } });
+        row.addEventListener('dragleave', () => row.classList.remove('dropto'));
+        row.addEventListener('drop', e => { e.preventDefault(); const a = keys.indexOf(from), b = keys.indexOf(row.dataset.k); if (a >= 0 && b >= 0 && a !== b) { keys.splice(b, 0, keys.splice(a, 1)[0]); draw(); } });
+      });
+      $('#cdReset', box).onclick = () => { keys = RP_DEF.slice(); draw(); };
+      $('#cdNo', box).onclick = () => sh.close();
+      $('#cdOk', box).onclick = () => { sh.close(); saveRpCols(keys); };
+    };
+    draw();
+  }
+
+  async function renderReport(refresh) {
+    const me = current();
+    if (refresh) rv.fetchedAt = 0;
+    if (!rp.started) { const r = rpRange('today'); rp.from = r[0]; rp.to = r[1]; rp.started = true; }
+    if (!(await ensureRows(me, () => paintReport()))) return;
+    const defs = sapDefs();
+    $('#view').innerHTML = `
+      <div class="fb-wrap rp-fw" id="rpF">${FB.head('rp', `📊 ${L('របាយការណ៍', 'Report')}`,
+        (isAdminUser() ? `<button type="button" class="fb-btn" id="rpCols">⚙️ ${L('ជួរឈរ', 'Columns')}</button>` : '') +
+        `<button type="button" class="fb-btn" id="rpRefresh" aria-label="${L('ទាញថ្មី', 'Refresh')}" title="${L('ទាញថ្មី', 'Refresh')}">↻</button>`,
+        () => { rp.sel.clear(); rp.status = 'all'; rp.sap = 'all'; rp.q = ''; rp.from = ''; rp.to = ''; renderReport(); })}
+      ${FB.panel('rp', FB.range('rpFrom', 'rpTo', rp.from, rp.to) + FB.show('rpGo')
+        + FB.seg(RP_PERIODS.map(([k, kh, en]) => [k, L(kh, en)]), RP_PERIODS.map(x => x[0]).find(rpRangeIs), 'per', true)
+        + FB.seg(RP_STATUS.map(([k, kh, en]) => [k, L(kh, en)]), rp.status, 'st', true)
+        + FB.seg(RP_SAP.map(([k, kh, en]) => [k, L(kh, en)]), rp.sap, 'sap', true)
+        + FB.search('rpQ', L('ស្វែងរក ផ្លាកលេខ ឈ្មោះតៃកុង ID_FR…', 'Search plate, driver, ID_FR…'), rp.q))}</div>
+      <div class="rp-kpis" id="rpKpi"></div>
+      <div class="rp-tw" id="rpTable"></div>
+      <section class="card rp-sap">
+        <div>
+          <h3>⬇ Excel for SAP</h3>
+          <div class="hint">${L('មួយជួរ = ការចាក់សាំងមួយដង។ Qty = លីត្រ, Text = ផ្លាកលេខ។ ជួរផ្សេងទៀតប្រើតម្លៃនេះ៖', 'One row per refill. Qty = litres, Text = plate number. The other columns use these values:')}</div>
+          <div class="rp-defs">${SAP_FIELDS.map(([k, label]) => `<label>${label}<input type="text" data-def="${k}" value="${esc(defs[k])}"></label>`).join('')}</div>
+          <div class="rp-selnote" id="rpSelNote"></div>
+          <button type="button" class="btn xl rp-big" id="rpXls"></button>
+          <button type="button" class="btn ghost rp-big" id="rpCopy"></button>
+          <button type="button" class="btn xl-o rp-big" id="rpPost" hidden></button>
+          <button type="button" class="btn ghost small rp-big" id="rpUndo" hidden></button>
+          <div class="hint">${L('បន្ទាប់ពីបញ្ចូលជួរទាំងនេះក្នុង SAP រួច សូមចុច ✔ Posted SAP ដើម្បីកុំឱ្យទាញចេញម្តងទៀត។', 'After you post these rows in SAP, tap ✔ Posted SAP so they are not exported again.')}</div>
+        </div>
+        <div class="rp-tw sap" id="rpSapPrev"></div>
+      </section>`;
+
+    const setRange = (a, b) => { rp.from = a; rp.to = b; $('#rpFrom').value = a; $('#rpTo').value = b; paintChips(); paintReport(); };
+    $('#rpGo').onclick = () => {
+      let a = $('#rpFrom').value, b = $('#rpTo').value;
+      if (a && b && a > b) { const t = a; a = b; b = t; }
+      setRange(a, b);
+    };
+    $$('[data-per]').forEach(b => b.onclick = () => { const r = rpRange(b.dataset.per); setRange(r[0], r[1]); });
+    // Clear (Kim, 12 Nov 2026): no filters at all = every date, every status, every SAP status, no search.
+    $$('[data-st]').forEach(b => b.onclick = () => { rp.status = b.dataset.st; paintChips(); paintReport(); });
+    $$('[data-sap]').forEach(b => b.onclick = () => { rp.sap = b.dataset.sap; paintChips(); paintReport(); });
+    $('#rpQ').oninput = e => { rp.q = e.target.value; clearTimeout(rp.qt); rp.qt = setTimeout(paintReport, 150); };
+    $$('[data-def]').forEach(i => i.oninput = () => {
+      sapDefs()[i.dataset.def] = i.value;
+      storeSet(SAP_DEF_KEY, JSON.stringify(sapDefs()));
+      paintSap();
+    });
+    $('#rpRefresh').onclick = () => renderReport(true);
+    if ($('#rpCols')) $('#rpCols').onclick = rpColsDialog;
+    $('#rpXls').onclick = exportSap;
+    $('#rpCopy').onclick = copySap;
+    $('#rpPost').onclick = () => askPost(false);
+    $('#rpUndo').onclick = () => askPost(true);
+    $('#rpTable').onclick = e => {
+      if (e.target.closest('.rp-ck')) return;   // the tick box cell does not open the entry
+      const tr = e.target.closest('tr[data-id]'); if (tr) go({ s: 'detail', id: tr.dataset.id });
+    };
+    $('#rpTable').onchange = e => {
+      const cb = e.target;
+      if (cb.matches('[data-sel]')) { if (cb.checked) rp.sel.add(cb.dataset.sel); else rp.sel.delete(cb.dataset.sel); paintSelAll(); paintSap(); }
+      else if (cb.id === 'rpSelAll') {
+        rpRows().filter(sapOk).forEach(row => { if (cb.checked) rp.sel.add(row.id); else rp.sel.delete(row.id); });
+        $$('#rpTable [data-sel]').forEach(x => { x.checked = rp.sel.has(x.dataset.sel); });
+        paintSap();
+      }
+    };
+    // The filter bar stays under the app bar while the page scrolls.
+    document.documentElement.style.setProperty('--rp-top', ($('.head') ? $('.head').offsetHeight : 0) + 'px');
+    paintReport();
+  }
+
+  function paintChips() {
+    $$('[data-per]').forEach(b => b.classList.toggle('on', rpRangeIs(b.dataset.per)));
+    $$('[data-st]').forEach(b => b.classList.toggle('on', rp.status === b.dataset.st));
+    $$('[data-sap]').forEach(b => b.classList.toggle('on', rp.sap === b.dataset.sap));
+  }
+
+  // The sheet's own Review Status words (Kim's column), not the Reviewer tab's short labels.
+  const rpStatus = s => `<span class="pill ${statusCls(s)}">${s === STATUS_OK ? L(STATUS_OK, 'Correct') : s === STATUS_BAD ? L(STATUS_BAD, 'Not correct') : L('រង់ចាំ', 'Pending')}</span>`;
+  function paintReport() {
+    if (!$('#rpTable')) return;
+    const rows = rpRows();
+    const sum = list => list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const ok = rows.filter(r => r.status === STATUS_OK), pend = rows.filter(r => !r.status).length, bad = rows.filter(r => r.status === STATUS_BAD).length;
+    const posted = rows.filter(r => r.sapStatus === SAP_POSTED).length;
+    const plates = new Set(rows.map(r => r.plate).filter(Boolean)).size;
+    const dmy = v => (v ? dmyOf(new Date(v + 'T00:00:00').getTime()) : '…');
+    const span = !rp.from && !rp.to ? L('គ្រប់ថ្ងៃ', 'All dates') : rp.from === rp.to ? dmy(rp.from) : `${dmy(rp.from)} – ${dmy(rp.to)}`;
+    const kpi = (kh, en, v, sub, cls) => `<div class="rp-kpi"><small>${L(kh, en)}</small><b${cls ? ` class="${cls}"` : ''}>${v}</b><i>${sub}</i></div>`;
+    $('#rpKpi').innerHTML =
+      kpi('ចាក់សាំង', 'Refills', fmtNum(rows.length), esc(span)) +
+      kpi('លីត្រសរុប', 'Total litres', `${fmtNum(sum(rows))}<em>L</em>`, `${L('ត្រឹមត្រូវ', 'Correct')} ${fmtNum(sum(ok))} L`) +
+      kpi('ឡាន', 'Trucks', fmtNum(plates), `✔ Posted SAP ${fmtNum(posted)} / ${fmtNum(rows.length)}`) +
+      kpi('រង់ចាំពិនិត្យ', 'Waiting review', fmtNum(pend), `${fmtNum(bad)} ${L('មិនត្រឹមត្រូវ', 'not correct')}`, pend ? 'warn' : '');
+    if (!rows.length) {
+      $('#rpTable').innerHTML = `<div class="empty"><div class="big">📭</div>${L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
+    } else {
+      const cols = rpCols(), adm = isAdminUser();
+      const drag = adm ? ` draggable="true" title="${esc(L('អូសដើម្បីរៀបចំជួរឈរ', 'Drag to move the column'))}"` : '';
+      const foot = cols.map((c, i) => c.sum ? `<th class="n">${fmtNum(sum(rows))} L</th>`
+        : i === cols.findIndex(x => !x.sum) ? `<th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th>` : '<th></th>');
+      const ck = r => `<td class="rp-ck">${sapOk(r) ? `<input type="checkbox" data-sel="${esc(r.id)}"${rp.sel.has(r.id) ? ' checked' : ''} aria-label="SAP">` : `<input type="checkbox" disabled title="${esc(r.sapStatus === SAP_POSTED ? 'Posted SAP' : L('តែ ✅ ត្រឹមត្រូវ ទើបដាក់ SAP បាន', 'Only ✅ correct rows go to SAP'))}">`}</td>`;
+      $('#rpTable').innerHTML = `<table class="rp-t" data-nocols><thead><tr><th class="rp-ck" data-nosort><input type="checkbox" id="rpSelAll" title="${esc(L('ធីកទាំងអស់', 'Tick all'))}" aria-label="${esc(L('ធីកទាំងអស់', 'Tick all'))}"></th>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="n"' : ''}${drag}>${esc(c.h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}">${ck(r)}${cols.map(c => c.td(r)).join('')}</tr>`).join('')}</tbody>
+        <tfoot><tr><th class="rp-ck"></th>${foot.join('')}</tr></tfoot></table>`;
+      paintSelAll();
+      if (adm) rpDrag();
+    }
+    paintSap(rows);
+  }
+
+  function paintSelAll() {
+    const all = $('#rpSelAll');
+    if (!all) return;
+    const ok = rpRows().filter(sapOk), n = ok.filter(r => rp.sel.has(r.id)).length;
+    all.disabled = !ok.length;
+    all.checked = !!ok.length && n === ok.length;
+    all.indeterminate = n > 0 && n < ok.length;
+  }
+
+  function paintSap(rows) {
+    if (!$('#rpSapPrev')) return;
+    const list = sapRows(rows || rpRows());
+    const n = list.length, litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const show = list.slice(0, 50);
+    $('#rpSapPrev').innerHTML = n ? `<table class="rp-t sap" data-nosort data-nocols><thead><tr>${SAP_HEAD.map((h, i) => `<th${i === 1 ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead>
+      <tbody>${show.map(r => `<tr>${sapCells(r).map((c, i) => `<td${i === 1 ? ' class="n"' : ''}>${i === 1 || i === 6 ? `<b>${esc(i === 1 ? fmtNum(c) : c)}</b>` : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><th>${n > show.length ? L(`… និង ${n - show.length} ជួរទៀត`, `… and ${n - show.length} more rows`) : `${n} ${L('ជួរ', 'rows')}`}</th><th class="n">${fmtNum(litres)}</th><th></th><th></th><th></th><th></th><th></th><th></th></tr></tfoot></table>`
+      : `<div class="empty">☑️ ${L('ធីកជួរក្នុងតារាងខាងលើ ដើម្បីដាក់ក្នុងតារាង SAP', 'Tick rows in the table above to add them to the SAP table')}</div>`;
+    const shown = rows || rpRows(), waiting = shown.filter(sapOk).length;
+    $('#rpSelNote').innerHTML = `☑️ ${L(`បានធីក <b>${n}</b> ជួរ · ${fmtNum(litres)} L`, `<b>${n}</b> rows ticked · ${fmtNum(litres)} L`)}
+      <span class="dim">(${L(`${waiting} ជួរ ✅ មិនទាន់ Post`, `${waiting} ✅ rows not posted`)})</span>
+      ${n ? `<button type="button" class="linkbtn" id="rpSelNone">${L('ដកធីកទាំងអស់', 'Untick all')}</button>` : ''}`;
+    if ($('#rpSelNone')) $('#rpSelNone').onclick = () => { rp.sel.clear(); $$('#rpTable [data-sel]').forEach(x => { x.checked = false; }); paintSelAll(); paintSap(); };
+    const xls = $('#rpXls');
+    xls.textContent = `⬇ ${L('ទាញយក Excel', 'Download Excel')} (${n} ${L('ជួរ', 'rows')})`;
+    xls.disabled = !n || rp.busy;
+    const cp = $('#rpCopy');
+    cp.textContent = `📋 Copy Table (${n} ${L('ជួរ', 'rows')})`;
+    cp.title = L('ចម្លងជួរ SAP ទាំងអស់ (គ្មានក្បាលតារាង) ដើម្បីបិទភ្ជាប់ក្នុង SAP ឬ Excel', 'Copies every SAP row (no header) to paste into SAP or Excel');
+    cp.disabled = !n || rp.busy;
+    // Only reviewers and admins mark rows; only correct rows not posted yet can be marked.
+    const toPost = list.filter(r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED).length;
+    const post = $('#rpPost');
+    post.hidden = !canReview();
+    post.textContent = `✔ Posted SAP · ${L('បានបញ្ចូល SAP', 'mark as posted')} (${toPost})`;
+    post.disabled = !toPost || rp.busy;
+    const isAdmin = ((state.config || {}).user || {}).role === 'admin';
+    const undoN = rpRows().filter(r => r.sapStatus === SAP_POSTED).length;
+    const undo = $('#rpUndo');
+    undo.hidden = !(isAdmin && rp.sap === 'posted' && undoN);
+    undo.textContent = `↶ ${L('ដក Posted SAP វិញ', 'Undo Posted SAP')} (${undoN})`;
+    undo.disabled = rp.busy;
+  }
+
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    if (!loadXlsx.p) {
+      loadXlsx.p = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = '../vendor/xlsx.mini.min.js';
+        s.onload = () => resolve();
+        s.onerror = () => { loadXlsx.p = null; reject(new Error(L('មិនអាចផ្ទុក Excel បានទេ។ សូមព្យាយាមម្តងទៀត។', 'Could not load Excel. Please try again.'))); };
+        document.head.appendChild(s);
+      });
+    }
+    return loadXlsx.p;
+  }
+
+  async function exportSap() {
+    const list = sapRows(rpRows());
+    if (!list.length) { toast(L('គ្មានទិន្នន័យ', 'No entries')); return; }
+    try { await loadXlsx(); } catch (e) { toast(e.message); return; }
+    // CC and GL stay numbers when they are plain numbers (no leading 0), like the team's own SAP sheet.
+    const asNum = v => /^[1-9]\d{0,14}$/.test(String(v).trim()) ? Number(v) : v;
+    const data = list.map(r => sapCells(r).map((c, i) => (i === 4 || i === 5 ? asNum(c) : c)));
+    const ws = XLSX.utils.aoa_to_sheet([SAP_HEAD].concat(data));
+    ws['!cols'] = [18, 9, 14, 11, 12, 12, 12, 12].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SAP');
+    XLSX.writeFile(wb, 'Fuel_SAP_' + (rp.from || rp.to ? (rp.from || 'start') + (rp.to !== rp.from ? '_to_' + (rp.to || 'today') : '') : 'all') + '.xlsx');
+  }
+
+  /** "Copy Table" (Kim, 12 Nov 2026): every SAP row, without the header, tab-separated so it pastes into SAP or Excel cells. */
+  async function copySap() {
+    const list = sapRows(rpRows());
+    if (!list.length) return;
+    const text = list.map(r => sapCells(r).map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n');
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+    if (!ok) {   // older phones / browsers: copy through a hidden text box
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+    }
+    toast(ok ? L(`📋 បានចម្លង ${list.length} ជួរ`, `📋 Copied ${list.length} rows`) : L('ចម្លងមិនបាន', 'Could not copy'));
+  }
+
+  function askPost(undo) {
+    const rows = rpRows();
+    const list = undo ? rows.filter(r => r.sapStatus === SAP_POSTED) : sapRows(rows);
+    if (!list.length) return;
+    const litres = list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
+    const sh = openSheet(undo ? L('ដក Posted SAP វិញ', 'Undo Posted SAP') : '✔ Posted SAP', `
+      <p>${undo
+        ? L(`ដក "Posted SAP" ចេញពី <b>${list.length}</b> ជួរ (${fmtNum(litres)} L)?`, `Remove "Posted SAP" from <b>${list.length}</b> rows (${fmtNum(litres)} L)?`)
+        : L(`សម្គាល់ <b>${list.length}</b> ជួរ (${fmtNum(litres)} L) ថា <b>Posted SAP</b>? ធ្វើបែបនេះ បន្ទាប់ពីបញ្ចូលក្នុង SAP រួច។`, `Mark <b>${list.length}</b> rows (${fmtNum(litres)} L) as <b>Posted SAP</b>? Do this after you have posted them in SAP.`)}</p>
+      <div class="actions"><button type="button" class="btn ghost" data-close>${L('បោះបង់', 'Cancel')}</button>
+        <button type="button" class="btn ${undo ? 'bad' : 'xl'}" id="rpYes">${undo ? '↶ ' + L('ដកវិញ', 'Undo') : '✔ Posted SAP'}</button></div>`);
+    $('#rpYes', sh.el).onclick = async () => {
+      sh.close();
+      rp.busy = true; paintSap();
+      try {
+        const res = await api('sapPost', { ids: list.map(r => r.id), undo: !!undo });
+        const done = new Set(res.ids || []);
+        (rv.rows || []).forEach(r => {
+          if (!done.has(r.id)) return;
+          r.sapStatus = undo ? '' : SAP_POSTED;
+          r.sapAt = undo ? null : res.at;
+        });
+        local.set('all', rv.rows);
+        done.forEach(id => rp.sel.delete(id));
+        toast(undo ? L(`បានដក ${done.size} ជួរ`, `${done.size} rows undone`) : L(`✔ ${done.size} ជួរ Posted SAP`, `✔ ${done.size} rows marked Posted SAP`));
+      } catch (e) { toast(e.message); }
+      rp.busy = false;
+      paintReport();
+    };
+  }
 
   const THEME_KEY = 'fr_theme';
   const prefersDark = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
@@ -2324,8 +2421,7 @@
   const STATIC = [
     ['#brandName', 'ចាក់សាំង', 'Fuel Refill'], ['#navBack span', 'ថយក្រោយ', 'Back'], ['#navFwd span', 'ទៅមុខ', 'Forward'],
     ['.home-tab .lb', 'ទំព័រដើម', 'Home'], ['[data-tab="new"] .lb', 'បញ្ចូលថ្មី', 'New'],
-    ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'],
-    ['[data-tab="gallery"] .lb', 'វិចិត្រសាល', 'Gallery'], ['[data-tab="ads"] .lb', 'ផ្សព្វផ្សាយ', 'Ads'],
+    ['[data-tab="mine"] .lb', 'របស់ខ្ញុំ', 'My entries'], ['[data-tab="review"] .lb', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'], ['[data-tab="report"] .lb', 'របាយការណ៍', 'Report'],
     ['#demoBanner', 'DEMO · ទិន្នន័យមិនត្រូវបានរក្សាទុកទេ', 'DEMO · Nothing is saved'],
   ];
   function paintStatic() {
