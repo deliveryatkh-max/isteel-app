@@ -1780,7 +1780,7 @@
   const dncCompanies = () => { const s = []; trucks().concat(DNC.rows || []).forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort(); };
   const dncTickets = () => {
     const q = DNC.q.trim().toLowerCase();
-    return (DNC.rows || []).filter(x => x.status === 'Done' && (!DNC.co || normC(x.company) === normC(DNC.co)) &&
+    return (DNC.rows || []).filter(x => x.status === 'Done' && (!DNC.co || normC(x.company) === normC(DNC.co) || String(x.company || '').toLowerCase().indexOf(DNC.co.toLowerCase()) >= 0) &&
       (!q || [x.no, x.plate, x.company, x.item, x.dest, x.load, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0))
       .sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
   };
@@ -1824,12 +1824,13 @@
       <div class="fwrap">${fHead('dnc', `🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}`, `<button type="button" class="btn" id="dXls"><span class="xl">X</span> Excel</button>
         <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>`)}
       ${fPanel('dnc', `${fRange('dFrom', 'dTo', DNC.from, DNC.to)}${fShow('dGo')}
-        <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<select class="in" id="dCo"><option value="">${t('ទាំងអស់', 'All')}</option>${dncCompanies().map(c => `<option${normC(c) === normC(DNC.co) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+        <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<input class="in" id="dCo" type="search" list="dCoList" autocomplete="off" placeholder="${t('ទាំងអស់ · វាយដើម្បីស្វែងរក', 'All · type to search')}" value="${esc(DNC.co)}"><datalist id="dCoList">${dncCompanies().map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist></label>
         ${fSearch('dQ', t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...'), DNC.q, 'grow')}`)}</div>
       <div id="dStat"></div></section>
       <div id="dBody"><div class="spinner"></div></div>`;
     $('#dGo').onclick = () => { DNC.from = $('#dFrom').value; DNC.to = $('#dTo').value; loadDnc(); };
-    $('#dCo').onchange = e => { DNC.co = e.target.value; paintDnc(); };
+    // Truck company: pick from the list or type part of the name (Kim, 13 Nov 2026)
+    let coT; $('#dCo').oninput = e => { clearTimeout(coT); coT = setTimeout(() => { DNC.co = e.target.value.trim(); paintDnc(); }, 250); };
     $('#dQ').oninput = e => { DNC.q = e.target.value; paintDnc(); };
     $('#dXls').onclick = dncXls;
     $('#dUp').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) readDn(f); };
