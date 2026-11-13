@@ -18,6 +18,7 @@
     incident: [['home', 'របាយការណ៍', 'Reports'], ['sign', 'ត្រូវចុះហត្ថលេខា', 'To sign'], ['sum', 'សង្ខេប', 'Summary'], ['set', 'ការកំណត់', 'Settings']],
     safety: [['home', 'ត្រួតពិនិត្យ', 'Walk'], ['actions', 'សកម្មភាព', 'Actions'], ['scores', 'ពិន្ទុ', 'Scores'], ['set', 'ការកំណត់', 'Settings']],
     meeting: [['home', 'ប្រជុំ', 'Meetings'], ['tasks', 'កិច្ចការ', 'Tasks'], ['new', 'ផ្ទុកឡើង', 'Upload']],
+    stockcount: [['home', 'ការរាប់ស្តុក', 'Stock Count']],
   };
   const get = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
   const me = document.currentScript && document.currentScript.dataset.app;
