@@ -525,3 +525,9 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 
 .facts .fclr:hover { border-color: var(--navy); }
 .fpanel .fshow { margin-right: 6px; }
+
+/* DN check: tick column + ticked table (Kim, 13 Nov 2026) */
+.dnct .ckc { width: 34px; text-align: center; }
+.dnct .ckc input { width: 18px; height: 18px; cursor: pointer; }
+.dnct tr.picked td { background: color-mix(in srgb, var(--soft) 55%, transparent); }
+.dncpick tr.tot td { border-top: 2px solid var(--line); }
