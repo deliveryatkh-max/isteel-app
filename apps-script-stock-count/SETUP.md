@@ -18,6 +18,6 @@ Kim does these steps once. Nothing here is secret in chat: paste the values from
 8. **Give the URL to Claude** (or paste it into `web/stock-count/config.js` as `API_URL`). Until then the app runs in demo mode and saves nothing.
 
 Notes:
-- Book Qty is not changed by a count. A count writes a row to **Counts** and the bin's last count date, last counted qty and last status to **Bin Master**. Adjust Book Qty when the stock card is corrected.
+- A count writes one row per SKU line to **Counts** (columns: Count ID, Type, Date, Time, Bin, SKU, Description, Batch No, Sloc, On Hand, OH UoM, Counted Qty Bundle, Counted Qty Kg, Counted Qty Pcs, Remark, Counted By). Rows are matched to columns by header name, so columns can be moved. Optional extra columns the app fills when present: Out Qty, Counted Qty, Diff, Status, Photo, Note. Book Qty in **Stock On Hand** changes right away when the box in the book unit is filled.
 - After changing Code.gs or rules.gs, Deploy > Manage deployments > Edit > New version, so the `/exec` URL keeps working.
 - Tests (for developers): `node apps-script-stock-count/tests/run.js`.
