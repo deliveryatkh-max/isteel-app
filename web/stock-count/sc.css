@@ -124,3 +124,31 @@ table.lines td, table.lines th { padding: 5px 3px; }
 .qr-view { position: relative; width: 100%; max-width: 360px; aspect-ratio: 1; margin: 0 auto 10px; border-radius: 16px; overflow: hidden; background: #000; }
 .qr-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .qr-frame { position: absolute; inset: 16%; border: 3px solid #fff; border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); }
+
+/* Digital stock card: actions, movement form, history, home numbers */
+.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.quad .btn { min-height: 64px; font-size: 17px; }
+.btn.blue { background: var(--blue); }
+select { width: 100%; min-height: 52px; padding: 8px 10px; border: 2px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; }
+.form label { margin-top: 10px; }
+.form input.need, .form select.need { background: var(--bad-bg); border-color: #f3a5a5; }
+.form .live { margin: 12px 0 0; }
+.item .sku { font-size: 14px; }
+.card.scroll { padding: 0; overflow: auto; max-height: 60vh; }
+table.hist th { position: sticky; top: 0; background: var(--card); z-index: 1; padding: 8px 6px; }
+table.hist td { padding: 7px 6px; }
+td.num { text-align: right; white-space: nowrap; }
+td.num.in { color: var(--ok); font-weight: 700; }
+td.num.out { color: var(--bad); font-weight: 700; }
+.kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+.kpis div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 4px; text-align: center; }
+.kpis b { display: block; font-size: 20px; }
+.kpis span { font-size: 11px; color: var(--muted); }
+.kpis .in b { color: var(--ok); } .kpis .out b { color: var(--bad); }
+@media (max-width: 420px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+.sheet-bg { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { width: 100%; max-width: 560px; background: var(--card); color: var(--ink); border-radius: 18px 18px 0 0; padding: 12px 14px 20px; }
+.sheet-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.icon-btn.dark { background: var(--line); color: var(--ink); }
+table.hist td:first-child { white-space: nowrap; }
+table.hist td { vertical-align: middle; }
