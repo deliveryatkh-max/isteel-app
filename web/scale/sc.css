@@ -532,3 +532,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .dnct tr.picked td { background: color-mix(in srgb, var(--soft) 55%, transparent); }
 .dncpick tr.tot td { border-top: 2px solid var(--line); }
 .dnct tr[data-tk] { cursor: pointer; }
+.dnno { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dnno label { font-weight: 600; }
+.dnno input { height: 38px; min-width: 240px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.dnno input.bad { border-color: #d33; box-shadow: 0 0 0 2px #d333; }
