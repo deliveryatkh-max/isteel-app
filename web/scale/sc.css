@@ -536,3 +536,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .dnno label { font-weight: 600; }
 .dnno input { height: 38px; min-width: 240px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .dnno input.bad { border-color: #d33; box-shadow: 0 0 0 2px #d333; }
+.dncpick .pxin { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--card, #fff); color: inherit; }
+.dncpick input.pxin { width: 96px; text-align: right; }
+.dncpick select.pxin { width: 76px; }

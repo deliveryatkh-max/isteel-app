@@ -426,7 +426,7 @@
   // ---------------------------------------------------------------- column layout for every table (Kim, 12 Nov 2026)
   // Admins drag a header onto another to move the column, or press ⚙️ Columns above the table to hide, show and order
   // columns. Saved per table in DE Settings SCALE_TABLE_COLS (for everyone). The Report has its own, richer list.
-  const TSEL = '#view .tbl table:not(.rep)';
+  const TSEL = '#view .tbl table:not(.rep):not([data-nocols])';
   const tCols = () => { try { return JSON.parse(S().SCALE_TABLE_COLS || get('sc_tcols') || '{}') || {}; } catch (e) { return {}; } };
   const tKey = tb => (location.hash.replace(/^#\/?/, '').split('/')[0] || 'home') + ':' + $$(TSEL).indexOf(tb) + ':' + tb.rows[0].children.length;
   function tApply(tb, lay) {
@@ -1755,7 +1755,7 @@
   // The tickets of one truck company next to the Debit Note it sent: each DN line is matched to a ticket by truck and
   // date, then the net weight, unit price, date and company are compared. Unit price and UoM come from the Price List.
   function canDnc() { return !!(me().admin || me().dnc); }
-  let DNC = { from: monthStart(), to: today(), co: '', q: '', tab: 'all', rows: null, dn: null, file: '', busy: '', pick: {} };
+  let DNC = { from: monthStart(), to: today(), co: '', q: '', tab: 'all', rows: null, dn: null, file: '', busy: '', pick: {}, px: {} };
   const normC = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(CO|LTD|COLTD|COMPANY)$/, '');
   const normD = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const tripDay = x => String(x.t2 || x.t1 || '').slice(0, 10);
@@ -1915,6 +1915,7 @@
     $$('[data-pick]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { if (c.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; paintDnc(); }; });
     const all = $('#dPickAll'), vis = $$('[data-pick]');
     if (all) { all.checked = vis.length > 0 && vis.every(c => c.checked); all.onchange = () => { vis.forEach(c => { if (all.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; }); paintDnc(); }; }
+    $$('[data-px]').forEach(el => { el.onchange = () => { const o = DNC.px[el.dataset.px] = DNC.px[el.dataset.px] || {}; o[el.dataset.f] = el.value; paintDnc(); }; });
     if ($('#dDnNo')) $('#dDnNo').oninput = e => { DNC.billNo = e.target.value; };
     if ($('#dConfirm')) $('#dConfirm').onclick = () => confirmBilling(true);
     if ($('#dUnconfirm')) $('#dUnconfirm').onclick = () => confirmBilling(false);
@@ -1923,21 +1924,30 @@
     if ($('#dAdd')) $('#dAdd').onclick = () => { DNC.dn.rows.push({ n: DNC.dn.rows.length + 1, date: DNC.to, plate: '', qty: null, price: null, extra: 0, total: null, place: '', ok: true }); paintDnc(); };
   }
   const billChip = x => (x.bill ? `<span class="badge approved" title="${esc([x.billBy, x.billAt ? String(x.billAt).replace('T', ' ').slice(0, 16) : '', x.billDn ? 'DN ' + x.billDn : ''].filter(Boolean).join(' · '))}">✔ Confirmed Billing</span>` : '');
+  // Unit price and UoM for billing: typed by the user, else the confirmed one, else the Price List (Kim, 13 Nov 2026)
+  const isTon = u => /^(t|ton|tons|tonne|mt|per\s*t(on)?)$/i.test(String(u || '').trim());
+  function pxOf(x) {
+    const o = DNC.px[x.no || x.cid] || {}, pl = priceOf(x), has = v => v != null && v !== '';
+    const price = has(o.price) ? +o.price : has(x.billPrice) ? +x.billPrice : pl ? pl.price : null;
+    const uom = o.uom != null ? o.uom : has(x.billUom) ? String(x.billUom) : pl ? (isTon(pl.uom) || isTon(pl.per) ? 't' : 'Trip') : '';
+    const amt = price == null || !isFinite(price) ? null : isTon(uom) ? Number(x.net || 0) / 1000 * price : price;
+    return { price, uom, amt };
+  }
   /** The ticked tickets, under the check table, with Confirm (the bill from the truck company is right for these). */
   function pickTable(M) {
     const rows = M.res.filter(r => DNC.pick[r.x.no || r.x.cid]);
     if (!rows.length) return `<p class="hint mt">☑ ${t('ធីកប័ណ្ណដែលត្រឹមត្រូវ ហើយចុច Confirm ដើម្បីបញ្ជាក់វិក្កយបត្រ', 'Tick the tickets that are right, then press Confirm to mark their billing as confirmed')}</p>`;
     let sumKg = 0, sumAmt = 0;
     const body = rows.map(r => {
-      const x = r.x, pl = priceOf(x), netT = Number(x.net || 0) / 1000;
-      const amt = pl ? (/^(t|ton|tons|tonne|mt)$/i.test(String(pl.uom).trim()) || /per\s*t(on)?$/i.test(String(pl.per).trim()) ? netT * pl.price : pl.price) : null;
+      const x = r.x, k = x.no || x.cid, v = pxOf(x), amt = v.amt;
       sumKg += Number(x.net || 0); if (amt != null) sumAmt += amt;
-      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r mono">${pl ? money2(pl.price) : ''}</td><td class="r mono">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td></tr>`;
+      const uo = ['t', 'Trip'].concat(v.uom && ['t', 'Trip'].indexOf(v.uom) < 0 ? [v.uom] : []);
+      return `<tr><td class="mono">${esc(x.no)}</td><td><b>${esc(x.plate)}</b></td><td>${esc(x.company || '')}</td><td>${esc(x.dest || '')}</td><td class="nw">${dmy(tripDay(x))}</td><td class="r mono">${kg(x.net)}</td><td class="r"><input class="pxin" type="number" step="0.01" min="0" inputmode="decimal" data-px="${esc(k)}" data-f="price" value="${v.price == null ? '' : v.price}" placeholder="0.00"></td><td><select class="pxin" data-px="${esc(k)}" data-f="uom"><option value=""></option>${uo.map(u => `<option${u === v.uom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></td><td class="r mono">${amt == null ? '' : money2(amt)}</td><td>${billChip(x)}</td><td class="mono">${esc(x.billDn || '')}</td></tr>`;
     }).join('');
     const done = rows.filter(r => r.x.bill).length;
     return `<h3 class="mt">☑ ${t('ប័ណ្ណដែលបានធីក', 'Ticked tickets')} (${rows.length})</h3>
-      <div class="tbl"><table class="tt dncpick" data-nocols><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th class="r">${t('ចំនួនទឹកប្រាក់', 'Amount')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខ DN អតិថិជន', "Customer's DN #")}</th></tr>
-      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td class="r mono"><b>${money2(sumAmt)}</b></td><td></td><td></td></tr></table></div>
+      <div class="tbl"><table class="tt dncpick" data-nocols><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('កន្លែងទម្លាក់', 'Unloading place')}</th><th>${t('ថ្ងៃដឹក', 'Trip date')}</th><th class="r">Net (kg)</th><th class="r">${t('តម្លៃឯកតា', 'Unit price')}</th><th>UoM</th><th class="r">${t('ចំនួនទឹកប្រាក់', 'Amount')}</th><th>${t('វិក្កយបត្រ', 'Billing')}</th><th>${t('លេខ DN អតិថិជន', "Customer's DN #")}</th></tr>
+      ${body}<tr class="tot"><td colspan="5"><b>${t('សរុប', 'Total')}</b></td><td class="r mono"><b>${kg(sumKg)}</b></td><td></td><td></td><td class="r mono"><b>${money2(sumAmt)}</b></td><td></td><td></td></tr></table></div>
       <div class="dnno mt"><label class="req" for="dDnNo">🧾 ${t('លេខ DN អតិថិជន', "Customer's DN #")}</label><input id="dDnNo" type="text" autocomplete="off" placeholder="${t('វាយលេខ Debit Note', 'Type the Debit Note number')}" value="${esc(DNC.billNo != null ? DNC.billNo : (DNC.dn && DNC.dn.no) || '')}"></div>
       <div class="btns mt"><button type="button" class="btn ok" id="dConfirm"${done === rows.length ? ' disabled' : ''}>✔ ${t('បញ្ជាក់', 'Confirm')} (${rows.length - done})</button>
         ${isAdmin() && done ? `<button type="button" class="btn" id="dUnconfirm">↺ ${t('ដកការបញ្ជាក់', 'Undo confirm')} (${done})</button>` : ''}
@@ -1952,10 +1962,11 @@
     if (on && !dnNo) { toast(t('សូមវាយលេខ DN អតិថិជន', "Type the Customer's DN # first")); if ($('#dDnNo')) { $('#dDnNo').classList.add('bad'); $('#dDnNo').focus(); } return; }
     const b = $(on ? '#dConfirm' : '#dUnconfirm'); if (b) b.disabled = true;
     try {
-      const r = await api('scBill', { nos, on: on ? 1 : '', dn: dnNo });
-      const mark = x => { if (nos.indexOf(x.no) < 0) return; x.bill = on ? 'Confirmed Billing' : ''; x.billBy = on ? r.by : ''; x.billAt = on ? r.at : ''; x.billDn = on ? dnNo : ''; };
+      const px = {}; list.forEach(x => { if (!x.no) return; const v = pxOf(x); px[x.no] = { price: v.price == null ? '' : v.price, uom: v.uom || '' }; });
+      const r = await api('scBill', { nos, on: on ? 1 : '', dn: dnNo, px });
+      const mark = x => { if (nos.indexOf(x.no) < 0) return; x.bill = on ? 'Confirmed Billing' : ''; x.billBy = on ? r.by : ''; x.billAt = on ? r.at : ''; x.billDn = on ? dnNo : ''; x.billPrice = on ? px[x.no].price : ''; x.billUom = on ? px[x.no].uom : ''; };
       (DNC.rows || []).forEach(mark); ((B && B.tickets) || []).forEach(mark);
-      if (on) { DNC.pick = {}; DNC.billNo = null; }
+      if (on) { DNC.pick = {}; DNC.billNo = null; DNC.px = {}; }
       toast((on ? '✔ ' + t('បានបញ្ជាក់', 'Confirmed') : '↺ ' + t('បានដក', 'Undone')) + ': ' + (r.n != null ? r.n : nos.length) + ' ' + t('ប័ណ្ណ', 'tickets'));
     } catch (e) { toast(e.message); }
     paintDnc();
@@ -2824,7 +2835,7 @@
       keep();
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
-    if (action === 'scBill') { const at = new Date().toISOString().slice(0, 19); db.tickets.forEach(x => { if (p.nos.indexOf(x.no) >= 0) { x.bill = p.on ? 'Confirmed Billing' : ''; x.billBy = p.on ? u.name : ''; x.billAt = p.on ? at : ''; x.billDn = p.on ? p.dn || '' : ''; } }); keep(); return { n: p.nos.length, by: u.name, at }; }
+    if (action === 'scBill') { const at = new Date().toISOString().slice(0, 19); db.tickets.forEach(x => { if (p.nos.indexOf(x.no) >= 0) { x.bill = p.on ? 'Confirmed Billing' : ''; x.billBy = p.on ? u.name : ''; x.billAt = p.on ? at : ''; x.billDn = p.on ? p.dn || '' : ''; const v = (p.px || {})[x.no] || {}; x.billPrice = p.on ? v.price : ''; x.billUom = p.on ? v.uom : ''; } }); keep(); return { n: p.nos.length, by: u.name, at }; }
     if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
     if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_MANUAL_ALL', 'SCALE_DN_VAR_KG'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });

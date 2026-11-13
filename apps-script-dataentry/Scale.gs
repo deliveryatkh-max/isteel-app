@@ -18,7 +18,7 @@ const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd', 'Empty Truck',
-  'Billing Status', 'Billing By', 'Billing At', "Customer's DN #"];   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
+  'Billing Status', 'Billing By', 'Billing At', "Customer's DN #", 'Billing Unit Price', 'Billing UoM'];   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
@@ -208,7 +208,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2', 'empty1', 'bill', 'billBy', 'billAt', 'billDn']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2', 'empty1', 'bill', 'billBy', 'billAt', 'billDn', 'billPrice', 'billUom']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   o.again = scAgain_(o.again);
@@ -304,8 +304,9 @@ function scBill_(p, user) {
   let n = 0;
   rows.forEach((r, i) => {
     if (!want[String(r[0])]) return;
-    const v = p.on ? ['Confirmed Billing', user.name, now, clip_(p.dn, 60)] : ['', '', '', ''];
-    sh.getRange(i + 2, c, 1, 4).setValues([v]);
+    const px = (p.px && p.px[String(r[0])]) || {}, pr = px.price === '' || px.price == null || !isFinite(+px.price) ? '' : +px.price;
+    const v = p.on ? ['Confirmed Billing', user.name, now, clip_(p.dn, 60), pr, clip_(px.uom, 20)] : ['', '', '', '', '', ''];
+    sh.getRange(i + 2, c, 1, 6).setValues([v]);
     scLog_(user, r[0], p.on ? 'Confirm billing' : 'Undo billing', 'Billing Status', r[c - 1], v[0], clip_(p.dn, 60));
     n++;
   });
