@@ -14,7 +14,7 @@ const ok = (c, m) => { assert.ok(c, m); pass++; };
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
-const { countedPcs, statusOf, needsPhoto, validateCount, accuracyPct, todayList } = ctx;
+const { countedPcs, statusOf, needsPhoto, validateCount, accuracyPct, todayList, outOk } = ctx;
 
 // Bundles x pieces per bundle + loose pieces
 eq(countedPcs(2, 50, 7), 107, 'bundles x pcs per bundle + pieces');
@@ -39,6 +39,11 @@ ok(validateCount({ bundles: '-1', pieces: '0' }) !== '', 'negative rejected');
 eq(accuracyPct([], 10), null, 'never counted = no score');
 eq(accuracyPct(['MATCH', 'SHORT', 'MATCH', 'MATCH'], 10), 75, '3 of 4 match');
 eq(accuracyPct(['SHORT', 'SHORT', 'MATCH', 'MATCH'], 2), 100, 'only the last 2 count');
+
+// Stock out
+eq(outOk(200, 1200), '', 'out within stock');
+ok(outOk(1300, 1200) !== '', 'out more than on hand rejected');
+ok(outOk(0, 1200) !== '', 'zero out rejected');
 
 // Today's list: never counted first, then oldest count, active only, limited to N
 const bins = [

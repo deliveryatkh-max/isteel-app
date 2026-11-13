@@ -17,9 +17,11 @@
  * Pure rules (countedPcs, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
-const SH = { BIN: 'Bin Master', CNT: 'Counts', SET: 'Settings' };
-const BIN_COLS = ['Bin', 'Warehouse', 'SKU', 'Description', 'UoM', 'Pcs per Bundle', 'Book Qty', 'Active', 'Last Count', 'Last Counted Qty', 'Last Status'];
-const CNT_COLS = ['Count ID', 'Date', 'Time', 'Bin', 'Warehouse', 'SKU', 'Description', 'Book Qty', 'Bundles', 'Pieces', 'Counted Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
+const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings' };
+// Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
+const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
+const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty'];
+const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'Book Qty', 'Bundles', 'Pieces', 'Counted Qty', 'Out Qty', 'Diff', 'Status', 'Photo', 'Counted By', 'Note'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const SET_SEED = [
   ['TOLERANCE_PCS', '0', 'Difference allowed without a photo (pcs). 0 = must match exactly.'],
@@ -52,6 +54,7 @@ function route_(action, p, user) {
     case 'boot': return boot_(user);
     case 'bin': return binInfo_(user, p.bin);
     case 'submit': return withLock_(() => submit_(user, p.count || {}));
+    case 'out': return withLock_(() => out_(user, p.out || {}));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -94,6 +97,7 @@ function objs_(name, cols) {
 /** Adds the tabs and the Drive folder. Safe to run again. */
 function setup() {
   sheet_(SH.BIN, BIN_COLS);
+  sheet_(SH.STK, STK_COLS);
   sheet_(SH.CNT, CNT_COLS);
   sheet_(SH.SET, SET_COLS, SET_SEED);
   const props = PropertiesService.getScriptProperties();
@@ -196,31 +200,31 @@ function settings_() {
 
 function bins_() {
   return objs_(SH.BIN, BIN_COLS).filter(b => b.Bin && yes_(b.Active)).map(b => ({
-    bin: b.Bin, warehouse: b.Warehouse, sku: b.SKU, desc: b.Description, uom: b.UoM || 'PC',
-    pcsPerBundle: Number(b['Pcs per Bundle']) || 1, book: Number(b['Book Qty']) || 0,
-    lastCount: b['Last Count'] || '', lastStatus: b['Last Status'] || '', active: true,
-  }));
+    bin: b.Bin, warehouse: b.Warehouse, lastCount: b['Last Count'] || '', lastStatus: b['Last Status'] || '', active: true }));
 }
 
-// Status history per bin, in the order the counts were saved.
+// Stock lines of one bin (or all, when bin is empty). Each line is one material + batch + SLOC.
+function stock_(bin) {
+  return objs_(SH.STK, STK_COLS).filter(r => r.Bin && (!bin || r.Bin.toUpperCase() === bin.toUpperCase())).map(r => ({
+    bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
+    pcsPerBundle: Number(r['Pcs per Bundle']) || 1, book: Number(r['Book Qty']) || 0 }));
+}
+const lineKey_ = l => [l.bin || '', l.material, l.batch, l.sloc].join('|').toUpperCase();
+
+// Status history per bin, in the order it was saved (counts only).
 function history_() {
   const h = {};
-  objs_(SH.CNT, CNT_COLS).forEach(r => { (h[r.Bin] = h[r.Bin] || []).push(r.Status); });
+  objs_(SH.CNT, CNT_COLS).filter(r => r.Type === 'Count').forEach(r => { (h[r.Bin] = h[r.Bin] || []).push(r.Status); });
   return h;
-}
-
-function view_(b, hist, win) {
-  return { bin: b.bin, warehouse: b.warehouse, sku: b.sku, desc: b.desc, uom: b.uom, pcsPerBundle: b.pcsPerBundle,
-    book: b.book, lastCount: b.lastCount, lastStatus: b.lastStatus, accuracy: accuracyPct(hist[b.bin] || [], win) };
 }
 
 function boot_(user) {
   const who = counter_(user);
   const st = settings_();
   const hist = history_();
-  const bins = bins_().map(b => view_(b, hist, st.win));
+  const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin).length }));
   return { user: { email: user.email, name: who.Name || user.email }, settings: { tolerance: st.tol },
-    today: todayList(bins, st.listSize), binCount: bins.length };
+    today: todayList(list, st.listSize), binCount: list.length };
 }
 
 function binInfo_(user, code) {
@@ -229,36 +233,89 @@ function binInfo_(user, code) {
   const bin = String(code || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
   if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
-  return view_(b, history_(), st.win);
+  const hist = history_();
+  return { bin: b.bin, warehouse: b.warehouse, lastCount: b.lastCount, lastStatus: b.lastStatus,
+    accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin) };
 }
 
-// ---------------------------------------------------------------- save a count
+// ---------------------------------------------------------------- save a count (all SKU lines of a bin, one submit)
 function submit_(user, c) {
-  const who = counter_(user);
+  counter_(user);
   const st = settings_();
   const bin = String(c.bin || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
   if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
-  const bad = validateCount(c);
-  if (bad) fail_('BAD', bad);
-
-  const counted = countedPcs(c.bundles, b.pcsPerBundle, c.pieces);
-  const diff = counted - b.book;
-  const status = statusOf(diff, st.tol);
-  if (needsPhoto(status) && !c.photo) fail_('PHOTO', 'Take a photo of the bin: the count does not match the book.', 'សូមថតរូបកុងតឺន័រ ដោយសារចំនួនមិនត្រូវនឹងសៀវភៅ។');
+  const stock = stock_(b.bin);
+  const lines = Array.isArray(c.lines) ? c.lines : [];
+  if (!lines.length) fail_('BAD', 'Nothing to count.');
+  const rows = [];
+  let worst = 'MATCH';
+  lines.forEach(l => {
+    const bad = validateCount(l);
+    if (bad) fail_('BAD', bad);
+    const s = stock.find(x => lineKey_(Object.assign({ bin: b.bin }, x)) === lineKey_(Object.assign({ bin: b.bin }, l)));
+    if (!s) fail_('NOLINE', 'Material ' + l.material + ' is not in this bin.');
+    const counted = countedPcs(l.bundles, s.pcsPerBundle, l.pieces);
+    const diff = counted - s.book;
+    const status = statusOf(diff, st.tol);
+    if (status !== 'MATCH') worst = status;
+    rows.push({ s: s, counted: counted, diff: diff, status: status });
+  });
+  if (needsPhoto(worst) && !c.photo) fail_('PHOTO', 'Take a photo of the bin: the count does not match the book.', 'សូមថតរូបកុងតឺន័រ ដោយសារចំនួនមិនត្រូវនឹងសៀវភៅ។');
 
   const now = new Date();
   const id = 'SC' + fmt_(now, 'yyMMddHHmmss') + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
   const photo = c.photo ? savePhoto_(id, c.photo) : '';
-  const when = fmt_(now, 'yyyy-MM-dd HH:mm');
-
-  sheet_(SH.CNT, CNT_COLS).appendRow([id, fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, b.warehouse, b.sku, b.desc,
-    b.book, Number(c.bundles), Number(c.pieces), counted, diff, status, photo, user.email, clip_(c.note, 200)]);
-  markBin_(b.bin, when, counted, status);
-
+  const cnt = sheet_(SH.CNT, CNT_COLS);
+  const stk = sheet_(SH.STK, STK_COLS);
+  rows.forEach((r, i) => {
+    const l = lines[i];
+    cnt.appendRow([id, 'Count', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, r.s.material, r.s.desc, r.s.batch, r.s.sloc,
+      r.s.book, Number(l.bundles), Number(l.pieces), r.counted, '', r.diff, r.status, photo, user.email, clip_(c.note, 200)]);
+    setBook_(stk, r.s, r.counted);   // book qty changes right away
+  });
+  markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), worst);
   const hist = history_();
-  return { id: id, status: status, diff: diff, counted: counted, book: b.book, uom: b.uom, sku: b.sku, desc: b.desc,
-    accuracy: accuracyPct(hist[b.bin] || [], st.win), counter: who.Name || user.email };
+  return { id: id, status: worst, lines: rows.map(r => ({ material: r.s.material, desc: r.s.desc, uom: r.s.uom, book: r.s.book, counted: r.counted, diff: r.diff, status: r.status })),
+    accuracy: accuracyPct(hist[b.bin] || [], st.win) };
+}
+
+// ---------------------------------------------------------------- stock out (Out Qty per SKU line of a bin)
+function out_(user, c) {
+  counter_(user);
+  const bin = String(c.bin || '').trim();
+  const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
+  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
+  const stock = stock_(b.bin);
+  const lines = (Array.isArray(c.lines) ? c.lines : []).filter(l => Number(l.outQty) > 0);
+  if (!lines.length) fail_('BAD', 'Enter an Out Qty for at least one line.');
+  const now = new Date();
+  const id = 'OUT' + fmt_(now, 'yyMMddHHmmss') + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
+  const cnt = sheet_(SH.CNT, CNT_COLS);
+  const stk = sheet_(SH.STK, STK_COLS);
+  const plan = lines.map(l => {
+    const s = stock.find(x => lineKey_(Object.assign({ bin: b.bin }, x)) === lineKey_(Object.assign({ bin: b.bin }, l)));
+    if (!s) fail_('NOLINE', 'Material ' + l.material + ' is not in this bin.');
+    const out = Number(l.outQty);
+    const bad = outOk(out, s.book);
+    if (bad) fail_('BAD', bad);
+    return { s: s, out: out };
+  });
+  plan.forEach(p => {
+    cnt.appendRow([id, 'Out', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, p.s.material, p.s.desc, p.s.batch, p.s.sloc,
+      p.s.book, '', '', '', p.out, '', '', '', user.email, clip_(c.note, 200)]);
+    setBook_(stk, p.s, p.s.book - p.out);   // book qty changes right away
+  });
+  return { id: id, lines: plan.map(p => ({ material: p.s.material, desc: p.s.desc, out: p.out, after: p.s.book - p.out })) };
+}
+
+// Writes the new book qty into the Stock On Hand row of this line.
+function setBook_(sh, s, qty) {
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const v = sh.getRange(2, 1, last - 1, 5).getDisplayValues();
+  const i = v.findIndex(r => lineKey_({ bin: r[0], material: r[1], batch: r[3], sloc: r[4] }) === lineKey_({ bin: s.bin, material: s.material, batch: s.batch, sloc: s.sloc }));
+  if (i >= 0) sh.getRange(i + 2, 8).setValue(qty);
 }
 
 function savePhoto_(id, dataUrl) {
@@ -270,13 +327,13 @@ function savePhoto_(id, dataUrl) {
   return DriveApp.getFolderById(prop_('SC_FOLDER_ID')).createFile(blob).getUrl();
 }
 
-// Writes the last count into the Bin Master row (Book Qty is not changed here).
-function markBin_(bin, when, counted, status) {
+// Writes the last count date and status into the Bin Master row (book qty lives in Stock On Hand).
+function markBin_(bin, when, status) {
   const sh = sheet_(SH.BIN, BIN_COLS);
   const last = sh.getLastRow();
   if (last < 2) return;
   const bins = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
   const i = bins.findIndex(r => String(r[0]).trim().toUpperCase() === bin.toUpperCase());
   if (i < 0) return;
-  sh.getRange(i + 2, 9, 1, 3).setValues([[when, counted, status]]);
+  sh.getRange(i + 2, 4, 1, 2).setValues([[when, status]]);
 }
