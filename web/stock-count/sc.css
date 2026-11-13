@@ -60,7 +60,11 @@ table.lines input { width: 70px; min-height: 40px; padding: 6px; border: 2px sol
 .diff { white-space: nowrap; }
 table.lines th.cap { text-align: center; color: var(--ink); font-size: 14px; border-bottom: 2px solid var(--navy); }
 table.lines tr.desc td { font-weight: 600; border-bottom: 0; padding-bottom: 0; }
-table.lines input { width: 56px; padding: 4px; font-size: 15px; }
+table.lines input { width: 100%; min-width: 64px; min-height: 48px; padding: 4px; font-size: 17px; text-align: center; -moz-appearance: textfield; }
+table.lines input::-webkit-outer-spin-button, table.lines input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* Empty box = light red, so the user sees where to type (Kim's rule); filled = white */
+table.lines input:placeholder-shown { background: var(--bad-bg); border-color: #f3a5a5; }
+table.lines td.in { width: 22%; padding: 4px 2px; }
 table.lines td small { white-space: nowrap; }
 table.lines td, table.lines th { padding: 5px 3px; }
 .diff .badge { padding: 3px 7px; font-size: 13px; }

@@ -315,13 +315,13 @@
     const rows = (b.lines || []).map((l, i) => isCount
       ? `<tr class="desc"><td colspan="4">${esc(l.desc)}</td></tr>
         <tr><td>${esc(l.material)}<br><small class="muted">Batch: ${esc(l.batch)}</small><br><small class="muted">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</small></td>
-        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles"></td>
-        <td><input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg"></td>
-        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces"></td></tr>`
+        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="bundles"></td>
+        <td class="in"><input type="number" inputmode="decimal" min="0" step="any" placeholder=" " data-i="${i}" data-f="kg"></td>
+        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="pieces"></td></tr>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
         <td>${l.book}</td>
-        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
+        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
       </tr>`).join('');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
