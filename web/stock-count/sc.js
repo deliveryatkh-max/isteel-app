@@ -29,16 +29,47 @@
   const comparable = (c, uom) => (isKg(uom) ? c.kg !== '' : (c.bundles !== '' || c.pieces !== ''));
   const worstOf = list => (list.indexOf('SHORT') >= 0 ? 'SHORT' : list.indexOf('OVER') >= 0 ? 'OVER' : 'MATCH');
 
-  // Demo data: one bin with two SKU lines (same shape as the Stock On Hand tab).
-  const DEMO_BIN = { bin: 'A-01-01', warehouse: 'WH I1', lastCount: '', lastStatus: '', accuracy: null, lines: [
-    { material: '1100000231', desc: 'INTANU G300AZ30 BR 1200x0.220', batch: 'D261023018', sloc: '1020', uom: 'KG', pcsPerBundle: 1, book: 4750 },
-    { material: 'SK-1002', desc: 'Steel bar 16mm', batch: 'B2611-09', sloc: 'WH01', uom: 'PC', pcsPerBundle: 30, book: 600 },
-  ] };
-  const DEMO_BINS = [{ bin: 'A-01-01' }, { bin: 'B-02-05' }];
-  const DEMO_LIST = [
-    { bin: 'A-01-01', warehouse: 'WH I1', lastCount: '', lastStatus: '', accuracy: null, lines: 2 },
-    { bin: 'B-02-05', warehouse: 'WH OB', lastCount: '2026-11-08 14:30', lastStatus: 'SHORT', accuracy: 60, lines: 1 },
+  // Demo data (sample only, not real ISI Steel stock): 2 warehouses, 10 bins, 10 materials, several batches.
+  const dAgo = n => { const d = new Date(Date.now() - n * 864e5); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const DEMO_BINS = [
+    ['I1-DB-A-01-01-01', 'WH I1'], ['I1-DB-A-02-01-01', 'WH I1'], ['I1-DB-A-03-01-01', 'WH I1'], ['I1-DB-A-04-01-01', 'WH I1'], ['I1-DB-A-05-01-01', 'WH I1'],
+    ['C1-FG-A-01-01-20', 'WH C1'], ['C1-FG-A-01-01-21', 'WH C1'], ['C1-FG-A-01-01-22', 'WH C1'], ['C1-FG-A-01-01-23', 'WH C1'], ['C1-FG-A-01-01-24', 'WH C1'],
+  ].map(x => ({ bin: x[0], warehouse: x[1], lastCount: '', lastStatus: '', accuracy: null }));
+  const DEMO_STOCK = [
+    ['I1-DB-A-01-01-01', '1100000231', 'INTANU G300AZ30 BR 1200x0.220', 'D261023018', '1020', 'KG', 1, 4620],
+    ['I1-DB-A-02-01-01', '1100000231', 'INTANU G300AZ30 BR 1200x0.220', 'D261023023', '1020', 'KG', 1, 4530],
+    ['I1-DB-A-03-01-01', '1100000245', 'GI COIL Z80 1219x0.30', 'D261101004', '1020', 'KG', 1, 5210],
+    ['I1-DB-A-04-01-01', '1100000260', 'PPGI COIL BLUE 1200x0.35', 'D261102011', '1020', 'KG', 1, 3980],
+    ['I1-DB-A-04-01-01', '1100000261', 'PPGI COIL RED 1200x0.35', 'D261102015', '1020', 'KG', 1, 4105],
+    ['I1-DB-A-05-01-01', '1100000302', 'HR COIL SS400 1250x2.0', 'H261028002', '1010', 'KG', 1, 8640],
+    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080153', '2010', 'PC', 150, 150],
+    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080154', '2010', 'PC', 150, 80],
+    ['C1-FG-A-01-01-21', 'PIPE-40X40', 'Square Steel Pipe 40 x 40 x 1.4', '26080155', '2010', 'PC', 100, 120],
+    ['C1-FG-A-01-01-22', 'PIPE-RD-21', 'Round Steel Pipe 21.3 x 1.6', '26090021', '2010', 'PC', 200, 400],
+    ['C1-FG-A-01-01-22', 'PIPE-RD-27', 'Round Steel Pipe 26.9 x 1.6', '26090030', '2010', 'PC', 150, 300],
+    ['C1-FG-A-01-01-23', 'CPURLIN-100', 'C Purlin 100 x 50 x 2.0', '26100007', '2010', 'PC', 50, 200],
+    ['C1-FG-A-01-01-24', 'ROOF-760', 'Roofing Sheet 760 x 0.35 Blue', '26100112', '2010', 'PC', 100, 650],
+  ].map(x => ({ bin: x[0], material: x[1], desc: x[2], batch: x[3], sloc: x[4], uom: x[5], pcsPerBundle: x[6], book: x[7] }));
+  // Opening movements, so every stock card has a history and its last balance equals the stock above.
+  const DEMO_LEDGER = [];
+  (function seed() {
+    const add = (ago, time, type, l, qtyIn, qtyOut, balance, reference, user, otherBin) => DEMO_LEDGER.push({ id: (type === 'IN' ? 'IN' : type === 'OUT' ? 'OUT' : 'TR') + dAgo(ago).slice(2).replace(/-/g, '') + '-' + String(DEMO_LEDGER.length + 1).padStart(4, '0'),
+      date: dAgo(ago), time: time, type: type, bin: l.bin, material: l.material, desc: l.desc, batch: l.batch, sloc: l.sloc, uom: l.uom, qtyIn: qtyIn, qtyOut: qtyOut, balance: balance, reference: reference, otherBin: otherBin || '', user: user });
+    DEMO_STOCK.forEach((l, i) => {
+      const out1 = l.uom === 'KG' ? 0 : 20 + (i % 3) * 10, in2 = l.uom === 'KG' ? 0 : 30;
+      const open = l.book + out1 - in2;
+      add(6, '08:1' + (i % 10), 'IN', l, open, 0, open, 'OPEN-' + String(i + 1).padStart(3, '0'), 'admin@isi');
+      if (out1) add(3 - (i % 3), '10:2' + (i % 10), 'OUT', l, 0, out1, open - out1, 'DN-81004522' + (30 + i), 'sokha@isi');
+      if (in2) add(1, '14:0' + (i % 10), 'IN', l, in2, 0, l.book, 'GR-00' + (40 + i), 'dara@isi');
+    });
+  })();
+  // Counts waiting for a supervisor (only counts with a difference need review).
+  const DEMO_COUNTS = [
+    { id: 'SC' + dAgo(1).slice(2).replace(/-/g, '') + '-A1F0', date: dAgo(1), time: '16:40', bin: 'C1-FG-A-01-01-20', material: 'PIPE-25X25', desc: 'Square Steel Pipe 25 x 25 x 1.2', batch: '26080153', sloc: '2010', uom: 'PC', book: 150, counted: 140, variance: -10, status: 'Submitted', by: 'sokha@isi', remark: 'One bundle opened' },
+    { id: 'SC' + dAgo(1).slice(2).replace(/-/g, '') + '-B7C2', date: dAgo(1), time: '16:55', bin: 'C1-FG-A-01-01-22', material: 'PIPE-RD-21', desc: 'Round Steel Pipe 21.3 x 1.6', batch: '26090021', sloc: '2010', uom: 'PC', book: 400, counted: 405, variance: 5, status: 'Submitted', by: 'dara@isi', remark: '' },
+    { id: 'SC' + dAgo(2).slice(2).replace(/-/g, '') + '-C3D9', date: dAgo(2), time: '09:15', bin: 'I1-DB-A-03-01-01', material: '1100000245', desc: 'GI COIL Z80 1219x0.30', batch: 'D261101004', sloc: '1020', uom: 'KG', book: 5210, counted: 5210, variance: 0, status: 'Approved', by: 'sokha@isi', remark: '' },
   ];
+  const demoBinList = () => DEMO_BINS.map(b => Object.assign({}, b, { lines: DEMO_STOCK.filter(l => l.bin === b.bin).length }));
 
   const S = { list: [], bins: [], stock: [], dash: null, card: null, move: null, lineIdx: -1, user: null, view: 'home', bin: null, mode: '', result: null, photo: '', signedOut: false, blocked: '' };
 
@@ -87,7 +118,6 @@
   const accText = a => (a == null ? '—' : a + '%');
   const shortDate = s => (s ? s.slice(5, 16) : T('ยังไม่เคย', 'Never'));
   const statusLabel = s => ({ MATCH: T('ត្រូវ', 'Match'), SHORT: T('ខ្វះ', 'Short'), OVER: T('លើស', 'Over') }[s] || '');
-  const demoLines = () => (S.bin ? S.bin.lines : []);
 
   function shrink(file) {
     return new Promise((resolve, reject) => {
@@ -106,7 +136,7 @@
 
   // ------------------------------------------------------------------ boot and queue
   async function boot() {
-    if (DEMO) { S.list = DEMO_LIST.slice(); S.user = { name: 'Demo' }; S.dash = demoDash(); return route(); }
+    if (DEMO) { S.bins = demoBinList(); S.stock = DEMO_STOCK; S.list = S.bins.slice(0, 5); S.user = { name: 'Demo' }; S.dash = demoDash(); return route(); }
     if (!signedIn()) { S.signedOut = true; return route(); }
     const cached = jget(CACHE_KEY, null);
     if (cached && !S.user) { useBoot(cached); route(); }   // fast: last data at once, fresh data follows
@@ -162,6 +192,9 @@
     $('#demo').textContent = DEMO ? T('ដំណើរការសាកល្បង: មិនទាន់រក្សាទុកទៅ Google Sheet', 'Demo mode: nothing is saved to the Google Sheet yet') : '';
     if (S.signedOut) return blockedScreen(T('សូមចូលគណនីនៅទំព័រដើម', 'Please sign in on the home menu'), T('ការចូលបានផុតកំណត់ ឬមិនទាន់ចូល', 'Not signed in or sign-in expired'));
     if (S.blocked) return blockedScreen(T('មិនទាន់មានសិទ្ធិ', 'No access yet'), S.blocked);
+    document.body.classList.remove('wide');
+    if (window.SC_NAV) window.SC_NAV();
+    if (window.SC_PAGES && window.SC_PAGES[S.view]) return window.SC_PAGES[S.view]();
     if (S.view === 'bin' && S.bin) return binScreen();
     if (S.view === 'count' && S.bin) return lineScreen('count');
     if (S.view === 'card' && S.bin && S.card) return cardScreen();
@@ -255,7 +288,7 @@
     view.hidden = false; msg.hidden = false; msg.textContent = T('ដាក់ QR ក្នុងប្រអប់', 'Hold the QR code inside the square');
     $('#scanBtn').textContent = '✖ ' + T('បិទកាមេរ៉ា', 'Close camera');
     scanner.on = true;
-    if (DEMO) { scanner.timer = setTimeout(() => { stopScan(); openBin(DEMO_BIN.bin); }, 1200); return; }
+    if (DEMO) { scanner.timer = setTimeout(() => { stopScan(); openBin(DEMO_BINS[5].bin); }, 1200); return; }
     try {
       scanner.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
       if (!scanner.on) { stopScan(); return; }
@@ -289,8 +322,7 @@
   async function openBin(code) {
     const key = code.toUpperCase();
     let b = null;
-    if (DEMO) { b = key === DEMO_BIN.bin ? JSON.parse(JSON.stringify(DEMO_BIN)) : null; }
-    else if (S.bins.length) b = localBin(key);
+    if (DEMO || S.bins.length) b = localBin(key);
     else {
       try { b = await api('bin', { bin: code }); }
       catch (e) { if (e.code === 'AUTH') S.signedOut = true; toast(e.message); return; }
@@ -330,7 +362,7 @@
   const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
   const typeLabel = t => ({ IN: T('ចូលស្តុក', 'Stock IN'), OUT: T('ចេញស្តុក', 'Stock OUT'), TRANSFER: T('ផ្ទេរ', 'Transfer'),
-    'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in') }[t] || t);
+    'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in'), ADJUST: T('កែតម្រូវ', 'Adjustment') }[t] || t);
   const sameLine = (a, b) => [a.material, a.batch, a.sloc].join('|').toUpperCase() === [b.material, b.batch, b.sloc].join('|').toUpperCase();
   const round3 = n => Math.round(n * 1000) / 1000;
   // Same rules as rules.gs moveOk / transferOk; the server checks again before posting.
@@ -473,8 +505,8 @@
       else if (isIn) { $('#mLine').value = 'new'; $('#nMat').value = text; toast(T('មិនមានក្នុងកុងតឺន័រនេះ។ សូមពិនិត្យកូដ។', 'Not in this bin yet. Check the code.')); }
       else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងកុងតឺន័រនេះទេ', 'This barcode does not match the stock in this bin'));
       refresh();
-    }, (b.lines[0] || {}).batch);
-    if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, 'B-02-05');
+    }, ((b.lines || [])[0] || {}).batch);
+    if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
     $('#mSave').onclick = () => saveMove(line(), sel() === 'new');
     refresh();
@@ -515,27 +547,41 @@
   }
 
   // Demo mode: the same checks and postings, kept in memory only.
-  const DEMO_LEDGER = [
-    { id: 'IN261101-0001', date: '2026-11-01', time: '08:10', type: 'IN', bin: 'A-01-01', material: 'SK-1002', batch: 'B2611-09', sloc: 'WH01', qtyIn: 650, qtyOut: 0, balance: 650, reference: 'OPEN-001', user: 'admin@demo' },
-    { id: 'OUT261103-0002', date: '2026-11-03', time: '14:25', type: 'OUT', bin: 'A-01-01', material: 'SK-1002', batch: 'B2611-09', sloc: 'WH01', qtyIn: 0, qtyOut: 50, balance: 600, reference: 'DN-8100452231', user: 'usera@demo' },
-  ];
   function demoDash() {
-    const today = new Date().toISOString().slice(0, 10), t = DEMO_LEDGER.filter(r => r.date === today);
-    return { bins: DEMO_BINS.length, lines: DEMO_BIN.lines.length, inToday: t.filter(r => r.type === 'IN').length, outToday: t.filter(r => r.type === 'OUT').length,
+    const today = dAgo(0), t = DEMO_LEDGER.filter(r => r.date === today);
+    return { bins: DEMO_BINS.length, lines: DEMO_STOCK.length, inToday: t.filter(r => r.type === 'IN').length, outToday: t.filter(r => r.type === 'OUT').length,
       transferToday: t.filter(r => r.type === 'TRANSFER OUT').length, recent: DEMO_LEDGER.slice(-10).reverse() };
   }
+  const demoLine = (bin, l) => DEMO_STOCK.find(x => x.bin.toUpperCase() === String(bin).toUpperCase() && sameLine(x, l));
+  const demoLog = (type, bin, l, qtyIn, qtyOut, balance, pl, otherBin, idPrefix) => {
+    const now = new Date(), d = dAgo(0), id = idPrefix + d.slice(2).replace(/-/g, '') + '-' + String(DEMO_LEDGER.length + 1).padStart(4, '0');
+    DEMO_LEDGER.push({ id: id, requestId: pl.requestId, date: d, time: now.toTimeString().slice(0, 5), type: type, bin: bin, material: l.material, desc: l.desc, batch: l.batch, sloc: l.sloc, uom: l.uom,
+      qtyIn: qtyIn, qtyOut: qtyOut, balance: balance, reference: pl.reference || '', remark: pl.remark || '', otherBin: otherBin || '', user: 'demo@isi' });
+    return id;
+  };
   function demoMove(pl, l) {
-    const now = new Date(), d = now.toISOString().slice(0, 10), t = now.toTimeString().slice(0, 5);
     if (DEMO_LEDGER.some(r => r.requestId === pl.requestId)) return { duplicate: true, balance: l ? l.book : 0 };
-    const isTr = pl.type === 'TRANSFER';
-    if (isTr && !DEMO_BINS.some(x => x.bin === pl.toBin.toUpperCase())) throw Object.assign(new Error(T('រកមិនឃើញកុងតឺន័រទៅ', 'Destination bin not found')), { code: 'NOBIN' });
-    if (!l) { l = { material: pl.material, desc: pl.desc || pl.material, batch: pl.batch, sloc: pl.sloc, uom: pl.uom || 'KG', pcsPerBundle: 1, book: 0 }; S.bin.lines.push(l); DEMO_BIN.lines.push(Object.assign({}, l)); S.stock.push(Object.assign({ bin: S.bin.bin }, l)); }
-    const bal = round3(pl.type === 'IN' ? l.book + pl.qty : l.book - pl.qty);
-    const id = (isTr ? 'TR' : pl.type) + d.slice(2).replace(/-/g, '') + '-' + String(DEMO_LEDGER.length + 1).padStart(4, '0');
-    DEMO_LEDGER.push({ id: id, requestId: pl.requestId, date: d, time: t, type: isTr ? 'TRANSFER OUT' : pl.type, bin: pl.bin, material: l.material, batch: l.batch, sloc: l.sloc,
-      qtyIn: pl.type === 'IN' ? pl.qty : 0, qtyOut: pl.type === 'IN' ? 0 : pl.qty, balance: bal, reference: pl.reference, otherBin: isTr ? pl.toBin.toUpperCase() : '', user: 'demo@demo' });
-    const dl = DEMO_BIN.lines.find(x => sameLine(x, l)); if (dl) dl.book = bal;
-    return { id: id, balance: bal, uom: l.uom, toBin: isTr ? pl.toBin.toUpperCase() : '', toBalance: isTr ? pl.qty : undefined };
+    const isTr = pl.type === 'TRANSFER', to = isTr ? pl.toBin.trim().toUpperCase() : '';
+    if (isTr && !DEMO_BINS.some(x => x.bin === to)) throw Object.assign(new Error(T('រកមិនឃើញកុងតឺន័រទៅ', 'Destination bin not found')), { code: 'NOBIN' });
+    let s = l ? demoLine(pl.bin, l) : null;
+    if (!s) {
+      const known = DEMO_STOCK.find(x => x.material.toUpperCase() === String(pl.material).toUpperCase());
+      s = { bin: pl.bin, material: known ? known.material : pl.material, desc: known ? known.desc : (pl.desc || pl.material), batch: pl.batch, sloc: pl.sloc, uom: known ? known.uom : (pl.uom || 'KG'), pcsPerBundle: known ? known.pcsPerBundle : 1, book: 0 };
+      DEMO_STOCK.push(s); S.bin.lines.push(Object.assign({}, s));
+    }
+    const bal = round3(pl.type === 'IN' ? s.book + pl.qty : s.book - pl.qty);
+    let id, toBal;
+    if (isTr) {
+      let d = demoLine(to, s);
+      if (!d) { d = Object.assign({}, s, { bin: to, book: 0 }); DEMO_STOCK.push(d); }
+      toBal = round3(d.book + pl.qty); d.book = toBal;
+      id = demoLog('TRANSFER OUT', pl.bin, s, 0, pl.qty, bal, pl, to, 'TR');
+      demoLog('TRANSFER IN', to, d, pl.qty, 0, toBal, { reference: pl.reference, remark: pl.remark }, pl.bin, 'TR');
+    } else id = demoLog(pl.type, pl.bin, s, pl.type === 'IN' ? pl.qty : 0, pl.type === 'IN' ? 0 : pl.qty, bal, pl, '', pl.type);
+    s.book = bal;
+    const cur = (S.bin.lines || []).find(x => sameLine(x, s)); if (cur) cur.book = bal;
+    S.bins = demoBinList();
+    return { id: id, balance: bal, uom: s.uom, toBin: to, toBalance: toBal };
   }
 
   // Count or Out: a table of every SKU line in the bin, one submit.
@@ -645,10 +691,13 @@
   }
 
   function demoCount(b, lines) {
+    const now = new Date();
     const out = (b.lines || []).map((l, i) => {
       if (!comparable(lines[i], l.uom)) return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: null, diff: null, status: '' };
       const counted = countedQty(lines[i], l.uom, l.pcsPerBundle);
-      const diff = counted - l.book;
+      const diff = round3(counted - l.book);
+      if (DEMO) DEMO_COUNTS.unshift({ id: 'SC' + dAgo(0).slice(2).replace(/-/g, '') + '-' + String(DEMO_COUNTS.length + 1).padStart(4, '0'), date: dAgo(0), time: now.toTimeString().slice(0, 5), bin: b.bin,
+        material: l.material, desc: l.desc, batch: l.batch, sloc: l.sloc, uom: l.uom, book: l.book, counted: counted, variance: diff, status: diff === 0 ? 'Approved' : 'Submitted', by: 'demo@isi', remark: lines[i].remark || '' });
       return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: counted, diff: diff, status: statusOf(diff, 0) };
     });
     return { status: worstOf(out.map(x => x.status)), lines: out, accuracy: null };
@@ -697,6 +746,10 @@
     if ($('#toBin')) $('#toBin').onclick = () => { S.view = 'bin'; S.result = null; route(); };
     $('#next').onclick = () => { S.view = 'home'; S.bin = null; S.result = null; route(); };
   }
+
+  // Shared with desk.js (dashboard, stock list, movements, count review, SAP reconciliation).
+  window.SC = { S: S, T: T, esc: esc, $: $, view: view, route: route, toast: toast, fmtQty: fmtQty, typeLabel: typeLabel, isKg: isKg, round3: round3, sameLine: sameLine, openBin: openBin,
+    DEMO: DEMO, dAgo: dAgo, demo: DEMO ? { bins: DEMO_BINS, stock: DEMO_STOCK, ledger: DEMO_LEDGER, counts: DEMO_COUNTS, log: demoLog, binList: demoBinList } : null };
 
   // ------------------------------------------------------------------ start
   window.addEventListener('DOMContentLoaded', () => {
