@@ -46,13 +46,18 @@
   };
   async function api(action, payload) {
     let data;
+    // 45 s limit, so a lost request never leaves the screen on the loading bars.
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 45000) : null;
     try {
       const res = await fetch(CFG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, token: get(TOKEN_KEY), payload: payload || {} }) });
+        body: JSON.stringify({ action, token: get(TOKEN_KEY), payload: payload || {} }), signal: ctl ? ctl.signal : undefined });
       data = await res.json();
     } catch (e) {
-      throw Object.assign(new Error(T('មិនអាចភ្ជាប់អ៊ីនធឺណិត។ សូមព្យាយាមម្តងទៀត។', 'No connection. Please try again.')), { code: 'NET' });
-    }
+      const slow = e && e.name === 'AbortError';
+      throw Object.assign(new Error(slow ? T('ម៉ាស៊ីនមេយឺតពេក។ ចុចឡូហ្គោ ISI ដើម្បីព្យាយាមម្តងទៀត។', 'Server too slow. Tap the ISI logo to try again.')
+        : T('មិនអាចភ្ជាប់អ៊ីនធឺណិត។ សូមព្យាយាមម្តងទៀត។', 'No connection. Please try again.')), { code: 'NET' });
+    } finally { if (timer) clearTimeout(timer); }
     if (!data.ok) { const m = msgOf(data.error); throw Object.assign(new Error(m.text), { code: m.code }); }
     if (data.session) put(TOKEN_KEY, data.session);
     return data.data;
@@ -95,12 +100,12 @@
     try {
       const b = await api('boot');
       S.user = b.user; S.list = b.today || [];
-      S.signedOut = false; S.blocked = '';
+      S.signedOut = false; S.blocked = ''; S.loadError = '';
       await flush();
     } catch (e) {
       if (e.code === 'AUTH') S.signedOut = true;
       else if (e.code === 'NOACCESS') S.blocked = e.message;
-      else toast(e.message);
+      else S.loadError = e.message;
     }
     route();
   }
@@ -123,6 +128,13 @@
 
   // ------------------------------------------------------------------ screens
   function route() {
+    try { route_(); }
+    catch (e) {   // a drawing error must never leave the loading bars on screen
+      view(`<div class="card blocked"><div class="emoji">⚠️</div><h2>${T('មានបញ្ហាបង្ហាញទំព័រ', 'Could not show the page')}</h2><p class="muted">${esc(e && e.message || e)}</p>
+        <button type="button" class="btn" onclick="location.reload()">${T('ផ្ទុកឡើងវិញ', 'Reload')}</button></div>`);
+    }
+  }
+  function route_() {
     $('#demo').hidden = !DEMO;
     $('#demo').textContent = DEMO ? T('ដំណើរការសាកល្បង: មិនទាន់រក្សាទុកទៅ Google Sheet', 'Demo mode: nothing is saved to the Google Sheet yet') : '';
     if (S.signedOut) return blockedScreen(T('សូមចូលគណនីនៅទំព័រដើម', 'Please sign in on the home menu'), T('ការចូលបានផុតកំណត់ ឬមិនទាន់ចូល', 'Not signed in or sign-in expired'));
@@ -154,6 +166,7 @@
         </div>
         <p class="muted" id="binMsg"></p>
       </section>
+      ${S.loadError ? `<div class="card err"><b>⚠️ ${T('ផ្ទុកទិន្នន័យមិនបាន', 'Could not load the data')}</b><p class="muted">${esc(S.loadError)}</p><button type="button" class="btn ghost" id="retry">${T('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>` : ''}
       ${q.length ? `<div class="card"><span class="pill">${q.length} ${T('រង់ចាំផ្ញើ', 'waiting to send')}</span> <button type="button" class="btn ghost" id="sendQ">${T('ផ្ញើឥឡូវ', 'Send now')}</button></div>` : ''}
       <h2>${T('បញ្ជីរាប់ថ្ងៃនេះ', "Today's count list")} (${S.list.length})</h2>
       ${list || `<p class="muted">${T('មិនទាន់មានកុងតឺន័រ។', 'No bins yet.')}</p>`}
@@ -163,6 +176,7 @@
     $('#binIn').onkeydown = e => { if (e.key === 'Enter') go(); };
     $('#camIn').onchange = scanPhoto;
     if ($('#sendQ')) $('#sendQ').onclick = () => flush().then(route);
+    if ($('#retry')) $('#retry').onclick = () => { view('<div class="loading"><div class="skel"></div><div class="skel short"></div></div>'); boot(); };
     document.querySelectorAll('[data-bin]').forEach(el => { el.onclick = () => openBin(el.dataset.bin); });
   }
 
