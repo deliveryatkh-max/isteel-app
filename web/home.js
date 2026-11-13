@@ -13,6 +13,7 @@
     { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
+    { key: 'stockcount', kh: 'ការរាប់ស្តុក', en: 'Stock Count', url: 'stock-count/' },
     { key: 'dataentry', kh: 'បញ្ចូលទិន្នន័យ', en: 'Data Entry', url: 'dataentry/' },
     { key: 'safety', kh: 'សុវត្ថិភាព & 5S', en: 'Safety & 5S', url: 'safety/' },
     { key: 'scale', kh: 'ជញ្ជីងឡាន', en: 'Truck Scale', url: 'scale/' },

@@ -133,6 +133,7 @@ const HOME_APPS = [
   { key: 'meeting', col: 'ប្រជុំ' },
   { key: 'incident', col: 'គ្រោះថ្នាក់' },
   { key: 'inbound', col: 'ទទួលទំនិញ' },
+  { key: 'stockcount', col: 'ការរាប់ស្តុក' },
   { key: 'dataentry', col: 'បញ្ចូលទិន្នន័យ' },
   { key: 'safety', col: 'សុវត្ថិភាព' },
   { key: 'scale', col: 'ជញ្ជីង' },
