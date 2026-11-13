@@ -310,7 +310,38 @@ function scBill_(p, user) {
     scLog_(user, r[0], p.on ? 'Confirm billing' : 'Undo billing', 'Billing Status', r[c - 1], v[0], clip_(p.dn, 60));
     n++;
   });
-  return { n, by: user.name, at: scTime_(now) };
+  const pl = p.on ? scBillPrices_(p, rows, want, user) : 0;
+  return { n, by: user.name, at: scTime_(now), pl, prices: pl ? prices_() : null };
+}
+/** Confirm Billing also writes the unit price and UoM to the Price List (Kim, 13 Nov 2026): same truck company and
+ *  destination = that row is updated when the price differs, otherwise a new row is added. */
+function scBillPrices_(p, rows, want, user) {
+  const nc = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(CO|LTD|COLTD|COMPANY)$/, '');
+  const nd = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const isT = u => /^(t|ton|tons|tonne|mt|per\s*t(on)?|charge per t(on)?)$/i.test(String(u || '').trim());
+  const ci = SC_TK_COLS.indexOf('Company'), di = SC_TK_COLS.indexOf('Destination');
+  const sh = sheet_(SH.PRICE, PRICE_COLS), last = sh.getLastRow();
+  const P = last > 1 ? sh.getRange(2, 1, last - 1, 5).getValues() : [];
+  let n = 0;
+  rows.forEach(r => {
+    const no = String(r[0]); if (!want[no]) return;
+    const px = (p.px && p.px[no]) || {}, price = Number(px.price), uom = clip_(px.uom, 20), co = String(r[ci] || '').trim(), de = String(r[di] || '').trim();
+    if (px.price === '' || px.price == null || !isFinite(price) || !co || !de) return;
+    const per = isT(uom) ? 'Charge per t' : 'Charge per trip';
+    const i = P.findIndex(q => nc(q[0]) === nc(co) && nd(q[1]) === nd(de));
+    if (i >= 0) {
+      if (Number(P[i][3]) === price && String(P[i][4]).trim().toLowerCase() === uom.toLowerCase()) return;
+      scLog_(user, no, 'Price List update', co + ' > ' + de, P[i][3] + ' ' + P[i][4], price + ' ' + uom, 'Confirm billing');
+      P[i] = [P[i][0], P[i][1], per, price, uom];
+      sh.getRange(i + 2, 1, 1, 5).setValues([P[i]]);
+    } else {
+      P.push([co, de, per, price, uom]);
+      sh.appendRow(P[P.length - 1]);
+      scLog_(user, no, 'Price List add', co + ' > ' + de, '', price + ' ' + uom, 'Confirm billing');
+    }
+    n++;
+  });
+  return n;
 }
 
 /** Debit Note check menu: Admins, plus the people an Admin ticked (DE Settings SCALE_DNC_USERS). */

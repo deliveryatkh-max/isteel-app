@@ -1966,8 +1966,9 @@
       const r = await api('scBill', { nos, on: on ? 1 : '', dn: dnNo, px });
       const mark = x => { if (nos.indexOf(x.no) < 0) return; x.bill = on ? 'Confirmed Billing' : ''; x.billBy = on ? r.by : ''; x.billAt = on ? r.at : ''; x.billDn = on ? dnNo : ''; x.billPrice = on ? px[x.no].price : ''; x.billUom = on ? px[x.no].uom : ''; };
       (DNC.rows || []).forEach(mark); ((B && B.tickets) || []).forEach(mark);
+      if (r.prices && B) B.prices = r.prices;   // the Price List was updated with the confirmed prices
       if (on) { DNC.pick = {}; DNC.billNo = null; DNC.px = {}; }
-      toast((on ? '✔ ' + t('បានបញ្ជាក់', 'Confirmed') : '↺ ' + t('បានដក', 'Undone')) + ': ' + (r.n != null ? r.n : nos.length) + ' ' + t('ប័ណ្ណ', 'tickets'));
+      toast((on ? '✔ ' + t('បានបញ្ជាក់', 'Confirmed') : '↺ ' + t('បានដក', 'Undone')) + ': ' + (r.n != null ? r.n : nos.length) + ' ' + t('ប័ណ្ណ', 'tickets') + (r.pl ? ' · ' + t('តារាងតម្លៃបានកែ', 'Price List updated') + ': ' + r.pl : ''));
     } catch (e) { toast(e.message); }
     paintDnc();
   }
@@ -2835,7 +2836,8 @@
       keep();
       return { added, changed, trucks: db.trucks, customers: db.customers, items: db.items };
     }
-    if (action === 'scBill') { const at = new Date().toISOString().slice(0, 19); db.tickets.forEach(x => { if (p.nos.indexOf(x.no) >= 0) { x.bill = p.on ? 'Confirmed Billing' : ''; x.billBy = p.on ? u.name : ''; x.billAt = p.on ? at : ''; x.billDn = p.on ? p.dn || '' : ''; const v = (p.px || {})[x.no] || {}; x.billPrice = p.on ? v.price : ''; x.billUom = p.on ? v.uom : ''; } }); keep(); return { n: p.nos.length, by: u.name, at }; }
+    if (action === 'scBill') { const at = new Date().toISOString().slice(0, 19); db.tickets.forEach(x => { if (p.nos.indexOf(x.no) >= 0) { x.bill = p.on ? 'Confirmed Billing' : ''; x.billBy = p.on ? u.name : ''; x.billAt = p.on ? at : ''; x.billDn = p.on ? p.dn || '' : ''; const v = (p.px || {})[x.no] || {}; x.billPrice = p.on ? v.price : ''; x.billUom = p.on ? v.uom : ''; } }); keep(); let pl = 0; if (p.on) { db.prices = db.prices || []; const nc = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), nd = v => String(v || '').toLowerCase().trim(); db.tickets.forEach(x => { const v = (p.px || {})[x.no]; if (p.nos.indexOf(x.no) < 0 || !v || v.price === '' || !x.company || !x.dest) return; const per = /^t$/i.test(v.uom) ? 'Charge per t' : 'Charge per trip', i = db.prices.findIndex(q => nc(q[0]) === nc(x.company) && nd(q[1]) === nd(x.dest)); if (i >= 0) { if (+db.prices[i][3] === +v.price && db.prices[i][4] === v.uom) return; db.prices[i] = [db.prices[i][0], db.prices[i][1], per, +v.price, v.uom]; } else db.prices.push([x.company, x.dest, per, +v.price, v.uom]); pl++; }); keep(); }
+      return { n: p.nos.length, by: u.name, at, pl, prices: pl ? db.prices : null }; }
     if (action === 'scTruckPhoto') { const x = db.trucks.find(y => normP(y.plate) === normP(p.plate)); if (!x) throw Object.assign(new Error('This truck is not in the Truck list.'), { code: 'BAD' }); x.photo = p.img; keep(); return { trucks: db.trucks }; }
     if (action === 'scSettings') { ['SCALE_TEMPLATE_LINK', 'SCALE_TEMPLATE_A5_LINK', 'SCALE_MANUAL_ALL', 'SCALE_DN_VAR_KG'].concat(Object.keys(db.settings)).forEach(k => { if (p[k] !== undefined) db.settings[k] = p[k]; }); keep(); return { settings: db.settings }; }
     throw Object.assign(new Error('Unknown action'), { code: 'BAD' });
