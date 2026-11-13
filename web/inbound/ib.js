@@ -80,8 +80,9 @@
       ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]], 'WH IB'),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
       ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]], 'WH METAL'));
+  PLAN.forEach(x => { x.po = npo(x.po); });
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
-  function setPlan(p) { PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
+  function setPlan(p) { p.forEach(x => { x.po = npo(x.po); }); PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
   const showEta = s => { const e = etaOf(s), m = String(e || '').match(/^(\d{4})-(\d\d)-(\d\d)$/);   // dd-mmm-yyyy like Kim's sheet
     return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : (e || ''); };
@@ -149,7 +150,7 @@
   // the greyed fields copied from the plan
   function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
   // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
-  const npo = v => { const x = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); return x && !/^PO/.test(x) ? 'PO' + x : x; };
+  function npo(v) { return String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, ''); }   // as in Kim's Excel, no "PO" (13 Nov 2026)
   const posOf = r => (r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/)).map(npo).filter(Boolean);
   const itemPo = (i, r) => npo(i.po) || posOf(r)[0] || '';
   const multi = r => posOf(r).length > 1;
@@ -311,7 +312,7 @@
     return `<a class="item${isLive(r) ? ' live' : ''}" href="#/r/${r.id}">
       <div class="top"><span class="id">🚛 ${esc(r.truck)}</span>${isLive(r) ? `<span class="timer${m > 60 ? ' slow' : ''}" data-timer="${r.id}">${clock(m)}</span>` : `<span>${badges(r)}</span>`}</div>
       <div class="ttl">${esc(its[0] ? its[0].desc : '')}${its.length > 1 ? ` <small class="il">+${its.length - 1} ${t('មុខទៀត', 'more')}</small>` : ''}</div>
-      <div class="meta">${esc(r.po)} · ${esc(r.supplier)}</div>
+      <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
     </a>`;
@@ -532,7 +533,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
-      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(r.po)}</small></h2>${itemsTable(r, mode)}</section>` : `
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}</section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
@@ -867,7 +868,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="head2"><h2>🚛 ${esc(r.truck)}</h2><a class="link" href="#/today">✕</a></div>
       <div style="margin:-4px 2px 12px">${badges(r)}</div>
       <section class="card"><div class="kvs">
-        ${kv(t('លេខ PO', 'PO Number'), esc(r.po))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
+        ${kv(t('លេខ PO', 'PO Number'), esc(posOf(r).join(", ")))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
         ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
@@ -1305,7 +1306,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         const l = { po: String(v(r, 'po')).replace(/\s+/g, '').toUpperCase(), material: String(v(r, 'material')).trim(), desc: String(v(r, 'desc')).trim(),
           plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, pcs: String(v(r, 'pcs')).trim(),
           inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim(), site: String(v(r, 'site')).trim() || SITE || '' };
-        if (l.po && !/^PO/.test(l.po)) l.po = 'PO' + l.po;
+        l.po = npo(l.po);
         if (!l.po || !l.material || !l.kg) skipped.push(hi + i + 2); else lines.push(l);
       });
       if (!lines.length) throw new Error(t('គ្មានជួរដែលមាន PO, Material និង Kg', 'No rows with PO, Material and Kg'));
@@ -1372,7 +1373,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     $$('[data-rm]').forEach(b => { b.onclick = () => { grab(); NP.lines.splice(+b.dataset.rm, 1); renderPlanNew(); }; });
     $('#saveNp').onclick = async () => {
       grab();
-      let po = NP.po.replace(/\s+/g, '').toUpperCase(); if (po && !/^PO/.test(po)) po = 'PO' + po;
+      let po = npo(NP.po);
       const ls = NP.lines.filter(l => l.material && +String(l.kg).replace(/,/g, '') > 0);
       if (!po || !ls.length) { toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); return; }
       if (POS.indexOf(po) >= 0) { toast('⚠️ ' + po + t(' មានរួចហើយ', ' already exists')); return; }
