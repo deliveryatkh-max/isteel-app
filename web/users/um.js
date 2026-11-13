@@ -90,7 +90,7 @@
   // ------------------------------------------------------------------ menus (Kim, 13 Nov 2026, option C)
   // One big table: people down, every app's menus across. Ticked = the person sees that menu. The server keeps
   // the unticked ones per person ("Hidden Menus"); the list of menus is ../menus.js. Admins always see everything.
-  const MF = { q: '', dept: '', app: '' };
+  const MF = { q: '', dept: '', app: '', role: '' };
   let MP = {};   // changes not saved yet: email → menus hidden
   const MENU_ALL = () => (window.MENUS && MENUS.all) || {};
   const mOff = u => MP[u.email] || u.menusOff || [];
@@ -100,6 +100,7 @@
     const q = MF.q.trim().toLowerCase();
     return D.users.filter(u => u.active && (!MF.dept || (MF.dept === '-' ? !u.dept : u.dept === MF.dept))
       && (!MF.app || u.role === 'admin' || u.apps[MF.app])
+      && (!MF.role || u.role === MF.role)
       && (!q || [u.name, u.email, u.empId, u.dept].join(' ').toLowerCase().indexOf(q) >= 0))
       .sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
   }
@@ -110,13 +111,15 @@
     const ALL = MENU_ALL();
     view(`<div class="um-head"><h1>🔐 ${t('ម៉ឺនុយ', 'Menus')}</h1></div>
       <p class="mx-hint">${t('ធីក = អ្នកនោះឃើញម៉ឺនុយ។ ចុចឈ្មោះម៉ឺនុយ ដើម្បីធីក ឬដកធីកទាំងជួរ។ Admin ឃើញគ្រប់ម៉ឺនុយ។', 'Ticked = the person sees the menu. Tap a menu name to tick or untick the whole column. Admins see every menu.')}</p>
-      <div class="fb-wrap">${FB.head('menus', '', '', () => { MF.q = ''; MF.dept = ''; MF.app = ''; renderMenus(); })}
+      <div class="fb-wrap">${FB.head('menus', '', '', () => { MF.q = ''; MF.dept = ''; MF.app = ''; MF.role = ''; renderMenus(); })}
       ${FB.panel('menus', FB.field(t('កម្មវិធី', 'App'), `<select id="mApp"><option value="">${t('គ្រប់កម្មវិធី', 'All apps')}</option>${D.apps.filter(a => ALL[a.key]).map(a => `<option value="${a.key}" ${MF.app === a.key ? 'selected' : ''}>${esc(appName(a))}</option>`).join('')}</select>`) +
         FB.field(t('ផ្នែក', 'Department'), `<select id="mDept"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${MF.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${MF.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.field(t('តួនាទី', 'Role'), `<select id="mRole"><option value="">${t('គ្រប់តួនាទី', 'All roles')}</option>${ROLES.filter(x => D.users.some(u => u.active && u.role === x[0])).map(x => `<option value="${x[0]}" ${MF.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))} (${D.users.filter(u => u.active && u.role === x[0]).length})</option>`).join('')}</select>`) +
         FB.search('mQ', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID…', 'Search name, email, ID…'), MF.q))}</div>
       <div id="mres"></div><div id="msave"></div>`);
     $('#mApp').onchange = e => { MF.app = e.target.value; drawMenus(); };
     $('#mDept').onchange = e => { MF.dept = e.target.value; drawMenus(); };
+    $('#mRole').onchange = e => { MF.role = e.target.value; drawMenus(); };
     $('#mQ').oninput = e => { MF.q = e.target.value; clearTimeout(renderMenus.h); renderMenus.h = setTimeout(drawMenus, 120); };
     drawMenus();
   }
