@@ -20,11 +20,21 @@ function needsPhoto(status) {
   return status === 'SHORT' || status === 'OVER';
 }
 
-// Bundles and pieces must be whole numbers, 0 allowed. Returns '' when valid, otherwise the message.
+// Bundle and Pcs are whole numbers, Kg can have decimals; blank = 0; at least one must be filled. Returns '' when valid.
 function validateCount(c) {
-  const whole = v => v !== '' && v != null && isFinite(Number(v)) && Number(v) >= 0 && Math.floor(Number(v)) === Number(v);
-  if (!whole(c.bundles) || !whole(c.pieces)) return 'Enter bundles and pieces as whole numbers (0 is allowed).';
+  const n = v => (v === '' || v == null ? 0 : Number(v));
+  const whole = v => isFinite(n(v)) && n(v) >= 0 && Math.floor(n(v)) === n(v);
+  if (!whole(c.bundles) || !whole(c.pieces)) return 'Enter Bundle and Pcs as whole numbers (0 or blank is allowed).';
+  if (!isFinite(n(c.kg)) || n(c.kg) < 0) return 'Enter Kg as a number.';
+  if (c.bundles === '' && c.kg === '' && c.pieces === '') return 'Fill Bundle, Kg or Pcs for every line.';
   return '';
+}
+
+// Counted qty in the book unit: Kg when the line is kept in KG, otherwise bundles x pcs per bundle + pcs.
+function countedQty(c, uom, pcsPerBundle) {
+  const n = v => (v === '' || v == null ? 0 : Number(v)) || 0;
+  if (/^(kg|kgs|ton|t)$/i.test(String(uom || '').trim())) return n(c.kg);
+  return countedPcs(n(c.bundles), pcsPerBundle, n(c.pieces));
 }
 
 // Stock out: qty must be more than 0 and no more than what is on hand. Returns '' when valid.

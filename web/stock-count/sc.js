@@ -17,11 +17,16 @@
   const statusOf = (diff, tol) => (Math.abs(diff) <= (Number(tol) || 0) ? 'MATCH' : diff < 0 ? 'SHORT' : 'OVER');
   const needsPhoto = s => s === 'SHORT' || s === 'OVER';
   const whole = v => v !== '' && v != null && isFinite(Number(v)) && Number(v) >= 0 && Math.floor(Number(v)) === Number(v);
+  const n0 = v => (v === '' || v == null ? 0 : Number(v)) || 0;
+  const isKg = u => /^(kg|kgs|ton|t)$/i.test(String(u || '').trim());
+  // Counted qty in the book unit: Kg for KG lines, else bundles x pcs per bundle + pcs (same as rules.gs countedQty).
+  const countedQty = (c, uom, ppb) => (isKg(uom) ? n0(c.kg) : countedPcs(n0(c.bundles), ppb, n0(c.pieces)));
+  const lineOk = c => (c.bundles === '' || whole(c.bundles)) && (c.pieces === '' || whole(c.pieces)) && (c.kg === '' || (isFinite(Number(c.kg)) && Number(c.kg) >= 0)) && !(c.bundles === '' && c.kg === '' && c.pieces === '');
   const worstOf = list => (list.indexOf('SHORT') >= 0 ? 'SHORT' : list.indexOf('OVER') >= 0 ? 'OVER' : 'MATCH');
 
   // Demo data: one bin with two SKU lines (same shape as the Stock On Hand tab).
   const DEMO_BIN = { bin: 'A-01-01', warehouse: 'WH I1', lastCount: '', lastStatus: '', accuracy: null, lines: [
-    { material: 'SK-1001', desc: 'Steel bar 12mm', batch: 'B2611-07', sloc: 'WH01', uom: 'PC', pcsPerBundle: 50, book: 1200 },
+    { material: '1100000231', desc: 'INTANU G300AZ30 BR 1200x0.220', batch: 'D261023018', sloc: '1020', uom: 'KG', pcsPerBundle: 1, book: 4750 },
     { material: 'SK-1002', desc: 'Steel bar 16mm', batch: 'B2611-09', sloc: 'WH01', uom: 'PC', pcsPerBundle: 30, book: 600 },
   ] };
   const DEMO_LIST = [
@@ -230,16 +235,23 @@
   function lineScreen(mode) {
     const b = S.bin;
     const isCount = mode === 'count';
-    const rows = (b.lines || []).map((l, i) => `<tr>
+    const rows = (b.lines || []).map((l, i) => isCount
+      ? `<tr class="desc"><td colspan="5">${esc(l.desc)}</td></tr>
+        <tr><td>${esc(l.material)}<br><small class="muted">Batch: ${esc(l.batch)}</small><br><small class="muted">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</small></td>
+        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles"></td>
+        <td><input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg"></td>
+        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces"></td>
+        <td class="diff" data-i="${i}">—</td></tr>`
+      : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
         <td>${l.book}</td>
-        ${isCount
-          ? `<td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles" placeholder="${T('កញ្ចប់', 'bdl')}"> <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces" placeholder="${T('បំណែក', 'pc')}"></td><td class="diff" data-i="${i}">—</td>`
-          : `<td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>`}
+        <td><input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
       </tr>`).join('');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
-      <section class="card" style="overflow-x:auto"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${isCount ? T('រាប់បាន (កញ្ចប់ / បំណែក)', 'Counted (bundles / pieces)') : T('ចំនួនចេញ', 'Out Qty')}</th><th>${isCount ? T('ខុសគ្នា', 'Diff') : T('នៅសល់', 'After')}</th></tr>${rows}</table></section>
+      <section class="card" style="overflow-x:auto"><table class="lines">${isCount
+        ? `<tr><th colspan="5" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('កញ្ចប់', 'Bundle')}</th><th>Kg</th><th>${T('បំណែក', 'Pcs')}</th><th>${T('ខុសគ្នា', 'Diff')}</th></tr>`
+        : `<tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>`}${rows}</table></section>
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
         <img id="photoPrev" alt="" hidden><span class="need-text" id="needTxt"></span></div>
@@ -255,10 +267,9 @@
       (b.lines || []).forEach((l, i) => {
         const cell = document.querySelector(`.diff[data-i="${i}"]`);
         if (isCount) {
-          const bd = document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value;
-          const pc = document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value;
-          if (bd === '' || pc === '' || !whole(bd) || !whole(pc)) { ok = false; cell.textContent = '—'; return; }
-          const diff = countedPcs(bd, l.pcsPerBundle, pc) - l.book;
+          const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
+          if (!lineOk(c)) { ok = false; cell.textContent = '—'; return; }
+          const diff = countedQty(c, l.uom, l.pcsPerBundle) - l.book;
           const st = statusOf(diff, 0);
           statuses.push(st);
           cell.innerHTML = `<span class="badge ${st}">${diff > 0 ? '+' : ''}${diff}</span>`;
@@ -294,7 +305,7 @@
   function readLines(isCount) {
     return (S.bin.lines || []).map((l, i) => {
       const base = { material: l.material, batch: l.batch, sloc: l.sloc };
-      if (isCount) return Object.assign(base, { bundles: Number(document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value), pieces: Number(document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value) });
+      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value });
       return Object.assign(base, { outQty: Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || { value: 0 }).value) || 0 });
     });
   }
@@ -323,7 +334,7 @@
 
   function demoCount(b, lines) {
     const out = (b.lines || []).map((l, i) => {
-      const counted = countedPcs(lines[i].bundles, l.pcsPerBundle, lines[i].pieces);
+      const counted = countedQty(lines[i], l.uom, l.pcsPerBundle);
       const diff = counted - l.book;
       return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: counted, diff: diff, status: statusOf(diff, 0) };
     });
