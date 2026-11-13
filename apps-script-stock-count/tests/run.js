@@ -14,7 +14,7 @@ const ok = (c, m) => { assert.ok(c, m); pass++; };
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
-const { countedPcs, statusOf, needsPhoto, validateCount, countedQty, accuracyPct, todayList, outOk } = ctx;
+const { countedPcs, statusOf, needsPhoto, validateCount, countedQty, accuracyPct, todayList, outOk, comparable } = ctx;
 
 // Bundles x pieces per bundle + loose pieces
 eq(countedPcs(2, 50, 7), 107, 'bundles x pcs per bundle + pieces');
@@ -39,6 +39,11 @@ ok(validateCount({ bundles: '-1', kg: '', pieces: '0' }) !== '', 'negative rejec
 // Counted qty follows the book unit (Kim's template: Bundle 1 / Kg 4,620 / Pcs -)
 eq(countedQty({ bundles: '1', kg: '4620', pieces: '' }, 'KG', 1), 4620, 'KG line counts the kg');
 eq(countedQty({ bundles: '2', kg: '', pieces: '7' }, 'PC', 50), 107, 'PC line counts bundles x pcs + pcs');
+
+// Any one box is enough; the book is compared only when the box in the book unit is filled
+eq(validateCount({ bundles: '1', kg: '', pieces: '' }), '', 'bundle only is a valid count');
+eq([comparable({ bundles: '1', kg: '', pieces: '' }, 'KG'), comparable({ bundles: '', kg: '4620', pieces: '' }, 'KG')], [false, true], 'KG line compares only with Kg filled');
+eq([comparable({ bundles: '', kg: '50', pieces: '' }, 'PC'), comparable({ bundles: '', kg: '', pieces: '0' }, 'PC')], [false, true], 'PC line compares only with Bundle or Pcs filled');
 
 // Accuracy = MATCH share of last N counts
 eq(accuracyPct([], 10), null, 'never counted = no score');

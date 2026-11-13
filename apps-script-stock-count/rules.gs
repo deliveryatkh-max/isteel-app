@@ -1,7 +1,7 @@
 /**
  * Stock Count rules: pure functions, no Apps Script calls.
  * Used by Code.gs in Apps Script and by apps-script-stock-count/tests/run.js in Node.
- * web/stock-count/sc.js keeps a copy of countedPcs / statusOf / needsPhoto (same logic).
+ * web/stock-count/sc.js keeps a copy of countedPcs / statusOf / needsPhoto / comparable (same logic).
  */
 
 // Counted pieces = bundles x pieces per bundle (bin master) + loose pieces.
@@ -35,6 +35,14 @@ function countedQty(c, uom, pcsPerBundle) {
   const n = v => (v === '' || v == null ? 0 : Number(v)) || 0;
   if (/^(kg|kgs|ton|t)$/i.test(String(uom || '').trim())) return n(c.kg);
   return countedPcs(n(c.bundles), pcsPerBundle, n(c.pieces));
+}
+
+// A count can be compared with the book only when the box in the book unit is filled:
+// Kg for a KG line, Bundle or Pcs for a line kept in pieces. Otherwise the count is only recorded.
+function comparable(c, uom) {
+  const has = v => !(v === '' || v == null);
+  if (/^(kg|kgs|ton|t)$/i.test(String(uom || '').trim())) return has(c.kg);
+  return has(c.bundles) || has(c.pieces);
 }
 
 // Stock out: qty must be more than 0 and no more than what is on hand. Returns '' when valid.

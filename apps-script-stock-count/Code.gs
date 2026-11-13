@@ -234,7 +234,7 @@ const lineKey_ = l => [l.bin || '', l.material, l.batch, l.sloc].join('|').toUpp
 // Status history per bin, in the order it was saved (counts only).
 function history_() {
   const h = {};
-  objs_(SH.CNT, CNT_COLS).filter(r => r.Type === 'Count').forEach(r => { (h[r.Bin] = h[r.Bin] || []).push(r.Status); });
+  objs_(SH.CNT, CNT_COLS).filter(r => r.Type === 'Count' && r.Status).forEach(r => { (h[r.Bin] = h[r.Bin] || []).push(r.Status); });
   return h;
 }
 
@@ -277,11 +277,13 @@ function submit_(user, c) {
     if (bad) fail_('BAD', bad);
     const s = stock.find(x => lineKey_(Object.assign({ bin: b.bin }, x)) === lineKey_(Object.assign({ bin: b.bin }, l)));
     if (!s) fail_('NOLINE', 'Material ' + l.material + ' is not in this bin.');
+    // Any one of Bundle / Kg / Pcs is enough. The book is compared and changed only when the box in the book unit is filled.
+    if (!comparable(l, s.uom)) { rows.push({ s: s, counted: '', diff: '', status: '', cmp: false }); return; }
     const counted = countedQty(l, s.uom, s.pcsPerBundle);
     const diff = counted - s.book;
     const status = statusOf(diff, st.tol);
-    if (status !== 'MATCH') worst = status;
-    rows.push({ s: s, counted: counted, diff: diff, status: status });
+    if (status === 'SHORT' || (status === 'OVER' && worst !== 'SHORT')) worst = status;
+    rows.push({ s: s, counted: counted, diff: diff, status: status, cmp: true });
   });
   if (needsPhoto(worst) && !c.photo) fail_('PHOTO', 'Take a photo of the bin: the count does not match the book.', 'សូមថតរូបកុងតឺន័រ ដោយសារចំនួនមិនត្រូវនឹងសៀវភៅ។');
 
@@ -293,12 +295,13 @@ function submit_(user, c) {
   rows.forEach((r, i) => {
     const l = lines[i];
     cnt.appendRow([id, 'Count', fmt_(now, 'yyyy-MM-dd'), fmt_(now, 'HH:mm'), b.bin, r.s.material, r.s.desc, r.s.batch, r.s.sloc,
-      r.s.book, Number(l.bundles) || 0, Number(l.kg) || 0, Number(l.pieces) || 0, r.counted, '', r.diff, r.status, photo, user.email, clip_(c.note, 200)]);
-    setBook_(stk, r.s, r.counted);   // book qty changes right away
+      r.s.book, l.bundles === '' || l.bundles == null ? '' : Number(l.bundles), l.kg === '' || l.kg == null ? '' : Number(l.kg), l.pieces === '' || l.pieces == null ? '' : Number(l.pieces),
+      r.counted, '', r.diff, r.status, photo, user.email, [clip_(l.remark, 200), clip_(c.note, 200)].filter(Boolean).join(' | ')]);
+    if (r.cmp) setBook_(stk, r.s, r.counted);   // book qty changes right away
   });
-  markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), worst);
+  markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
   const hist = history_();
-  return { id: id, status: worst, lines: rows.map(r => ({ material: r.s.material, desc: r.s.desc, uom: r.s.uom, book: r.s.book, counted: r.counted, diff: r.diff, status: r.status })),
+  return { id: id, status: worst, lines: rows.map(r => ({ material: r.s.material, desc: r.s.desc, uom: r.s.uom, book: r.s.book, counted: r.cmp ? r.counted : null, diff: r.cmp ? r.diff : null, status: r.status })),
     accuracy: accuracyPct(hist[b.bin] || [], st.win) };
 }
 

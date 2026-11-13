@@ -22,11 +22,11 @@
   const isKg = u => /^(kg|kgs|ton|t)$/i.test(String(u || '').trim());
   // Counted qty in the book unit: Kg for KG lines, else bundles x pcs per bundle + pcs (same as rules.gs countedQty).
   const countedQty = (c, uom, ppb) => (isKg(uom) ? n0(c.kg) : countedPcs(n0(c.bundles), ppb, n0(c.pieces)));
-  // Required box = the one in the book unit: Kg for KG lines (Bundle and Pcs can stay blank, Kim 13 Nov);
-  // for a line kept in pieces, Bundle or Pcs must be filled instead, so a blank count never zeroes the book.
+  // Any one of Bundle / Kg / Pcs is enough (Kim, 13 Nov); the other two can stay blank.
   const numOk = v => v === '' || (isFinite(Number(v)) && Number(v) >= 0);
-  const lineOk = (c, uom) => (c.bundles === '' || whole(c.bundles)) && (c.pieces === '' || whole(c.pieces)) && numOk(c.kg)
-    && (isKg(uom) ? c.kg !== '' : (c.bundles !== '' || c.pieces !== ''));
+  const lineOk = c => (c.bundles === '' || whole(c.bundles)) && (c.pieces === '' || whole(c.pieces)) && numOk(c.kg) && !(c.bundles === '' && c.kg === '' && c.pieces === '');
+  // The book is compared and changed only when the box in the book unit is filled (same as rules.gs comparable).
+  const comparable = (c, uom) => (isKg(uom) ? c.kg !== '' : (c.bundles !== '' || c.pieces !== ''));
   const worstOf = list => (list.indexOf('SHORT') >= 0 ? 'SHORT' : list.indexOf('OVER') >= 0 ? 'OVER' : 'MATCH');
 
   // Demo data: one bin with two SKU lines (same shape as the Stock On Hand tab).
@@ -317,11 +317,18 @@
     const b = S.bin;
     const isCount = mode === 'count';
     const rows = (b.lines || []).map((l, i) => isCount
-      ? `<tr class="desc"><td colspan="4">${esc(l.desc)}</td></tr>
-        <tr><td>${esc(l.material)}<br><small class="muted">Batch: ${esc(l.batch)}</small><br><small class="muted">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</small></td>
-        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="bundles"></td>
-        <td class="in"><input type="number" inputmode="decimal" min="0" step="any" placeholder=" " ${isKg(l.uom) ? 'class="req" ' : ''}data-i="${i}" data-f="kg"></td>
-        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " ${isKg(l.uom) ? '' : 'class="req" '}data-i="${i}" data-f="pieces"></td></tr>`
+      ? `<div class="cline">
+        <div class="cdesc">${esc(l.desc)}</div>
+        <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></div>
+        <div class="cgrid chead"><span>${T('បាច់', 'Bundle')}</span><span>Kg</span><span>${T('រាយ', 'Pcs')}</span><span>${T('កំណត់សម្គាល់', 'Remark')}</span></div>
+        <div class="cgrid">
+          <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles">
+          <input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg">
+          <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces">
+          <input type="text" maxlength="200" data-i="${i}" data-f="remark">
+        </div>
+        <div class="muted chand">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</div>
+      </div>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
         <td>${l.book}</td>
@@ -329,9 +336,8 @@
       </tr>`).join('');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
-      <section class="card" style="overflow-x:auto"><table class="lines">${isCount
-        ? `<tr><th colspan="4" class="cap">${T('ចំនួនរាប់បាន', 'Counted Qty')}</th></tr><tr><th>${T('កូដ/សម្ភារៈ', 'Code/Material')}</th><th>${T('បាច់', 'Bundle')}</th><th>Kg</th><th>${T('រាយ', 'Pcs')}</th></tr>`
-        : `<tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>`}${rows}</table></section>
+      ${isCount ? `<section class="card">${rows}</section>`
+        : `<section class="card" style="overflow-x:auto"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>${rows}</table></section>`}
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
         <img id="photoPrev" alt="" hidden><span class="need-text" id="needTxt"></span></div>
@@ -348,8 +354,10 @@
         const cell = document.querySelector(`.diff[data-i="${i}"]`);
         if (isCount) {
           const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
-          if (!lineOk(c, l.uom)) { ok = false; return; }
-          statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // no Diff column (Kim), status only for the photo rule
+          const empty = c.bundles === '' && c.kg === '' && c.pieces === '';   // all three red until one has a value
+          ['bundles', 'kg', 'pieces'].forEach(f => document.querySelector(`[data-i="${i}"][data-f="${f}"]`).classList.toggle('need', empty));
+          if (!lineOk(c)) { ok = false; return; }
+          if (comparable(c, l.uom)) statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // status only for the photo rule
         } else {
           const v = document.querySelector(`[data-i="${i}"][data-f="outQty"]`).value;
           if (v === '') { cell.textContent = '—'; return; }   // blank line = no out
@@ -366,7 +374,7 @@
       $('#submit').disabled = !ok || (needPhoto && !S.photo) || (!isCount && !anyOut());
     };
     const anyOut = () => (b.lines || []).some((l, i) => Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || {}).value) > 0);
-    document.querySelectorAll('.lines input').forEach(el => { el.oninput = refresh; });
+    document.querySelectorAll('.lines input, .cgrid input').forEach(el => { el.oninput = refresh; });
     if ($('#photoIn')) $('#photoIn').onchange = async e => {
       const f = e.target.files && e.target.files[0];
       if (!f) return;
@@ -382,7 +390,7 @@
   function readLines(isCount) {
     return (S.bin.lines || []).map((l, i) => {
       const base = { material: l.material, batch: l.batch, sloc: l.sloc };
-      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value });
+      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value, remark: document.querySelector(`[data-i="${i}"][data-f="remark"]`).value.trim() });
       return Object.assign(base, { outQty: Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || { value: 0 }).value) || 0 });
     });
   }
@@ -405,18 +413,19 @@
         else { toast(e.message); return; }
       }
     }
-    (out.lines || []).forEach(l => { const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && x.material === l.material); if (s) s.book = l.counted; });
+    (out.lines || []).forEach(l => { const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && x.material === l.material); if (s && l.counted != null) s.book = l.counted; });
     S.result = { title: T('បានរក្សាទុក', 'Saved'), status: out.status, lines: out.lines, accuracy: out.accuracy, offline: !!out.offline, kind: 'count' };
     S.view = 'result'; S.photo = ''; route();
   }
 
   function demoCount(b, lines) {
     const out = (b.lines || []).map((l, i) => {
+      if (!comparable(lines[i], l.uom)) return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: null, diff: null, status: '' };
       const counted = countedQty(lines[i], l.uom, l.pcsPerBundle);
       const diff = counted - l.book;
       return { material: l.material, desc: l.desc, uom: l.uom, book: l.book, counted: counted, diff: diff, status: statusOf(diff, 0) };
     });
-    b.lines.forEach((l, i) => { l.book = out[i].counted; });   // book qty changes right away (demo)
+    b.lines.forEach((l, i) => { if (out[i].counted != null) l.book = out[i].counted; });   // book qty changes right away (demo)
     return { status: worstOf(out.map(x => x.status)), lines: out, accuracy: null };
   }
 
@@ -447,7 +456,7 @@
     const cls = r.status === 'OUT' ? 'MATCH' : r.status;
     const rows = (r.lines || []).map(l => r.kind === 'out'
       ? `<tr><td>${esc(l.material)}</td><td>${l.out}</td><td>${l.after != null ? l.after : ''}</td></tr>`
-      : `<tr><td>${esc(l.material)}</td><td>${l.book}</td><td>${l.counted}</td><td><span class="badge ${l.status}">${l.diff > 0 ? '+' : ''}${l.diff}</span></td></tr>`).join('');
+      : `<tr><td>${esc(l.material)}</td><td>${l.book}</td><td>${l.counted == null ? '—' : l.counted}</td><td>${l.counted == null ? '—' : `<span class="badge ${l.status}">${l.diff > 0 ? '+' : ''}${l.diff}</span>`}</td></tr>`).join('');
     view(`
       <section class="card hero" style="text-align:center">
         <div class="emoji" style="font-size:40px">${r.status === 'OUT' || r.status === 'MATCH' ? '✅' : r.status === 'SHORT' ? '⚠️' : '🔶'}</div>
