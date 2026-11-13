@@ -87,6 +87,97 @@
     return data.data;
   }
 
+  // ------------------------------------------------------------------ menus (Kim, 13 Nov 2026, option C)
+  // One big table: people down, every app's menus across. Ticked = the person sees that menu. The server keeps
+  // the unticked ones per person ("Hidden Menus"); the list of menus is ../menus.js. Admins always see everything.
+  const MF = { q: '', dept: '', app: '' };
+  let MP = {};   // changes not saved yet: email → menus hidden
+  const MENU_ALL = () => (window.MENUS && MENUS.all) || {};
+  const mOff = u => MP[u.email] || u.menusOff || [];
+  const sameList = (a, b) => a.slice().sort().join(',') === b.slice().sort().join(',');
+  const mChanged = () => D.users.filter(u => MP[u.email] && !sameList(MP[u.email], u.menusOff || []));
+  function mPeople() {
+    const q = MF.q.trim().toLowerCase();
+    return D.users.filter(u => u.active && (!MF.dept || (MF.dept === '-' ? !u.dept : u.dept === MF.dept))
+      && (!MF.app || u.role === 'admin' || u.apps[MF.app])
+      && (!q || [u.name, u.email, u.empId, u.dept].join(' ').toLowerCase().indexOf(q) >= 0))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+  }
+  const mApps = () => D.apps.filter(a => MENU_ALL()[a.key] && (!MF.app || a.key === MF.app));
+
+  function renderMenus() {
+    paintTabs('menus');
+    const ALL = MENU_ALL();
+    view(`<div class="um-head"><h1>🔐 ${t('ម៉ឺនុយ', 'Menus')}</h1></div>
+      <p class="mx-hint">${t('ធីក = អ្នកនោះឃើញម៉ឺនុយ។ ចុចឈ្មោះម៉ឺនុយ ដើម្បីធីក ឬដកធីកទាំងជួរ។ Admin ឃើញគ្រប់ម៉ឺនុយ។', 'Ticked = the person sees the menu. Tap a menu name to tick or untick the whole column. Admins see every menu.')}</p>
+      <div class="fb-wrap">${FB.head('menus', '', '', () => { MF.q = ''; MF.dept = ''; MF.app = ''; renderMenus(); })}
+      ${FB.panel('menus', FB.field(t('កម្មវិធី', 'App'), `<select id="mApp"><option value="">${t('គ្រប់កម្មវិធី', 'All apps')}</option>${D.apps.filter(a => ALL[a.key]).map(a => `<option value="${a.key}" ${MF.app === a.key ? 'selected' : ''}>${esc(appName(a))}</option>`).join('')}</select>`) +
+        FB.field(t('ផ្នែក', 'Department'), `<select id="mDept"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${MF.dept === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${MF.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.search('mQ', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID…', 'Search name, email, ID…'), MF.q))}</div>
+      <div id="mres"></div><div id="msave"></div>`);
+    $('#mApp').onchange = e => { MF.app = e.target.value; drawMenus(); };
+    $('#mDept').onchange = e => { MF.dept = e.target.value; drawMenus(); };
+    $('#mQ').oninput = e => { MF.q = e.target.value; clearTimeout(renderMenus.h); renderMenus.h = setTimeout(drawMenus, 120); };
+    drawMenus();
+  }
+
+  function drawMenus() {
+    const box = $('#mres');
+    if (!box) return;
+    const ALL = MENU_ALL(), apps = mApps(), list = mPeople();
+    if (!apps.length) { box.innerHTML = `<div class="empty">${t('មិនទាន់មានម៉ឺនុយ', 'No menus yet')}</div>`; return; }
+    if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawMenuSave(); return; }
+    const cell = (u, a, m) => {
+      const k = a.key + '.' + m[0];
+      if (u.role === 'admin') return `<td class="mx-c adm" title="Admin">✓</td>`;
+      if (!u.apps[a.key]) return `<td class="mx-c na" title="${esc(t('មិនមានកម្មវិធីនេះ', 'No access to this app'))}">–</td>`;
+      const on = mOff(u).indexOf(k) < 0, was = (u.menusOff || []).indexOf(k) < 0;
+      return `<td class="mx-c${on !== was ? ' chg' : ''}"><input type="checkbox" data-u="${esc(u.email)}" data-k="${k}"${on ? ' checked' : ''} aria-label="${esc(u.name + ' · ' + t(m[1], m[2]))}"></td>`;
+    };
+    box.innerHTML = `<div class="tbl-wrap mx-wrap"><table class="tbl mx" data-nosort data-nocols><thead>
+      <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th>${apps.map((a, i) => `<th colspan="${ALL[a.key].length}" class="mx-app${i % 2 ? ' alt' : ''}">${appIcon(a.key, 18)} ${esc(appName(a))}</th>`).join('')}</tr>
+      <tr>${apps.map((a, i) => ALL[a.key].map((m, j) => `<th class="mx-m${i % 2 ? ' alt' : ''}${j === 0 ? ' first' : ''}" data-col="${a.key}.${m[0]}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(t(m[1], m[2]))}</th>`).join('')).join('')}</tr></thead>
+      <tbody>${list.map(u => `<tr><td class="mx-name"><b>${esc(u.name)}</b><small>${esc(u.dept || u.email)}</small></td>${apps.map(a => ALL[a.key].map(m => cell(u, a, m)).join('')).join('')}</tr>`).join('')}</tbody></table></div>`;
+    box.querySelector('tbody').onchange = e => {
+      const cb = e.target; if (!cb.dataset || !cb.dataset.u) return;
+      const u = byEmail(cb.dataset.u); if (!u) return;
+      const off = mOff(u).filter(k => k !== cb.dataset.k);
+      if (!cb.checked) off.push(cb.dataset.k);
+      MP[u.email] = off;
+      cb.parentElement.classList.toggle('chg', cb.checked !== ((u.menusOff || []).indexOf(cb.dataset.k) < 0));
+      drawMenuSave();
+    };
+    $$('th[data-col]', box).forEach(th => th.onclick = () => {
+      const k = th.dataset.col, app = k.split('.')[0];
+      const who = list.filter(u => u.role !== 'admin' && u.apps[app]);
+      if (!who.length) return;
+      const tick = who.some(u => mOff(u).indexOf(k) >= 0);   // any unticked → tick all, else untick all
+      who.forEach(u => { const off = mOff(u).filter(x => x !== k); if (!tick) off.push(k); MP[u.email] = off; });
+      drawMenus();
+    });
+    drawMenuSave();
+  }
+
+  function drawMenuSave() {
+    const bar = $('#msave'); if (!bar) return;
+    const n = mChanged().length;
+    bar.className = n ? 'mx-save' : '';
+    bar.innerHTML = n ? `<span>✏️ ${t(`កែ ${n} នាក់ មិនទាន់រក្សាទុក`, `${n} ${n === 1 ? 'person' : 'people'} changed, not saved`)}</span>
+      <button type="button" class="btn" id="mUndo">↶ ${t('បោះបង់', 'Undo')}</button>
+      <button type="button" class="btn ok" id="mSave">💾 ${t('រក្សាទុក', 'Save')}</button>` : '';
+    if (!n) return;
+    $('#mUndo').onclick = () => { MP = {}; drawMenus(); };
+    $('#mSave').onclick = async () => {
+      const b = $('#mSave'); b.disabled = true; b.textContent = '⏳ ' + t('កំពុងរក្សាទុក…', 'Saving…');
+      try {
+        const r = await api('umMenus', { changes: mChanged().map(u => ({ email: u.email, menusOff: MP[u.email] })) });
+        merge(r.users); addLog(r.log); MP = {}; save();
+        toast('✓ ' + t('បានរក្សាទុក', 'Saved'));
+        drawMenus();
+      } catch (e) { toast(e.message); b.disabled = false; b.textContent = '💾 ' + t('រក្សាទុក', 'Save'); }
+    };
+  }
+
   // ------------------------------------------------------------------ chrome
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2600); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
@@ -112,6 +203,7 @@
     if (h === 'req') return renderReq();
     if (h === 'dept') return renderDept();
     if (h === 'log') return renderLog();
+    if (h === 'menus') return renderMenus();
     if (h === 'new') return renderEdit(null);
     if (h.indexOf('u/') === 0) return renderEdit(h.slice(2));
     return renderList();
@@ -544,7 +636,7 @@
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintDemo(); screen(); }); }
   paintDemo(); paintStatic();
-  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D });
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D || !!(D && mChanged().length) });
   window.ISTEEL_REFRESH = () => { if (E) { toast(t('កំពុងកែ · ចុច រក្សាទុក ឬ ថយក្រោយ', 'Editing · tap Save or Back')); return; } refresh(); };
   window.addEventListener('hashchange', () => { if (!/^#\/(u\/|new)/.test(location.hash)) E = null; screen(); window.scrollTo(0, 0); });
   let wasWide = wide();
@@ -583,6 +675,11 @@
           if (p.active !== undefined) d.active = p.active;
           return resolve({ depts: clone(S.depts), log: log('', 'Department: ' + p.name, 'changed') });
         }
+        if (action === 'umMenus') {
+          const out = [], logs = [];
+          p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.menusOff = c.menusOff.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Menus changed')); });
+          return resolve({ users: out, log: logs });
+        }
         if (action === 'umPhoto') return resolve({ dataUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" rx="14" fill="#f4f6f9"/><rect x="18" y="30" width="90" height="120" rx="8" fill="#b9c3cf"/><text x="128" y="60" font-family="sans-serif" font-weight="700" font-size="20" fill="#011e41">ISI STEEL</text><text x="128" y="95" font-family="sans-serif" font-size="13" fill="#546274">NAME: SOK DARA</text><text x="128" y="120" font-family="sans-serif" font-size="13" fill="#546274">ID: 108765</text></svg>') });
         if (action === 'umOt') return resolve({ ok: true, byId: { 125771: { manager: 'Sok Dara', tg: '@sokdara' }, 130452: { manager: 'Kim Sopheakdey', tg: '@pheakdey' } }, managers: [{ name: 'Kim Sopheakdey', tg: '@pheakdey' }, { name: 'Sok Dara', tg: '@sokdara' }] });
         if (action === 'umOtSave') return resolve({ manager: p.manager, tg: p.tg, log: log(p.email, '', 'OT approver → ' + p.manager) });
@@ -600,7 +697,7 @@
       users: [
         { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), offAt: 0, offNote: '' },
         { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'supervisor', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), offAt: 0, offNote: '' },
-        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'driver', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), offAt: 0, offNote: '' },
+        { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'driver', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), offAt: 0, offNote: '', menusOff: ['fuel.review', 'fuel.report'] },
         { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'warehouse', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
         { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'security', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), offAt: 0, offNote: '' },
         { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), offAt: now - 2 * day, offNote: 'Left the company' },

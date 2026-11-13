@@ -77,6 +77,7 @@ function doPost(e) {
     // Each app checks its own tick box in the Users sheet (admins can open everything).
     const app = ACTION_APP[req.action];
     if (app && !canUse_(user, app)) throw new Error('NOACCESS: ' + user.email + ' has no access to ' + appTitle_(app) + '. Ask the admin to tick it in the Users sheet.');
+    if (ACTION_MENU[req.action] && menuOff_(user, ACTION_MENU[req.action])) throw new Error('NOACCESS: this menu is switched off for ' + user.email + '. Ask the admin to tick it in 👥 Users › Menus. / ម៉ឺនុយនេះត្រូវបានបិទ។');
     const out = { ok: true, data: action(req.payload || {}, user) };
     if (user.session) out.session = user.session;   // the apps save it in place of the Google sign-in
     return json_(out);
@@ -115,6 +116,7 @@ const ACTIONS = {
   umOt: umOt_,
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
+  umMenus: umMenus_,
   saver: fuelSaver_,
   sapPost: sapPost_,
   reportCols: reportColsSave_,
@@ -167,6 +169,7 @@ function homeApps_(p, user) {
   ensureUserSync_();
   const out = {
     user: { name: user.name, role: user.role, employeeId: user.employeeId || '' },
+    menusOff: user.menusOff || [],
     apps: HOME_APPS.map(a => a.key).filter(k => canUse_(user, k)),
   };
   // Reviewers see how many entries wait for them on the Fuel Refill tile.
@@ -263,7 +266,8 @@ function authenticate_(token) {
   const apps = {};
   HOME_APPS.forEach(a => { if (a.col in user) apps[a.key] = isYes_(user[a.col]); });
   return { email: email, name: user['Name'] || '', role: accessLevel_(user['Role']), job: String(user['Role'] || 'user').trim().toLowerCase(), apps: apps, session: session,
-    employeeId: String(user['Employee ID'] || '').trim(), dept: String(user['Department'] || '').trim() };
+    employeeId: String(user['Employee ID'] || '').trim(), dept: String(user['Department'] || '').trim(),
+    menusOff: accessLevel_(user['Role']) === 'admin' ? [] : menuList_(user['Hidden Menus']) };
 }
 
 // ---------- Sessions: stay signed in ----------
@@ -343,12 +347,19 @@ function verifyToken_(token) {
 const DEPT_SHEET = 'Department';
 const EMP_ID_MIN = 100000, EMP_ID_MAX = 190000;   // Kim, 10 Oct 2026
 const MASTER_ACCESS = ['Email', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse']);
+  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse', 'Hidden Menus']);
 const COPY_HEAD = ['Email', 'Name', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse']);
+  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse', 'Hidden Menus']);
 // Inbound app warehouses (Kim, 2 Nov 2026). A person's ticks are kept in "Inbound Warehouse", comma-separated; "All" = every warehouse.
 const IB_WAREHOUSES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
 const ibWhList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+// Who sees which menu (Kim, 13 Nov 2026): "Hidden Menus" lists the app menus a person does NOT see, as app.menu
+// ("fuel.report, scale.set"), so today's access stays and a new menu shows until an admin unticks it in 👥 Users › Menus.
+// The list of menus is web/menus.js. Admins always see every menu.
+const menuList_ = v => String(v || '').split(',').map(x => x.trim().toLowerCase()).filter(x => /^[a-z]+\.[a-z]+$/.test(x));
+const menuOff_ = (user, key) => user.role !== 'admin' && (user.menusOff || []).indexOf(key) >= 0;
+// Fuel actions that belong to one menu: a person whose menu is hidden can't call them either.
+const ACTION_MENU = { submit: 'fuel.new', review: 'fuel.review', sapPost: 'fuel.report', reportCols: 'fuel.report' };
 const USERS_BACKUP = 'Users (old, 31 Oct)';
 const CARD_FOLDER_NAME = 'Employee Card Photos';
 const DEPT_SEP = ' · ';
@@ -425,7 +436,7 @@ function mRow_(m, r, i) {
     emails: emailsOf_(g('Email')), role: String(g('Role') || '').trim(), active: g('Active') === true || isYes_(g('Active')),
     apps: apps, team: String(g('TEAM') || '').trim(), offNote: String(g('Off Note') || '').trim(), offAt: at('Off At'),
     appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
-    claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')),
+    claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')), menusOff: menuList_(g('Hidden Menus')),
   };
 }
 const displayName_ = e => e.appName || e.kh || e.full;
@@ -482,7 +493,7 @@ function syncUsers_(force) {
     seen[email] = 1;
     if (e.active && /admin/i.test(e.role)) admins++;
     rows.push([email, displayName_(e), e.role || 'user', e.active ? 'Yes' : 'No'].concat(HOME_APPS.map(a => !!e.apps[a.key]),
-      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', ')]));
+      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', '), e.menusOff.join(', ')]));
   }));
   if (!admins) return 'Skipped: no active admin in Employee & Approver.';
   const props = PropertiesService.getScriptProperties();
@@ -3077,7 +3088,7 @@ function umUserOf_(e, email) {
     role: UM_ROLES.indexOf(role) >= 0 ? role : 'user', active: e.active, empId: e.id,
     dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
     photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
-    ibWh: e.ibWh,
+    ibWh: e.ibWh, menusOff: e.menusOff,
   };
 }
 const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
@@ -3132,6 +3143,7 @@ function umCheck_(p, isNew) {
     out.apps = {};
     HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
   }
+  if (p.menusOff !== undefined) out.menusOff = menuList_((Array.isArray(p.menusOff) ? p.menusOff : [p.menusOff]).join(',')).filter((x, k, a) => a.indexOf(x) === k).slice(0, 200);
   if (p.ibWh !== undefined) out.ibWh = (Array.isArray(p.ibWh) ? p.ibWh : ibWhList_(p.ibWh)).map(x => String(x).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (p.removeEmail) out.removeEmail = true;
   return out;
@@ -3228,6 +3240,11 @@ function umWrite_(m, email, v, by, isNew) {
     mPut_(m, i, 'Inbound Warehouse', v.ibWh.join(', '));
     log.push('Inbound warehouse: ' + (cur.ibWh.join(', ') || '–') + ' → ' + (v.ibWh.join(', ') || '–'));
   }
+  if (v.menusOff !== undefined && v.menusOff.slice().sort().join(',') !== cur.menusOff.slice().sort().join(',')) {
+    mPut_(m, i, 'Hidden Menus', v.menusOff.join(', '));
+    const hid = v.menusOff.filter(x => cur.menusOff.indexOf(x) < 0), back = cur.menusOff.filter(x => v.menusOff.indexOf(x) < 0);
+    log.push('Menus: ' + [hid.length ? 'hidden ' + hid.join(', ') : '', back.length ? 'shown ' + back.join(', ') : ''].filter(Boolean).join('; '));
+  }
   // Rejecting a request: Active is already No, so the change is stamping Off At (it leaves the Requests list).
   if (v.active !== undefined && (v.active !== cur.active || isNew || (!v.active && !cur.offAt))) {
     mPut_(m, i, 'Active', v.active ? 'Yes' : 'No');
@@ -3312,6 +3329,23 @@ function umBulk_(p, user) {
       const o = umWrite_(m, email, JSON.parse(JSON.stringify(v)), user.email, false);
       Array.prototype.push.apply(users, umUsersOfRow_(o.e));
       Array.prototype.push.apply(log, umLog_(user.name || user.email, email, displayName_(o.e), o.log));
+    });
+    return { users, log };
+  });
+}
+
+/** 🔐 Menus screen (Kim, 13 Nov 2026): saves the hidden menus of several people in one go. changes = [{ email, menusOff }]. */
+function umMenus_(p, user) {
+  needAdmin_(user);
+  const list = (p.changes || []).slice(0, 300).map(c => ({ email: String(c.email || '').trim().toLowerCase(), v: umCheck_({ menusOff: c.menusOff || [] }, false) }))
+    .filter(c => c.email && c.v.menusOff);
+  if (!list.length) throw new Error('Nothing to save.');
+  return umRun_(m => {
+    const users = [], log = [];
+    list.forEach(c => {
+      const o = umWrite_(m, c.email, { menusOff: c.v.menusOff }, user.email, false);
+      Array.prototype.push.apply(users, umUsersOfRow_(o.e));
+      Array.prototype.push.apply(log, umLog_(user.name || user.email, c.email, displayName_(o.e), o.log));
     });
     return { users, log };
   });

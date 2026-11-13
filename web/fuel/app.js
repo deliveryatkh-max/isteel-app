@@ -573,7 +573,10 @@
     $('#who').innerHTML = '';
     $('#reviewTab').hidden = !(u.role === 'reviewer' || u.role === 'admin');
     $('#reportTab').hidden = !canCheck();
-    $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').length > 4);
+    // Menus an admin switched off for this person in 👥 Users › Menus (../menus.js hides them).
+    if (window.MENUS && Array.isArray(u.menusOff)) MENUS.set(u.menusOff);
+    $('#tabs').classList.toggle('many', $$('#tabs .tab:not([hidden])').filter(x => getComputedStyle(x).display !== 'none').length > 4);
+    if (state.tab && menuOff(state.tab)) show(firstMenu() || 'new');
     reviewBadge();
   }
 
@@ -654,12 +657,21 @@
     b.hidden = !n;
   }
 
+  const menuOff = tab => !!(window.MENUS && MENUS.isOff('fuel', tab));
+  const firstMenu = () => ['new', 'mine', 'review', 'report'].find(k => !menuOff(k) && !$(`.tab[data-tab="${k}"]`).hidden);
+
   /** Draws a screen without changing the history. */
   function paint(screen) {
     if (screen.s !== 'edit' && state.editing) leaveEdit();
     const tab = screen.s === 'detail' ? 'review'
       : screen.s === 'edit' ? (screen.from || 'mine')
       : screen.s === 'success' ? 'new' : screen.s;
+    if (menuOff(tab)) {
+      const ok = firstMenu();
+      if (ok) return show(ok);
+      $('#view').innerHTML = `<div class="card"><p>🔒 ${L('គ្មានម៉ឺនុយសម្រាប់អ្នកទេ។ សូមសួរ Admin។', 'No menus are switched on for you. Ask the admin.')}</p></div>`;
+      return;
+    }
     state.tab = tab;
     document.body.classList.toggle('rp-wide', screen.s === 'report');
     $$('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));

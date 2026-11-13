@@ -1,7 +1,8 @@
 /* 👥 User Management: on top of ../overtime/ot.css (same colours, banner, cards, buttons). */
 main { max-width: 680px; padding-bottom: 32px; }
 .bar.busy { box-shadow: inset 0 -3px 0 #61cbf4; }
-.tabs { grid-template-columns: repeat(5, 1fr); }
+.tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 420px) { .tabs .tab { font-size: 11px; } .tabs .tab b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
 .tab span { position: relative; }
 .tab .count {
   position: absolute; top: -6px; right: -12px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
@@ -204,3 +205,35 @@ small.inl { display: inline; }
 
 /* Forms 50% wider on computers (Kim, 5 Nov 2026) */
 @media (min-width: 900px) { .frow { max-width: 1020px; } #view > .card:not(.done):not(.empty), #view > .prof, #view > .sec, #view > .apps2, #view > #eErr, #view > .savebar { max-width: 1020px; } }
+
+/* 🔐 Menus (Kim, 13 Nov 2026, option C): people down, every app's menus across. */
+.mx-hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.mx-wrap { max-height: calc(100vh - 230px); overflow: auto; }
+.tbl.mx { width: auto; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.tbl.mx th { text-align: center; padding: 6px 6px; font-size: 12px; }
+.tbl.mx thead tr:first-child th { top: 0; z-index: 3; }
+.tbl.mx thead tr:nth-child(2) th { top: 33px; z-index: 3; }
+.tbl.mx th.mx-app { background: #1f4e78; color: #fff; font-weight: 700; height: 33px; box-sizing: border-box; border-left: 2px solid var(--card); }
+.tbl.mx th.mx-app.alt { background: #011e41; }
+.tbl.mx th.mx-app img { vertical-align: -4px; background: #fff; border-radius: 5px; padding: 1px; }
+.tbl.mx th.mx-m { background: var(--soft); color: var(--text); cursor: pointer; white-space: normal; min-width: 64px; max-width: 96px; line-height: 1.25; }
+.tbl.mx th.mx-m.alt { background: var(--card); }
+.tbl.mx th.mx-m:hover { color: var(--accent); text-decoration: underline; }
+.tbl.mx th.first, .tbl.mx td.first { border-left: 2px solid var(--line); }
+.tbl.mx .mx-name { position: sticky; left: 0; z-index: 2; background: var(--card); text-align: left; min-width: 150px; max-width: 210px; border-right: 1.5px solid var(--line); }
+.tbl.mx thead .mx-name { z-index: 4; vertical-align: bottom; }
+.tbl.mx td.mx-name b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbl.mx td.mx-name small { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbl.mx td.mx-c { text-align: center; padding: 5px 4px; }
+.tbl.mx td.mx-c.na { color: var(--muted); opacity: .5; }
+.tbl.mx td.mx-c.adm { color: var(--ok, #1d6f42); font-weight: 700; }
+.tbl.mx td.mx-c.chg { background: #fff3cd; }
+.tbl.mx tbody tr:hover td { background: var(--soft); }
+.tbl.mx tbody tr:hover td.chg { background: #ffe9a8; }
+.mx-save { position: sticky; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; padding: 10px 12px; background: var(--card); border: 1.5px solid #f0b400; border-radius: 14px; box-shadow: 0 8px 24px rgba(1, 30, 65, .18); }
+.mx-save span { flex: 1; font-weight: 600; min-width: 160px; }
+@media (min-width: 900px) { .mx-save { bottom: 12px; } }
+:root[data-theme="dark"] .tbl.mx td.mx-c.chg { background: #4a3b10; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tbl.mx td.mx-c.chg { background: #4a3b10; } }
+@media (max-width: 640px) { .tbl.mx .mx-name { min-width: 112px; max-width: 130px; } .tbl.mx th.mx-m { min-width: 56px; } }

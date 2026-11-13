@@ -207,6 +207,7 @@
     try {
       const d = await api('home');
       set(key, JSON.stringify(d));
+      if (window.MENUS && Array.isArray(d.menusOff)) MENUS.set(d.menusOff);   // who sees which menu (👥 Users › Menus)
       if (JSON.stringify(d) !== JSON.stringify(cached)) renderMenu(d);
     } catch (e) {
       if (e.code === 'AUTH') { set(TOKEN_KEY, null); renderLogin(); }
