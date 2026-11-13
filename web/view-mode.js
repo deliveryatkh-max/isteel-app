@@ -10,6 +10,12 @@
   const get = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
   const put = v => { try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) { /* private window */ } };
   const mode = get();
+  // Phone header (Kim, 13 Nov 2026, option C): inside an app, phones show the ISI circle without the word STEEL.
+  try {
+    const hs = document.createElement('style');
+    hs.textContent = '@media (max-width:600px){.isi-logo:has(+ .sep) .word{display:none}}';
+    document.head.appendChild(hs);
+  } catch (e) { /* no head yet */ }
   const inFrame = window !== window.top && /[?&]vm=in\b/.test(location.search);
   const phoneDevice = Math.min(screen.width, screen.height) < 700 && matchMedia('(pointer: coarse)').matches;
 

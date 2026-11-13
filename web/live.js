@@ -78,7 +78,9 @@
   try { at = +(localStorage.getItem(AT_KEY) || 0); } catch (e) { /* private mode */ }
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const two = n => (n < 10 ? '0' : '') + n;
-  const stamp = d => two(d.getDate()) + '-' + MON[d.getMonth()] + '-' + d.getFullYear() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
+  // Phones leave out the year so the bar fits (Kim, 13 Nov 2026, option C).
+  const narrow = () => window.matchMedia && matchMedia('(max-width: 600px)').matches;
+  const stamp = d => two(d.getDate()) + '-' + MON[d.getMonth()] + (narrow() ? '' : '-' + d.getFullYear()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
   function paintAt() {
     if (!at) return;
     let el = document.getElementById('liveAt');
