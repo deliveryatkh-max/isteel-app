@@ -2306,14 +2306,35 @@
       d = d.replace(re, (all, k) => { k = k.replace(/<[^>]*>/g, ''); return Object.prototype.hasOwnProperty.call(vals, k) ? xml(vals[k]) : all; });
       zip.file(n, d);
       if (n === 'word/document.xml') {
-        const rf = zip.file('word/_rels/document.xml.rels'), rels = rf ? await rf.async('string') : '';
+        const rf = zip.file('word/_rels/document.xml.rels');
+        let rels = rf ? await rf.async('string') : '';
+        const found = [];
         for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE']) {
           const at = d.search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
           const emb = at >= 0 ? d.slice(at).match(/r:embed="([^"]+)"/) : null;
           const rel = emb && rels.match(new RegExp('<Relationship[^>]*Id="' + emb[1] + '"[^>]*>'));
           const tg = rel && rel[0].match(/Target="([^"]+)"/);
-          if (tg) picT[key] = 'word/' + tg[1].replace(/^\.?\//, '').replace(/^word\//, '');
+          if (tg) found.push({ key, at, rid: emb[1], tg: tg[1] });
         }
+        // A picture copied in Word shares one image file with the first one, so filling the barcode also changed
+        // the QR (Kim, 13 Nov 2026). Each marked picture gets its own copy of the image and its own link.
+        const seen = {};
+        found.sort((p, q) => q.at - p.at).forEach(f => { seen[f.tg] = (seen[f.tg] || 0) + 1; });
+        const used = {};
+        found.slice().sort((p, q) => p.at - q.at).forEach(f => {
+          if (seen[f.tg] < 2 || !used[f.tg]) { used[f.tg] = 1; return; }
+          const src = 'word/' + f.tg.replace(/^\.?\//, '').replace(/^word\//, ''), file = zip.file(src);
+          if (!file) return;
+          const ext = (f.tg.match(/\.[a-z0-9]+$/i) || ['.png'])[0], nt = 'media/sc_' + f.key.toLowerCase() + ext, nid = 'rIdSc' + f.key;
+          zip.file('word/' + nt, file.async('uint8array'));
+          rels = rels.replace('</Relationships>', `<Relationship Id="${nid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${nt}"/></Relationships>`);
+          f.newRid = nid; f.tg = nt;
+        });
+        found.sort((p, q) => q.at - p.at).forEach(f => {
+          if (f.newRid) { const i = d.indexOf('r:embed="' + f.rid + '"', f.at); if (i >= 0) d = d.slice(0, i) + 'r:embed="' + f.newRid + '"' + d.slice(i + ('r:embed="' + f.rid + '"').length); }
+          picT[f.key] = 'word/' + f.tg.replace(/^\.?\//, '').replace(/^word\//, '');
+        });
+        if (found.some(f => f.newRid)) { zip.file(n, d); zip.file('word/_rels/document.xml.rels', rels); }
         qrTarget = picT.QR || '';
       }
     }
