@@ -22,7 +22,11 @@
   const isKg = u => /^(kg|kgs|ton|t)$/i.test(String(u || '').trim());
   // Counted qty in the book unit: Kg for KG lines, else bundles x pcs per bundle + pcs (same as rules.gs countedQty).
   const countedQty = (c, uom, ppb) => (isKg(uom) ? n0(c.kg) : countedPcs(n0(c.bundles), ppb, n0(c.pieces)));
-  const lineOk = c => (c.bundles === '' || whole(c.bundles)) && (c.pieces === '' || whole(c.pieces)) && (c.kg === '' || (isFinite(Number(c.kg)) && Number(c.kg) >= 0)) && !(c.bundles === '' && c.kg === '' && c.pieces === '');
+  // Required box = the one in the book unit: Kg for KG lines (Bundle and Pcs can stay blank, Kim 13 Nov);
+  // for a line kept in pieces, Bundle or Pcs must be filled instead, so a blank count never zeroes the book.
+  const numOk = v => v === '' || (isFinite(Number(v)) && Number(v) >= 0);
+  const lineOk = (c, uom) => (c.bundles === '' || whole(c.bundles)) && (c.pieces === '' || whole(c.pieces)) && numOk(c.kg)
+    && (isKg(uom) ? c.kg !== '' : (c.bundles !== '' || c.pieces !== ''));
   const worstOf = list => (list.indexOf('SHORT') >= 0 ? 'SHORT' : list.indexOf('OVER') >= 0 ? 'OVER' : 'MATCH');
 
   // Demo data: one bin with two SKU lines (same shape as the Stock On Hand tab).
@@ -316,8 +320,8 @@
       ? `<tr class="desc"><td colspan="4">${esc(l.desc)}</td></tr>
         <tr><td>${esc(l.material)}<br><small class="muted">Batch: ${esc(l.batch)}</small><br><small class="muted">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</small></td>
         <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="bundles"></td>
-        <td class="in"><input type="number" inputmode="decimal" min="0" step="any" placeholder=" " data-i="${i}" data-f="kg"></td>
-        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="pieces"></td></tr>`
+        <td class="in"><input type="number" inputmode="decimal" min="0" step="any" placeholder=" " ${isKg(l.uom) ? 'class="req" ' : ''}data-i="${i}" data-f="kg"></td>
+        <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " ${isKg(l.uom) ? '' : 'class="req" '}data-i="${i}" data-f="pieces"></td></tr>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
         <td>${l.book}</td>
@@ -344,7 +348,7 @@
         const cell = document.querySelector(`.diff[data-i="${i}"]`);
         if (isCount) {
           const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
-          if (!lineOk(c)) { ok = false; return; }
+          if (!lineOk(c, l.uom)) { ok = false; return; }
           statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // no Diff column (Kim), status only for the photo rule
         } else {
           const v = document.querySelector(`[data-i="${i}"][data-f="outQty"]`).value;
