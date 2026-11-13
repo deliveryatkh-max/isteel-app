@@ -1909,7 +1909,8 @@
       ${pickTable(M)}
       ${diffList}</section>`;
     $$('[data-tab]').forEach(b => { b.onclick = () => { DNC.tab = b.dataset.tab; paintDnc(); }; });
-    bindTable();
+    // A click on a row ticks it, it no longer opens the ticket (Kim, 13 Nov 2026)
+    $$('table.dnct tr[data-tk]').forEach(r => { r.onclick = e => { if (e.target.closest('input,button,a,select')) return; const c = r.querySelector('[data-pick]'); if (c) { c.checked = !c.checked; c.onchange(); } }; });
     // Tick tickets, check them in the table below, then Confirm = the truck company's billing is correct (Kim, 13 Nov 2026)
     $$('[data-pick]').forEach(c => { c.onclick = e => e.stopPropagation(); c.onchange = () => { if (c.checked) DNC.pick[c.dataset.pick] = 1; else delete DNC.pick[c.dataset.pick]; paintDnc(); }; });
     const all = $('#dPickAll'), vis = $$('[data-pick]');
