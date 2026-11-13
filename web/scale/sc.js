@@ -1218,7 +1218,7 @@
     list: () => { Object.assign(LIST, { from: ALL_FROM, to: today(), q: '', st: '' }); renderList(); },
     rep: () => { Object.assign(REP, { from: today(), to: today(), q: '', st: '', co: '', ty: '' }); renderReport(); },
     tat: () => { Object.assign(TAT, { from: monthStart(), to: today(), slow: 120 }); renderTat(); },
-    dnc: () => { Object.assign(DNC, { from: monthStart(), to: today(), co: '', q: '' }); renderDnc(); }
+    dnc: () => { Object.assign(DNC, { from: monthStart(), to: today(), co: '', q: '', de: '' }); renderDnc(); }
   };
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-fclr]');
@@ -1755,7 +1755,7 @@
   // The tickets of one truck company next to the Debit Note it sent: each DN line is matched to a ticket by truck and
   // date, then the net weight, unit price, date and company are compared. Unit price and UoM come from the Price List.
   function canDnc() { return !!(me().admin || me().dnc); }
-  let DNC = { from: monthStart(), to: today(), co: '', q: '', tab: 'all', rows: null, dn: null, file: '', busy: '', pick: {}, px: {} };
+  let DNC = { from: monthStart(), to: today(), co: '', q: '', tab: 'all', rows: null, dn: null, file: '', busy: '', pick: {}, px: {}, de: '' };
   const normC = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(CO|LTD|COLTD|COMPANY)$/, '');
   const normD = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const tripDay = x => String(x.t2 || x.t1 || '').slice(0, 10);
@@ -1778,9 +1778,12 @@
     return n;
   }
   const dncCompanies = () => { const s = []; trucks().concat(DNC.rows || []).forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort(); };
+  const dncRangeIs = k => { const r = rangeOf(k); return DNC.from === r[0] && DNC.to === r[1]; };
+  const dncDests = () => { const s = []; ((B && B.dests) || []).concat(...(DNC.rows || []).map(x => String(x.dest || '').split(/\s*,\s*/))).forEach(d => { d = String(d || '').trim(); if (d && s.indexOf(d) < 0) s.push(d); }); return s.sort(); };
   const dncTickets = () => {
     const q = DNC.q.trim().toLowerCase();
     return (DNC.rows || []).filter(x => x.status === 'Done' && (!DNC.co || normC(x.company) === normC(DNC.co) || String(x.company || '').toLowerCase().indexOf(DNC.co.toLowerCase()) >= 0) &&
+      (!DNC.de || String(x.dest || '').toLowerCase().indexOf(DNC.de.toLowerCase()) >= 0) &&
       (!q || [x.no, x.plate, x.company, x.item, x.dest, x.load, (x.dns || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0))
       .sort((a, b) => String(a.t2 || a.t1).localeCompare(String(b.t2 || b.t1)));
   };
@@ -1824,13 +1827,19 @@
       <div class="fwrap">${fHead('dnc', `🧾 ${t('ពិនិត្យ Debit Note', 'Debit Note check')}`, `<button type="button" class="btn" id="dXls"><span class="xl">X</span> Excel</button>
         <label class="btn ok" style="display:inline-flex">⬆ ${t('ផ្ទុក Debit Note', 'Upload Debit Note')}<input type="file" id="dUp" accept="application/pdf,image/*" hidden></label>`)}
       ${fPanel('dnc', `${fRange('dFrom', 'dTo', DNC.from, DNC.to)}${fShow('dGo')}
+        <div class="qchips">${QRANGES.map(r => `<button type="button" class="chip${dncRangeIs(r[0]) ? ' on' : ''}" data-drg="${r[0]}">${t(r[1], r[2])}</button>`).join('')}</div>
         <label>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}<input class="in" id="dCo" type="search" list="dCoList" autocomplete="off" placeholder="${t('ទាំងអស់ · វាយដើម្បីស្វែងរក', 'All · type to search')}" value="${esc(DNC.co)}"><datalist id="dCoList">${dncCompanies().map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist></label>
+        <label>${t('កន្លែងទម្លាក់', 'Destination')}<input class="in" id="dDe" type="search" list="dDeList" autocomplete="off" placeholder="${t('ទាំងអស់ · វាយដើម្បីស្វែងរក', 'All · type to search')}" value="${esc(DNC.de)}"><datalist id="dDeList">${dncDests().map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist></label>
         ${fSearch('dQ', t('ស្វែងរក ឡាន DN ទីកន្លែង...', 'Search truck, DN, place...'), DNC.q, 'grow')}`)}</div>
       <div id="dStat"></div></section>
       <div id="dBody"><div class="spinner"></div></div>`;
     $('#dGo').onclick = () => { DNC.from = $('#dFrom').value; DNC.to = $('#dTo').value; loadDnc(); };
     // Truck company: pick from the list or type part of the name (Kim, 13 Nov 2026)
     let coT; $('#dCo').oninput = e => { clearTimeout(coT); coT = setTimeout(() => { DNC.co = e.target.value.trim(); paintDnc(); }, 250); };
+    // Today / This month / All and Destination (Kim, 13 Nov 2026)
+    let deT; $('#dDe').oninput = e => { clearTimeout(deT); deT = setTimeout(() => { DNC.de = e.target.value.trim(); paintDnc(); }, 250); };
+    $$('[data-drg]').forEach(b => { b.onclick = () => { const r = rangeOf(b.dataset.drg); DNC.from = r[0]; DNC.to = r[1]; $('#dFrom').value = r[0]; $('#dTo').value = r[1]; $$('[data-drg]').forEach(c => c.classList.toggle('on', c === b)); loadDnc(); }; });
+    ['dFrom', 'dTo'].forEach(id => { $('#' + id).addEventListener('change', () => $$('[data-drg]').forEach(c => c.classList.remove('on'))); });
     $('#dQ').oninput = e => { DNC.q = e.target.value; paintDnc(); };
     $('#dXls').onclick = dncXls;
     $('#dUp').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) readDn(f); };
