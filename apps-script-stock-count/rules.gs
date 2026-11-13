@@ -66,3 +66,27 @@ function todayList(bins, n) {
     .sort((a, b) => (a.lastCount || '') < (b.lastCount || '') ? -1 : (a.lastCount || '') > (b.lastCount || '') ? 1 : 0)
     .slice(0, Number(n) || 20);
 }
+
+// Stock movement (In / Out / Transfer): qty is a number above 0; Out and Transfer cannot take more than the balance.
+// Whole numbers only for lines kept in pieces. Returns '' when valid.
+function moveOk(type, qty, balance, uom) {
+  const q = Number(qty);
+  if (!isFinite(q) || !(q > 0)) return 'Quantity must be above 0.';
+  if (!/^(kg|kgs|ton|t)$/i.test(String(uom || '').trim()) && Math.floor(q) !== q) return 'Quantity must be a whole number.';
+  if (type !== 'IN' && q > Number(balance)) return 'Quantity is more than the stock in this bin.';
+  return '';
+}
+
+// New balance after a movement. IN adds; OUT and TRANSFER OUT subtract. Rounded to 3 decimals (kg).
+function balanceAfter(type, qty, balance) {
+  const b = Number(balance) || 0, q = Number(qty) || 0;
+  return Math.round((type === 'IN' || type === 'TRANSFER IN' ? b + q : b - q) * 1000) / 1000;
+}
+
+// Transfer needs a destination bin that is not the source bin. Returns '' when valid.
+function transferOk(fromBin, toBin) {
+  const a = String(fromBin || '').trim().toUpperCase(), b = String(toBin || '').trim().toUpperCase();
+  if (!b) return 'Scan or type the destination bin.';
+  if (a === b) return 'Destination bin must be different from the source bin.';
+  return '';
+}

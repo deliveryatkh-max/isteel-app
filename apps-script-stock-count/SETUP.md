@@ -21,3 +21,14 @@ Notes:
 - A count writes one row per SKU line to **Counts** (columns: Count ID, Type, Date, Time, Bin, SKU, Description, Batch No, Sloc, On Hand, OH UoM, Counted Qty Bundle, Counted Qty Kg, Counted Qty Pcs, Remark, Counted By). Rows are matched to columns by header name, so columns can be moved. Optional extra columns the app fills when present: Out Qty, Counted Qty, Diff, Status, Photo, Note. Each count also adds up in **Stock On Hand** for its Bin + Material: Counted Qty Bundle, Counted Qty Kg, Counted Qty Pcs, Total Counted Qty Kg (= Kg total) and Difference (= Total Counted Qty Kg - Book Qty). Book Qty comes from MB52 and is not changed by a count; an Out reduces it. Clear the three Counted cells of a row to start a new count round.
 - After changing Code.gs or rules.gs, Deploy > Manage deployments > Edit > New version, so the `/exec` URL keeps working.
 - Tests (for developers): `node apps-script-stock-count/tests/run.js`.
+
+
+## Digital stock card (13 Nov 2026)
+
+- New tab **Stock Ledger** (made by the app on first use): Txn ID, Date, Time, Type, Bin, Material, Description, Batch, SLOC, UoM, In, Out, Balance, Reference, Other Bin, Transfer ID, Remark, User, Request ID. One row per posted movement. The app never edits or deletes a row; a mistake is corrected with a new movement.
+- **Book Qty** in Stock On Hand is the running balance of each line. Stock IN adds, Stock OUT subtracts, Transfer moves it to the other bin (a new line is added there when the bin does not hold that material and batch yet).
+- Every movement is posted by the server under the script lock, one at a time, so two phones issuing from the same bin end with the right balance. Each form carries a request id: a double tap or a re-send from the offline queue is answered, not posted again.
+- Rules (rules.gs `moveOk`, `transferOk`): quantity above 0; whole numbers for lines kept in pieces; Out and Transfer cannot take more than the balance; Stock IN and OUT need a reference document; Transfer needs a different, active destination bin.
+- Stock IN of a material the sheet has never seen is allowed for admins only (description and unit required). A known material can be received into any active bin.
+- A count does not change the balance. Counts add up in Stock On Hand (Counted columns and Difference) for review.
+- Tests: `node apps-script-stock-count/tests/run.js` (rules) and `node apps-script-stock-count/tests/flow.js` (movements against an in-memory sheet).

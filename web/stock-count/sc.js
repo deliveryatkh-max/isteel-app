@@ -34,12 +34,13 @@
     { material: '1100000231', desc: 'INTANU G300AZ30 BR 1200x0.220', batch: 'D261023018', sloc: '1020', uom: 'KG', pcsPerBundle: 1, book: 4750 },
     { material: 'SK-1002', desc: 'Steel bar 16mm', batch: 'B2611-09', sloc: 'WH01', uom: 'PC', pcsPerBundle: 30, book: 600 },
   ] };
+  const DEMO_BINS = [{ bin: 'A-01-01' }, { bin: 'B-02-05' }];
   const DEMO_LIST = [
     { bin: 'A-01-01', warehouse: 'WH I1', lastCount: '', lastStatus: '', accuracy: null, lines: 2 },
     { bin: 'B-02-05', warehouse: 'WH OB', lastCount: '2026-11-08 14:30', lastStatus: 'SHORT', accuracy: 60, lines: 1 },
   ];
 
-  const S = { list: [], bins: [], stock: [], user: null, view: 'home', bin: null, mode: '', result: null, photo: '', signedOut: false, blocked: '' };
+  const S = { list: [], bins: [], stock: [], dash: null, card: null, move: null, lineIdx: -1, user: null, view: 'home', bin: null, mode: '', result: null, photo: '', signedOut: false, blocked: '' };
 
   // ------------------------------------------------------------------ Apps Script (same sign-in as every iSteel app)
   function claims() {
@@ -105,7 +106,7 @@
 
   // ------------------------------------------------------------------ boot and queue
   async function boot() {
-    if (DEMO) { S.list = DEMO_LIST.slice(); S.user = { name: 'Demo' }; return route(); }
+    if (DEMO) { S.list = DEMO_LIST.slice(); S.user = { name: 'Demo' }; S.dash = demoDash(); return route(); }
     if (!signedIn()) { S.signedOut = true; return route(); }
     const cached = jget(CACHE_KEY, null);
     if (cached && !S.user) { useBoot(cached); route(); }   // fast: last data at once, fresh data follows
@@ -122,7 +123,7 @@
   }
 
   function useBoot(b) {
-    S.user = b.user; S.list = b.today || []; S.bins = b.bins || []; S.stock = b.stock || [];
+    S.user = b.user; S.list = b.today || []; S.bins = b.bins || []; S.stock = b.stock || []; S.dash = b.dash || null;
     S.signedOut = false; S.blocked = ''; S.loadError = '';
   }
   // Bin from the booted data (no request). null when the bin is not in Bin Master.
@@ -163,7 +164,8 @@
     if (S.blocked) return blockedScreen(T('មិនទាន់មានសិទ្ធិ', 'No access yet'), S.blocked);
     if (S.view === 'bin' && S.bin) return binScreen();
     if (S.view === 'count' && S.bin) return lineScreen('count');
-    if (S.view === 'out' && S.bin) return lineScreen('out');
+    if (S.view === 'card' && S.bin && S.card) return cardScreen();
+    if (S.view === 'move' && S.bin && S.move) return moveScreen();
     if (S.view === 'result' && S.result) return resultScreen();
     return homeScreen();
   }
@@ -173,6 +175,7 @@
   }
 
   function homeScreen() {
+    if (DEMO) S.dash = demoDash();
     const q = queue();
     const list = S.list.map(b => `<button type="button" class="item" data-bin="${esc(b.bin)}">
         <span><span class="bin">${esc(b.bin)}</span><br>
@@ -194,10 +197,15 @@
           <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
         </div>
       </section>
+      ${S.dash ? `<div class="kpis"><div><b>${S.dash.bins}</b><span>${T('កុងតឺន័រ', 'Bins')}</span></div><div><b>${S.dash.lines}</b><span>${T('ប្រភេទស្តុក', 'Stock lines')}</span></div>
+        <div class="in"><b>${S.dash.inToday}</b><span>${T('ចូលថ្ងៃនេះ', 'IN today')}</span></div><div class="out"><b>${S.dash.outToday}</b><span>${T('ចេញថ្ងៃនេះ', 'OUT today')}</span></div>
+        <div><b>${S.dash.transferToday}</b><span>${T('ផ្ទេរថ្ងៃនេះ', 'Transfers today')}</span></div></div>` : ''}
       ${S.loadError ? `<div class="card err"><b>⚠️ ${T('ផ្ទុកទិន្នន័យមិនបាន', 'Could not load the data')}</b><p class="muted">${esc(S.loadError)}</p><button type="button" class="btn ghost" id="retry">${T('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>` : ''}
       ${q.length ? `<div class="card"><span class="pill">${q.length} ${T('រង់ចាំផ្ញើ', 'waiting to send')}</span> <button type="button" class="btn ghost" id="sendQ">${T('ផ្ញើឥឡូវ', 'Send now')}</button></div>` : ''}
       <h2>${T('បញ្ជីរាប់ថ្ងៃនេះ', "Today's count list")} (${S.list.length})</h2>
       ${list || `<p class="muted">${T('មិនទាន់មានកុងតឺន័រ។', 'No bins yet.')}</p>`}
+      ${S.dash && S.dash.recent && S.dash.recent.length ? `<h2>${T('សកម្មភាពថ្មីៗ', 'Recent activity')}</h2><section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ចំនួន', 'Qty')}</th></tr>${
+        S.dash.recent.map(r => `<tr><td>${esc((r.date || '').slice(5))} <small class="muted">${esc(r.time || '')}</small></td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td><td>${esc(typeLabel(r.type))}</td><td class="num ${r.qtyIn ? 'in' : 'out'}">${r.qtyIn ? '+' + fmtQty(r.qtyIn) : '-' + fmtQty(r.qtyOut)}</td></tr>`).join('')}</table></section>` : ''}
     `);
     const go = () => { const code = $('#binIn').value.trim(); if (code) openBin(code); };
     $('#goBin').onclick = go;
@@ -296,20 +304,238 @@
   // Bin screen: the three choices, and the bin's SKU lines.
   function binScreen() {
     const b = S.bin;
-    const rows = (b.lines || []).map(l => `<tr><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td>${l.book}</td></tr>`).join('');
+    const rows = (b.lines || []).map((l, i) => `<button type="button" class="item" data-line="${i}">
+        <span><span class="sku"><b>${esc(l.material)}</b> · ${esc(l.desc)}</span><br><span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></span>
+        <span class="acc">${fmtQty(l.book)}<small>${esc(l.uom)}</small></span></button>`).join('');
     view(`
-      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${esc(b.warehouse)} · ${accText(b.accuracy)} ${T('ភាពត្រឹមត្រូវ', 'accuracy')}</div></section>
-      <section class="card"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLOC</th><th>${T('ក្នុងស្តុក', 'On hand')}</th></tr>${rows}</table></section>
-      <div class="tri">
-        <a class="btn ok" href="../inbound/">1<br>In</a>
-        <button type="button" class="btn warn" id="actOut">2<br>Out</button>
-        <button type="button" class="btn" id="actCount">3<br>Count</button>
+      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${esc(b.warehouse)} · ${(b.lines || []).length} ${T('ប្រភេទ', 'SKU')}</div></section>
+      <div class="quad">
+        <button type="button" class="btn ok" id="actIn">${typeLabel('IN')}</button>
+        <button type="button" class="btn warn" id="actOut">${typeLabel('OUT')}</button>
+        <button type="button" class="btn blue" id="actTr">${typeLabel('TRANSFER')}</button>
+        <button type="button" class="btn" id="actCount">${T('រាប់ស្តុក', 'Stock Count')}</button>
       </div>
-      <div class="note muted">${T('In: ទៅកម្មវិធីទទួលទំនិញ (ការងារ PO និងការដាក់ចូលកុងតឺន័រ)។', 'In: opens the Inbound app (PO, scan, put-away).')}</div>
+      <h2>${T('ស្តុកក្នុងកុងតឺន័រនេះ (ចុចដើម្បីមើលកាតស្តុក)', 'Stock in this bin (tap a line for its stock card)')}</h2>
+      ${rows || `<p class="muted">${T('កុងតឺន័រនេះទទេ។ ប្រើ ចូលស្តុក ដើម្បីដាក់ទំនិញ។', 'This bin is empty. Use Stock IN to put material here.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
-    $('#actOut').onclick = () => { S.mode = 'out'; S.view = 'out'; route(); };
+    $('#actIn').onclick = () => openMove('IN');
+    $('#actOut').onclick = () => openMove('OUT');
+    $('#actTr').onclick = () => openMove('TRANSFER');
     $('#actCount').onclick = () => { S.mode = 'count'; S.view = 'count'; S.photo = ''; route(); };
+    document.querySelectorAll('[data-line]').forEach(el => { el.onclick = () => openCard(Number(el.dataset.line)); });
     $('#back').onclick = () => { S.view = 'home'; S.bin = null; route(); };
+  }
+
+  // ------------------------------------------------------------------ digital stock card: In / Out / Transfer / history
+  const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
+  const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
+  const typeLabel = t => ({ IN: T('ចូលស្តុក', 'Stock IN'), OUT: T('ចេញស្តុក', 'Stock OUT'), TRANSFER: T('ផ្ទេរ', 'Transfer'),
+    'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in') }[t] || t);
+  const sameLine = (a, b) => [a.material, a.batch, a.sloc].join('|').toUpperCase() === [b.material, b.batch, b.sloc].join('|').toUpperCase();
+  const round3 = n => Math.round(n * 1000) / 1000;
+  // Same rules as rules.gs moveOk / transferOk; the server checks again before posting.
+  const moveBad = (type, qty, balance, uom) => {
+    const q = Number(qty);
+    if (qty === '' || !isFinite(q) || !(q > 0)) return T('ចំនួនត្រូវធំជាង 0', 'Quantity must be above 0');
+    if (!isKg(uom) && Math.floor(q) !== q) return T('ចំនួនត្រូវជាលេខគត់', 'Quantity must be a whole number');
+    if (type !== 'IN' && q > Number(balance)) return T('ចំនួនច្រើនជាងស្តុកក្នុងកុងតឺន័រ', 'More than the stock in this bin');
+    return '';
+  };
+
+  // Camera scan in a sheet over the screen (product barcode, destination bin). The code can always be typed instead.
+  function scanSheet(title, onText, demoText) {
+    stopScan();
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet"><div class="sheet-top"><b>${esc(title)}</b><button type="button" class="icon-btn dark" data-close aria-label="Close">✕</button></div>
+      <div class="qr-view"><video playsinline muted></video><div class="qr-frame"></div></div><p class="muted center" data-msg>${T('ដាក់កូដក្នុងប្រអប់', 'Hold the code inside the square')}</p></div>`;
+    let on = true, stream = null, timer = 0;
+    const close = () => { on = false; clearTimeout(timer); if (stream) stream.getTracks().forEach(x => x.stop()); bg.remove(); };
+    bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) close(); };
+    document.body.appendChild(bg);
+    if (DEMO) { timer = setTimeout(() => { close(); onText(demoText || ''); }, 1000); return; }
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        if (!on) { stream.getTracks().forEach(x => x.stop()); return; }
+        const video = bg.querySelector('video');
+        video.srcObject = stream; await video.play();
+        const tick = async () => {
+          if (!on) return;
+          const text = await decodeQr(video).catch(() => '');
+          if (text) { close(); onText(text.trim()); } else timer = setTimeout(tick, 180);
+        };
+        tick();
+      } catch (e) { bg.querySelector('.qr-view').hidden = true; bg.querySelector('[data-msg]').textContent = T('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយកូដ។', 'Cannot open the camera. Please type the code.'); }
+    })();
+  }
+
+  // Stock card of one line: header, balance and every movement (newest first).
+  async function openCard(i) {
+    const l = S.bin.lines[i];
+    S.lineIdx = i; S.card = { line: l, rows: null, error: '' }; S.view = 'card'; route();
+    try {
+      const c = DEMO ? { line: l, rows: DEMO_LEDGER.filter(r => r.bin === S.bin.bin && sameLine(r, l)).slice().reverse() }
+        : await api('card', { bin: S.bin.bin, material: l.material, batch: l.batch, sloc: l.sloc });
+      l.book = c.line.book;
+      S.card = { line: l, rows: c.rows, error: '' };
+    } catch (e) { if (e.code === 'AUTH') S.signedOut = true; S.card.rows = []; S.card.error = e.message; }
+    if (S.view === 'card') route();
+  }
+  function cardScreen() {
+    const b = S.bin, c = S.card, l = c.line;
+    const rows = (c.rows || []).map(r => `<tr><td>${esc((r.date || '').slice(5))}<br><small class="muted">${esc(r.time || '')}</small></td>
+      <td>${esc(r.reference || r.id || '')}${r.otherBin ? `<br><small class="muted">${r.type === 'TRANSFER IN' ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td>
+      <td>${esc(typeLabel(r.type))}</td><td class="num in">${r.qtyIn ? fmtQty(r.qtyIn) : ''}</td><td class="num out">${r.qtyOut ? fmtQty(r.qtyOut) : ''}</td>
+      <td class="num"><b>${fmtQty(r.balance)}</b></td><td><small>${esc(String(r.user || '').split('@')[0])}</small></td></tr>`).join('');
+    view(`
+      <section class="card hero">
+        <div class="muted">${esc(b.bin)} · ${esc(b.warehouse || '')}</div>
+        <div class="cdesc">${esc(l.desc)}</div>
+        <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></div>
+        <div class="kv"><div><span class="muted">${T('សមតុល្យបច្ចុប្បន្ន', 'Current balance')}</span><b>${fmtQty(l.book)} ${esc(l.uom)}</b></div>
+          <div><span class="muted">${T('ចលនាចុងក្រោយ', 'Last movement')}</span><b style="font-size:15px">${c.rows && c.rows[0] ? esc(c.rows[0].date + ' ' + c.rows[0].time) : '—'}</b></div></div>
+      </section>
+      <div class="quad">
+        <button type="button" class="btn ok" data-move="IN">${typeLabel('IN')}</button>
+        <button type="button" class="btn warn" data-move="OUT">${typeLabel('OUT')}</button>
+        <button type="button" class="btn blue" data-move="TRANSFER">${typeLabel('TRANSFER')}</button>
+      </div>
+      <h2>${T('ប្រវត្តិចលនា', 'Stock card history')}</h2>
+      ${c.error ? `<div class="card err"><p class="muted">${esc(c.error)}</p></div>` : ''}
+      ${c.rows == null ? '<div class="loading"><div class="skel"></div></div>'
+        : rows ? `<section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ឯកសារ', 'Document')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>IN</th><th>OUT</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('អ្នកធ្វើ', 'By')}</th></tr>${rows}</table></section>`
+        : `<p class="muted">${T('មិនទាន់មានចលនា។', 'No movements yet.')}</p>`}
+      <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
+    document.querySelectorAll('[data-move]').forEach(el => { el.onclick = () => openMove(el.dataset.move, S.lineIdx); });
+    $('#back').onclick = () => { S.view = 'bin'; route(); };
+  }
+
+  // In / Out / Transfer form. One request id per opened form, so a double tap or a re-send is never posted twice.
+  function openMove(type, lineIdx) {
+    S.move = { type: type, requestId: newId(), from: S.view, line: lineIdx == null ? ((S.bin.lines || []).length === 1 ? 0 : -1) : lineIdx };
+    S.view = 'move'; route();
+  }
+  function moveScreen() {
+    const b = S.bin, m = S.move, isIn = m.type === 'IN', isTr = m.type === 'TRANSFER';
+    const opts = (b.lines || []).map((l, i) => `<option value="${i}" ${m.line === i ? 'selected' : ''}>${esc(l.material)} · ${esc(l.batch)} · ${fmtQty(l.book)} ${esc(l.uom)}</option>`).join('');
+    view(`
+      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${typeLabel(m.type)}</div></section>
+      <section class="card form">
+        <label for="mLine">${T('សម្ភារៈ / បាច់', 'Material / batch')}</label>
+        <div class="row"><select id="mLine"><option value="-1">${T('— ជ្រើសរើស —', '— choose —')}</option>${opts}${isIn ? `<option value="new" ${m.line === 'new' ? 'selected' : ''}>➕ ${T('សម្ភារៈ ឬបាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New material or batch in this bin')}</option>` : ''}</select>
+          <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>
+        <p class="muted" id="mInfo"></p>
+        <div id="mNew" hidden>
+          <div class="fields"><div><label for="nMat">${T('កូដសម្ភារៈ', 'Material code')}</label><input id="nMat" type="text" autocapitalize="characters" autocomplete="off"></div>
+            <div><label for="nBatch">Batch</label><input id="nBatch" type="text" autocapitalize="characters" autocomplete="off"></div></div>
+          <div class="fields"><div><label for="nSloc">SLOC</label><input id="nSloc" type="text" autocomplete="off"></div>
+            <div><label for="nUom">${T('ឯកតា (សម្ភារៈថ្មីប៉ុណ្ណោះ)', 'Unit (new material only)')}</label><input id="nUom" type="text" placeholder="KG / PC" autocomplete="off"></div></div>
+          <label for="nDesc">${T('បរិយាយ (សម្ភារៈថ្មីប៉ុណ្ណោះ)', 'Description (new material only)')}</label><input id="nDesc" type="text" autocomplete="off">
+        </div>
+        <label for="mQty">${T('ចំនួន', 'Quantity')} <span id="mUom"></span></label>
+        <input id="mQty" type="number" inputmode="decimal" min="0" step="any" class="need">
+        ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
+          <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
+        <label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : isTr ? T('លេខឯកសារយោង (ស្រេចចិត្ត)', 'Reference (optional)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
+        <input id="mRef" type="text" maxlength="60" autocomplete="off" ${isTr ? '' : 'class="need"'}>
+        <label for="mRemark">${T('កំណត់សម្គាល់ (ស្រេចចិត្ត)', 'Remark (optional)')}</label>
+        <input id="mRemark" type="text" maxlength="200" autocomplete="off">
+        <div class="live" id="mAfter"></div>
+      </section>
+      <button type="button" class="btn big ${isIn ? 'ok' : isTr ? 'blue' : 'warn'}" id="mSave" disabled>${T('បញ្ជាក់', 'Confirm')} ${typeLabel(m.type)}</button>
+      <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
+
+    const sel = () => { const v = $('#mLine').value; return v === 'new' ? 'new' : Number(v); };
+    const line = () => (typeof sel() === 'number' && sel() >= 0 ? b.lines[sel()] : null);
+    const refresh = () => {
+      const l = line(), isNew = sel() === 'new', qty = $('#mQty').value, ref = $('#mRef').value.trim();
+      $('#mNew').hidden = !isNew;
+      $('#mUom').textContent = l ? '(' + l.uom + ')' : '';
+      $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : '';
+      const uom = l ? l.uom : ($('#nUom').value.trim() || 'KG'), bal = l ? l.book : 0;
+      let bad = !l && !isNew ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isNew && !$('#nMat').value.trim() ? T('សូមបញ្ចូលកូដសម្ភារៈ', 'Enter the material code') : moveBad(m.type, qty, bal, uom);
+      if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
+      if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
+      $('#mQty').classList.toggle('need', qty === '');
+      if ($('#mTo')) $('#mTo').classList.toggle('need', !$('#mTo').value.trim());
+      if (!isTr) $('#mRef').classList.toggle('need', !ref);
+      const after = qty !== '' && isFinite(Number(qty)) ? round3(isIn ? bal + Number(qty) : bal - Number(qty)) : null;
+      $('#mAfter').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : `${T('សមតុល្យក្រោយ', 'Balance after')}: <b>${fmtQty(after)} ${esc(uom)}</b>`;
+      $('#mSave').disabled = !!bad;
+    };
+    document.querySelectorAll('.form input, .form select').forEach(el => { el.oninput = refresh; el.onchange = refresh; });
+    // Product barcode: matched to a line of this bin when the scanned text contains its batch or its material code.
+    $('#mScan').onclick = () => scanSheet(T('ស្កេនបាកូដទំនិញ', 'Scan the product barcode'), text => {
+      const up = text.toUpperCase();
+      const i = (b.lines || []).findIndex(l => (l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) || (l.material && up.indexOf(String(l.material).toUpperCase()) >= 0));
+      if (i >= 0) $('#mLine').value = String(i);
+      else if (isIn) { $('#mLine').value = 'new'; $('#nMat').value = text; toast(T('មិនមានក្នុងកុងតឺន័រនេះ។ សូមពិនិត្យកូដ។', 'Not in this bin yet. Check the code.')); }
+      else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងកុងតឺន័រនេះទេ', 'This barcode does not match the stock in this bin'));
+      refresh();
+    }, (b.lines[0] || {}).batch);
+    if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, 'B-02-05');
+    $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
+    $('#mSave').onclick = () => saveMove(line(), sel() === 'new');
+    refresh();
+  }
+
+  async function saveMove(l, isNew) {
+    const b = S.bin, m = S.move, isTr = m.type === 'TRANSFER', qty = Number($('#mQty').value);
+    const src = l || { material: $('#nMat').value.trim(), batch: $('#nBatch').value.trim(), sloc: $('#nSloc').value.trim(), desc: $('#nDesc').value.trim(), uom: $('#nUom').value.trim() };
+    const pl = { requestId: m.requestId, type: m.type, bin: b.bin, material: src.material, batch: src.batch, sloc: src.sloc, qty: qty,
+      reference: $('#mRef').value.trim(), remark: $('#mRemark').value.trim() };
+    if (isNew) { pl.desc = src.desc; pl.uom = src.uom; }
+    if (isTr) pl.toBin = $('#mTo').value.trim();
+    const action = isTr ? 'transfer' : 'move';
+    const btn = $('#mSave'); btn.disabled = true; btn.textContent = T('កំពុងរក្សាទុក…', 'Saving…');
+    let out, offline = false;
+    try { out = DEMO ? demoMove(pl, l) : await api(action, pl); }
+    catch (e) {
+      if (e.code === 'NET') { saveQueue(queue().concat([{ action: action, payload: pl }])); offline = true; out = {}; }
+      else { if (e.code === 'AUTH') { S.signedOut = true; route(); return; } toast(e.message); btn.disabled = false; btn.textContent = T('បញ្ជាក់', 'Confirm') + ' ' + typeLabel(m.type); return; }
+    }
+    // Keep the phone's copy in step, then refresh quietly from the server.
+    if (!offline) {
+      if (l) l.book = out.balance;
+      const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && sameLine(x, src));
+      if (s) s.book = out.balance;
+      refreshQuiet();
+    }
+    const uom = out.uom || (l ? l.uom : src.uom) || '';
+    S.result = { kind: 'move', status: 'MATCH', offline: offline, title: typeLabel(m.type) + ' ' + T('រួចរាល់', 'posted'),
+      detail: offline ? '' : `${fmtQty(qty)} ${uom} · ${T('សមតុល្យថ្មី', 'New balance')}: ${fmtQty(out.balance)} ${uom}` + (isTr ? ` · ${out.toBin || pl.toBin}: ${fmtQty(out.toBalance)} ${uom}` : ''),
+      docId: out.id || '' };
+    S.view = 'result'; route();
+  }
+  // Fresh data from the server without leaving the current screen.
+  function refreshQuiet() {
+    if (DEMO) return;
+    api('boot').then(bt => { useBoot(bt); put(CACHE_KEY, JSON.stringify(bt)); if (S.bin) { const nb = localBin(S.bin.bin.toUpperCase()); if (nb) S.bin = nb; } }).catch(() => {});
+  }
+
+  // Demo mode: the same checks and postings, kept in memory only.
+  const DEMO_LEDGER = [
+    { id: 'IN261101-0001', date: '2026-11-01', time: '08:10', type: 'IN', bin: 'A-01-01', material: 'SK-1002', batch: 'B2611-09', sloc: 'WH01', qtyIn: 650, qtyOut: 0, balance: 650, reference: 'OPEN-001', user: 'admin@demo' },
+    { id: 'OUT261103-0002', date: '2026-11-03', time: '14:25', type: 'OUT', bin: 'A-01-01', material: 'SK-1002', batch: 'B2611-09', sloc: 'WH01', qtyIn: 0, qtyOut: 50, balance: 600, reference: 'DN-8100452231', user: 'usera@demo' },
+  ];
+  function demoDash() {
+    const today = new Date().toISOString().slice(0, 10), t = DEMO_LEDGER.filter(r => r.date === today);
+    return { bins: DEMO_BINS.length, lines: DEMO_BIN.lines.length, inToday: t.filter(r => r.type === 'IN').length, outToday: t.filter(r => r.type === 'OUT').length,
+      transferToday: t.filter(r => r.type === 'TRANSFER OUT').length, recent: DEMO_LEDGER.slice(-10).reverse() };
+  }
+  function demoMove(pl, l) {
+    const now = new Date(), d = now.toISOString().slice(0, 10), t = now.toTimeString().slice(0, 5);
+    if (DEMO_LEDGER.some(r => r.requestId === pl.requestId)) return { duplicate: true, balance: l ? l.book : 0 };
+    const isTr = pl.type === 'TRANSFER';
+    if (isTr && !DEMO_BINS.some(x => x.bin === pl.toBin.toUpperCase())) throw Object.assign(new Error(T('រកមិនឃើញកុងតឺន័រទៅ', 'Destination bin not found')), { code: 'NOBIN' });
+    if (!l) { l = { material: pl.material, desc: pl.desc || pl.material, batch: pl.batch, sloc: pl.sloc, uom: pl.uom || 'KG', pcsPerBundle: 1, book: 0 }; S.bin.lines.push(l); DEMO_BIN.lines.push(Object.assign({}, l)); S.stock.push(Object.assign({ bin: S.bin.bin }, l)); }
+    const bal = round3(pl.type === 'IN' ? l.book + pl.qty : l.book - pl.qty);
+    const id = (isTr ? 'TR' : pl.type) + d.slice(2).replace(/-/g, '') + '-' + String(DEMO_LEDGER.length + 1).padStart(4, '0');
+    DEMO_LEDGER.push({ id: id, requestId: pl.requestId, date: d, time: t, type: isTr ? 'TRANSFER OUT' : pl.type, bin: pl.bin, material: l.material, batch: l.batch, sloc: l.sloc,
+      qtyIn: pl.type === 'IN' ? pl.qty : 0, qtyOut: pl.type === 'IN' ? 0 : pl.qty, balance: bal, reference: pl.reference, otherBin: isTr ? pl.toBin.toUpperCase() : '', user: 'demo@demo' });
+    const dl = DEMO_BIN.lines.find(x => sameLine(x, l)); if (dl) dl.book = bal;
+    return { id: id, balance: bal, uom: l.uom, toBin: isTr ? pl.toBin.toUpperCase() : '', toBalance: isTr ? pl.qty : undefined };
   }
 
   // Count or Out: a table of every SKU line in the bin, one submit.
@@ -461,11 +687,14 @@
         <div class="emoji" style="font-size:40px">${r.status === 'OUT' || r.status === 'MATCH' ? '✅' : r.status === 'SHORT' ? '⚠️' : '🔶'}</div>
         <div class="bin">${esc(r.title)}</div>
         ${r.kind === 'count' ? `<span class="badge ${r.status}">${statusLabel(r.status)}</span>` : ''}
+        ${r.detail ? `<p style="margin:10px 0 0;font-size:17px">${esc(r.detail)}</p>` : ''}${r.docId ? `<p class="muted" style="margin:4px 0 0">${esc(r.docId)}</p>` : ''}
         ${r.offline ? `<p class="muted" style="margin-top:10px">${T('បានរក្សាទុកក្នុងទូរស័ព្ទ។ នឹងផ្ញើនៅពេលមានអ៊ីនធឺណិត។', 'Saved on this phone. It will be sent when you are online.')}</p>` : ''}
       </section>
       <table class="lines" ${(r.lines || []).length ? '' : 'hidden'}>${r.kind === 'out' ? `<tr><th>Material</th><th>Out</th><th>After</th></tr>` : `<tr><th>Material</th><th>Book</th><th>Counted</th><th>Diff</th></tr>`}${rows}</table>
       <div style="height:12px"></div>
-      <button type="button" class="btn big ok" id="next">${T('ត្រឡប់ទៅបញ្ជី', 'Back to list')}</button>`);
+      ${r.kind === 'move' && S.bin ? `<button type="button" class="btn big" id="toBin">${T('ត្រឡប់ទៅកុងតឺន័រ', 'Back to the bin')} ${esc(S.bin.bin)}</button>` : ''}
+      <button type="button" class="btn big ${r.kind === 'move' ? 'ghost' : 'ok'}" id="next">${T('ត្រឡប់ទៅបញ្ជី', 'Back to list')}</button>`);
+    if ($('#toBin')) $('#toBin').onclick = () => { S.view = 'bin'; S.result = null; route(); };
     $('#next').onclick = () => { S.view = 'home'; S.bin = null; S.result = null; route(); };
   }
 
