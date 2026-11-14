@@ -1,14 +1,25 @@
-// Stock Count demo screens (sample data only): desktop dashboard, stock list, movements, count review with roles,
-// SAP import and reconciliation. Runs only in demo mode (no API_URL); the live app is not changed by this file.
+// Stock Count menu screens. Live app: dashboard, stock list, movements (Stock Ledger) and SAP check, on the real stock.
+// Demo mode (no API_URL, sample data only) adds count review, roles and the role switcher, which have no backend yet.
 // SAP figures are only compared with the digital balance. They never overwrite it.
 (function () {
   'use strict';
   const SC = window.SC;
-  if (!SC || !SC.DEMO) return;
+  if (!SC) return;
+  const DEMO = SC.DEMO;
   const { S, T, esc, $, view, route, toast, fmtQty, typeLabel, round3, sameLine, openBin, dAgo } = SC;
-  const D = SC.demo;
+  // Live data: stock and bins come with the app start; the ledger is read when a screen needs it.
+  const D = DEMO ? SC.demo : { get stock() { return S.stock || []; }, get bins() { return S.bins || []; }, ledger: [], counts: [], at: 0, old: false, busy: false };
+  function loadLedger(again) {
+    if (DEMO || D.busy || Date.now() - D.at < 30000) return;
+    D.busy = true;
+    SC.api('ledger', {}).then(r => { D.ledger = r.rows || []; D.old = false; }, e => {
+      // Old Code.gs (not re-pasted yet): show the last movements that came with the app start.
+      D.old = true; D.ledger = ((S.dash && S.dash.recent) || []).slice().reverse();
+    }).then(() => { D.busy = false; D.at = Date.now(); if (S.view === again) route(); });
+  }
+  const oldNote = () => (!DEMO && D.old ? `<p class="muted">⚠️ ${T('បង្ហាញតែចលនា ១០ ចុងក្រោយ។ សូម paste Code.gs ថ្មី ដើម្បីមើលទាំងអស់។', 'Showing the last 10 movements only. Re-paste Code.gs to see them all.')}</p>` : '');
   const $$ = s => Array.from(document.querySelectorAll(s));
-  const SNAP = D.stock.map(l => Object.assign({}, l));   // stock at page load = base of the SAP sample files
+  const SNAP = !DEMO ? [] : D.stock.map(l => Object.assign({}, l));   // stock at page load = base of the SAP sample files
 
   // ------------------------------------------------------------------ roles
   const PAGES = [
@@ -29,7 +40,8 @@
   ];
   let roleId = 'admin';
   try { roleId = localStorage.getItem('sc_demo_role') || 'admin'; } catch (e) { /* private mode */ }
-  const role = () => ROLES.find(r => r.id === roleId) || ROLES[3];
+  const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'sap'], can: ['export', 'sap'] };
+  const role = () => (!DEMO ? LIVE_ROLE : ROLES.find(r => r.id === roleId) || ROLES[3]);
   const can = what => role().can.indexOf(what) >= 0;
   const has = (r, right) => (right === 'scan' || right === 'stockv' ? true : right === 'dashv' ? r.pages.indexOf('dash') >= 0 : r.can.indexOf(right) >= 0);
 
@@ -43,6 +55,7 @@
     nav.innerHTML = PAGES.filter(p => r.pages.indexOf(p[0]) >= 0).map(p => `<button type="button" class="tab${p[0] === on ? ' on' : ''}" data-tab="${p[0]}"><span>${p[1]}</span><b>${T(p[2], p[3])}</b>${
       p[0] === 'review' && pending() ? `<i class="count">${pending()}</i>` : ''}</button>`).join('');
     nav.querySelectorAll('.tab').forEach(b => { b.onclick = () => { S.view = b.dataset.tab; route(); window.scrollTo(0, 0); }; });
+    if (!DEMO) return;
     const d = $('#demo');
     d.innerHTML = `${T('សាកល្បង៖ ទិន្នន័យគំរូ មិនមែនស្តុកពិត', 'Demo: sample data, not real stock')} · <label class="role-pick">${T('តួនាទី', 'Role')}
       <select id="rolePick">${ROLES.map(x => `<option value="${x.id}"${x.id === r.id ? ' selected' : ''}>${T(x.km, x.en)}</option>`).join('')}</select></label>`;
@@ -73,16 +86,16 @@
   // ------------------------------------------------------------------ dashboard
   let lastSap = null;
   function dash() {
-    wide();
+    wide(); loadLedger('dash');
     const today = dAgo(0), led = D.ledger, td = led.filter(r => r.date === today);
-    const kg = D.stock.filter(l => l.uom === 'KG').reduce((a, l) => a + l.book, 0), pc = D.stock.filter(l => l.uom !== 'KG').reduce((a, l) => a + l.book, 0);
+    const kg = D.stock.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0), pc = D.stock.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
     const done = D.counts.filter(c => c.status !== 'Submitted'), okCount = D.counts.filter(c => c.variance === 0).length;
     const acc = D.counts.length ? Math.round(okCount / D.counts.length * 100) : null;
     const stat = (v, label, cls, go) => `<div class="stat ${cls || ''}"${go ? ` data-go="${go}"` : ''}><b>${v}</b><span>${label}</span></div>`;
     const days = [6, 5, 4, 3, 2, 1, 0].map(n => { const d = dAgo(n), rows = led.filter(r => r.date === d); return { d: d.slice(5), i: rows.filter(r => isIn(r.type)).length, o: rows.filter(r => r.type === 'OUT' || r.type === 'TRANSFER OUT').length }; });
     const max = Math.max(1, ...days.map(x => Math.max(x.i, x.o)));
     const whs = Array.from(new Set(D.bins.map(b => b.warehouse))).map(w => { const ls = D.stock.filter(l => whOf(l.bin) === w); return { w: w, bins: D.bins.filter(b => b.warehouse === w).length, lines: ls.length,
-      kg: ls.filter(l => l.uom === 'KG').reduce((a, l) => a + l.book, 0), pc: ls.filter(l => l.uom !== 'KG').reduce((a, l) => a + l.book, 0) }; });
+      kg: ls.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0), pc: ls.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0) }; });
     view(`
       <h2 class="ptitle">${T('ផ្ទាំងគ្រប់គ្រងស្តុក', 'Stock dashboard')} <small class="muted">${now()}</small></h2>
       <div class="dash-kpis">
@@ -92,8 +105,8 @@
         ${stat(fmtQty(pc), T('ស្តុកសរុប Pcs', 'Total Pcs'))}
         ${stat(td.filter(r => r.type === 'IN').length, T('ចូលថ្ងៃនេះ', 'IN today'), 'in', 'moves')}
         ${stat(td.filter(r => r.type === 'OUT').length, T('ចេញថ្ងៃនេះ', 'OUT today'), 'out', 'moves')}
-        ${stat(pending(), T('ការរាប់រង់ចាំអនុម័ត', 'Counts to review'), pending() ? 'warn' : '', 'review')}
-        ${stat(acc == null ? '—' : acc + '%', T('ភាពត្រឹមត្រូវនៃការរាប់', 'Count accuracy'))}
+        ${DEMO ? stat(pending(), T('ការរាប់រង់ចាំអនុម័ត', 'Counts to review'), pending() ? 'warn' : '', 'review') : ''}
+        ${DEMO ? stat(acc == null ? '—' : acc + '%', T('ភាពត្រឹមត្រូវនៃការរាប់', 'Count accuracy')) : ''}
         ${stat(lastSap ? lastSap.variances : '—', lastSap ? T('ខុសគ្នាជាមួយ SAP', 'SAP variances') + ' · ' + lastSap.at.slice(5) : T('មិនទាន់នាំចូល SAP', 'No SAP import yet'), lastSap && lastSap.variances ? 'warn' : '', role().pages.indexOf('sap') >= 0 ? 'sap' : '')}
       </div>
       <div class="dgrid">
@@ -103,9 +116,9 @@
         <section class="card scroll"><h3>${T('ស្តុកតាមឃ្លាំង', 'Stock by warehouse')}</h3>
           <table class="lines hist"><tr><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('កុងតឺន័រ', 'Bins')}</th><th>${T('ប្រភេទស្តុក', 'Lines')}</th><th>Kg</th><th>Pcs</th></tr>
           ${whs.map(w => `<tr><td><b>${esc(w.w)}</b></td><td class="num">${w.bins}</td><td class="num">${w.lines}</td><td class="num">${fmtQty(w.kg)}</td><td class="num">${fmtQty(w.pc)}</td></tr>`).join('')}</table></section>
-        <section class="card scroll"><h3>${T('ការរាប់ចុងក្រោយ', 'Latest counts')}</h3>
+        ${DEMO ? `<section class="card scroll"><h3>${T('ការរាប់ចុងក្រោយ', 'Latest counts')}</h3>
           <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('ស្ថានភាព', 'Status')}</th></tr>
-          ${D.counts.slice(0, 6).map(c => `<tr><td>${esc(c.date.slice(5))}</td><td>${esc(c.bin)}</td><td>${esc(c.material)}</td><td class="num ${c.variance < 0 ? 'out' : c.variance > 0 ? 'in' : ''}">${c.variance > 0 ? '+' : ''}${fmtQty(c.variance)}</td><td>${stBadge(c.status)}</td></tr>`).join('')}</table></section>
+          ${D.counts.slice(0, 6).map(c => `<tr><td>${esc(c.date.slice(5))}</td><td>${esc(c.bin)}</td><td>${esc(c.material)}</td><td class="num ${c.variance < 0 ? 'out' : c.variance > 0 ? 'in' : ''}">${c.variance > 0 ? '+' : ''}${fmtQty(c.variance)}</td><td>${stBadge(c.status)}</td></tr>`).join('')}</table></section>` : ''}
         <section class="card scroll"><h3>${T('ប្រតិបត្តិការថ្មីៗ', 'Recent transactions')}</h3>
           <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
           ${newest().slice(0, 10).map(r => `<tr><td>${esc(r.date.slice(5))} <small class="muted">${esc(r.time)}</small></td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td>${qtyCell(r)}<td>${esc(r.user)}</td></tr>`).join('')}</table></section>
@@ -142,7 +155,7 @@
 
   // ------------------------------------------------------------------ movements (the ledger)
   function moves() {
-    wide();
+    wide(); loadLedger('moves');
     const types = ['IN', 'OUT', 'TRANSFER OUT', 'TRANSFER IN', 'ADJUST'];
     const rows = newest().filter(r => (!F.mt || r.type === F.mt) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user]));
     view(`
@@ -153,6 +166,7 @@
       <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
         ${rows.map(r => `<tr><td>${esc(r.date)} <small class="muted">${esc(r.time)}</small></td><td>${esc(r.id)}</td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}${r.otherBin ? ` <small class="muted">${isIn(r.type) ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td><td>${esc(r.material)}</td><td>${esc(r.batch)}</td>${qtyCell(r)}<td class="num">${fmtQty(r.balance)} ${esc(r.uom)}</td><td>${esc(r.reference)}</td><td>${esc(r.user)}</td></tr>`).join('')
           || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
+      ${oldNote()}
       <p class="muted">${T('ជួរនីមួយៗមិនអាចកែ ឬលុបបានទេ។ កំហុសត្រូវកែដោយប្រតិបត្តិការថ្មី។', 'Rows are never edited or deleted. A mistake is corrected with a new transaction.')}</p>`);
     keep('#mq', v => { F.mq = v; moves(); });
     $('#mt').onchange = e => { F.mt = e.target.value; moves(); };
@@ -265,14 +279,14 @@
       <h2 class="ptitle">${T('នាំចូល SAP និងផ្ទៀងផ្ទាត់', 'SAP import and reconciliation')}</h2>
       <section class="card">
         <div class="fbar"><label class="btn sm file">⬆ ${T('ជ្រើសឯកសារ CSV ពី SAP', 'Choose SAP CSV file')}<input type="file" id="sapFile" accept=".csv,.txt,text/csv" hidden></label>
-          <button type="button" class="btn ghost sm" data-sample="mb52">${T('គំរូ MB52', 'Sample MB52')}</button>
-          <button type="button" class="btn ghost sm" data-sample="ewm">${T('គំរូ EWM (មានកុងតឺន័រ)', 'Sample EWM (with bins)')}</button></div>
+          ${DEMO ? `<button type="button" class="btn ghost sm" data-sample="mb52">${T('គំរូ MB52', 'Sample MB52')}</button>
+          <button type="button" class="btn ghost sm" data-sample="ewm">${T('គំរូ EWM (មានកុងតឺន័រ)', 'Sample EWM (with bins)')}</button>` : ''}</div>
         <details class="paste"><summary>${T('ឬបិទភ្ជាប់ពី Excel', 'or paste from Excel')}</summary><textarea id="sapPaste" rows="4" placeholder="Material&#9;Batch&#9;Storage Location&#9;Unrestricted"></textarea>
           <button type="button" class="btn ghost sm" id="usePaste">${T('ប្រើទិន្នន័យនេះ', 'Use this data')}</button></details>
         ${R.error ? `<p class="bad">⚠️ ${esc(R.error)}</p>` : ''}
         ${R.rows.length ? `<p class="muted">📄 <b>${esc(R.name)}</b> · ${R.rows.length} ${T('ជួរ', 'rows')} · ${T('នាំចូលនៅ', 'snapshot')} ${esc(R.at)}${res && res.bad ? ` · <span class="bad">${res.bad} ${T('ជួរមិនអាចអាន', 'rows skipped (no material or quantity)')}</span>` : ''}</p>
           <div class="mapgrid">${FIELDS.map(f => `<label>${f[1]}${f[3] ? ' *' : ''}<select data-map="${f[0]}"${f[3] && R.map[f[0]] < 0 ? ' class="need"' : ''}><option value="-1">—</option>${R.headers.map((h, i) => `<option value="${i}"${R.map[f[0]] === i ? ' selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}</div>`
-        : `<p class="muted">${T('នាំចេញ MB52 ឬ EWM ពី SAP ជា CSV រួចជ្រើសឯកសារនៅទីនេះ។ សម្រាប់សាកល្បង ចុចប៊ូតុងគំរូ។', 'Export MB52 or EWM stock from SAP as CSV, then choose the file here. To try it, press a sample button.')}</p>`}
+        : `<p class="muted">${T('នាំចេញ MB52 ឬ EWM ពី SAP ជា CSV រួចជ្រើសឯកសារនៅទីនេះ។ ', 'Export MB52 or EWM stock from SAP as CSV (Excel: Save as CSV), then choose the file here or paste the rows.')}</p>`}
       </section>
       ${res ? `
       <div class="dash-kpis">
