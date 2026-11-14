@@ -165,7 +165,7 @@
         ${GROUPS.map(g => `<button type="button" class="gs-card ${g[0]}${F.st === g[0] ? ' on' : ''}" data-st="${g[0]}"><span>${g[1]} ${t(g[2], g[3])}</span><b>${cnt[g[0]]}</b></button>`).join('')}
         <div class="gs-card pct"><span>${t('ត្រូវគ្នា', 'Match rate')}</span><b>${okPct}%</b><small>${total} ${t('ជើង', 'trips')}</small></div>
       </div>
-      <div class="gs-src"><span class="key ib">📦 Inbound · ${stamp(IB && IB.at)}</span><span class="key sc">⚖️ ${t('ជញ្ជីង', 'Truck Scale')} · ${stamp(SC && SC.at)}</span>${F.st !== 'all' ? `<button type="button" class="gs-link" data-st="all">✕ ${t('បង្ហាញទាំងអស់', 'Show all')}</button>` : ''}</div>
+      <div class="gs-src"><span class="key rate">${t('ត្រូវគ្នា', 'Match rate')} ${okPct}% · ${total} ${t('ជើង', 'trips')}</span><span class="key ib">📦 Inbound · ${stamp(IB && IB.at)}</span><span class="key sc">⚖️ ${t('ជញ្ជីង', 'Truck Scale')} · ${stamp(SC && SC.at)}</span>${F.st !== 'all' ? `<button type="button" class="gs-link" data-st="all">✕ ${t('បង្ហាញទាំងអស់', 'Show all')}</button>` : ''}</div>
       ${(!IB || !SC || !scCovers()) && (busy || (!ERR.ib && !ERR.sc)) ? `<div class="spinner" role="status"></div>` : !IB || !SC || !scCovers() ? '' : rows.length ? `
       <div class="tbl-wrap"><table class="gs-tbl" data-tc="gs">
         <thead><tr>${COLS.map(thOf).join('')}</tr></thead>
@@ -173,11 +173,24 @@
       </table></div>` : `<div class="card empty">${total ? t('គ្មានជួរត្រូវនឹងតម្រង', 'No rows match the filter') : t('គ្មានឡានចូលទម្លាក់ទំនិញក្នុងថ្ងៃទាំងនេះ', 'No trucks came in to unload on these days')}</div>`}
       <p class="gs-help">${t('ប្រៀបធៀប៖ កំណត់ត្រា Inbound ទល់ ប័ណ្ណថ្លឹង "ទំលាក់ទំនិញ" (មិនរាប់ប័ណ្ណបានលុប)។ ត្រូវគ្នា = ផ្លាកលេខដូចគ្នា ថ្ងៃដូចគ្នា ឬឡាននៅលើទីតាំងឆ្លងថ្ងៃ។ ផ្លាកលេខខុសគ្នា = ខុសតែ ១ តួអក្សរ សូមពិនិត្យ។',
         'Compares Inbound records with Scale tickets ticked Unload (cancelled tickets left out). Matched = same plate on the same day, or the truck stayed on site overnight. Plate typed differently = one letter or digit apart, please check which is right.')}</p>`;
+    paintNav(cnt, total);
     wire();
   }
 
+  // Side menu on computers (Kim picked mockup C, 14 Nov 2026): Home, Dashboards, then the status filters with their counts.
+  // Phones keep the 3-button bottom bar (Home, Dashboards, Cross-check) and the count cards above the table.
+  function paintNav(cnt, total) {
+    const nav = $('nav.tabs'); if (!nav) return;
+    const item = (st, ico, km, en, n) => `<a href="#" class="tab flt${F.st === st ? ' on' : ''}" data-st="${st}"><span aria-hidden="true">${ico}</span><b>${t(km, en)}</b><i class="cnt">${n}</i></a>`;
+    nav.innerHTML = `<a href="../" class="tab"><img src="../icons/home.svg" alt="" width="24" height="24"><b>${t('ទំព័រដើម', 'Home')}</b></a>
+      <a href="../dashboards/" class="tab"><img src="../icons/dashboard.svg" alt="" width="24" height="24"><b>${t('ផ្ទាំងព័ត៌មាន', 'Dashboards')}</b></a>
+      <a href="#" class="tab cur on"><span aria-hidden="true">⚖️</span><b>${t('ផ្ទៀងផ្ទាត់', 'Cross-check')}</b></a>
+      <div class="nav-sec">${t('ច្រកចូល ទល់ ជញ្ជីង', 'Gate vs Scale')}</div>
+      ${item('all', '📋', 'ជើងទាំងអស់', 'All trips', total)}${GROUPS.map(g => item(g[0], g[1], g[2], g[3], cnt[g[0]])).join('')}`;
+  }
+
   function wire() {
-    $$('[data-st]').forEach(b => { b.onclick = () => { F.st = F.st === b.dataset.st ? 'all' : b.dataset.st; saveF(); render(); }; });
+    $$('[data-st]').forEach(b => { b.onclick = e => { e.preventDefault(); F.st = b.dataset.st === 'all' || F.st === b.dataset.st ? 'all' : b.dataset.st; saveF(); render(); }; });
     $$('[data-qd]').forEach(b => {
       b.onclick = () => {
         const k = b.dataset.qd, td = today();
