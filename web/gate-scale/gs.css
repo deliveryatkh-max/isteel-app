@@ -18,6 +18,10 @@ a.gs-link { display: inline-block; margin-top: 10px; }
 .tbl-wrap { overflow: auto; max-height: calc(100vh - 300px); min-height: 220px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .gs-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
 .gs-tbl th { position: sticky; top: 0; z-index: 2; background: #011e41; color: #fff; text-align: left; font-weight: 600; padding: 8px 8px; white-space: nowrap; font-size: 12.5px; }
+.gs-tbl th.src-ib { background: #084f6a; } .gs-tbl th.src-sc { background: #a55a00; }
+.gs-tbl th.src-ib + th.src-sc, .gs-tbl th.src-sc + th.src-ib { border-left: 2px solid #fff; }
+.gs-src .key { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; color: #fff; font-weight: 600; }
+.gs-src .key.ib { background: #084f6a; } .gs-src .key.sc { background: #a55a00; }
 .gs-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .gs-tbl tbody tr:hover td { background: var(--soft); }
 .gs-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

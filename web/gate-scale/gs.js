@@ -103,12 +103,15 @@
     return { all: byWh, rows: byWh.filter(w => (F.st === 'all' || groupOf(w.st) === F.st) && (!q || [w.ib && w.ib.truck, w.sc && w.sc.plate, w.ib && w.ib.id, w.sc && w.sc.no].some(v => C.norm(v).indexOf(q) >= 0))) };
   }
 
+  // Header colour and emoji per source app (Kim, 14 Nov 2026): 📦 Inbound teal, ⚖️ Scale amber, both / neither navy.
+  const SRC = { ib: '📦', sc: '⚖️' };
   const COLS = [
-    ['st', 'ស្ថានភាព', 'Status'], ['date', 'ថ្ងៃ', 'Date'], ['ibp', 'ផ្លាកលេខ (Inbound)', 'Plate (Inbound)'], ['scp', 'ផ្លាកលេខ (ជញ្ជីង)', 'Plate (Scale)'],
-    ['rid', 'លេខ Inbound', 'Receipt No'], ['unl', 'ម៉ោងទម្លាក់', 'Unload time'], ['wh', 'ឃ្លាំង', 'Warehouse'], ['carrier', 'ក្រុមហ៊ុនដឹក (Inbound)', 'Carrier (Inbound)'],
-    ['tk', 'លេខប័ណ្ណថ្លឹង', 'Ticket No'], ['w', 'ថ្លឹង ចូល–ចេញ', 'Weigh in–out'], ['co', 'ក្រុមហ៊ុនឡាន (ជញ្ជីង)', 'Truck company (Scale)'],
-    ['ikg', 'Inbound (kg)', 'Inbound (kg)'], ['skg', 'ជញ្ជីង Net (kg)', 'Scale net (kg)'], ['dkg', 'ខុសគ្នា (kg)', 'Diff (kg)'], ['note', 'កំណត់សម្គាល់', 'Note'],
+    ['st', 'ស្ថានភាព', 'Status'], ['date', 'ថ្ងៃ', 'Date'], ['ibp', 'ផ្លាកលេខ', 'Plate', 'ib'], ['scp', 'ផ្លាកលេខ', 'Plate', 'sc'],
+    ['rid', 'លេខ Inbound', 'Receipt No', 'ib'], ['unl', 'ម៉ោងទម្លាក់', 'Unload time', 'ib'], ['wh', 'ឃ្លាំង', 'Warehouse', 'ib'], ['carrier', 'ក្រុមហ៊ុនដឹក', 'Carrier', 'ib'],
+    ['tk', 'លេខប័ណ្ណថ្លឹង', 'Ticket No', 'sc'], ['w', 'ថ្លឹង ចូល–ចេញ', 'Weigh in–out', 'sc'], ['co', 'ក្រុមហ៊ុនឡាន', 'Truck company', 'sc'],
+    ['ikg', 'ទទួល (kg)', 'GR (kg)', 'ib'], ['skg', 'Net (kg)', 'Net (kg)', 'sc'], ['dkg', 'ខុសគ្នា (kg)', 'Diff (kg)'], ['note', 'កំណត់សម្គាល់', 'Note'],
   ];
+  const thOf = c => `<th class="${[c[3] ? 'src-' + c[3] : '', /^(ikg|skg|dkg)$/.test(c[0]) ? 'n' : ''].filter(Boolean).join(' ')}"${c[3] ? ` title="${c[3] === 'ib' ? 'Inbound' : t('ជញ្ជីង', 'Truck Scale')}"` : ''}>${c[3] ? SRC[c[3]] + ' ' : ''}${t(c[1], c[2])}</th>`;
   function cell(k, w) {
     const ib = w.ib || {}, sc = w.sc || {};
     switch (k) {
@@ -120,7 +123,7 @@
       case 'unl': return `<td class="nw">${esc(ib.start || '')}${ib.end ? '–' + esc(ib.end) : ''}</td>`;
       case 'wh': return `<td class="nw">${esc([ib.site, ib.warehouse].filter(Boolean).join(' · '))}</td>`;
       case 'carrier': return `<td>${esc(ib.carrier || ib.owner || '')}</td>`;
-      case 'tk': return `<td class="nw">${esc(sc.no || '')}</td>`;
+      case 'tk': return `<td class="nw">${sc.no ? `<a href="../scale/#/t/${encodeURIComponent(sc.no)}" target="_blank" rel="noopener">${esc(sc.no)}</a>` : ''}</td>`;
       case 'w': return `<td class="nw">${sc.t1 ? (w.st === 'day' ? dShow(sc.t1) + ' ' : '') + hm(sc.t1) + '–' + (sc.t2 ? (String(sc.t2).slice(0, 10) !== String(sc.t1).slice(0, 10) ? dShow(sc.t2) + ' ' : '') + hm(sc.t2) : '…') : ''}</td>`;
       case 'co': return `<td>${esc(sc.company || '')}</td>`;
       case 'ikg': return `<td class="n">${num(w.ibKg)}</td>`;
@@ -162,10 +165,10 @@
         ${GROUPS.map(g => `<button type="button" class="gs-card ${g[0]}${F.st === g[0] ? ' on' : ''}" data-st="${g[0]}"><span>${g[1]} ${t(g[2], g[3])}</span><b>${cnt[g[0]]}</b></button>`).join('')}
         <div class="gs-card pct"><span>${t('ត្រូវគ្នា', 'Match rate')}</span><b>${okPct}%</b><small>${total} ${t('ជើង', 'trips')}</small></div>
       </div>
-      <div class="gs-src"><span>🚛 Inbound ${stamp(IB && IB.at)}</span><span>⚖️ ${t('ជញ្ជីង', 'Scale')} ${stamp(SC && SC.at)}</span>${F.st !== 'all' ? `<button type="button" class="gs-link" data-st="all">✕ ${t('បង្ហាញទាំងអស់', 'Show all')}</button>` : ''}</div>
+      <div class="gs-src"><span class="key ib">📦 Inbound · ${stamp(IB && IB.at)}</span><span class="key sc">⚖️ ${t('ជញ្ជីង', 'Truck Scale')} · ${stamp(SC && SC.at)}</span>${F.st !== 'all' ? `<button type="button" class="gs-link" data-st="all">✕ ${t('បង្ហាញទាំងអស់', 'Show all')}</button>` : ''}</div>
       ${(!IB || !SC || !scCovers()) && (busy || (!ERR.ib && !ERR.sc)) ? `<div class="spinner" role="status"></div>` : !IB || !SC || !scCovers() ? '' : rows.length ? `
       <div class="tbl-wrap"><table class="gs-tbl" data-tc="gs">
-        <thead><tr>${COLS.map(c => `<th${/^(ikg|skg|dkg)$/.test(c[0]) ? ' class="n"' : ''}>${t(c[1], c[2])}</th>`).join('')}</tr></thead>
+        <thead><tr>${COLS.map(thOf).join('')}</tr></thead>
         <tbody>${rows.map(w => `<tr class="r-${ST[w.st][3]}">${COLS.map(c => cell(c[0], w)).join('')}</tr>`).join('')}</tbody>
       </table></div>` : `<div class="card empty">${total ? t('គ្មានជួរត្រូវនឹងតម្រង', 'No rows match the filter') : t('គ្មានឡានចូលទម្លាក់ទំនិញក្នុងថ្ងៃទាំងនេះ', 'No trucks came in to unload on these days')}</div>`}
       <p class="gs-help">${t('ប្រៀបធៀប៖ កំណត់ត្រា Inbound ទល់ ប័ណ្ណថ្លឹង "ទំលាក់ទំនិញ" (មិនរាប់ប័ណ្ណបានលុប)។ ត្រូវគ្នា = ផ្លាកលេខដូចគ្នា ថ្ងៃដូចគ្នា ឬឡាននៅលើទីតាំងឆ្លងថ្ងៃ។ ផ្លាកលេខខុសគ្នា = ខុសតែ ១ តួអក្សរ សូមពិនិត្យ។',
