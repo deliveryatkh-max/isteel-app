@@ -192,6 +192,9 @@ function authenticate_(token) {
 // Access = the one user list: the Users tab of the Fuel Refill sheet (USERS_SHEET_ID), same as Inbound.
 // Active = Yes and the ការរាប់ស្តុក tick box ticked (admins always). Admin role = Role contains "admin".
 const APP_COL = 'ការរាប់ស្តុក';
+// The person's name for sheet rows (Kim, 14 Nov: no emails on screen); the part before @ when Users has no name.
+const name_ = (who, user) => (who && who.Name && who.Name.indexOf('@') < 0 ? who.Name : String(user.email).split('@')[0]);
+
 function counter_(user) {
   const cache = CacheService.getScriptCache(), ck = 'who_' + user.email;
   const hit = cache.get(ck);
@@ -318,7 +321,7 @@ function binInfo_(user, code) {
 
 // ---------------------------------------------------------------- save a count (all SKU lines of a bin, one submit)
 function submit_(user, c) {
-  counter_(user);
+  const who = counter_(user);
   const st = settings_();
   const bin = String(c.bin || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
@@ -352,7 +355,7 @@ function submit_(user, c) {
     const l = lines[i];
     const num = v => (v === '' || v == null ? '' : Number(v));
     appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
-      counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: user.email, remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
+      counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: name_(who, user), remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
     addCounted_(stk, r.s, l);   // every count adds up in Stock On Hand; Book Qty (from MB52) is not changed by a count
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
@@ -463,7 +466,7 @@ function move_(user, p) {
   if (bad) fail_('BAD', bad);
   if (!s) s = newLine_(who, b.bin, p);
   const qty = Number(p.qty), now = new Date(), id = txnId_(type === 'IN' ? 'IN' : 'OUT', now), balance = balanceAfter(type, qty, s.book);
-  ledgerAppend_([ledgerRow_(id, now, type, b.bin, s, qty, balance, { Reference: reference, Remark: clip_(p.remark, 200), User: user.email, 'Request ID': clip_(p.requestId, 80) })]);
+  ledgerAppend_([ledgerRow_(id, now, type, b.bin, s, qty, balance, { Reference: reference, Remark: clip_(p.remark, 200), User: name_(who, user), 'Request ID': clip_(p.requestId, 80) })]);
   setBook_(sheet_(SH.STK, STK_COLS), s, balance);
   return { id: id, balance: balance, uom: s.uom };
 }
@@ -471,7 +474,7 @@ function move_(user, p) {
 // Moves stock of one line to another bin. Everything is checked first; then both ledger rows are written in one write
 // (one Transfer ID), then the two balances. Runs under the script lock, so two phones cannot move the same stock at once.
 function transfer_(user, p) {
-  counter_(user);
+  const who = counter_(user);
   const dup = posted_(p.requestId);
   if (dup) return dup;
   const from = activeBin_(p.bin);
@@ -487,7 +490,7 @@ function transfer_(user, p) {
   let d = findLine_(stock_(to.bin), to.bin, s);
   if (!d) { d = Object.assign({}, s, { bin: to.bin, book: 0 }); stk.appendRow([d.bin, d.material, d.desc, d.batch, d.sloc, d.uom, d.pcsPerBundle, 0]); }
   const fromBal = balanceAfter('TRANSFER OUT', qty, s.book), toBal = balanceAfter('TRANSFER IN', qty, d.book);
-  const extra = other => ({ Reference: clip_(p.reference, 60), 'Other Bin': other, 'Transfer ID': tid, Remark: clip_(p.remark, 200), User: user.email, 'Request ID': clip_(p.requestId, 80) });
+  const extra = other => ({ Reference: clip_(p.reference, 60), 'Other Bin': other, 'Transfer ID': tid, Remark: clip_(p.remark, 200), User: name_(who, user), 'Request ID': clip_(p.requestId, 80) });
   ledgerAppend_([ledgerRow_(tid + '-O', now, 'TRANSFER OUT', from.bin, s, qty, fromBal, extra(to.bin)),
     ledgerRow_(tid + '-I', now, 'TRANSFER IN', to.bin, d, qty, toBal, extra(from.bin))]);
   setBook_(stk, s, fromBal);
