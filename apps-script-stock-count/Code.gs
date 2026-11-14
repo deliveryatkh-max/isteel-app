@@ -18,7 +18,10 @@
  * Pure rules (countedPcs, countedQty, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
-const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger' };
+const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger', PM: 'Product Master' };
+// Product Master = pipe materials with pieces per bundle and kg per piece (from Kim's Product Master file). It turns a count in
+// bundles / pieces into kg. Filled once from ProductMaster.gs when the tab is empty; after that the tab is edited by hand.
+const PM_COLS = ['Material', 'Description', 'Pipe Size', 'Pcs per Bundle', 'Kg per Pc', 'Source'];
 // Stock Ledger = the digital stock card: one row per posted movement (In, Out, Transfer Out, Transfer In). Rows are never edited
 // or deleted by the app; a correction is a new movement. Book Qty in Stock On Hand is the running balance of each line.
 const LED_COLS = ['Txn ID', 'Date', 'Time', 'Type', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'In', 'Out', 'Balance',
@@ -238,9 +241,29 @@ function bins_() {
 
 // Stock lines of one bin (or all, when bin is empty). Each line is one material + batch + SLOC.
 function stock_(bin) {
-  return objs_(SH.STK, STK_COLS).filter(r => r.Bin && (!bin || r.Bin.toUpperCase() === bin.toUpperCase())).map(r => ({
-    bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
-    pcsPerBundle: num_(r['Pcs per Bundle']) || 1, book: num_(r['Book Qty']) }));
+  const pm = pm_();
+  return objs_(SH.STK, STK_COLS).filter(r => r.Bin && (!bin || r.Bin.toUpperCase() === bin.toUpperCase())).map(r => {
+    const m = pm[String(r.Material).toUpperCase()] || {};
+    // Pcs per Bundle typed in Stock On Hand wins; blank (or 1 on a pipe) falls back to the Product Master.
+    const typed = num_(r['Pcs per Bundle']);
+    return { bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
+      pcsPerBundle: (typed > 1 ? typed : m.ppb) || typed || 1, kgPerPc: m.kg || 0, book: num_(r['Book Qty']) };
+  });
+}
+// Product Master as { MATERIAL: { ppb, kg } }, kept 10 minutes. An empty tab is filled from PM_SEED (ProductMaster.gs) first.
+function pm_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('pm');
+  if (hit) { try { return JSON.parse(hit); } catch (e) { /* read again */ } }
+  const sh = sheet_(SH.PM, PM_COLS);
+  if (sh.getLastRow() < 2 && typeof PM_SEED !== 'undefined' && PM_SEED.length) {
+    sh.getRange(1, 1, 1, PM_COLS.length).setValues([PM_COLS]);
+    sh.getRange(2, 1, PM_SEED.length, PM_COLS.length).setNumberFormat('@').setValues(PM_SEED.map(r => r.map(String)));
+  }
+  const out = {};
+  objs_(SH.PM, PM_COLS).forEach(r => { if (r.Material) out[r.Material.toUpperCase()] = { ppb: num_(r['Pcs per Bundle']), kg: num_(r['Kg per Pc']) }; });
+  try { cache.put('pm', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
+  return out;
 }
 // Sheet text to number: '4,620.00' -> 4620, blank -> 0.
 const num_ = v => Number(String(v == null ? '' : v).replace(/,/g, '')) || 0;
@@ -495,11 +518,10 @@ function addCounted_(sh, s, l) {
     sh.getRange(row, c).setValue(total);
     return total;
   };
-  add('counted qty bundle', l.bundles);
-  const kg = add('counted qty kg', l.kg);
-  add('counted qty pcs', l.pieces);
-  if (col('total counted qty kg')) sh.getRange(row, col('total counted qty kg')).setValue(kg);
-  if (col('difference')) sh.getRange(row, col('difference')).setValue(kg - s.book);
+  const tot = { bundles: add('counted qty bundle', l.bundles), kg: add('counted qty kg', l.kg), pieces: add('counted qty pcs', l.pieces) };
+  // Total kg = kg counted + bundles and pieces turned into kg with the Product Master. Difference is in the book unit.
+  if (col('total counted qty kg')) sh.getRange(row, col('total counted qty kg')).setValue(countedKg(tot, s.pcsPerBundle, s.kgPerPc));
+  if (col('difference')) sh.getRange(row, col('difference')).setValue(countDiff(tot, s.uom, s.pcsPerBundle, s.kgPerPc, s.book));
 }
 
 // Writes the new book qty into the Stock On Hand row of this line.
