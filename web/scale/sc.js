@@ -1192,11 +1192,43 @@
   }
   function ticketTable(list) {
     return `<div class="tbl fit"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ស្ថានភាព', 'Status')}</th><th>${t('ឡាន', 'Truck')}</th><th>DN</th><th>${t('ឡើង / ទំលាក់', 'Load / Unload')}</th><th>${t('ទំនិញ', 'Item')}</th><th>${t('ម៉ោងចូល–ចេញ', 'In–Out time')}</th><th class="r">Gross</th><th class="r">Tare</th><th class="r">Net</th><th></th></tr>
-      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}</td><td>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${typeOf(x) === 'In' ? '⬇️ ' + typeName('In') : typeOf(x) === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td><td>${esc(x.item || '')}</td>
+      ${list.map(x => `<tr class="pick${x.status === 'Void' ? ' void' : ''}${x.err ? ' errrow' : ''}" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}</td><td${isAdmin() && x.cid ? ` class="stchg" data-stchg="${esc(x.cid)}" title="${t('ចុចដើម្បីប្តូរស្ថានភាព', 'Click to change the status')}"` : ''}>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}${isAdmin() && x.cid ? ' <span class="stcaret" aria-hidden="true">▾</span>' : ''}</td><td>${esc(x.plate)}</td><td>${esc((x.dns || []).join(', '))}</td><td>${typeOf(x) === 'In' ? '⬇️ ' + typeName('In') : typeOf(x) === 'Out' ? '⬆️ ' + typeName('Out') : ''}</td><td>${esc(x.item || '')}</td>
         <td>${dmy(x.t1) === dmy(new Date().toISOString()) ? '' : dmy(x.t1) + ' '}${hm(x.t1)}${x.t2 ? '–' + hm(x.t2) : ''}</td><td class="r mono">${kg(x.gross)}</td><td class="r mono">${kg(x.tare)}</td><td class="r mono"><b>${kg(x.net)}</b></td>
         <td class="nw">${x.warn ? '<span title="' + esc(warnTxt(x.warn)) + '">⚠️</span>' : ''}${[x.s1, x.s2].some(s => s === 'Manual') ? '<span title="Manual">✍</span>' : ''}${[x.s1, x.s2].some(s => s === 'Simulator') ? '<span title="Simulator">🧪</span>' : ''}${x.err ? '<span title="' + esc(x.err) + '">❗</span>' : Q.indexOf(x.cid) >= 0 ? '<span title="' + t('រង់ចាំផ្ញើ', 'Waiting to send') + '">⏳</span>' : ''}</td></tr>`).join('')}</table></div>`;
   }
-  function bindTable() { $$('[data-tk]').forEach(r => { r.onclick = () => { location.hash = '#/t/' + encodeURIComponent(r.dataset.tk); }; }); }
+  function bindTable() {
+    $$('[data-tk]').forEach(r => { r.onclick = () => { location.hash = '#/t/' + encodeURIComponent(r.dataset.tk); }; });
+    $$('[data-stchg]').forEach(c => { c.onclick = e => { e.stopPropagation(); const x = ticketBy(c.dataset.stchg) || ((LIST.rows || []).find(y => y.cid === c.dataset.stchg)); if (x) statusDialog(x); }; });
+  }
+  /** Admin: change a ticket's status from the list (Kim, 14 Nov 2026). Cancel needs a reason, like the 🗑 button. */
+  function statusDialog(x) {
+    const back = document.createElement('div');
+    back.className = 'popwrap';
+    let pick = x.status;
+    const OPTS = [['Open', 'follow', '🚚 ' + t('នៅលើទីតាំង', 'On site')], ['Done', 'approved', '✅ ' + t('រួចរាល់', 'Done')], ['Void', 'rejected', '🗑 ' + t('បានលុប', 'Cancelled')]];
+    const draw = () => {
+      back.innerHTML = `<div class="popbox stdlg" role="dialog" aria-modal="true"><h3>${t('ប្តូរស្ថានភាព', 'Change status')} · <span class="mono">${esc(x.no)}</span></h3>
+        <p class="hint">${esc(x.plate)}${x.w2 === '' || x.w2 == null ? ' · ' + t('មិនទាន់ថ្លឹងលើកទី២', 'no 2nd weigh yet') : ''}</p>
+        <div class="chips">${OPTS.map(o => `<button type="button" class="chip${pick === o[0] ? ' on' : ''}" data-st="${o[0]}"${o[0] === 'Done' && (x.w2 === '' || x.w2 == null) ? ' disabled' : ''}>${o[2]}</button>`).join('')}</div>
+        <label class="mt" style="display:block">${t('មូលហេតុ', 'Reason')}${pick === 'Void' ? ' <span class="req">*</span>' : ''}<textarea class="in" id="stWhy" rows="2"></textarea></label>
+        <div class="btns mt"><span class="sp"></span><button type="button" class="btn" id="stNo">${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="stOk"${pick === x.status ? ' disabled' : ''}>💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
+      back.querySelectorAll('[data-st]').forEach(b => { b.onclick = () => { const why = back.querySelector('#stWhy').value; pick = b.dataset.st; draw(); back.querySelector('#stWhy').value = why; }; });
+      back.querySelector('#stNo').onclick = () => back.remove();
+      back.querySelector('#stOk').onclick = () => {
+        const why = back.querySelector('#stWhy').value.trim();
+        if (pick === 'Void' && !why) { back.querySelector('#stWhy').classList.add('need'); back.querySelector('#stWhy').focus(); return; }
+        back.remove();
+        const tk = Object.assign({}, x, { status: pick, reason: why || t('Admin ប្តូរស្ថានភាព', 'Status changed by Admin') });
+        putTicket(tk);
+        (LIST.rows || []).forEach(y => { if (y.cid === x.cid) y.status = pick; });
+        toast('✔ ' + x.no + ' → ' + stName(pick));
+        if (typeof paintListBody === 'function' && $('#lBody')) paintListBody(); else route();
+      };
+    };
+    back.addEventListener('click', e => { if (e.target === back) back.remove(); });
+    draw();
+    document.body.appendChild(back);
+  }
 
   // ---------------------------------------------------------------- ticket list, search, Excel
   const ALL_FROM = '2020-01-01';   // "All" = every ticket (Kim, 10 Nov 2026: the default)
