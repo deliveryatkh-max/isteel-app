@@ -44,3 +44,17 @@ a.gs-link { display: inline-block; margin-top: 10px; }
   .gs-card.pct { grid-column: span 2; flex-direction: row; align-items: baseline; gap: 8px; }
   .tbl-wrap { max-height: calc(100vh - 220px); }
 }
+
+/* Side menu (mockup C, 14 Nov 2026): on computers the menu holds the status filters, so the count cards are hidden. */
+.gs-src .key.rate { background: #011e41; }
+@media (max-width: 899px) { .gs-src .key.rate { display: none; } }
+nav.tabs .tab.flt, nav.tabs .nav-sec { display: none; }
+nav.tabs .tab.cur { cursor: default; }
+@media (min-width: 900px) {
+  .gs-cards, nav.tabs .tab.cur { display: none !important; }
+  nav.tabs .tab.flt { display: flex; }
+  nav.tabs .nav-sec { display: block; color: rgba(255,255,255,.55); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 10px 14px 2px; }
+  nav.tabs .tab .cnt { margin-left: auto; font-style: normal; background: rgba(255,255,255,.15); color: #fff; border-radius: 999px; padding: 0 9px; font-size: 13px; font-weight: 700; }
+  nav.tabs .tab.on .cnt { background: #61cbf4; color: #011e41; }
+  .tbl-wrap { max-height: calc(100vh - 230px); }
+}
