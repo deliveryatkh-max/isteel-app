@@ -337,3 +337,18 @@ img[data-zoom] { cursor: zoom-in; }
 .scline { margin-top: 6px; font-size: 14px; font-weight: 700; }
 .scline .scbad { display: inline-block; background: #fdecea; color: #b3261e; border: 1.5px solid #d93025; border-radius: 8px; padding: 3px 8px; }
 .scline .scok { color: #1e7a3c; font-weight: 600; font-size: 13px; }
+/* calculator on the qty boxes (Kim, 14 Nov 2026) */
+.qwrap { position: relative; display: block; }
+.qwrap .qin { padding-left: 30px; }
+.calcb { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border: 0; background: transparent; font-size: 16px; line-height: 1; padding: 0; cursor: pointer; }
+.calc-sheet .calc-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 8px; margin: 4px 0; }
+.calc-n { background: var(--c2b, #e3f0fb); color: var(--c2, #0b62a4); border-radius: 8px; padding: 3px 4px 3px 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.calc-n button { border: 0; background: transparent; color: inherit; font-size: 12px; margin-left: 2px; cursor: pointer; }
+.calc-op { font-weight: 700; color: var(--muted, #6b7a8c); }
+.calc-disp { text-align: right; font-size: 28px; font-weight: 700; padding: 8px 10px; border: 1.5px solid var(--accent, #0b76a0); border-radius: 10px; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.calc-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.calc-keys button { font: inherit; font-size: 22px; font-weight: 700; padding: 12px 0; border-radius: 10px; border: 1px solid var(--line, #d4e1f5); background: var(--card, #fff); color: var(--text, #011e41); cursor: pointer; }
+.calc-keys .calc-plus { background: #011e41; color: #fff; grid-column: span 2; }
+.calc-keys .calc-c { color: #b3261e; }
+.calc-tot { display: flex; justify-content: space-between; font-size: 18px; margin: 12px 2px 8px; }
+.calc-tot b { font-size: 22px; color: #1e7a3c; }

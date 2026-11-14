@@ -481,7 +481,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
-    const cell = (i, n, k, on) => on ? `<input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0">`
+    const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const mp = multi(r); let lastPo = null;
     const rows = r.items.map((i, n) => {
@@ -760,6 +760,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
         F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
+    $$('[data-calc]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, k] = b.dataset.calc.split(':'), i = F.items[+n];
+      const col = { arrQty: t('ចំនួន (ដល់)', 'Arrival Qty'), grQty: t('ទទួល', 'Actual GR Qty'), dmgQty: t('ខូចខាត', 'Damaged Qty') }[k] || k;
+      openCalc(i.desc + ' · ' + col, v => { const el = $(`[data-it="${n}"][data-k="${k}"]`); if (el) el.value = v; i[k] = v; re(); }); }; });
     $$('[data-it]').forEach(el => { el.onchange = re; });
     F.items.forEach((i, n) => pk('dt' + n, () => ({ title: t('ប្រភេទខូចខាត', 'Damage type'), value: i.dmgType ? dmgName(i.dmgType) : '',
       groups: [{ items: DMG.map(d => ({ value: d[1] + ' ' + t(d[2], d[3]), key: d[0] })).concat(dmgCustom().map(x => ({ value: x }))) }],
@@ -863,6 +866,46 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     busy(b, true, t('កំពុងទាញ…', 'Loading…'));
     try { const x = await api('voice', { id: r.id }); a.src = x.url; a.hidden = false; a.play(); } catch (e) { toast('⚠️ ' + oldScript(e)); }
     finally { busy(b, false); }
+  }
+  // Calculator for a qty box (Kim, 14 Nov 2026): add several numbers (e.g. the weights of each coil), then put the total in the box
+  function openCalc(title, onDone) {
+    let nums = [], cur = '';
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'];
+    bg.innerHTML = `<div class="sheet calc-sheet" role="dialog" aria-modal="true" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">🧮 ${esc(title)}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <div class="calc-list"></div>
+        <div class="calc-disp"><span class="calc-cur"></span></div>
+        <div class="calc-keys">${keys.map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}
+          <button type="button" data-k="C" class="calc-c">C</button><button type="button" data-k="+" class="calc-plus">＋</button></div>
+        <div class="calc-tot"><span>${t('សរុប', 'Total')}</span><b></b></div>
+        <button type="button" class="btn ok big" data-done>✓ ${t('ដាក់ក្នុងប្រអប់', 'Put in the box')}</button></div>`;
+    const total = () => nums.concat(cur && cur !== '.' ? [+cur] : []).reduce((a, x) => a + x, 0);
+    const round = x => Math.round(x * 1000) / 1000, show = x => round(x).toLocaleString('en-US', { maximumFractionDigits: 3 });
+    const draw = () => {
+      bg.querySelector('.calc-list').innerHTML = nums.map((x, j) => `<span class="calc-n">${show(x)}<button type="button" data-del="${j}" aria-label="remove">✕</button></span>`).join('<span class="calc-op">+</span>');
+      bg.querySelector('.calc-cur').textContent = (nums.length ? '+ ' : '') + (cur || '0');
+      bg.querySelector('.calc-tot b').textContent = show(total());
+    };
+    const close = () => { bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-close]')) return close();
+      const d = e.target.closest('[data-del]'); if (d) { nums.splice(+d.dataset.del, 1); return draw(); }
+      if (e.target.closest('[data-done]')) { close(); onDone(round(total())); return; }
+      const b = e.target.closest('[data-k]'); if (!b) return;
+      const k = b.dataset.k;
+      if (k === '+') { if (cur && cur !== '.') nums.push(+cur); cur = ''; }
+      else if (k === 'C') { nums = []; cur = ''; }
+      else if (k === '⌫') cur = cur.slice(0, -1);
+      else if (k === '.') { if (cur.indexOf('.') < 0) cur += cur ? '.' : '0.'; }
+      else if (cur.length < 12) cur = cur === '0' ? k : cur + k;
+      draw();
+    };
+    document.body.appendChild(bg);
+    draw();
+    requestAnimationFrame(() => bg.classList.add('open'));
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
