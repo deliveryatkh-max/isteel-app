@@ -452,7 +452,7 @@ function scSave_(ops, user) {
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
       scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar,
       p.ph1img ? scPhoto_(p.ph1img, no, plate, 1) || (old ? old[34] : '') : (old ? old[34] : ''), p.ph2img ? scPhoto_(p.ph2img, no, plate, 2) || (old ? old[35] : '') : (old ? old[35] : ''),
-      p.empty1 === undefined && old ? old[36] : (['Yes', 'No'].indexOf(p.empty1) >= 0 ? p.empty1 : '')];   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
+      p.empty1 === undefined && old ? old[36] : (['Yes', 'No', 'Pallet'].indexOf(p.empty1) >= 0 ? p.empty1 : '')];   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     let row;
     if (old) {
       row = idx + 2;

@@ -76,6 +76,9 @@
   const canEdit = () => !!(me().admin || me().reviewer);
   const trucks = () => (B && B.trucks) || [];
   const truckOf = p => trucks().find(x => normP(x.plate) === normP(p)) || null;
+  // Empty truck at the 1st weigh (Kim, 12 Nov 2026; labels and Empty + pallets added 14 Nov 2026)
+  const EMPTY_OPTS = [['Yes', '🚚 ឡានទទេ', '🚚 Empty truck'], ['Pallet', '🚚🪵 ឡានទទេ+ផាឡែត', '🚚🪵 Empty + pallets'], ['No', '🚚📦 ឡានមានទំនិញ', '🚚📦 Loaded truck']];
+  const emptyTxt = v => { const o = EMPTY_OPTS.find(e => e[0] === v); return o ? t(o[1].replace(/^\S+\s/, ''), o[2].replace(/^\S+\s/, '')) : ''; };
   function tickets() {
     const map = {};
     ((B && B.tickets) || []).forEach(x => { map[x.cid || x.no] = x; });
@@ -729,7 +732,7 @@
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
       ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${req}</span>
-        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${[['Yes', '🚚 បាទ ឡានទទេ', '🚚 Yes, empty'], ['No', '🚚📦 អត់ទេ (មានទំនិញ)', '🚚📦 No (loaded)']].map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${EMPTY_OPTS.map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       </div>
@@ -1291,7 +1294,7 @@
     if (!rows.length || !window.XLSX) { toast(t('គ្មានប័ណ្ណ', 'No tickets')); return; }
     const head = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Load/Unload', 'DN No', 'DN Count', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Driver', 'Loading Place', 'Destination', 'Canvas', 'Note', '1st Time', '1st Weight (kg)', '2nd Time', '2nd Weight (kg)', 'Gross (kg)', 'Tare (kg)', 'Net (kg)', 'Source', 'Warnings', 'Operator', 'Photo 1st', 'Photo 2nd', 'Empty Truck'];
     const data = rows.map(x => [x.no, x.status, x.plate, x.company, x.customer, x.item, typeOf(x) === 'In' ? 'Unload' : typeOf(x) === 'Out' ? 'Load' : '', (x.dns || []).join(', '), (x.dns || []).length, (x.dns || []).filter(d => dnKgOf(x, d)).map(d => d + ': ' + dnKgOf(x, d)).join(', '), num(dnSum(x)), dnCheck(x) ? dnCheck(x).d : '', x.driver, x.load || '', x.dest, x.tarp === 'Yes' ? 'Covered' : x.tarp === 'No' ? 'Not covered' : '', x.note,
-      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '', x.empty1 === 'Yes' ? 'Yes' : x.empty1 === 'No' ? 'No' : '']);
+      String(x.t1 || '').replace('T', ' '), num(x.w1), String(x.t2 || '').replace('T', ' '), num(x.w2), num(x.gross), num(x.tare), num(x.net), [x.s1, x.s2].filter(Boolean).join(' / '), x.warn || '', x.op || '', x.ph1 || '', x.ph2 || '', EMPTY_OPTS.some(o => o[0] === x.empty1) ? x.empty1 : '']);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(data));
     ws['!cols'] = head.map((h, i) => ({ wch: [16, 8, 11, 16, 24, 14, 7, 28, 6, 32, 10, 10, 18, 16, 16, 12, 20, 18, 10, 18, 10, 10, 10, 10, 12, 40, 14, 30, 30, 10][i] }));
     const wb = XLSX.utils.book_new();
@@ -2059,7 +2062,7 @@
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ឡើង / ទំលាក់', 'Load / Unload'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
-        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), x.empty1 === 'Yes' ? t('បាទ', 'Yes') : x.empty1 === 'No' ? t('ទេ', 'No') : '')}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
+        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), x.emptyTxt(x.empty1))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
@@ -2363,7 +2366,7 @@
     const src = v => (v === 'Manual' ? 'TYPED BY HAND' : v === 'Simulator' ? 'TEST (simulator)' : '');
     const dns = x.dns || [];
     return {
-      TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : '',
+      TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : x.empty1 === 'Pallet' ? 'ឡានទទេ+ផាឡែត' : '',
       DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: TYPE[typeOf(x)] ? TYPE[typeOf(x)][0] : '',
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
