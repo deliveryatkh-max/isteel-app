@@ -220,3 +220,5 @@ body.wide table.hist td small { white-space: normal; }
 @media (min-width: 1100px) { body.wide main .dash-kpis { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); } body.wide main .dash-kpis .stat b { font-size: 24px; } }
 @media (min-width: 1100px) { body.wide main .dgrid { columns: 2 440px; } }
 @media (max-width: 899px) { body:has(> nav.tabs:not([hidden])) .toast { bottom: calc(92px + env(safe-area-inset-bottom)); } }
+/* No menu shown (live app): the banner must not shift left for the side menu. */
+@media (min-width: 900px) { body:not(:has(> nav.tabs:not([hidden]))) > header.bar { margin-left: 0; } }
