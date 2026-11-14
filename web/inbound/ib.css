@@ -333,3 +333,7 @@ img[data-zoom] { cursor: zoom-in; }
 .scbox.bad { background: #fdecea; border-color: #d93025; color: #b3261e; }
 .scbox.ok { background: #e6f4ea; border-color: #1e7a3c; color: #1e7a3c; }
 .scbox.wait { color: var(--muted, #6b7a8c); background: transparent; }
+.scline:empty { display: none; }
+.scline { margin-top: 6px; font-size: 14px; font-weight: 700; }
+.scline .scbad { display: inline-block; background: #fdecea; color: #b3261e; border: 1.5px solid #d93025; border-radius: 8px; padding: 3px 8px; }
+.scline .scok { color: #1e7a3c; font-weight: 600; font-size: 13px; }

@@ -295,7 +295,7 @@
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
   function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = VD().filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
-  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
+  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); paintCards(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
   function badges(r) {
@@ -315,6 +315,7 @@
       <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
+      <div class="scline" data-sc="${esc(r.id)}"></div>
     </a>`;
   }
 
@@ -554,6 +555,25 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="scrow"><span>📦 ${t('បញ្ចូលនៅទីនេះ', 'Entered here')}</span><b>${fmt(kg)} Kg</b></div>
       <div class="scrow big"><span>${bad ? '⚠️ ' + t('ខុសគ្នា', 'Difference') : '✅ ' + t('ត្រូវគ្នា', 'Same')}</span><b>${bad ? (diff > 0 ? '+' : '') + fmt(diff) + ' Kg' : '0 Kg'}</b></div>
       <small>${t('ប័ណ្ណ', 'Ticket')} ${esc(m.t.no)} · ${esc(m.t.plate)}${m.st === 'typo' ? ' · ' + t('ផ្លាកលេខខុសគ្នាបន្តិច សូមពិនិត្យ', 'plate typed a little differently, please check') : ''}</small></div>`;
+  }
+  // the same check on every truck card (Kim, 14 Nov 2026: "so that users notice and take action")
+  function cardLine(r, c) {
+    const m = c && !c.err && scaleMatch(r, c.tickets); if (!m) return '';
+    const net = Math.round(+m.t.net || 0), diff = kgOf(r) - net;
+    return diff ? `<span class="scbad">⚠️ ${t('ជញ្ជីង', 'Scale')} ${fmt(net)} Kg · ${t('ខុសគ្នា', 'Difference')} ${diff > 0 ? '+' : ''}${fmt(diff)} Kg</span>`
+      : `<span class="scok">✅ ${t('ត្រូវនឹងជញ្ជីង', 'Same as scale')} ${fmt(net)} Kg</span>`;
+  }
+  function paintCards() {
+    const els = $$('[data-sc]'); if (!els.length || (!SC_URL && !DEMO)) return;
+    const byDay = {};
+    els.forEach(el => { const r = byId(el.dataset.sc); if (r && r.truck) (byDay[r.date || today()] = byDay[r.date || today()] || []).push([el, r]); });
+    Object.keys(byDay).forEach(d => {
+      const fill = c => byDay[d].forEach(([el, r]) => { if (el.isConnected) el.innerHTML = cardLine(r, c); });
+      if (DEMO) { byDay[d].forEach(([el, r], n) => { const net = Math.round((r.items || []).reduce((a, i) => a + (+i.arrQty || 0), 0)) + (n % 2 ? 0 : 350);
+        el.innerHTML = cardLine(r, { tickets: [{ no: 'DEMO', plate: r.truck, type: 'In', status: 'Done', t1: d + 'T' + (r.start || '08:00') + ':00', w1: 50000, w2: 50000 - net, net }] }); }); return; }
+      const c = SCK[d]; if (c && !c.p) fill(c);
+      scaleTickets(d).then(fill);
+    });
   }
   // fills #scBox; the finish form calls it again as the GR qty is typed
   function paintScale(r) {
