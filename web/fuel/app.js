@@ -2081,16 +2081,18 @@
   // Saved in the Settings sheet (FUEL_REPORT_COLS) for everyone; empty = the default list. k key · h header · td cell
   const RC = (k, h, td, o) => Object.assign({ k, h, td }, o || {});
   const tdTxt = v => `<td>${esc(v == null ? '' : v)}</td>`;
+  const rpOpen = txt => `<td><a href="#" class="rp-open" title="${esc(L('បើកមើលលម្អិត', 'Open details'))}">${esc(txt || '–')}</a></td>`;
   const RP_COLS = [
     RC('id', 'ID_FR', r => `<td class="mono">${esc(r.id)}</td>`),
     RC('type', 'ចាក់សាំងសម្រាប់', r => tdTxt(r.type)),
     RC('plate', 'ផ្លាកលេខឡាន', r => `<td><b>${esc(r.plate || '–')}</b></td>`),
     RC('driver', 'ឈ្មោះតៃកុង', r => tdTxt(r.driver || '–')),
-    RC('km', 'លេខកុងទ័រ (Km)', r => `<td class="n"><a href="#" class="rp-open" title="${esc(L('បើកមើលលម្អិត', 'Open details'))}">${r.km == null ? '–' : fmtNum(r.km)}</a></td>`, { num: 1 }),
-    RC('hour', 'Hour Meter', r => `<td class="n">${r.hour == null ? '' : `<a href="#" class="rp-open">${fmtNum(r.hour)}</a>`}</td>`, { num: 1 }),
+    RC('km', 'លេខកុងទ័រ (Km)', r => `<td class="n">${r.km == null ? '–' : fmtNum(r.km)}</td>`, { num: 1 }),
+    RC('hour', 'Hour Meter', r => `<td class="n">${r.hour == null ? '' : fmtNum(r.hour)}</td>`, { num: 1 }),
     RC('litres', 'ចំនួនចាក់ (លីត្រ)', r => `<td class="n"><b>${fmtNum(r.litres)}</b></td>`, { num: 1, sum: 1 }),
-    RC('date', 'Date of Record', r => tdTxt(r.dateTime ? dmyOf(r.dateTime) : '')),
-    RC('datetime', 'Date & Time of Record', r => tdTxt(r.dateTime ? `${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}` : '')),
+    // Every entry has a date and time (some have no odometer), so the date opens the details (Kim, 14 Nov 2026).
+    RC('date', 'Date of Record', r => rpOpen(r.dateTime ? dmyOf(r.dateTime) : '')),
+    RC('datetime', 'Date & Time of Record', r => rpOpen(r.dateTime ? `${dmyOf(r.dateTime)} ${hmsOf(r.dateTime)}` : '')),
     RC('note', 'សំគាល់', r => `<td class="wrap">${esc(r.note)}</td>`),
     RC('user', 'User', r => tdTxt(r.user)),
     RC('status', 'Review Status', r => `<td>${rpStatus(r.status)}</td>`),
