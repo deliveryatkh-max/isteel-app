@@ -261,8 +261,13 @@
       set('sc_boot', json);
       // tickets the server has now are no longer needed here
       const have = {};
-      (d.tickets || []).forEach(x => { if (x.cid) have[x.cid] = x; });
-      Object.keys(LOC).forEach(c => { const l = LOC[c]; if (l.synced && Q.indexOf(c) < 0 && (have[c] || Date.now() - l.synced > 4 * 86400000)) delete LOC[c]; });
+      (d.tickets || []).forEach(x => { if (x.cid) have[x.cid] = x; if (x.no) have['#' + x.no] = x; });
+      // The server sends every open ticket, so a sent copy here that is still Open but not in that list was finished
+      // or deleted on another PC: drop it, or this PC keeps showing the truck as waiting (Kim, 14 Nov 2026).
+      Object.keys(LOC).forEach(c => {
+        const l = LOC[c]; if (!l.synced || Q.indexOf(c) >= 0) return;
+        if (have[c] || (l.no && have['#' + l.no]) || Date.now() - l.synced > 4 * 86400000 || (l.status === 'Open' && Date.now() - l.synced > 120000)) delete LOC[c];
+      });
       saveLoc();
       paintTabs();
       if (quiet === true) { paintLists(); if (/^#\/?set/.test(location.hash) && !document.activeElement.closest('input,select,textarea')) route(); }
