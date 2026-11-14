@@ -624,3 +624,5 @@ body.rp-wide main { max-width: 1400px; }
 .rp-selnote { font-size: 14px; margin: 4px 0 2px; }
 .rp-selnote .dim { color: var(--muted); font-size: 12.5px; }
 .linkbtn { border: 0; background: none; color: var(--brand); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 0 4px; }
+.rp-t a.rp-open { color: var(--brand, #011e41); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.rp-t a.rp-open:hover { color: var(--brand-2, #1565c0); }
