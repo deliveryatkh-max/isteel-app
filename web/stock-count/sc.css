@@ -222,3 +222,15 @@ body.wide table.hist td small { white-space: normal; }
 @media (max-width: 899px) { body:has(> nav.tabs:not([hidden])) .toast { bottom: calc(92px + env(safe-area-inset-bottom)); } }
 /* No menu shown (live app): the banner must not shift left for the side menu. */
 @media (min-width: 900px) { body:not(:has(> nav.tabs:not([hidden]))) > header.bar { margin-left: 0; } }
+
+/* Stock card history as a timeline (Kim picked mockup 1, 14 Nov 2026). */
+.card.tl { padding: 2px 12px; }
+.lrow { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.lrow:last-child { border-bottom: 0; }
+.ic { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex: none; }
+.i-in { background: var(--ok-bg); } .i-out { background: var(--bad-bg); } .i-tr { background: rgba(37, 99, 235, .12); }
+.lmid { flex: 1; min-width: 0; } .lmid b { font-size: 14px; }
+.lmid div { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lqty { text-align: right; flex: none; } .lqty b { font-size: 16px; }
+.lqty .in, .lqty b.in { color: var(--ok); } .lqty .out, .lqty b.out { color: var(--bad); }
+.lqty div { font-size: 11px; color: var(--muted); }

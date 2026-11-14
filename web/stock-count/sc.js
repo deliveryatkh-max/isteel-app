@@ -416,10 +416,15 @@
   }
   function cardScreen() {
     const b = S.bin, c = S.card, l = c.line;
-    const rows = (c.rows || []).map(r => `<tr><td>${esc((r.date || '').slice(5))}<br><small class="muted">${esc(r.time || '')}</small></td>
-      <td>${esc(r.reference || r.id || '')}${r.otherBin ? `<br><small class="muted">${r.type === 'TRANSFER IN' ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td>
-      <td>${esc(typeLabel(r.type))}</td><td class="num in">${r.qtyIn ? fmtQty(r.qtyIn) : ''}</td><td class="num out">${r.qtyOut ? fmtQty(r.qtyOut) : ''}</td>
-      <td class="num"><b>${fmtQty(r.balance)}</b></td><td><small>${esc(String(r.user || '').split('@')[0])}</small></td></tr>`).join('');
+    // Timeline list (Kim picked mockup 1, 14 Nov): one row per movement, no sideways scrolling.
+    const icon = t => (t === 'OUT' ? ['i-out', '⬆'] : t === 'TRANSFER OUT' || t === 'TRANSFER IN' ? ['i-tr', '⇄'] : t === 'ADJUST' ? ['i-tr', '✎'] : ['i-in', '⬇']);
+    const rows = (c.rows || []).map(r => { const ic = icon(r.type), out = Number(r.qtyOut) || 0; return `<div class="lrow">
+      <div class="ic ${ic[0]}" aria-hidden="true">${ic[1]}</div>
+      <div class="lmid"><b>${esc(typeLabel(r.type))}</b>
+        <div>${esc(r.reference || r.id || '')}${r.otherBin ? ` ${r.type === 'TRANSFER IN' ? '←' : '→'} ${esc(r.otherBin)}` : ''}${r.user ? ' · ' + esc(String(r.user).split('@')[0]) : ''}</div>
+        <div>${esc((r.date || '').slice(5))} ${esc(r.time || '')}</div></div>
+      <div class="lqty"><b class="${out ? 'out' : 'in'}">${out ? '-' + fmtQty(out) : '+' + fmtQty(Number(r.qtyIn) || 0)}</b>
+        <div>${T('នៅសល់', 'left')} ${fmtQty(r.balance)}</div></div></div>`; }).join('');
     view(`
       <section class="card hero">
         <div class="muted">${esc(b.bin)} · ${esc(b.warehouse || '')}</div>
@@ -436,7 +441,7 @@
       <h2>${T('ប្រវត្តិចលនា', 'Stock card history')}</h2>
       ${c.error ? `<div class="card err"><p class="muted">${esc(c.error)}</p></div>` : ''}
       ${c.rows == null ? '<div class="loading"><div class="skel"></div></div>'
-        : rows ? `<section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ឯកសារ', 'Document')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>IN</th><th>OUT</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('អ្នកធ្វើ', 'By')}</th></tr>${rows}</table></section>`
+        : rows ? `<section class="card tl">${rows}</section>`
         : `<p class="muted">${T('មិនទាន់មានចលនា។', 'No movements yet.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
     document.querySelectorAll('[data-move]').forEach(el => { el.onclick = () => openMove(el.dataset.move, S.lineIdx); });
