@@ -1,0 +1,42 @@
+/* Gate vs Scale (Kim, 14 Nov 2026). Base look from ../overtime/ot.css, filter header from ../filter-bar.css. */
+main { max-width: 1500px; }
+.gs-err { background: var(--bad-soft); color: var(--bad); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; margin: 0 0 10px; }
+.gs-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 0 0 8px; }
+.gs-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); box-shadow: var(--shadow); cursor: pointer; font: inherit; border-left-width: 5px; }
+.gs-card span { font-size: 13px; font-weight: 600; color: var(--muted); }
+.gs-card b { font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.gs-card small { font-size: 12px; }
+.gs-card.ok { border-left-color: #1e7b46; } .gs-card.typo { border-left-color: #e08600; } .gs-card.ib { border-left-color: #c62828; } .gs-card.sc { border-left-color: #7b3fb0; }
+.gs-card.pct { cursor: default; border-left-color: #011e41; }
+.gs-card.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gs-src { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 12.5px; color: var(--muted); margin: 0 2px 8px; }
+.gs-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+a.gs-link { display: inline-block; margin-top: 10px; }
+
+/* table: header frozen while the rows scroll (Kim's rule: every table header sticky and sortable) */
+.tbl-wrap { overflow: auto; max-height: calc(100vh - 300px); min-height: 220px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.gs-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.gs-tbl th { position: sticky; top: 0; z-index: 2; background: #011e41; color: #fff; text-align: left; font-weight: 600; padding: 8px 8px; white-space: nowrap; font-size: 12.5px; }
+.gs-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.gs-tbl tbody tr:hover td { background: var(--soft); }
+.gs-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gs-tbl .nw { white-space: nowrap; }
+.gs-tbl .pl { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; white-space: nowrap; }
+.gs-tbl .pl.bad { color: #c25e00; background: #fff1dc; }
+.gs-tbl td.warn { color: #8a5a00; background: #fff3d6; font-weight: 700; }
+.gs-tbl .st { white-space: nowrap; font-weight: 700; }
+.gs-tbl .st.ok { color: #1e7b46; } .gs-tbl .st.typo { color: #c25e00; } .gs-tbl .st.ib { color: #c62828; } .gs-tbl .st.sc { color: #7b3fb0; }
+.gs-tbl tr.r-ib td:first-child { box-shadow: inset 4px 0 0 #c62828; } .gs-tbl tr.r-sc td:first-child { box-shadow: inset 4px 0 0 #7b3fb0; }
+.gs-tbl tr.r-typo td:first-child { box-shadow: inset 4px 0 0 #e08600; }
+.gs-tbl .note { min-width: 180px; color: var(--muted); font-size: 12.5px; }
+.gs-tbl a { color: var(--accent); }
+.gs-help { font-size: 12.5px; color: var(--muted); margin: 10px 2px 0; }
+:root[data-theme="dark"] .gs-tbl .pl.bad, :root[data-theme="dark"] .gs-tbl td.warn { background: #3a2c10; color: #ffc46b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gs-tbl .pl.bad, :root:not([data-theme="light"]) .gs-tbl td.warn { background: #3a2c10; color: #ffc46b; } }
+
+@media (max-width: 700px) {
+  .gs-cards { grid-template-columns: repeat(2, 1fr); }
+  .gs-card.pct { grid-column: span 2; flex-direction: row; align-items: baseline; gap: 8px; }
+  .tbl-wrap { max-height: calc(100vh - 220px); }
+}
