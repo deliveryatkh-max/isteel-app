@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e41">
+  <title>ច្រកចូល ទល់ ជញ្ជីង · Gate vs Scale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@800&text=STEEL&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="../icons/favicon.png">
+  <link rel="apple-touch-icon" href="../icons/app-180.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="stylesheet" href="../overtime/ot.css?v=20261105c">
+  <link rel="stylesheet" href="../filter-bar.css?v=20261113a">
+  <link rel="stylesheet" href="gs.css?v=20261114a">
+  <script>try { var t = localStorage.getItem('fr_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+  <!-- Tapping the ISI STEEL logo refreshes the screen (Kim, 12 Oct 2026). -->
+  <style>.isi-logo{cursor:pointer;-webkit-tap-highlight-color:transparent}</style>
+  <script>document.addEventListener('click', function (e) { var l = e.target && e.target.closest && e.target.closest('.isi-logo'); if (!l) return; e.preventDefault(); if (window.ISTEEL_REFRESH) window.ISTEEL_REFRESH(); else location.reload(); });</script>
+  <script src="../view-mode.js?v=20261113c"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <div class="isi-logo"><img src="../icons/isi-white.png" alt="ISI" width="30" height="30"><span class="word">STEEL</span></div>
+      <span class="sep" aria-hidden="true"></span>
+      <div><b data-km="ច្រកចូល ទល់ ជញ្ជីង" data-en="Gate vs Scale">ច្រកចូល ទល់ ជញ្ជីង</b><small data-km="ផ្ទៀងផ្ទាត់ផ្លាកលេខឡាន" data-en="Plate cross-check">ផ្ទៀងផ្ទាត់ផ្លាកលេខឡាន</small></div>
+    </div>
+    <div class="bar-right">
+      <button type="button" class="icon-btn lang-btn" id="langBtn"></button>
+      <button type="button" class="icon-btn" id="themeBtn" aria-label="Light / Dark" title="Light / Dark">🌙</button>
+    </div>
+  </header>
+
+  <main id="view"><div class="spinner" role="status" aria-label="Loading"></div></main>
+
+  <nav class="tabs">
+    <a href="../" class="tab"><img src="../icons/home.svg" alt="" width="24" height="24"><b data-km="ទំព័រដើម" data-en="Home">ទំព័រដើម</b></a>
+    <a href="../dashboards/" class="tab"><img src="../icons/dashboard.svg" alt="" width="24" height="24"><b data-km="ផ្ទាំងព័ត៌មាន" data-en="Dashboards">ផ្ទាំងព័ត៌មាន</b></a>
+    <a href="#" class="tab on"><span aria-hidden="true">⚖️</span><b data-km="ផ្ទៀងផ្ទាត់" data-en="Cross-check">ផ្ទៀងផ្ទាត់</b></a>
+  </nav>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="../inbound/config.js?v=20261102b"></script>
+  <script src="../scale/config.js"></script>
+  <script src="../lang.js"></script>
+  <script src="../live.js?v=20261113b"></script>
+  <script src="../table-sort.js?v=20261108a"></script>
+  <script src="../table-cols.js?v=20261113b"></script>
+  <script src="../filter-bar.js?v=20261113a"></script>
+  <script src="gs-core.js?v=20261114a"></script>
+  <script src="gs.js?v=20261114a"></script>
+</body>
+</html>
