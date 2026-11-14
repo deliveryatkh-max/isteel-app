@@ -67,6 +67,7 @@ function route_(action, p, user) {
     case 'bin': return binInfo_(user, p.bin);
     case 'submit': return withLock_(() => submit_(user, p.count || {}));
     case 'out': return withLock_(() => out_(user, p.out || {}));
+    case 'ledger': return ledger_(user);
     case 'move': return withLock_(() => move_(user, p));
     case 'transfer': return withLock_(() => transfer_(user, p));
     case 'card': return card_(user, p);
@@ -296,7 +297,13 @@ function dash_(lines, bins) {
     transferToday: t.filter(r => r.Type === 'TRANSFER OUT').length, recent: led.slice(-10).reverse().map(ledRow_) };
 }
 const ledRow_ = r => ({ id: r['Txn ID'], date: r.Date, time: r.Time, type: r.Type, bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch,
-  uom: r.UoM, qtyIn: num_(r.In), qtyOut: num_(r.Out), balance: num_(r.Balance), reference: r.Reference, otherBin: r['Other Bin'], remark: r.Remark, user: r.User });
+  sloc: r.SLOC, uom: r.UoM, qtyIn: num_(r.In), qtyOut: num_(r.Out), balance: num_(r.Balance), reference: r.Reference, otherBin: r['Other Bin'], remark: r.Remark, user: r.User });
+
+// Movements screen: the newest 1,000 ledger rows, oldest first.
+function ledger_(user) {
+  counter_(user);
+  return { rows: objs_(SH.LED, LED_COLS).slice(-1000).map(ledRow_) };
+}
 
 function binInfo_(user, code) {
   counter_(user);

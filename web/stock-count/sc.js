@@ -748,7 +748,7 @@
   }
 
   // Shared with desk.js (dashboard, stock list, movements, count review, SAP reconciliation).
-  window.SC = { S: S, T: T, esc: esc, $: $, view: view, route: route, toast: toast, fmtQty: fmtQty, typeLabel: typeLabel, isKg: isKg, round3: round3, sameLine: sameLine, openBin: openBin,
+  window.SC = { api: api, S: S, T: T, esc: esc, $: $, view: view, route: route, toast: toast, fmtQty: fmtQty, typeLabel: typeLabel, isKg: isKg, round3: round3, sameLine: sameLine, openBin: openBin,
     DEMO: DEMO, dAgo: dAgo, demo: DEMO ? { bins: DEMO_BINS, stock: DEMO_STOCK, ledger: DEMO_LEDGER, counts: DEMO_COUNTS, log: demoLog, binList: demoBinList } : null };
 
   // ------------------------------------------------------------------ start
