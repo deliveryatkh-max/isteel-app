@@ -234,3 +234,7 @@ body.wide table.hist td small { white-space: normal; }
 .lqty { text-align: right; flex: none; } .lqty b { font-size: 16px; }
 .lqty .in, .lqty b.in { color: var(--ok); } .lqty .out, .lqty b.out { color: var(--bad); }
 .lqty div { font-size: 11px; color: var(--muted); }
+
+/* History header with the UoM selector (Kim, 14 Nov 2026). */
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hrow select { width: auto; min-width: 90px; padding: 6px 10px; font-size: 13px; }

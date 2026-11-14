@@ -42,14 +42,14 @@
     ['I1-DB-A-04-01-01', '1100000260', 'PPGI COIL BLUE 1200x0.35', 'D261102011', '1020', 'KG', 1, 3980],
     ['I1-DB-A-04-01-01', '1100000261', 'PPGI COIL RED 1200x0.35', 'D261102015', '1020', 'KG', 1, 4105],
     ['I1-DB-A-05-01-01', '1100000302', 'HR COIL SS400 1250x2.0', 'H261028002', '1010', 'KG', 1, 8640],
-    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080153', '2010', 'PC', 150, 150],
-    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080154', '2010', 'PC', 150, 80],
-    ['C1-FG-A-01-01-21', 'PIPE-40X40', 'Square Steel Pipe 40 x 40 x 1.4', '26080155', '2010', 'PC', 100, 120],
-    ['C1-FG-A-01-01-22', 'PIPE-RD-21', 'Round Steel Pipe 21.3 x 1.6', '26090021', '2010', 'PC', 200, 400],
-    ['C1-FG-A-01-01-22', 'PIPE-RD-27', 'Round Steel Pipe 26.9 x 1.6', '26090030', '2010', 'PC', 150, 300],
-    ['C1-FG-A-01-01-23', 'CPURLIN-100', 'C Purlin 100 x 50 x 2.0', '26100007', '2010', 'PC', 50, 200],
+    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080153', '2010', 'PC', 150, 150, 5.3],
+    ['C1-FG-A-01-01-20', 'PIPE-25X25', 'Square Steel Pipe 25 x 25 x 1.2', '26080154', '2010', 'PC', 150, 80, 5.3],
+    ['C1-FG-A-01-01-21', 'PIPE-40X40', 'Square Steel Pipe 40 x 40 x 1.4', '26080155', '2010', 'PC', 100, 120, 10.2],
+    ['C1-FG-A-01-01-22', 'PIPE-RD-21', 'Round Steel Pipe 21.3 x 1.6', '26090021', '2010', 'PC', 200, 400, 4.7],
+    ['C1-FG-A-01-01-22', 'PIPE-RD-27', 'Round Steel Pipe 26.9 x 1.6', '26090030', '2010', 'PC', 150, 300, 6.0],
+    ['C1-FG-A-01-01-23', 'CPURLIN-100', 'C Purlin 100 x 50 x 2.0', '26100007', '2010', 'PC', 50, 200, 17.8],
     ['C1-FG-A-01-01-24', 'ROOF-760', 'Roofing Sheet 760 x 0.35 Blue', '26100112', '2010', 'PC', 100, 650],
-  ].map(x => ({ bin: x[0], material: x[1], desc: x[2], batch: x[3], sloc: x[4], uom: x[5], pcsPerBundle: x[6], book: x[7] }));
+  ].map(x => ({ bin: x[0], material: x[1], desc: x[2], batch: x[3], sloc: x[4], uom: x[5], pcsPerBundle: x[6], book: x[7], kgPerPc: x[8] || 0 }));
   // Opening movements, so every stock card has a history and its last balance equals the stock above.
   const DEMO_LEDGER = [];
   (function seed() {
@@ -405,7 +405,7 @@
   // Stock card of one line: header, balance and every movement (newest first).
   async function openCard(i) {
     const l = S.bin.lines[i];
-    S.lineIdx = i; S.card = { line: l, rows: null, error: '' }; S.view = 'card'; route();
+    S.lineIdx = i; S.cardUom = ''; S.card = { line: l, rows: null, error: '' }; S.view = 'card'; route();
     try {
       const c = DEMO ? { line: l, rows: DEMO_LEDGER.filter(r => r.bin === S.bin.bin && sameLine(r, l)).slice().reverse() }
         : await api('card', { bin: S.bin.bin, material: l.material, batch: l.batch, sloc: l.sloc });
@@ -416,6 +416,13 @@
   }
   function cardScreen() {
     const b = S.bin, c = S.card, l = c.line;
+    // UoM filter (Kim, 14 Nov): show the card in the line's own unit (default), or converted with the Product Master factors.
+    const kgPc = Number(l.kgPerPc) || 0, ppb = Number(l.pcsPerBundle) || 1;
+    const units = [[l.uom, 1, l.uom]];
+    if (isKg(l.uom)) { if (kgPc) { units.push(['PCS', 1 / kgPc, T('រាយ', 'Pcs')]); if (ppb > 1) units.push(['BD', 1 / (kgPc * ppb), T('បាច់', 'Bundle')]); } }
+    else { if (ppb > 1) units.push(['BD', 1 / ppb, T('បាច់', 'Bundle')]); if (kgPc) units.push(['KG', kgPc, 'KG']); }
+    const u = units.find(x => x[0] === S.cardUom) || units[0], cv = v => round3((Number(v) || 0) * u[1]);
+    const uomSel = units.length > 1 ? `<select id="cUom">${units.map(x => `<option value="${esc(x[0])}" ${x[0] === u[0] ? 'selected' : ''}>${esc(x[2])}</option>`).join('')}</select>` : '';
     // Timeline list (Kim picked mockup 1, 14 Nov): one row per movement, no sideways scrolling.
     const icon = t => (t === 'OUT' ? ['i-out', '⬆'] : t === 'TRANSFER OUT' || t === 'TRANSFER IN' ? ['i-tr', '⇄'] : t === 'ADJUST' ? ['i-tr', '✎'] : ['i-in', '⬇']);
     const rows = (c.rows || []).map(r => { const ic = icon(r.type), out = Number(r.qtyOut) || 0; return `<div class="lrow">
@@ -423,14 +430,14 @@
       <div class="lmid"><b>${esc(typeLabel(r.type))}</b>
         <div>${esc(r.reference || r.id || '')}${r.otherBin ? ` ${r.type === 'TRANSFER IN' ? '←' : '→'} ${esc(r.otherBin)}` : ''}${r.user ? ' · ' + esc(String(r.user).split('@')[0]) : ''}</div>
         <div>${esc((r.date || '').slice(5))} ${esc(r.time || '')}</div></div>
-      <div class="lqty"><b class="${out ? 'out' : 'in'}">${out ? '-' + fmtQty(out) : '+' + fmtQty(Number(r.qtyIn) || 0)}</b>
-        <div>${T('នៅសល់', 'left')} ${fmtQty(r.balance)}</div></div></div>`; }).join('');
+      <div class="lqty"><b class="${out ? 'out' : 'in'}">${out ? '-' + fmtQty(cv(out)) : '+' + fmtQty(cv(r.qtyIn))}</b>
+        <div>${T('នៅសល់', 'left')} ${fmtQty(cv(r.balance))}</div></div></div>`; }).join('');
     view(`
       <section class="card hero">
         <div class="muted">${esc(b.bin)} · ${esc(b.warehouse || '')}</div>
         <div class="cdesc">${esc(l.desc)}</div>
         <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></div>
-        <div class="kv"><div><span class="muted">${T('សមតុល្យបច្ចុប្បន្ន', 'Current balance')}</span><b>${fmtQty(l.book)} ${esc(l.uom)}</b></div>
+        <div class="kv"><div><span class="muted">${T('សមតុល្យបច្ចុប្បន្ន', 'Current balance')}</span><b>${fmtQty(cv(l.book))} ${esc(u[2])}</b></div>
           <div><span class="muted">${T('ចលនាចុងក្រោយ', 'Last movement')}</span><b style="font-size:15px">${c.rows && c.rows[0] ? esc(c.rows[0].date + ' ' + c.rows[0].time) : '—'}</b></div></div>
       </section>
       <div class="quad">
@@ -438,13 +445,14 @@
         <button type="button" class="btn warn" data-move="OUT">${typeLabel('OUT')}</button>
         <button type="button" class="btn blue" data-move="TRANSFER">${typeLabel('TRANSFER')}</button>
       </div>
-      <h2>${T('ប្រវត្តិចលនា', 'Stock card history')}</h2>
+      <div class="hrow"><h2>${T('ប្រវត្តិចលនា', 'Stock card history')}</h2>${uomSel}</div>
       ${c.error ? `<div class="card err"><p class="muted">${esc(c.error)}</p></div>` : ''}
       ${c.rows == null ? '<div class="loading"><div class="skel"></div></div>'
         : rows ? `<section class="card tl">${rows}</section>`
         : `<p class="muted">${T('មិនទាន់មានចលនា។', 'No movements yet.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
     document.querySelectorAll('[data-move]').forEach(el => { el.onclick = () => openMove(el.dataset.move, S.lineIdx); });
+    const us = $('#cUom'); if (us) us.onchange = () => { S.cardUom = us.value; route(); };
     $('#back').onclick = () => { S.view = 'bin'; route(); };
   }
 
@@ -475,7 +483,7 @@
         ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
         <label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : isTr ? T('លេខឯកសារយោង (ស្រេចចិត្ត)', 'Reference (optional)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
-        <input id="mRef" type="text" maxlength="60" autocomplete="off" ${isTr ? '' : 'class="need"'}>
+        <div class="row"><input id="mRef" type="text" maxlength="60" autocomplete="off" ${isTr ? '' : 'class="need"'}><button type="button" class="btn ghost shrink" id="mRefScan" title="Scan">📷</button></div>
         <label for="mRemark">${T('កំណត់សម្គាល់ (ស្រេចចិត្ត)', 'Remark (optional)')}</label>
         <input id="mRemark" type="text" maxlength="200" autocomplete="off">
         <div class="live" id="mAfter"></div>
@@ -511,6 +519,8 @@
       else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងកុងតឺន័រនេះទេ', 'This barcode does not match the stock in this bin'));
       refresh();
     }, ((b.lines || [])[0] || {}).batch);
+    // Reference barcode (Kim, 14 Nov): scan the GR / PO / DN barcode instead of typing it.
+    $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
     if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
     $('#mSave').onclick = () => saveMove(line(), sel() === 'new');
