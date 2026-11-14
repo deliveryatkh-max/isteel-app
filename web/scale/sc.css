@@ -539,3 +539,10 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .dncpick .pxin { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--card, #fff); color: inherit; }
 .dncpick input.pxin { width: 96px; text-align: right; }
 .dncpick select.pxin { width: 76px; }
+.tt td.stchg { cursor: pointer; white-space: nowrap; }
+.tt td.stchg:hover .badge { outline: 2px solid var(--brand, #011e41); outline-offset: 1px; }
+.stcaret { color: var(--muted, #667); font-size: 11px; }
+.popbox.stdlg { border-top-color: #011e41; }
+.popbox.stdlg .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.popbox.stdlg .chip[disabled] { opacity: .45; cursor: not-allowed; }
+.popbox.stdlg textarea { width: 100%; margin-top: 4px; }

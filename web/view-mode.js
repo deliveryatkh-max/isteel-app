@@ -11,8 +11,11 @@
   const get = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
   const put = v => { try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) { /* private window */ } };
   const mode = get();
-  const inFrame = window !== window.top && /[?&]vm=in\b/.test(location.search);
-  const phoneDevice = Math.min(screen.width, screen.height) < 700 && matchMedia('(pointer: coarse)').matches;
+  // Inside the phone frame: also true after moving to another app inside it (that page has no ?vm=in), so the
+  // 🖥️ button reloads the whole window and not only the frame (Kim, 14 Nov 2026: "switch back to desktop doesn't work").
+  const inFrame = (() => { try { return window !== window.top && !!window.top.document.getElementById('vmFrame'); } catch (e) { return false; } })();
+  // Phones and tablets (touch screen up to tablet size): the computer look widens the page instead of framing it.
+  const phoneDevice = Math.min(screen.width, screen.height) < 1100 && matchMedia('(pointer: coarse)').matches;
 
   // Phone look on a computer: the rest of this page is not run; a frame loads the same page at phone width.
   if (mode === 'mobile' && !inFrame && window === window.top && !phoneDevice) {
@@ -29,10 +32,18 @@
     if (m) m.setAttribute('content', 'width=1280, viewport-fit=cover');
   }
 
-  const looksPhone = () => inFrame || (mode !== 'desktop' && (phoneDevice || mode === 'mobile'));
+  // What the screen shows now: the apps switch to the computer layout at 900px.
+  const looksPhone = () => inFrame || window.innerWidth < 900;
   function pick(v) {
     const natural = phoneDevice ? 'mobile' : 'desktop';
     put(v === natural ? '' : v);
+    if (v === 'desktop' && !inFrame && !phoneDevice) {   // a computer window narrower than 900px: only a wider window helps
+      const n = document.createElement('div');
+      n.textContent = window.LANG ? LANG.t('សូមពង្រីកផ្ទាំងកម្មវិធីរុករកឱ្យធំជាងនេះ', 'Make the browser window wider') : 'សូមពង្រីកផ្ទាំងកម្មវិធីរុករកឱ្យធំជាងនេះ';
+      n.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:1001;background:#011e41;color:#fff;padding:10px 16px;border-radius:12px;font:14px system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+      document.body.appendChild(n); setTimeout(() => n.remove(), 3000);
+      return;
+    }
     if (inFrame) window.top.location.reload(); else location.reload();
   }
   function addButton() {
