@@ -325,3 +325,15 @@ img[data-zoom] { cursor: zoom-in; }
 /* one truck, several POs (Kim, 11 Nov 2026) */
 .itbl tr.porow td { background: #011e41; color: #fff; padding: 6px 8px; font-size: 13px; text-align: left; }
 .itbl tr.porow td small { color: #d4e1f5; opacity: 1; font-size: 12px; font-weight: 600; margin-left: 4px; }
+/* Scale net vs entered kg (Kim, 14 Nov 2026) */
+.scbox { margin-top: 10px; border-radius: 10px; padding: 10px 12px; font-size: 14px; border: 1.5px solid var(--line, #d4e1f5); }
+.scbox .scrow { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.scbox .scrow.big { font-size: 16px; font-weight: 700; border-top: 1px dashed currentColor; margin-top: 4px; padding-top: 6px; }
+.scbox small { display: block; margin-top: 4px; opacity: .8; }
+.scbox.bad { background: #fdecea; border-color: #d93025; color: #b3261e; }
+.scbox.ok { background: #e6f4ea; border-color: #1e7a3c; color: #1e7a3c; }
+.scbox.wait { color: var(--muted, #6b7a8c); background: transparent; }
+.scline:empty { display: none; }
+.scline { margin-top: 6px; font-size: 14px; font-weight: 700; }
+.scline .scbad { display: inline-block; background: #fdecea; color: #b3261e; border: 1.5px solid #d93025; border-radius: 8px; padding: 3px 8px; }
+.scline .scok { color: #1e7a3c; font-weight: 600; font-size: 13px; }

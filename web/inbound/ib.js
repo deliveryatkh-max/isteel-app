@@ -295,7 +295,7 @@
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2400); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
   function paintTabs(r) { $$('.tab[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === r)); const n = VD().filter(isLive).length; const c = $('#liveCount'); c.textContent = n; c.hidden = !n; const pt = $('#planTab'); pt.hidden = !canPlan(); $('.tabs').classList.toggle('five', canPlan()); }
-  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); };
+  const view = html => { $('#view').innerHTML = html; window.scrollTo(0, 0); const m = $('main'); if (m) m.scrollTop = 0; loadThumbs(); paintCards(); };
 
   const lessBadge = () => `<span class="badge less">⬇ ${t('ទទួលខ្វះ', 'Received less')}</span>`;
   function badges(r) {
@@ -315,6 +315,7 @@
       <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
+      <div class="scline" data-sc="${esc(r.id)}"></div>
     </a>`;
   }
 
@@ -518,6 +519,71 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
+  // Scale net vs the kg typed here (Kim, 14 Nov 2026): the Truck Scale ticket of the same plate (same day, or overnight / one
+  // letter off like the Gate vs Scale page) is read with the user's sign-in; red when the kg differ. Nothing is saved.
+  const SC_URL = (window.SC_CONFIG || {}).API_URL;
+  const SCK = {};   // receipt date -> { at, tickets, err }
+  const kgOf = r => Math.round((r.items || []).reduce((a, i) => a + (+(i.grQty === '' || i.grQty == null ? i.arrQty : i.grQty) || 0), 0));
+  async function scaleTickets(d) {
+    const c = SCK[d]; if (c && (c.p || Date.now() - c.at < 120000)) return c.p || c;
+    const add = n => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    const p = (async () => {
+      try {
+        const res = await fetch(SC_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'scList', token: get(TOKEN_KEY), payload: { from: add(-1), to: add(1), all: true } }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(msgOf(data.error).text);
+        return (SCK[d] = { at: Date.now(), tickets: data.data.tickets || [] });
+      } catch (e) { return (SCK[d] = { at: Date.now(), tickets: [], err: e.message }); }
+    })();
+    SCK[d] = { p };
+    return p;
+  }
+  function scaleMatch(r, tickets) {
+    if (!window.GSCORE) return null;
+    const me = { id: r.id || 'new', truck: r.truck, date: r.date || today(), start: r.start, end: r.end, items: r.items, uom: r.uom, status: r.status };
+    const w = GSCORE.match([me], tickets, me.date, me.date).find(x => x.ib === me && x.sc);
+    return w ? { t: w.sc, st: w.st } : null;
+  }
+  function scaleHtml(r, c) {
+    if (!c) return `<div class="scbox wait">⚖️ ${t('កំពុងរកប័ណ្ណជញ្ជីង…', 'Looking for the scale ticket…')}</div>`;
+    if (c.err) return `<div class="scbox wait">⚖️ ${t('អានជញ្ជីងមិនបាន', 'Scale not available')}: ${esc(c.err)}</div>`;
+    const m = scaleMatch(r, c.tickets);
+    if (!m) return `<div class="scbox wait">⚖️ ${t('មិនទាន់មានប័ណ្ណជញ្ជីងសម្រាប់ ', 'No scale ticket yet for ')}${esc(r.truck || '–')}</div>`;
+    const net = Math.round(+m.t.net || 0), kg = kgOf(r), diff = kg - net, bad = !!diff;
+    return `<div class="scbox ${bad ? 'bad' : 'ok'}">
+      <div class="scrow"><span>⚖️ ${t('ជញ្ជីង (Net)', 'Scale net')}</span><b>${fmt(net)} Kg</b></div>
+      <div class="scrow"><span>📦 ${t('បញ្ចូលនៅទីនេះ', 'Entered here')}</span><b>${fmt(kg)} Kg</b></div>
+      <div class="scrow big"><span>${bad ? '⚠️ ' + t('ខុសគ្នា', 'Difference') : '✅ ' + t('ត្រូវគ្នា', 'Same')}</span><b>${bad ? (diff > 0 ? '+' : '') + fmt(diff) + ' Kg' : '0 Kg'}</b></div>
+      <small>${t('ប័ណ្ណ', 'Ticket')} ${esc(m.t.no)} · ${esc(m.t.plate)}${m.st === 'typo' ? ' · ' + t('ផ្លាកលេខខុសគ្នាបន្តិច សូមពិនិត្យ', 'plate typed a little differently, please check') : ''}</small></div>`;
+  }
+  // the same check on every truck card (Kim, 14 Nov 2026: "so that users notice and take action")
+  function cardLine(r, c) {
+    const m = c && !c.err && scaleMatch(r, c.tickets); if (!m) return '';
+    const net = Math.round(+m.t.net || 0), diff = kgOf(r) - net;
+    return diff ? `<span class="scbad">⚠️ ${t('ជញ្ជីង', 'Scale')} ${fmt(net)} Kg · ${t('ខុសគ្នា', 'Difference')} ${diff > 0 ? '+' : ''}${fmt(diff)} Kg</span>`
+      : `<span class="scok">✅ ${t('ត្រូវនឹងជញ្ជីង', 'Same as scale')} ${fmt(net)} Kg</span>`;
+  }
+  function paintCards() {
+    const els = $$('[data-sc]'); if (!els.length || (!SC_URL && !DEMO)) return;
+    const byDay = {};
+    els.forEach(el => { const r = byId(el.dataset.sc); if (r && r.truck) (byDay[r.date || today()] = byDay[r.date || today()] || []).push([el, r]); });
+    Object.keys(byDay).forEach(d => {
+      const fill = c => byDay[d].forEach(([el, r]) => { if (el.isConnected) el.innerHTML = cardLine(r, c); });
+      if (DEMO) { byDay[d].forEach(([el, r], n) => { const net = Math.round((r.items || []).reduce((a, i) => a + (+i.arrQty || 0), 0)) + (n % 2 ? 0 : 350);
+        el.innerHTML = cardLine(r, { tickets: [{ no: 'DEMO', plate: r.truck, type: 'In', status: 'Done', t1: d + 'T' + (r.start || '08:00') + ':00', w1: 50000, w2: 50000 - net, net }] }); }); return; }
+      const c = SCK[d]; if (c && !c.p) fill(c);
+      scaleTickets(d).then(fill);
+    });
+  }
+  // fills #scBox; the finish form calls it again as the GR qty is typed
+  function paintScale(r) {
+    const box = $('#scBox'); if (!box) return;
+    if (DEMO) { const kg = Math.round((r.items || []).reduce((a, i) => a + (+i.arrQty || 0), 0)); box.innerHTML = scaleHtml(r, { tickets: [{ no: 'DEMO-1', plate: r.truck, type: 'In', status: 'Done', t1: (r.date || today()) + 'T' + (r.start || '08:00') + ':00', w1: 40000, w2: 40000 - kg - 350, net: kg + 350 }] }); return; }
+    if (!SC_URL || !r.truck) { box.innerHTML = ''; return; }
+    const c = SCK[r.date || today()];
+    box.innerHTML = scaleHtml(r, c && !c.p ? c : null);
+    scaleTickets(r.date || today()).then(x => { const b = $('#scBox'); if (b && b.dataset.for === (r.id || 'new')) b.innerHTML = scaleHtml(r === F ? F : r, x); });
+  }
   const siteLocked = r => !!(r.site && (r.id ? !(USER && (USER.admin || USER.reviewer)) && !DEMO : SITE));
   function renderForm(id) {
     paintTabs('');
@@ -533,7 +599,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
-      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}</section>` : `
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
@@ -575,6 +641,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
           : `<button class="btn ok big" id="saveBtn">💾 ${t('រក្សាទុក', 'Save')}</button>`}
       <div style="height:16px"></div>`);
     bindForm();
+    if (started) paintScale(F);
   }
   function collect() {
     ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
@@ -678,7 +745,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   }
   function bindForm() {
     markNeed();
-    const live = () => { collect(); markNeed(); };
+    const live = () => { collect(); markNeed(); if (F.start && $('#scBox')) paintScale(F); };
     ['dn3pl'].forEach(k => { const el = $('#' + k); if (el) el.oninput = live; });
     $$('[data-it]').forEach(el => { el.oninput = live; });
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
@@ -874,7 +941,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
         ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
-      <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}</section>
+      <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}<div id="scBox" data-for="${esc(r.id)}"></div></section>
       <section class="card"><div class="kvs">
         ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
@@ -890,6 +957,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <button class="btn big" id="mailBtn">✉️ ${t('ផ្ញើអ៊ីមែល', 'Send Email')}</button></div><div id="mailBox"></div></section>
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
     if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
+    paintScale(r);
     // Admin removes a pending unloading record, e.g. a truck started twice (Kim, 3 Nov 2026); a copy stays in the IB Deleted tab
     if ($('#delBtn')) $('#delBtn').onclick = () => {
       $('#delBtn').hidden = true;
