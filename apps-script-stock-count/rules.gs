@@ -45,6 +45,21 @@ function comparable(c, uom) {
   return has(c.bundles) || has(c.pieces);
 }
 
+
+// Counted totals of one line in kg: kg counted + (bundles x pcs per bundle + loose pcs) x kg per piece.
+// kgPerPc is 0 when the material is not in the Product Master: then only the kg box counts.
+function countedKg(t, pcsPerBundle, kgPerPc) {
+  const pcs = (Number(t.bundles) || 0) * (Number(pcsPerBundle) || 1) + (Number(t.pieces) || 0);
+  return Math.round(((Number(t.kg) || 0) + pcs * (Number(kgPerPc) || 0)) * 1000) / 1000;
+}
+// Difference against the book, in the book unit: kg for KG lines, pieces for the rest (kg counted is turned into pieces).
+function countDiff(t, uom, pcsPerBundle, kgPerPc, book) {
+  if (/^(kg|kgs|ton|t)$/i.test(String(uom || '').trim())) return Math.round((countedKg(t, pcsPerBundle, kgPerPc) - (Number(book) || 0)) * 1000) / 1000;
+  const k = Number(kgPerPc) || 0;
+  const pcs = (Number(t.bundles) || 0) * (Number(pcsPerBundle) || 1) + (Number(t.pieces) || 0) + (k ? (Number(t.kg) || 0) / k : 0);
+  return Math.round((pcs - (Number(book) || 0)) * 1000) / 1000;
+}
+
 // Stock out: qty must be more than 0 and no more than what is on hand. Returns '' when valid.
 function outOk(out, onHand) {
   if (!(Number(out) > 0) || Math.floor(Number(out)) !== Number(out)) return 'Out Qty must be a whole number above 0.';

@@ -50,6 +50,7 @@ const ctx = {
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(DIR, 'ProductMaster.gs'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'Code.gs'), 'utf8') + '\nthis.route_ = route_;', ctx);
 const op = { email: 'op@isi' }, admin = { email: 'admin@isi' };
 const call = (action, p, user) => JSON.parse(JSON.stringify(ctx.route_(action, p, user || op)));
@@ -95,5 +96,14 @@ eq([r.line.book, r.rows.map(x => x.type), r.rows[0].balance], [90, ['TRANSFER OU
 // Home numbers
 r = call('boot', {});
 eq([r.dash.inToday, r.dash.outToday, r.dash.transferToday, r.dash.recent.length], [3, 1, 1, 6], 'dashboard numbers for today');
+
+// Product Master: the empty tab is filled from the seed; a pipe counted in bundles and pieces gets its kg total
+eq(sheets['Product Master'].grid.length, 427, 'Product Master tab filled from the seed (426 pipes + header)');
+const soh = sheets['Stock On Hand'].grid;
+soh[0].push('Counted Qty Bundle', 'Counted Qty Kg', 'Counted Qty Pcs', 'Total Counted Qty Kg', 'Difference');
+soh.push(['BIN-A', '1400000021', 'Galvanized Square Pipe 25x25x1.10x6m', 'L9', '2010', 'PC', '', '300']);
+call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch: 'L9', sloc: '2010', bundles: 2, kg: '', pieces: 5 }] } });
+const pr = soh[soh.length - 1];
+eq([pr[8], pr[10], pr[11], pr[12]], [2, 5, 1523.17, 5], '2 bundles x 150 + 5 pcs = 305 pcs = 1,523.17 kg, 5 pcs over the book');
 
 console.log('Stock Count flow tests: ' + pass + ' passed');

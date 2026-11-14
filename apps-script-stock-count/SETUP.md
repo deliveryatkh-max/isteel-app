@@ -23,6 +23,13 @@ Notes:
 - Tests (for developers): `node apps-script-stock-count/tests/run.js`.
 
 
+## Product Master (14 Nov 2026)
+
+Tab **Product Master**: Material, Description, Pipe Size, Pcs per Bundle, Kg per Pc, Source. Paste `ProductMaster.gs` as one more
+script file; the first time the app opens with an empty tab it copies the 426 pipe materials into it. After that edit the tab.
+A count in bundles or pieces is turned into kg: Total Counted Qty Kg = Kg + (Bundle x Pcs per Bundle + Pcs) x Kg per Pc.
+Difference is in the book unit (kg for KG lines, pieces for the rest). Pcs per Bundle typed in Stock On Hand wins over the master.
+
 ## Digital stock card (13 Nov 2026)
 
 - New tab **Stock Ledger** (made by the app on first use): Txn ID, Date, Time, Type, Bin, Material, Description, Batch, SLOC, UoM, In, Out, Balance, Reference, Other Bin, Transfer ID, Remark, User, Request ID. One row per posted movement. The app never edits or deletes a row; a mistake is corrected with a new movement.
