@@ -324,4 +324,4 @@ img[data-zoom] { cursor: zoom-in; }
 }
 /* one truck, several POs (Kim, 11 Nov 2026) */
 .itbl tr.porow td { background: #011e41; color: #fff; padding: 6px 8px; font-size: 13px; text-align: left; }
-.itbl tr.porow small { opacity: .8; margin-left: 4px; }
+.itbl tr.porow td small { color: #d4e1f5; opacity: 1; font-size: 12px; font-weight: 600; margin-left: 4px; }
