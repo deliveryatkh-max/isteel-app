@@ -481,7 +481,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
-    const cs = mode === 'arr' ? 3 : 5;   // GR + Damaged columns are hidden at Start unloading
+    const cs = mode === 'arr' ? 2 : 4;   // GR + Damaged columns are hidden at Start unloading; PO Qty sits under the item name (Kim, 15 Nov 2026)
     const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const mp = multi(r); let lastPo = null;
@@ -492,9 +492,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
         head = `<tr class="porow"><td colspan="${cs}"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
       }
-      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
-        <td class="n c1">${cell(i, n, 'poQty', false)}</td>
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
         <td class="n c4">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
@@ -515,9 +514,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     }).join('');
     const sum = k => fmt(tot(r, k));
     return `<div class="tblwrap"><table class="itbl${mode === 'arr' ? ' arr' : ''}">
-      <thead><tr><th class="n c1">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួល', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
+      <thead><tr><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួល', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="${cs}" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n c3">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n c4">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
+      <tfoot><tr><td colspan="${cs}" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${sum('poQty')} ${esc(r.uom)}</span></td></tr><tr><td class="n">${sum('arrQty')}</td><td class="n c3">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n c4">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
   // Scale net vs the kg typed here (Kim, 14 Nov 2026): the Truck Scale ticket of the same plate (same day, or overnight / one
