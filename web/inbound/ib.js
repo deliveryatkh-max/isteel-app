@@ -481,6 +481,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   function itemsTable(r, mode) {
+    const cs = mode === 'arr' ? 3 : 5;   // GR + Damaged columns are hidden at Start unloading
     const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const mp = multi(r); let lastPo = null;
@@ -489,9 +490,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       let head = '';
       if (mp && itemPo(i, r) !== lastPo) {
         lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
-        head = `<tr class="porow"><td colspan="5"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
+        head = `<tr class="porow"><td colspan="${cs}"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
       }
-      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="5" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''}</small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c1">${cell(i, n, 'poQty', false)}</td>
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
@@ -500,7 +501,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <td class="u c5"><span class="qro">${esc(r.uom)}</span></td></tr>`;
       if (dm) {
         const ph = i.dmgPh || [];
-        out += `<tr class="dmgrow"><td colspan="5">
+        out += `<tr class="dmgrow"><td colspan="${cs}">
           <div class="dmgbox">
             <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
             ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
@@ -513,10 +514,10 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       return head + out;
     }).join('');
     const sum = k => fmt(tot(r, k));
-    return `<div class="tblwrap"><table class="itbl">
+    return `<div class="tblwrap"><table class="itbl${mode === 'arr' ? ' arr' : ''}">
       <thead><tr><th class="n c1">${t('ចំនួន (PO)', 'PO Qty')}</th><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួល', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="5" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
+      <tfoot><tr><td colspan="${cs}" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')}</td></tr><tr><td class="n">${sum('poQty')}</td><td class="n">${sum('arrQty')}</td><td class="n c3">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n c4">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
   // Scale net vs the kg typed here (Kim, 14 Nov 2026): the Truck Scale ticket of the same plate (same day, or overnight / one
@@ -616,7 +617,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
             ${pickBtn('truck', r.truck, '', r.newTruck)}</div>
           ${grey(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}
         </div>
-        <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"></div>
+        <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><div class="scanrow"><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"><button type="button" class="scanb" id="dnScan" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
       ${ents(r.site).length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
@@ -760,6 +761,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
         F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
+    const ds = $('#dnScan'); if (ds) ds.onclick = () => { collect(); scanCode(code => { F.dn3pl = code; const el = $('#dn3pl'); if (el) el.value = code; markNeed(); toast('✓ ' + code); }); };
     $$('[data-calc]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, k] = b.dataset.calc.split(':'), i = F.items[+n];
       const col = { arrQty: t('ចំនួន (ដល់)', 'Arrival Qty'), grQty: t('ទទួល', 'Actual GR Qty'), dmgQty: t('ខូចខាត', 'Damaged Qty') }[k] || k;
       openCalc(i.desc + ' · ' + col, v => { const el = $(`[data-it="${n}"][data-k="${k}"]`); if (el) el.value = v; i[k] = v; re(); }); }; });
@@ -906,6 +908,43 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     document.body.appendChild(bg);
     draw();
     requestAnimationFrame(() => bg.classList.add('open'));
+  }
+  // Camera scan of a barcode or QR code (3PL DN, Kim 15 Nov 2026), same as the Incident app: Android uses the built-in
+  // BarcodeDetector, other phones load the zxing reader. The number can always be typed instead.
+  function scanCode(onCode) {
+    let stream = null, stopped = false, timer = 0, ctrl = null;
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-grip"></div>
+        <div class="sheet-top"><div class="sheet-h">${esc(t('ស្កេនបាកូដ ឬ QR', 'Scan barcode or QR code'))}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
+        <div class="scan-view"><video playsinline muted></video><div class="scan-frame"></div></div>
+        <p class="hint" id="scanMsg" style="text-align:center">${esc(t('ដាក់បាកូដក្នុងប្រអប់', 'Hold the code inside the box'))}</p></div>`;
+    const video = bg.querySelector('video'), msg = bg.querySelector('#scanMsg');
+    const close = () => { stopped = true; clearTimeout(timer); if (ctrl) try { ctrl.stop(); } catch (e) { /* already stopped */ } if (stream) stream.getTracks().forEach(x => x.stop()); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
+    const done = code => { if (stopped || !code) return; code = String(code).trim(); close(); onCode(code); };
+    bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) close(); };
+    document.body.appendChild(bg);
+    requestAnimationFrame(() => bg.classList.add('open'));
+    const fail = () => { if (stopped) return; msg.textContent = t('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយលេខ។', 'Camera not available. Please type the number.'); bg.querySelector('.scan-view').hidden = true; };
+    if (DEMO) { timer = setTimeout(() => done('DN-0011442'), 1500); return; }
+    (async () => {
+      try {
+        if ('BarcodeDetector' in window) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+          if (stopped) { stream.getTracks().forEach(x => x.stop()); return; }
+          video.srcObject = stream; await video.play();
+          const det = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'codabar', 'data_matrix'] });
+          const tick = async () => { if (stopped) return; try { const r = await det.detect(video); if (r && r[0] && r[0].rawValue) return done(r[0].rawValue); } catch (e) { /* next frame */ } timer = setTimeout(tick, 150); };
+          tick();
+        } else {
+          const z = await import('../vendor/zxing-browser.min.js');
+          if (stopped) return;
+          ctrl = await new z.BrowserMultiFormatReader().decodeFromVideoDevice(undefined, video, r => { if (r) done(r.getText()); });
+          if (stopped) ctrl.stop();
+        }
+      } catch (e) { fail(); }
+    })();
   }
   // Searchable picker with "add new", same as the Fuel app.
   function openPicker(o) {
