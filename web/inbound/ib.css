@@ -361,3 +361,4 @@ img[data-zoom] { cursor: zoom-in; }
 .scan-view { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
 .scan-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-frame { position: absolute; left: 10%; right: 10%; top: 32%; bottom: 32%; border: 3px solid #61cbf4; border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
+.itbl .poq { color: var(--c1); background: var(--c1b); border-radius: 6px; padding: 0 6px; font-weight: 700; white-space: nowrap; }
