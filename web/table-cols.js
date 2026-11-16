@@ -2,7 +2,8 @@
  * Column layout for every table (Kim, 12 Nov 2026: "do this for all tables in all apps … allow admin to drag and drop
  * or remove or add columns directly in the screen"). One shared file: add <script src="../table-cols.js"></script>.
  * - Admins drag a header onto another header to move the column, or press ⚙️ Columns above the table to hide, show
- *   and order columns. Everyone else sees the layout; only admins can change it.
+ *   and order columns. The layout is saved in each person's own browser, so everyone, viewers too, can set their own
+ *   (Kim, 16 Nov 2026). Only when an app shares one layout on its server (TC_STORE) are changes kept to admins.
  * - Admin = window.TC_ADMIN() when the app sets it, else Role "admin" from the iSteel home menu.
  * - Saved per table in this browser (localStorage), or through window.TC_STORE = { load(): obj, save(obj) } when an
  *   app keeps it on its server.
@@ -106,7 +107,7 @@
     index(tb);
     const lay = load()[key];
     if (lay) apply(tb, lay);
-    if (!isAdmin()) return;
+    if (window.TC_STORE && !isAdmin()) return;   // a shared layout: admins only; the browser's own layout: anyone
     const name = j => (([...head.children].find(c => c.__tci === j) || {}).textContent || '').replace(/[▲▼]/g, '').trim();
     let from = -1;
     [...head.children].forEach(th => {
