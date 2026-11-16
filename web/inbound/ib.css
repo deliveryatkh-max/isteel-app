@@ -362,3 +362,22 @@ img[data-zoom] { cursor: zoom-in; }
 .scan-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-frame { position: absolute; left: 10%; right: 10%; top: 32%; bottom: 32%; border: 3px solid #61cbf4; border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .itbl .poq { color: var(--c1); background: var(--c1b); border-radius: 6px; padding: 0 6px; font-weight: 700; white-space: nowrap; }
+/* Report (Kim, 16 Nov 2026): one row per item, header frozen, columns chosen by reviewers / admins */
+.repk { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 2px 8px; font-size: 13px; }
+.repk .key { padding: 3px 10px; border-radius: 999px; background: #011e41; color: #fff; font-weight: 600; }
+.repk .key.bad { background: #c62828; } .repk .key.warn { background: #b26a00; }
+.repk .sp { flex: 1; }
+.rep-wrap { overflow: auto; max-height: calc(100vh - 300px); min-height: 220px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.rep-tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.rep-tbl th { position: sticky; top: 0; z-index: 2; background: #011e41; color: #fff; text-align: left; font-weight: 600; padding: 8px; white-space: nowrap; font-size: 12.5px; cursor: pointer; }
+.rep-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rep-tbl tbody tr:hover td { background: var(--soft); }
+.rep-tbl tfoot td { position: sticky; bottom: 0; background: var(--card); border-top: 2px solid #011e41; font-weight: 700; z-index: 1; }
+.rep-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rep-tbl .nw { white-space: nowrap; } .rep-tbl .wrap { min-width: 180px; }
+.rep-tbl .pl { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; white-space: nowrap; }
+.rep-tbl td.bad { color: #c62828; font-weight: 700; } .rep-tbl td.warn { color: #b26a00; font-weight: 700; }
+.rep-tbl .st.ok { color: #1e7b46; font-weight: 700; } .rep-tbl .st.live { color: #0b76a0; font-weight: 700; }
+.rep-tbl tr.r-dmg td:first-child { box-shadow: inset 4px 0 0 #c62828; } .rep-tbl tr.r-less td:first-child { box-shadow: inset 4px 0 0 #e08600; }
+.rep-tbl a { color: var(--accent); }
+@media (max-width: 700px) { .rep-wrap { max-height: calc(100vh - 240px); } }

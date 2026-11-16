@@ -98,6 +98,12 @@ function route_(action, p, user) {
       mailLists_().filter(l => l.active && names.indexOf(l.name) >= 0).forEach(l => l.emails.forEach(e => { if (out.indexOf(e) < 0) out.push(e); }));
       return { emails: out };
     }
+    case 'reportCols': {   // Report columns shown to everyone; reviewers and admins choose them (Kim, 16 Nov 2026)
+      planner_(user);
+      const cols = (Array.isArray(p.cols) ? p.cols : []).map(String).filter(c => /^[a-zA-Z]{1,20}$/.test(c)).slice(0, 60);
+      setSetting_('IB_REPORT_COLS', cols.join(','));
+      return { cols: cols };
+    }
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
     case 'delete': return withLock_(() => del_(p.id, p.reason, user));   // admin removes a pending unloading record (Kim, 3 Nov 2026)
@@ -415,6 +421,7 @@ function boot_(user) {
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
     warehouses: warehouses_(), sites: us.list, allSites: us.all,
+    reportCols: String(setting_('IB_REPORT_COLS') || '').split(',').map(c => c.trim()).filter(Boolean),
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
 /** Warehouse List tab (Kim, 30 Oct 2026): code + description for the Warehouse box. */

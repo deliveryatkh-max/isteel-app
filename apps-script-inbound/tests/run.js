@@ -309,4 +309,8 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
 { plan.rows.push([4, 1300000001, 'COIL X', 'KMH1', 1020, 9000, 9, 1, '', 1, 5100077777, 'IN 7', 'X-1', eta, 'X Co']);
   const x = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: 'PO 5100077777', pos: ['PO5100077777'], dn3pl: 'DN-NUM', truck: '3E-2588', items: [{ po: '5100077777', material: '1300000001', arrQty: 9000 }] }) }));
   eq([x.po, x.items[0].po], ['5100077777', '5100077777'], 'PO typed with or without "PO" is the same'); }
+// Report columns (Kim, 16 Nov 2026): reviewers and admins choose them for everyone
+{ ok(/^DENIED/.test(call('sok@x.com', 'reportCols', { cols: ['id'] }).error), 'user cannot change report columns');
+  eq(must(call('sai@x.com', 'reportCols', { cols: ['id', 'truck', 'bad col!', 'grQty'] })).cols, ['id', 'truck', 'grQty'], 'reviewer saves report columns');
+  eq(must(call('sok@x.com', 'boot', {})).reportCols, ['id', 'truck', 'grQty'], 'report columns in boot'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
