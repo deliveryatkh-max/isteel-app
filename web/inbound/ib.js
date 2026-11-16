@@ -167,6 +167,7 @@
   const pendingPOs = skip => VPOS().filter(po => pendingLines(po, skip).length);
   // Live: everything comes from the Apps Script in one "boot" call and is kept on the phone, so the app opens at once.
   let USER = null;
+  let REPC = null;   // from the Apps Script (boot.reportCols); an old script: this device's choice
   window.TC_ADMIN = () => DEMO || !!(USER && USER.admin);   // shared ⚙️ Columns tool (table-cols.js)
   function applyBoot(d) {
     setPlan(d.plan || []); DATA = d.receipts || []; USER = d.user || null;
@@ -175,6 +176,7 @@
     LISTS = d.lists || [];
     WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Entrance box is then hidden
     SITES = d.sites || []; ALLS = !!d.allSites;   // an older Apps Script sends none: no warehouse split
+    REPC = d.reportCols && d.reportCols.length ? d.reportCols : null;   // an older Apps Script sends none
     fixSite();
   }
   function load() {
@@ -1285,48 +1287,146 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // home: a reminder of tomorrow's arrivals
   function tomorrowBar() {
     const tm = addDays(today(), 1), l = schedule().filter(o => o.eta === tm);
-    return l.length ? `<a class="tombar" href="#/sum">🔔 <b>${t('ស្អែក', 'Tomorrow')}: ${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</b><span>${t('មើល', 'View')} ›</span></a>` : '';
+    return l.length ? `<a class="tombar" href="#/sched">🔔 <b>${t('ស្អែក', 'Tomorrow')}: ${l.length} PO · ${fmt(l.reduce((n, o) => n + o.kg, 0) / 1000, 1)} t</b><span>${t('មើល', 'View')} ›</span></a>` : '';
   }
+  // the incoming schedule on its own page (it was on Summary; the Tomorrow bar opens it)
+  function renderSched() { paintTabs(''); view(schedHTML()); }
+  // ------------------------------------------------------------------ Report (Kim, 16 Nov 2026): replaces Summary.
+  // Filter header like the other reports, one row per item, columns chosen by reviewers / admins for everyone.
+  const REP_COLS = [
+    ['id', 'លេខទទួល', 'Receipt No'], ['status', 'ស្ថានភាព', 'Status'], ['date', 'ថ្ងៃ', 'Date'], ['po', 'PO', 'PO'],
+    ['inbound', 'លេខ Inbound', 'Inbound No'], ['ref', 'លេខយោង', 'Ref. No'], ['supplier', 'អ្នកផ្គត់ផ្គង់', 'Supplier'], ['eta', 'ETA', 'ETA'],
+    ['dn3pl', '3PL DN', '3PL DN'], ['material', 'សម្ភារៈ', 'Material'], ['desc', 'ការពិពណ៌នា', 'Description'], ['truck', 'ផ្លាកលេខ', 'Truck'],
+    ['poQty', 'ចំនួន (PO)', 'PO Qty', 1], ['arrQty', 'ចំនួន (ដល់)', 'Arrival Qty', 1], ['grQty', 'ទទួល', 'Actual GR Qty', 1],
+    ['dmgQty', 'ខូចខាត', 'Damaged Qty', 1], ['dmgUom', 'ឯកតាខូច', 'Damage UoM'], ['dmgType', 'ប្រភេទខូច', 'Damage Type'],
+    ['less', 'ទទួលខ្វះ', 'Received Less', 1], ['uom', 'ឯកតា', 'UoM'], ['start', 'ចាប់ផ្តើម', 'Start'], ['end', 'បញ្ចប់', 'End'],
+    ['min', 'នាទី', 'Time (min)', 1], ['prod', 'ផលិតភាព', 'Productivity', 1], ['manpower', 'បុគ្គលិក', 'Manpower', 1],
+    ['owner', 'ម្ចាស់ឡាន', 'Truck owner'], ['carrier', 'ក្រុមហ៊ុន 3PL', '3PL company'], ['entrance', 'ច្រកចូល', 'Entrance'],
+    ['site', 'ឃ្លាំង', 'Warehouse'], ['remark', 'កំណត់សម្គាល់', 'Remark'], ['by', 'កត់ត្រាដោយ', 'Recorded by'], ['finishedBy', 'បញ្ចប់ដោយ', 'Finished by'],
+  ];
+  const REP_DEF = ['id', 'status', 'date', 'po', 'supplier', 'truck', 'material', 'desc', 'arrQty', 'grQty', 'dmgQty', 'less', 'uom', 'min', 'owner'];
+  const repCols = () => { const ok = c => REP_COLS.some(x => x[0] === c); let l = (REPC || []).filter(ok);
+    if (!l.length) { try { l = (JSON.parse(get('ib_repcols') || '[]') || []).filter(ok); } catch (e) { l = []; } } return l.length ? l : REP_DEF; };
+  const repVal = (k, r, i) => {
+    switch (k) {
+      case 'id': return r.id; case 'status': return !r.end ? t('កំពុងទម្លាក់', 'Unloading') : t('រួចរាល់', 'Done');
+      case 'date': return r.date; case 'po': return itemPo(i, r); case 'inbound': return i.inbound || r.inbound; case 'eta': return r.eta;
+      case 'material': case 'desc': case 'poQty': case 'arrQty': return i[k];
+      case 'grQty': return r.end ? i.grQty : ''; case 'dmgQty': return +i.dmgQty > 0 ? +i.dmgQty : '';
+      case 'dmgUom': return +i.dmgQty > 0 ? i.dmgUom || r.uom : ''; case 'dmgType': return +i.dmgQty > 0 ? dmgEn(i.dmgType) : '';
+      case 'less': return isLessItem(i) ? +i.arrQty - +i.grQty : '';
+      case 'min': return r.end ? spentMin(r) : ''; case 'prod': { const p = r.end ? prod(r) : null; return p == null ? '' : Math.round(p * 100) / 100; }
+      case 'owner': return r.owner === 'ISI' ? 'ISI' : r.owner ? '3PL' : ''; case 'entrance': return r.warehouse || '';
+      default: return r[k] == null ? '' : r[k];
+    }
+  };
+  const fq = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  let RP = { q: '', st: 'all', own: 'all', from: '', to: '' };
   function renderSum() {
     paintTabs('sum');
-    const rows = VD().filter(r => r.end && r.date >= sumFrom());
-    const tn = rows.reduce((s, r) => s + (tons(r) || 0), 0);
-    const avgM = rows.length ? rows.reduce((s, r) => s + spentMin(r), 0) / rows.length : null;
-    const tr = rows.filter(r => prod(r) != null);
-    const manH = tr.reduce((s, r) => s + spentMin(r) / 60 * r.manpower, 0);
+    const td = today();
+    if (!RP.from) { RP.to = td; RP.from = addDays(td, -6); }
+    const q = RP.q.toLowerCase();
+    const recs = VD().filter(r => r.date >= RP.from && r.date <= RP.to)
+      .filter(r => RP.own === 'all' || (RP.own === 'ISI' ? r.owner === 'ISI' : r.owner && r.owner !== 'ISI'))
+      .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+    const lines = [];
+    recs.forEach(r => (r.items || []).forEach(i => {
+      if (RP.st === 'live' && r.end) return; if (RP.st === 'done' && !r.end) return;
+      if (RP.st === 'dmg' && !(+i.dmgQty > 0)) return; if (RP.st === 'less' && !isLessItem(i)) return;
+      if (q && ![r.id, itemPo(i, r), i.inbound || r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.remark, i.material, i.desc].join(' ').toLowerCase().includes(q)) return;
+      lines.push([r, i]);
+    }));
+    const done = recs.filter(r => r.end && lines.some(l => l[0] === r)), tn = done.reduce((s, r) => s + (tons(r) || 0), 0);
+    const avgM = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
+    const tr = done.filter(r => prod(r) != null), manH = tr.reduce((s, r) => s + spentMin(r) / 60 * r.manpower, 0);
     const avgP = manH ? tr.reduce((s, r) => s + tons(r), 0) / manH : null;
-    const dmg = rows.filter(isDamaged).length, diff = rows.filter(isLess).length;
-    // tonnes by day
-    const days = {}; rows.forEach(r => { days[r.date] = (days[r.date] || 0) + (tons(r) || 0); });
-    const dk = Object.keys(days).sort(); const mx = Math.max(1, ...dk.map(k => days[k]));
-    // owners
-    const isi = rows.filter(r => r.owner === 'ISI').length, pl = rows.length - isi;
-    const by = {}; rows.forEach(r => { const k = r.owner === 'ISI' ? 'ISI' : (r.carrier || '3PL'); const o = by[k] || (by[k] = { n: 0, t: 0, m: 0 }); o.n++; o.t += tons(r) || 0; o.m += spentMin(r); });
-    const chip = (k, km, en) => `<button class="chip${SP === k ? ' on' : ''}" data-p="${k}">${t(km, en)}</button>`;
-    view(`<div class="ibdash">
-      ${schedHTML()}
-      <div class="filters">${chip('1', 'ថ្ងៃនេះ', 'Today')}${chip('7', '៧ ថ្ងៃ', '7 days')}${chip('m', 'ខែនេះ', 'This month')}</div>
-      <div class="stats dash-kpis">
-        <a class="stat go" href="#/log" data-go="period"><small>${t('ឡានទទួលរួច', 'Trucks received')}</small><b>${rows.length}</b></a>
-        <a class="stat go" href="#/log" data-go="period"><small>${t('បរិមាណទទួល', 'Received')}</small><b>${fmt(tn, 1)}<em>t</em></b></a>
-        <a class="stat go" href="#/log" data-go="period"><small>${t('រយៈពេលមធ្យម/ឡាន', 'Avg time / truck')}</small><b>${avgM == null ? '–' : fmt(avgM)}<em>${t('នាទី', 'min')}</em></b></a>
-        <div class="stat"><small>${t('ផលិតភាពមធ្យម', 'Avg productivity')}</small><b>${avgP == null ? '–' : fmt(avgP, 1)}<em>${t('ត/នាក់/ម៉', 't/person/h')}</em></b></div>
-        <a class="stat go" href="#/log" data-go="dmg"><small>${t('ខូចខាត', 'Damaged')}</small><b style="color:var(--bad)">${dmg}</b></a>
-        <a class="stat go" href="#/log" data-go="less"><small>⬇ ${t('ទទួលខ្វះ', 'Received less')}</small><b style="color:var(--warn)">${diff}</b></a>
-      </div>
-      <div class="dgrid"><section class="card"><h2>📦 ${t('តោនទទួលតាមថ្ងៃ', 'Tonnes received by day')}</h2>
-        <div class="bars">${dk.map(k => `<div class="barrow"><span>${showDate(k).slice(0, 5)}</span><div class="tr"><i style="width:${days[k] / mx * 100}%"></i></div><span>${fmt(days[k], 1)} t</span></div>`).join('') || `<div class="empty">–</div>`}</div>
-      </section>
-      <section class="card"><h2>🚚 ${t('ឡាន ISI ធៀប 3PL', 'ISI vs 3PL trucks')}</h2>
-        <div class="split"><i style="width:${rows.length ? isi / rows.length * 100 : 0}%;background:var(--accent)"></i><i style="flex:1;background:#61cbf4"></i></div>
-        <div class="legend"><span><i style="background:var(--accent)"></i>ISI ${isi}</span><span><i style="background:#61cbf4"></i>3PL ${pl}</span></div>
-        <table class="tb mt"><tr><th>${t('ម្ចាស់ឡាន', 'Owner')}</th><th class="n">${t('ឡាន', 'Trucks')}</th><th class="n">${t('តោន', 'Tonnes')}</th><th class="n">${t('នាទី/ឡាន', 'Min/truck')}</th></tr>
-          ${Object.keys(by).sort((a, b) => by[b].n - by[a].n).map(k => `<tr><td>${esc(k)}</td><td class="n">${by[k].n}</td><td class="n">${fmt(by[k].t, 1)}</td><td class="n">${fmt(by[k].m / by[k].n)}</td></tr>`).join('')}
-        </table>
-      </section></div>
-      <p class="hint center">${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p></div>`);
-    $$('[data-p]').forEach(b => { b.onclick = () => { SP = b.dataset.p; renderSum(); }; });
-    bindGo();
+    const cols = repCols().map(k => REP_COLS.find(x => x[0] === k));
+    const uoms = []; lines.forEach(([r]) => { if (uoms.indexOf(r.uom) < 0) uoms.push(r.uom); });
+    const cell = (c, r, i) => { const v = repVal(c[0], r, i);
+      if (c[0] === 'id') return `<td class="nw"><a href="#/r/${encodeURIComponent(r.id)}">${esc(v)}</a></td>`;
+      if (c[0] === 'status') return `<td class="nw st ${r.end ? 'ok' : 'live'}">${r.end ? '✅' : '⏱'} ${esc(v)}</td>`;
+      if (c[0] === 'date' || c[0] === 'eta') return `<td class="nw" data-sort="${esc(v)}">${esc(c[0] === 'eta' ? showEta(v) : showDate(v))}</td>`;
+      if (c[3]) return `<td class="n${c[0] === 'dmgQty' && v ? ' bad' : c[0] === 'less' && v ? ' warn' : ''}">${v === '' || v == null ? '' : fq(v)}</td>`;
+      return `<td${c[0] === 'truck' ? ' class="pl"' : c[0] === 'desc' || c[0] === 'remark' ? ' class="wrap"' : ' class="nw"'}>${esc(v)}</td>`; };
+    const perItem = { poQty: 1, arrQty: 1, grQty: 1, dmgQty: 1, less: 1 };
+    const foot = cols.map((c, n) => !n ? `<td><b>${t('សរុប', 'Total')}</b></td>` : perItem[c[0]] && uoms.length === 1 ? `<td class="n"><b>${fq(lines.reduce((s, [r, i]) => s + (+repVal(c[0], r, i) || 0), 0))}</b></td>` : c[0] === 'uom' && uoms.length === 1 ? `<td>${esc(uoms[0])}</td>` : '<td></td>').join('');
+    const quick = [['t', t('ថ្ងៃនេះ', 'Today')], ['y', t('ម្សិលមិញ', 'Yesterday')], ['7', t('៧ ថ្ងៃ', '7 days')], ['30', t('៣០ ថ្ងៃ', '30 days')], ['m', t('ខែនេះ', 'This month')]];
+    const qOn = RP.to === td ? (RP.from === td ? 't' : RP.from === addDays(td, -6) ? '7' : RP.from === addDays(td, -29) ? '30' : RP.from === td.slice(0, 8) + '01' ? 'm' : '') : RP.from === RP.to && RP.from === addDays(td, -1) ? 'y' : '';
+    const sts = [['all', t('ទាំងអស់', 'All')], ['live', t('⏱ កំពុងទម្លាក់', '⏱ Unloading')], ['done', t('✅ រួចរាល់', '✅ Done')], ['dmg', t('⚠️ ខូចខាត', '⚠️ Damaged')], ['less', t('⬇ ទទួលខ្វះ', '⬇ Received less')]];
+    const owns = [['all', t('ឡានទាំងអស់', 'All trucks')], ['ISI', 'ISI'], ['3PL', '3PL']];
+    view(`<div class="fb-wrap">${FB.head('rep', `📊 ${t('របាយការណ៍ទទួលទំនិញ', 'Goods receipt report')}`, `<button class="fb-btn" id="xls" type="button">${FB.xl} Excel</button>`, () => { RP = { q: '', st: 'all', own: 'all', from: '', to: '' }; renderSum(); })}
+      ${FB.panel('rep', FB.seg(quick, qOn, 'qd') + FB.range('rFrom', 'rTo', RP.from, RP.to) + FB.show('rGo') + FB.seg(sts, RP.st, 'rs', true) + FB.seg(owns, RP.own, 'ro') +
+        FB.search('rq', t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'), RP.q))}</div>
+      <div class="repk"><span class="key"><b>${done.length}</b> ${t('ឡានរួច', 'trucks done')}</span><span class="key"><b>${fmt(tn, 1)}</b> t</span>
+        <span class="key"><b>${avgM == null ? '–' : fmt(avgM)}</b> ${t('នាទី/ឡាន', 'min/truck')}</span><span class="key"><b>${avgP == null ? '–' : fmt(avgP, 1)}</b> ${t('ត/នាក់/ម៉', 't/person/h')}</span>
+        <span class="key bad"><b>${recs.filter(isDamaged).length}</b> ${t('ខូចខាត', 'damaged')}</span><span class="key warn"><b>${recs.filter(isLess).length}</b> ${t('ទទួលខ្វះ', 'received less')}</span>
+        <span class="sp"></span>${canPlan() ? `<button type="button" class="tc-btn" id="repCols">⚙️ ${t('ជួរឈរ', 'Columns')}</button>` : ''}</div>
+      ${lines.length ? `<div class="rep-wrap"><table class="rep-tbl" data-nocols>
+        <thead><tr>${cols.map(c => `<th${c[3] ? ' class="n"' : ''}>${esc(t(c[1], c[2]))}</th>`).join('')}</tr></thead>
+        <tbody>${lines.map(([r, i]) => `<tr class="${+i.dmgQty > 0 ? 'r-dmg' : isLessItem(i) ? 'r-less' : !r.end ? 'r-live' : ''}">${cols.map(c => cell(c, r, i)).join('')}</tr>`).join('')}</tbody>
+        <tfoot><tr>${foot}</tr></tfoot></table></div>` : `<div class="card empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}
+      <p class="hint center">${lines.length} ${t('ជួរ', 'rows')} · ${t('ផលិតភាព = បរិមាណទទួល ÷ ម៉ោង ÷ ចំនួនបុគ្គលិកឃ្លាំង', 'Productivity = qty received ÷ hours ÷ manpower')}</p>`);
+    $$('[data-qd]').forEach(b => { b.onclick = () => { const k = b.dataset.qd; RP.to = td;
+      RP.from = k === 't' ? td : k === '7' ? addDays(td, -6) : k === '30' ? addDays(td, -29) : k === 'm' ? td.slice(0, 8) + '01' : (RP.to = addDays(td, -1)); renderSum(); }; });
+    $$('[data-rs]').forEach(b => { b.onclick = () => { RP.st = b.dataset.rs; renderSum(); }; });
+    $$('[data-ro]').forEach(b => { b.onclick = () => { RP.own = b.dataset.ro; renderSum(); }; });
+    $('#rGo').onclick = () => { const a = $('#rFrom').value, z = $('#rTo').value; if (a && z) { RP.from = a < z ? a : z; RP.to = a < z ? z : a; } renderSum(); };
+    $('#rFrom').onchange = e => { if (e.target.value) { RP.from = e.target.value; if (RP.from > RP.to) RP.to = RP.from; renderSum(); } };
+    $('#rTo').onchange = e => { if (e.target.value) { RP.to = e.target.value; if (RP.to < RP.from) RP.from = RP.to; renderSum(); } };
+    const qi = $('#rq'); qi.oninput = () => { RP.q = qi.value; const pos = qi.selectionStart; renderSum(); const n = $('#rq'); n.focus(); n.setSelectionRange(pos, pos); };
+    $('#xls').onclick = () => repExcel(cols, lines);
+    const cb = $('#repCols'); if (cb) cb.onclick = () => repColsDialog();
+  }
+  // Excel of the columns shown, numbers kept as numbers
+  async function repExcel(cols, lines) {
+    const head = cols.map(c => c[2]);
+    const rows = lines.map(([r, i]) => cols.map(c => { const v = repVal(c[0], r, i); return c[0] === 'date' ? showDate(v) : c[0] === 'eta' ? showEta(v) : c[0] === 'status' ? (r.end ? 'Done' : 'Unloading') : v; }));
+    try {
+      await loadXlsx();
+      const ws = window.XLSX.utils.aoa_to_sheet([head].concat(rows)), wb = window.XLSX.utils.book_new();
+      ws['!cols'] = head.map((h, n) => ({ wch: Math.min(40, Math.max(h.length, ...rows.slice(0, 200).map(x => String(x[n] == null ? '' : x[n]).length)) + 2) }));
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Inbound Report');
+      window.XLSX.writeFile(wb, 'Inbound_Report_' + RP.from + '_' + RP.to + '.xlsx');
+    } catch (e) {
+      const qv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + [head].concat(rows).map(x => x.map(qv).join(',')).join('\r\n')], { type: 'text/csv' }));
+      a.download = 'Inbound_Report.csv'; document.body.appendChild(a); a.click(); a.remove();
+    }
+  }
+  // ⚙️ Columns (reviewers and admins): tick to show, ▲▼ to order; saved on the Apps Script for everyone
+  function repColsDialog() {
+    let keys = repCols().slice();
+    const back = document.createElement('div');
+    back.className = 'tc-back';
+    const nm = k => { const c = REP_COLS.find(x => x[0] === k); return t(c[1], c[2]); };
+    const draw = () => {
+      const rest = REP_COLS.filter(c => keys.indexOf(c[0]) < 0);
+      back.innerHTML = `<div class="tc-dlg" role="dialog" aria-modal="true"><h3>⚙️ ${t('ជួរឈររបាយការណ៍', 'Report columns')}</h3>
+        <p>${t('ធីក = បង្ហាញ · ▲▼ ប្តូរលំដាប់ · សម្រាប់អ្នកប្រើទាំងអស់', 'Ticked = shown · ▲▼ to order · for everyone')}</p>
+        <div class="tc-list">${keys.map((k, n) => `<div class="tc-row"><label><input type="checkbox" checked data-i="${n}"> ${esc(nm(k))}</label><button type="button" class="tc-btn" data-up="${n}" ${n ? '' : 'disabled'}>▲</button><button type="button" class="tc-btn" data-dn="${n}" ${n < keys.length - 1 ? '' : 'disabled'}>▼</button></div>`).join('')}
+        ${rest.map(c => `<div class="tc-row tc-off"><label><input type="checkbox" data-add="${c[0]}"> ${esc(t(c[1], c[2]))}</label></div>`).join('')}</div>
+        <div class="tc-btns"><button type="button" class="tc-btn" data-act="reset">↺ ${t('លំនាំដើម', 'Default')}</button><span class="tc-sp"></span><button type="button" class="tc-btn" data-act="no">${t('បោះបង់', 'Cancel')}</button><button type="button" class="tc-btn tc-ok" data-act="ok">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;
+      back.querySelectorAll('input[data-i]').forEach(c => { c.onchange = () => { if (keys.length > 1) keys.splice(+c.dataset.i, 1); draw(); }; });
+      back.querySelectorAll('input[data-add]').forEach(c => { c.onchange = () => { keys.push(c.dataset.add); draw(); }; });
+      back.querySelectorAll('[data-up]').forEach(b => { b.onclick = () => { const n = +b.dataset.up; keys.splice(n - 1, 0, keys.splice(n, 1)[0]); draw(); }; });
+      back.querySelectorAll('[data-dn]').forEach(b => { b.onclick = () => { const n = +b.dataset.dn; keys.splice(n + 1, 0, keys.splice(n, 1)[0]); draw(); }; });
+      back.querySelector('[data-act="reset"]').onclick = () => { keys = REP_DEF.slice(); draw(); };
+      back.querySelector('[data-act="no"]').onclick = () => back.remove();
+      back.querySelector('[data-act="ok"]').onclick = async () => {
+        back.remove(); REPC = keys.slice(); set('ib_repcols', JSON.stringify(keys)); renderSum();
+        if (DEMO) return toast('✅ ' + t('បានរក្សាទុក', 'Saved'));
+        try {
+          await api('reportCols', { cols: keys });
+          try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) { b.reportCols = keys; set('ib_boot', JSON.stringify(b)); } } catch (e) { /* cache only */ }
+          toast('✅ ' + t('បានរក្សាទុកសម្រាប់អ្នកប្រើទាំងអស់', 'Saved for everyone'));
+        } catch (e) { toast('⚠️ ' + t('រក្សាទុកតែលើឧបករណ៍នេះ', 'Saved on this device only') + ': ' + e.message); }
+      };
+    };
+    draw();
+    back.addEventListener('click', e => { if (e.target === back) back.remove(); });
+    document.body.appendChild(back);
   }
 
   // ------------------------------------------------------------------ start menu (Kim, 28 Oct 2026): Receive goods | Incoming Plan
@@ -1534,13 +1634,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // ------------------------------------------------------------------ router
   function screen() {
     const h = location.hash.replace(/^#\/?/, '');
-    document.body.classList.toggle('wide', h === 'sum');   // summary is a wide dashboard on computers
+    document.body.classList.toggle('wide', h === 'sum');   // the report table uses the full width on computers
     if (h === 'site' || (siteOn() && SITE === null)) return renderSite();
     if (h === 'new') return renderForm('');
     if (h.indexOf('edit/') === 0) return renderForm(h.slice(5));
     if (h.indexOf('r/') === 0) return renderOne(h.slice(2));
     if (h === 'log') return renderLog();
     if (h === 'sum') return renderSum();
+    if (h === 'sched') return renderSched();
     if (h === 'plan') return renderPlan();
     if (h === 'plan-up') return renderUpload();
     if (h === 'plan-new') return renderPlanNew();

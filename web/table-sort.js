@@ -19,7 +19,7 @@
   const MEMO = {};   // header names joined → [column, 'asc' | 'desc']
   const headRow = table => { const th = table.querySelector('tr > th'); return th ? th.parentElement : null; };
   const sig = tr => Array.from(tr.children).map(c => c.textContent.trim()).join('|');
-  const bodyRows = (table, head) => Array.from(table.querySelectorAll('tr')).filter(r => r !== head && r.closest('table') === table && r.querySelector('td'));
+  const bodyRows = (table, head) => Array.from(table.querySelectorAll('tr')).filter(r => r !== head && r.closest('table') === table && !r.closest('tfoot') && r.querySelector('td'));
 
   function key(text) {
     const s = String(text || '').trim();
