@@ -12,7 +12,7 @@
   const ALL = {
     fuel: [['new', 'បញ្ចូលថ្មី', 'New'], ['mine', 'របស់ខ្ញុំ', 'My entries'], ['review', 'អ្នកត្រួតពិនិត្យ', 'Reviewer'], ['report', 'របាយការណ៍', 'Report']],
     scale: [['home', 'ថ្លឹង', 'Weigh'], ['list', 'ប័ណ្ណថ្លឹង', 'Tickets'], ['rep', 'របាយការណ៍', 'Report'], ['tat', 'រយៈពេល', 'Turnaround'], ['dnc', 'ពិនិត្យ DN', 'DN check'], ['set', 'ការកំណត់', 'Settings']],
-    inbound: [['home', 'ថ្ងៃនេះ', 'Today'], ['log', 'កំណត់ត្រា', 'Log'], ['sum', 'សង្ខេប', 'Summary'], ['plan', 'ផែនការ', 'Plan']],
+    inbound: [['home', 'ថ្ងៃនេះ', 'Today'], ['log', 'កំណត់ត្រា', 'Log'], ['sum', 'សង្ខេប', 'Summary'], ['plan', 'ផែនការ', 'Plan'], ['gs', 'ធៀបជញ្ជីង', 'Inbound vs Scale']],
     dataentry: [['entry', 'បញ្ចូលទិន្នន័យ', 'Data Entry'], ['report', 'របាយការណ៍', 'Report'], ['settings', 'ការកំណត់', 'Settings']],
     overtime: [['new', 'ស្នើថ្មី', 'New request'], ['mine', 'សំណើរបស់ខ្ញុំ', 'My requests']],
     incident: [['home', 'របាយការណ៍', 'Reports'], ['sign', 'ត្រូវចុះហត្ថលេខា', 'To sign'], ['sum', 'សង្ខេប', 'Summary'], ['set', 'ការកំណត់', 'Settings']],
