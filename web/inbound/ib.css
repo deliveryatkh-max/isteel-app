@@ -1,5 +1,5 @@
 /* Inbound (goods receipt log): builds on ../overtime/ot.css (ISI colours, header, cards, buttons). */
-.tabs { grid-template-columns: repeat(4, 1fr); }
+.tabs { grid-template-columns: repeat(5, 1fr); }
 .tab span { position: relative; }
 .count { position: absolute; top: -6px; right: -12px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font: 700 11px/18px system-ui, sans-serif; font-style: normal; text-align: center; }
 .req { color: var(--bad); }
@@ -170,7 +170,7 @@ table.itbl { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .stepper.need { border-radius: 14px; padding: 3px; border: 1.5px solid var(--bad); }
 
 /* start menu + Incoming Plan */
-.tabs.five { grid-template-columns: repeat(5, 1fr); }
+.tabs.five { grid-template-columns: repeat(6, 1fr); }
 .menu2 { display: grid; gap: 14px; margin-top: 6px; }
 .mtile { display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto auto auto; column-gap: 14px; align-items: center; padding: 18px 16px; border-radius: 18px;
   background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-decoration: none; }
