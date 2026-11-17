@@ -274,7 +274,6 @@
     const deptList = (D.depts || []).slice();
     f.depts.forEach(d => { if (deptList.indexOf(d) < 0) deptList.push(d); });
     const form = `
-      ${split() && a ? '' : `<a class="back" href="#/manage">‹ ${t('ថយក្រោយ', 'Back')}</a>`}
       <div class="ghead"><h2>${a ? '✏️ ' + t('ការផ្សាយ', 'Edit ad') : '＋ ' + t('បង្ហោះថ្មី', 'Post new')}</h2>${a ? pill(a) : ''}</div>
       <div class="card">
         <label class="gdrop${need(!a && !f.file)}"><input type="file" accept="image/*,video/*" hidden id="fFile">

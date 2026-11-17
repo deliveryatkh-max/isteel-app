@@ -5,6 +5,7 @@
  * The choice is remembered on this device (localStorage isteel_view); picking the device's own look clears it.
  * Load it in <head> (it must run before the page body): <script src="../view-mode.js"></script>
  * Header (Kim, 13 Nov 2026, option B): one ⚙️ button in the bar; language, phone/computer and dark mode sit in its menu.
+ * Back ‹ and Forward › buttons left of ⚙️ on every screen of every app (Kim, 17 Nov 2026).
  */
 (function () {
   const KEY = 'isteel_view';
@@ -63,6 +64,62 @@
     w.onclick = e => { const b = e.target.closest('[data-vm]'); if (b && !b.classList.contains('on')) pick(b.dataset.vm); };
     lang.parentNode.insertBefore(w, lang.nextSibling);
     buildMenu(lang, w);
+    addNav();
+  }
+
+  /**
+   * ‹ Back and › Forward: the browser's own history, so they match the phone's back gesture.
+   * Apps with their own screen list (Fuel: #navBack / #navFwd) are driven through those buttons instead.
+   * Back with nothing before it (an app opened from a link) goes to the home menu.
+   */
+  function addNav() {
+    if (document.getElementById('vmNav')) return;
+    let anchor = document.querySelector('.set-wrap');
+    if (!anchor) anchor = reactGear();
+    if (!anchor || !anchor.parentNode) return;
+    if (!document.getElementById('vmNavCss')) {
+      const st = document.createElement('style');
+      st.id = 'vmNavCss';
+      st.textContent = '.vm-nav{flex:none;display:inline-flex;gap:4px;margin-right:2px}' +
+        '.vm-nav button{flex:none;width:32px;height:32px;padding:0;margin:0;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:none}' +
+        '.vm-nav button:active{background:rgba(255,255,255,.3)}.vm-nav button:disabled{opacity:.35;cursor:default}' +
+        '.vm-nav svg{width:18px;height:18px;display:block}' +
+        '#navBack,#navFwd{visibility:hidden}';   // Fuel's own row: the bar buttons take over
+      document.head.appendChild(st);
+    }
+    const ic = d => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const nav = document.createElement('span');
+    nav.className = 'vm-nav'; nav.id = 'vmNav';
+    nav.innerHTML = '<button type="button" data-nav="back">' + ic('M15 5l-7 7 7 7') + '</button><button type="button" data-nav="fwd">' + ic('M9 5l7 7-7 7') + '</button>';
+    anchor.parentNode.insertBefore(nav, anchor);
+    const [bb, fb] = nav.querySelectorAll('button');
+    const own = k => document.getElementById(k === 'back' ? 'navBack' : 'navFwd');
+    const N = window.navigation;
+    const isHome = () => /^\/(index\.html)?$/.test(location.pathname);
+    const paint = () => {
+      bb.title = T('ថយក្រោយ', 'Back'); fb.title = T('ទៅមុខ', 'Forward');
+      bb.setAttribute('aria-label', bb.title); fb.setAttribute('aria-label', fb.title);
+      const ob = own('back'), of = own('fwd');
+      if (ob && of && !ob.closest('[hidden]')) { bb.disabled = ob.disabled && (!N || !N.canGoBack); fb.disabled = of.disabled && (!N || !N.canGoForward); return; }
+      bb.disabled = isHome() && !!N && !N.canGoBack;
+      fb.disabled = !!N && !N.canGoForward;
+    };
+    nav.onclick = e => {
+      const b = e.target.closest('[data-nav]'); if (!b || b.disabled) return;
+      const k = b.dataset.nav, o = own(k);
+      if (o && !o.disabled && !o.closest('[hidden]')) return o.click();
+      if (k === 'fwd') return history.forward();
+      if (N && !N.canGoBack && !isHome()) { location.href = '/'; return; }
+      history.back();
+    };
+    paint();
+    if (window.LANG && LANG.onChange) LANG.onChange(paint);
+    if (N) N.addEventListener('currententrychange', () => setTimeout(paint, 0));
+    window.addEventListener('popstate', () => setTimeout(paint, 0));
+    window.addEventListener('hashchange', () => setTimeout(paint, 0));
+    ['navBack', 'navFwd'].forEach(id => { const o = document.getElementById(id); if (o) new MutationObserver(paint).observe(o, { attributes: true, attributeFilter: ['disabled'] }); });
+    const nb = document.getElementById('navbar');
+    if (nb) new MutationObserver(paint).observe(nb, { attributes: true, attributeFilter: ['hidden'] });
   }
 
   const T = (km, en) => (window.LANG ? LANG.t(km, en) : km);
@@ -120,10 +177,38 @@
     window.addEventListener('resize', () => open(false));
     window.addEventListener('scroll', () => open(false), { passive: true });
   }
+  /**
+   * Delivery (React) keeps its own buttons, so they are not moved into a menu (React still owns them): a ⚙️ button
+   * only shows or hides them under the bar, which leaves room for ‹ ›.
+   */
+  function reactGear() {
+    const sw = document.getElementById('vmSw');
+    const bar = sw && sw.parentNode;
+    if (!bar || !sw.closest('#root')) return null;
+    let g = document.getElementById('vmGear');
+    if (g) return g;
+    const st = document.createElement('style');
+    st.textContent = '.vm-dd>*:not(.vm-nav):not(#vmGear){display:none!important}' +
+      '.vm-dd.open>*:not(.vm-nav):not(#vmGear){display:inline-flex!important;position:fixed;right:22px;z-index:1001}' +
+      '.vm-dd.open>.lang-btn{top:calc(70px + env(safe-area-inset-top));height:32px}.vm-dd.open>.vm-sw{top:calc(112px + env(safe-area-inset-top))}' +
+      '.vm-dd.open>.vm-sw~*:not(.vm-nav):not(#vmGear){top:calc(158px + env(safe-area-inset-top));width:40px;height:32px}' +
+      '.vm-dd.open::before{content:"";position:fixed;z-index:1000;top:calc(60px + env(safe-area-inset-top));right:10px;width:104px;height:142px;border-radius:14px;background:#091f3f;border:1px solid rgba(255,255,255,.2);box-shadow:0 12px 30px rgba(1,30,65,.35)}' +
+      '#vmGear{flex:none;width:32px;height:32px;padding:0;margin:0;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;font-size:16px;line-height:1;display:grid;place-items:center;cursor:pointer}';
+    document.head.appendChild(st);
+    g = document.createElement('button');
+    g.type = 'button'; g.id = 'vmGear'; g.textContent = '⚙️';
+    g.title = T('ការកំណត់', 'Settings'); g.setAttribute('aria-label', g.title);
+    bar.appendChild(g);
+    bar.classList.add('vm-dd');
+    g.onclick = e => { e.stopPropagation(); bar.classList.toggle('open'); };
+    document.addEventListener('click', e => { if (bar.classList.contains('open') && !bar.contains(e.target)) bar.classList.remove('open'); });
+    window.addEventListener('scroll', () => bar.classList.remove('open'), { passive: true });
+    return g;
+  }
   // Apps that draw their bar later (Delivery is React) get the switch as soon as the language button appears.
   function watch() {
     addButton();
-    const mo = new MutationObserver(() => { if (!document.getElementById('vmSw')) addButton(); });
+    const mo = new MutationObserver(() => { if (!document.getElementById('vmSw')) addButton(); else if (!document.getElementById('vmNav')) addNav(); });
     mo.observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();

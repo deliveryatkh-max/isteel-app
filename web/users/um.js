@@ -379,8 +379,7 @@
     if (f.dept && deptOpts.indexOf(f.dept) < 0) deptOpts.unshift(f.dept);
     const need = (v, extra) => (E.tried && !String(v || '').trim()) || extra ? ' need' : '';
     const deptApps = (D.depts.find(d => d.name === f.dept) || {}).apps;
-    view(`<a class="back" href="${isWaiting(E.orig) && !isNew ? '#/req' : '#/'}">‹ ${t('ថយក្រោយ', 'Back')}</a>
-      <div class="prof">${avatar(Object.assign({}, f, { email: f.email || f.name || '?' }), 'big')}<div>
+    view(`<div class="prof">${avatar(Object.assign({}, f, { email: f.email || f.name || '?' }), 'big')}<div>
         <h1>${esc(f.name || (isNew ? t('អ្នកប្រើថ្មី', 'New user') : f.email))}</h1>
         ${isNew ? '' : `<small>${esc(f.email)}${(E.orig.others || []).length ? ' · ' + t('Gmail ផ្សេង', 'also') + ' ' + esc(E.orig.others.join(', ')) : ''}</small>`}
         ${!isNew && (E.orig.fullName || E.orig.kh) ? `<small>${esc([E.orig.fullName, E.orig.kh].filter(Boolean).join(' · '))}${E.orig.manager ? ' · ' + t('ប្រធាន', 'Manager') + ' ' + esc(E.orig.manager) : ''}</small>` : ''}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>

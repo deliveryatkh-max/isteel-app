@@ -2134,7 +2134,6 @@
     $('#view').innerHTML = `<section class="card">
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
       <div class="btns tbtns">
-        <a class="btn" href="#/list">← ${t('ត្រឡប់', 'Back')}</a>
         ${x.status !== 'Open' || lastAgain(x) ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
         ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
         ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
