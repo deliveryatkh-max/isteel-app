@@ -67,6 +67,14 @@
       IB.forEach(a => { if (a.used) return; SC.forEach(b => { if (!b.used && a.p === b.p && Math.abs(dayDiff(a.d, b.d)) === maxD) { const g = near(a, b); if (!maxD || g <= DAY_GAP) cand.push([g, a, b]); } }); });
       cand.sort((u, v) => u[0] - v[0]).forEach(([, a, b]) => { if (!a.used && !b.used) pair(a, b, maxD ? 'day' : 'ok'); });
     });
+    // 2b: one trip, several Inbound receipts (Kim, 17 Nov 2026: 3A-2389 brought 2 GRs on one weigh ticket). A receipt left
+    // over with the same plate and day as a ticket already paired shares that ticket; the weight check uses the receipts' sum.
+    IB.forEach(a => {
+      if (a.used) return;
+      const w = rows.filter(x => x.sc && norm(x.sc.plate) === a.p && (x.st === 'ok' || x.st === 'day') && Math.abs(dayDiff(a.d, dayOf(x.sc.t1 || x.sc.created))) <= (x.st === 'day' ? 1 : 0))
+        .sort((u, v) => Math.abs(mins(a.d, a.r.start) - mins(u.ib.date, u.ib.start)) - Math.abs(mins(a.d, a.r.start) - mins(v.ib.date, v.ib.start)))[0];
+      if (w) { a.used = true; rows.push({ st: w.st, date: a.d, ib: a.r, sc: w.sc, extra: 1 }); }
+    });
     // 3: one character off. A letter typed wrong (3C/3G, 3R/3E) is likelier than a digit: real fleets run 3G-0499, 0500, 0501…
     const cand = [];
     IB.forEach(a => {
@@ -90,6 +98,15 @@
       w.ibKg = w.ib ? ibKg(w.ib) : '';
       w.scKg = w.sc && w.sc.net !== '' && w.sc.net != null && isFinite(+w.sc.net) ? Math.round(+w.sc.net) : '';
       w.diff = w.ibKg !== '' && w.scKg !== '' && w.sc.status === 'Done' ? w.scKg - w.ibKg : '';
+    });
+    // receipts sharing one ticket: the net and the difference go on the first row, against the sum of their GR kg
+    const share = {};
+    rows.forEach(w => { if (w.sc && w.ib) (share[w.sc.no] = share[w.sc.no] || []).push(w); });
+    Object.keys(share).forEach(k => {
+      const g = share[k]; if (g.length < 2) return;
+      g.sort((u, v) => (u.extra ? 1 : 0) - (v.extra ? 1 : 0));
+      const sum = g.every(w => w.ibKg !== '') ? g.reduce((s, w) => s + w.ibKg, 0) : '';
+      g.forEach((w, i) => { w.shared = g.length; w.sharedIds = g.map(x => x.ib.id); w.sumKg = sum; if (i) { w.scKg = ''; w.diff = ''; } else w.diff = sum !== '' && w.scKg !== '' && w.sc.status === 'Done' ? w.scKg - sum : ''; });
     });
     const ord = { ib: 0, sc: 1, typo: 2, day: 3, ok: 4 };
     const tm = w => (w.ib ? w.ib.date + ' ' + (w.ib.start || '') : String(w.sc.t1 || '').replace('T', ' '));

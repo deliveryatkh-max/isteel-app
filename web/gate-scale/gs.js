@@ -90,6 +90,7 @@
     if (w.st === 'day') n.push(t('ថ្លឹងលើកទី១ ថ្ងៃ ', '1st weigh on ') + dShow(w.sc.t1));
     if (w.st === 'ib') n.push(w.outNo ? t('មានលើជញ្ជីង ជា "ឡើងទំនិញ" ', 'On the Scale as Load ') + w.outNo : t('គ្មានប័ណ្ណថ្លឹង', 'No Scale ticket'));
     if (w.st === 'sc') n.push(t('គ្មានកំណត់ត្រា Inbound', 'No Inbound record'));
+    if (w.shared) n.push(t(`ប័ណ្ណថ្លឹង ១ សម្រាប់ Inbound ${w.shared}`, `1 weigh ticket for ${w.shared} Inbound`) + ` (${w.sharedIds.join(' + ')})` + (w.sumKg !== '' ? t(' · ទទួលសរុប ', ' · GR total ') + w.sumKg.toLocaleString('en-US') + ' kg' : ''));
     if (w.sc && w.sc.status === 'Open') n.push(t('ឡាននៅក្នុងរោងចក្រ', 'Truck still on site'));
     if (w.ib && w.ib.status && w.ib.status !== 'Done') n.push(t('កំពុងទម្លាក់', 'Unloading'));
     return n.join(' · ');

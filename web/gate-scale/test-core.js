@@ -34,4 +34,10 @@ assert.strictEqual(r13.find(w => w.ib && w.ib.id === 'IB-1').diff, -70);
 assert.strictEqual(r13.find(w => w.ib && w.ib.id === 'IB-7').outNo, 'WB-7');
 const d14 = by(C.match(rec, tk, '2026-11-14', '2026-11-14'));
 assert.deepStrictEqual(d14, { 'IB-3/WB-3': 'day' });
+// one trip, two receipts (3A-2389 on 17 Nov 2026)
+const r17 = C.match([R('IB-03', '3A-2389', '2026-11-17', '07:20', 22315), R('IB-04', '3A-2389', '2026-11-17', '08:40', 11055)],
+  [T('WB-7', '3A-2389', '2026-11-17T07:05:08', '2026-11-17T09:26:29', 'In', 33350)], '2026-11-17', '2026-11-17');
+assert.deepStrictEqual(by(r17), { 'IB-03/WB-7': 'ok', 'IB-04/WB-7': 'ok' });
+assert.strictEqual(r17.find(w => w.ib.id === 'IB-03').diff, -20);
+assert.strictEqual(r17.find(w => w.ib.id === 'IB-04').diff, '');
 console.log('gate-scale core: all tests passed');
