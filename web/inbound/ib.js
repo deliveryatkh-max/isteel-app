@@ -1726,6 +1726,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   paintDemo();
   window.ISTEEL_REFRESH = () => { if (formOpen()) { toast(t('កំពុងបំពេញទម្រង់', 'Form in progress')); return; } screen(); refresh(); };
+  // opened from the Telegram button through go.html (?tk=ticket): go to that truck (Kim, 17 Nov 2026)
+  { const m = location.search.match(/[?&]tk=([^&]+)/); if (m) history.replaceState(null, '', location.pathname + '#/newtk/' + m[1]); }
   load(); paintStatic(); window.addEventListener('hashchange', screen);
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { screen(); refresh(); }

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="km"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inbound · Open</title>
+<style>
+body{margin:0;font-family:system-ui,'Noto Sans Khmer',sans-serif;background:#f3f6fb;color:#011e41;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.c{background:#fff;border-radius:18px;padding:24px 20px;max-width:360px;width:100%;text-align:center;box-shadow:0 6px 24px rgba(1,30,65,.12)}
+h1{font-size:19px;margin:6px 0 14px}a.b{display:block;background:#1e7b46;color:#fff;text-decoration:none;font-weight:700;padding:14px;border-radius:12px;margin:10px 0}
+a.l{color:#0b76a0;font-size:14px}p{font-size:13.5px;color:#5b6b80;line-height:1.5}
+</style></head><body><div class="c">
+<div style="font-size:40px">⚖️</div><h1>បើកក្នុងកម្មវិធី STEEL<br><small style="font-weight:600;color:#5b6b80">Open in the STEEL app</small></h1>
+<a class="b" id="app" href="#">📲 បើកកម្មវិធី · Open the app</a>
+<a class="l" id="here" href="#">បន្តនៅទីនេះ · Continue here</a>
+<p id="ios" hidden>iPhone: ចុច ••• ហើយជ្រើស "Open in Safari" ឬបើកកម្មវិធី STEEL ពីអេក្រង់ដើម។</p>
+</div>
+<script>
+// Telegram buttons open links in Telegram's own browser (Kim, 17 Nov 2026: "open with the app installed").
+// On Android an intent:// link hands the address to the phone, so the installed STEEL app (or Chrome) opens it.
+(function () {
+  var tk = (location.search.match(/[?&]tk=([^&]+)/) || [])[1] || '';
+  var target = location.origin + '/inbound/' + (tk ? '?tk=' + tk : '');
+  var ua = navigator.userAgent || '', android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+  var intent = 'intent://' + location.host + '/inbound/' + (tk ? '?tk=' + tk : '') + '#Intent;scheme=https;S.browser_fallback_url=' + encodeURIComponent(target) + ';end';
+  document.getElementById('here').href = target;
+  document.getElementById('app').href = android ? intent : target;
+  if (ios) document.getElementById('ios').hidden = false;
+  var standalone = window.matchMedia && matchMedia('(display-mode: standalone)').matches;
+  if (standalone || (!android && !ios)) location.replace(target);
+  else if (android) setTimeout(function () { location.href = intent; }, 150);
+})();
+</script></body></html>
