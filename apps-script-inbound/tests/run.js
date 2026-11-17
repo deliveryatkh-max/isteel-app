@@ -326,7 +326,7 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(/MV HAI PHONG 08/.test(JSON.stringify(env.telegrams[env.telegrams.length - 1])), 'alert shows the vessel');
   let a = must(call('sok@x.com', 'boot', {})).arrivals;
   eq(a.map(x => [x.no, x.truck, x.vessel, x.pos, x.kg]), [['WB-1', '3E7777', 'MV HAI PHONG 08', ['5100088888'], 41250]], 'arrival in boot');
-  const r = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: '', pos: ['5100088888'], dn3pl: 'DN-V1', truck: '3E-7777', scaleNo: 'WB-1', vessel: 'MV HAI PHONG 08', items: [{ po: '5100088888', material: '1300000002', arrQty: 20000 }] }) }));
-  eq([r.scaleNo, r.vessel], ['WB-1', 'MV HAI PHONG 08'], 'receipt keeps ticket and vessel');
+  const r = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: '', pos: ['5100088888'], dn3pl: 'DN-V1', truck: '3E-7777', scaleNo: 'WB-1', vessel: 'MV HAI PHONG 08', company: 'SRONG SAL', items: [{ po: '5100088888', material: '1300000002', arrQty: 20000 }] }) }));
+  eq([r.scaleNo, r.vessel, r.company], ['WB-1', 'MV HAI PHONG 08', 'SRONG SAL'], 'receipt keeps ticket, vessel and company');
   eq(must(call('sok@x.com', 'boot', {})).arrivals, [], 'received truck leaves the list'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');
