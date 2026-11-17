@@ -373,8 +373,19 @@
   }
   function bindWait() { const q = $('#wq'); if (q) q.oninput = () => { WQ = q.value; $('#wlist').innerHTML = waitRows(); }; }
   // Receive a truck from the scale: step 1 opens with the truck, company and vessel already filled
+  const TK_TRIED = {};
   function renderFromScale(no) {
+    const started = DATA.find(r => r.scaleNo === no);
+    if (started) { location.replace('#/r/' + started.id); return; }   // already received: open its receipt
     const a = ARRIVALS.find(x => x.no === no);
+    // opened from the Telegram link: the truck is newer than the data kept on the phone, so fetch first (Kim, 17 Nov 2026)
+    if (!a && !DEMO && !TK_TRIED[no]) {
+      TK_TRIED[no] = 1; paintTabs('');
+      view(`<div class="card empty"><div class="spinner"></div><p>⚖️ ${t('កំពុងបើកឡានពីជញ្ជីង…', 'Opening the truck from the scale…')}</p></div>`);
+      const here = location.hash;
+      refresh().then(() => { if (location.hash === here) renderFromScale(no); });
+      return;
+    }
     if (!a) { toast(t('រកមិនឃើញឡាននេះ ឬបានទទួលរួច', 'Truck not found or already received')); location.hash = '#/today'; return; }
     F = blank(); F.scaleNo = a.no; F.vessel = a.vessel || ''; F.company = a.company || ''; F.truck = a.truck;
     const ps = vesPOs(a.vessel).map(x => x.po).filter(po => pendingPOs().indexOf(po) >= 0);
