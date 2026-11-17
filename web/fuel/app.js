@@ -2199,7 +2199,14 @@
           <button type="button" class="btn ghost small rp-big" id="rpUndo" hidden></button>
           <div class="hint">${L('បន្ទាប់ពីបញ្ចូលជួរទាំងនេះក្នុង SAP រួច សូមចុច ✔ Posted SAP ដើម្បីកុំឱ្យទាញចេញម្តងទៀត។', 'After you post these rows in SAP, tap ✔ Posted SAP so they are not exported again.')}</div>
         </div>
-        <div class="rp-tw sap" id="rpSapPrev"></div>
+        <div class="rp-sapR">
+          <div class="rp-plates" id="rpPlatesBox" hidden>
+            <label for="rpPlates">${L('ផ្លាកលេខ (Text)', 'Plates (Text)')}</label>
+            <div class="rp-plrow"><textarea id="rpPlates" rows="2" readonly spellcheck="false"></textarea>
+            <button type="button" class="btn ghost small" id="rpPlCopy">📋 Copy</button></div>
+          </div>
+          <div class="rp-tw sap" id="rpSapPrev"></div>
+        </div>
       </section>`;
 
     const setRange = (a, b) => { rp.from = a; rp.to = b; $('#rpFrom').value = a; $('#rpTo').value = b; paintChips(); paintReport(); };
@@ -2222,6 +2229,9 @@
     if ($('#rpCols')) $('#rpCols').onclick = rpColsDialog;
     $('#rpXls').onclick = exportSap;
     $('#rpCopy').onclick = copySap;
+    // Plates of the ticked rows, joined by commas, for pasting (Kim, 17 Nov 2026). A tap selects the whole list.
+    $('#rpPlates').onfocus = e => setTimeout(() => e.target.select(), 0);
+    $('#rpPlCopy').onclick = () => copyText($('#rpPlates').value, L('📋 បានចម្លងផ្លាកលេខ', '📋 Plates copied'));
     $('#rpPost').onclick = () => askPost(false);
     $('#rpUndo').onclick = () => askPost(true);
     $('#rpTable').onclick = e => {
@@ -2304,6 +2314,8 @@
       <tbody>${show.map(r => `<tr>${sapCells(r).map((c, i) => `<td${i === 1 ? ' class="n"' : ''}>${i === 1 || i === 6 ? `<b>${esc(i === 1 ? fmtNum(c) : c)}</b>` : esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
       <tfoot><tr><th>${n > show.length ? L(`… និង ${n - show.length} ជួរទៀត`, `… and ${n - show.length} more rows`) : `${n} ${L('ជួរ', 'rows')}`}</th><th class="n">${fmtNum(litres)}</th><th></th><th></th><th></th><th></th><th></th><th></th></tr></tfoot></table>`
       : `<div class="empty">☑️ ${L('ធីកជួរក្នុងតារាងខាងលើ ដើម្បីដាក់ក្នុងតារាង SAP', 'Tick rows in the table above to add them to the SAP table')}</div>`;
+    $('#rpPlatesBox').hidden = !n;
+    $('#rpPlates').value = list.map(r => String(sapCells(r)[6] || '').trim()).filter(Boolean).join(',');
     const shown = rows || rpRows(), waiting = shown.filter(sapOk).length;
     $('#rpSelNote').innerHTML = `☑️ ${L(`បានធីក <b>${n}</b> ជួរ · ${fmtNum(litres)} L`, `<b>${n}</b> rows ticked · ${fmtNum(litres)} L`)}
       <span class="dim">(${L(`${waiting} ជួរ ✅ មិនទាន់ Post`, `${waiting} ✅ rows not posted`)})</span>
@@ -2363,6 +2375,11 @@
     const list = sapRows(rpRows());
     if (!list.length) return;
     const text = list.map(r => sapCells(r).map(c => String(c).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n');
+    copyText(text, L(`📋 បានចម្លង ${list.length} ជួរ`, `📋 Copied ${list.length} rows`));
+  }
+
+  async function copyText(text, done) {
+    if (!text) return;
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
     if (!ok) {   // older phones / browsers: copy through a hidden text box
@@ -2372,7 +2389,7 @@
       try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
       ta.remove();
     }
-    toast(ok ? L(`📋 បានចម្លង ${list.length} ជួរ`, `📋 Copied ${list.length} rows`) : L('ចម្លងមិនបាន', 'Could not copy'));
+    toast(ok ? done : L('ចម្លងមិនបាន', 'Could not copy'));
   }
 
   function askPost(undo) {
