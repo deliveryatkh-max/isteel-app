@@ -402,8 +402,8 @@
         if (action === 'sapPost') {
           const ids = demo.rows.filter(r => p.ids.indexOf(r.id) >= 0 && (p.undo ? r.sapStatus === 'Posted SAP' : r.status === STATUS_OK && r.sapStatus !== 'Posted SAP')).map(r => r.id);
           const at = Date.now();
-          demo.rows.forEach(r => { if (ids.indexOf(r.id) >= 0) { r.sapStatus = p.undo ? '' : 'Posted SAP'; r.sapAt = p.undo ? null : at; } });
-          return resolve({ marked: ids.length, ids, at, undo: !!p.undo });
+          demo.rows.forEach(r => { if (ids.indexOf(r.id) >= 0) { r.sapStatus = p.undo ? '' : 'Posted SAP'; r.sapAt = p.undo ? null : at; r.sapDoc = p.undo ? '' : String(p.doc || ''); } });
+          return resolve({ marked: ids.length, ids, at, undo: !!p.undo, doc: p.undo ? '' : String(p.doc || '') });
         }
         if (action === 'photo') return resolve({ dataUrl: demo.photos[p.url] || null });
         if (action === 'transcribe') return setTimeout(() => resolve({ text: 'ចាក់សាំងនៅស្ថានីយ៍ទួលគោក' }), 800);
@@ -2053,7 +2053,7 @@
       const k = ymdOf(new Date(r.dateTime));
       if ((from && k < from) || (to && k > to)) return false;
       if (!st(r) || !sp(r)) return false;
-      return !q || [r.id, r.type, r.plate, r.driver, r.note, r.km, r.litres].join(' ').toLowerCase().indexOf(q) >= 0;
+      return !q || [r.id, r.type, r.plate, r.driver, r.note, r.km, r.litres, r.sapDoc].join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
   /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
@@ -2099,11 +2099,13 @@
     RC('reviewedby', 'Reviewed By', r => tdTxt(r.reviewedByName || r.reviewedBy)),
     RC('reviewedat', 'Reviewed At', r => tdTxt(r.reviewedAt ? `${dmyOf(r.reviewedAt)} ${hmsOf(r.reviewedAt)}` : '')),
     RC('sap', 'SAP Status', r => `<td>${r.sapStatus === SAP_POSTED ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>'}</td>`),
+    // SAP Material document number typed when marking Posted SAP (Kim, 17 Nov 2026), e.g. 4900878335.
+    RC('docno', 'Doc No.', r => tdTxt(r.sapDoc || '')),
     RC('sapat', 'SAP Posted At', r => tdTxt(r.sapAt ? `${dmyOf(r.sapAt)} ${hmsOf(r.sapAt)}` : '')),
     RC('saptext', 'SAP Text', r => tdTxt(sapText(r))),
     RC('latlong', 'LatLong', r => tdTxt(r.latLong)),
   ];
-  const RP_DEF = ['id', 'type', 'plate', 'driver', 'km', 'litres', 'datetime', 'status', 'sap'];
+  const RP_DEF = ['id', 'type', 'plate', 'driver', 'km', 'litres', 'datetime', 'status', 'sap', 'docno'];
   const isAdminUser = () => { const c = state.config || {}; return !!c.isAdmin || ((c.user || {}).role === 'admin'); };
   window.TC_ADMIN = isAdminUser;   // shared ⚙️ Columns tool (table-cols.js)
   function rpCols() {
@@ -2401,22 +2403,34 @@
       <p>${undo
         ? L(`ដក "Posted SAP" ចេញពី <b>${list.length}</b> ជួរ (${fmtNum(litres)} L)?`, `Remove "Posted SAP" from <b>${list.length}</b> rows (${fmtNum(litres)} L)?`)
         : L(`សម្គាល់ <b>${list.length}</b> ជួរ (${fmtNum(litres)} L) ថា <b>Posted SAP</b>? ធ្វើបែបនេះ បន្ទាប់ពីបញ្ចូលក្នុង SAP រួច។`, `Mark <b>${list.length}</b> rows (${fmtNum(litres)} L) as <b>Posted SAP</b>? Do this after you have posted them in SAP.`)}</p>
+      ${undo ? '' : `<label class="rp-doc">${L('លេខ Material Document (Doc No.)', 'Material Document (Doc No.)')} <span class="req">*</span>
+        <input type="text" id="rpDoc" inputmode="numeric" autocomplete="off" placeholder="${L('ឧ. 4900878335', 'e.g. 4900878335')}"></label>
+        <div class="rp-doc-err" id="rpDocErr" hidden>${L('សូមបញ្ចូលលេខ ១០ ខ្ទង់', 'Type the 10-digit number')}</div>`}
       <div class="actions"><button type="button" class="btn ghost" data-close>${L('បោះបង់', 'Cancel')}</button>
         <button type="button" class="btn ${undo ? 'bad' : 'xl'}" id="rpYes">${undo ? '↶ ' + L('ដកវិញ', 'Undo') : '✔ Posted SAP'}</button></div>`);
+    const docIn = $('#rpDoc', sh.el);
+    if (docIn) {
+      setTimeout(() => docIn.focus(), 250);
+      docIn.oninput = () => { docIn.value = docIn.value.replace(/\D+/g, ''); docIn.classList.remove('bad'); docIn.classList.toggle('ok', /^\d{10}$/.test(docIn.value)); $('#rpDocErr', sh.el).hidden = true; };
+      docIn.onkeydown = e => { if (e.key === 'Enter') $('#rpYes', sh.el).click(); };
+    }
     $('#rpYes', sh.el).onclick = async () => {
+      const doc = docIn ? docIn.value.trim() : '';
+      if (docIn && !/^\d{10}$/.test(doc)) { docIn.classList.add('bad'); $('#rpDocErr', sh.el).hidden = false; docIn.focus(); return; }
       sh.close();
       rp.busy = true; paintSap();
       try {
-        const res = await api('sapPost', { ids: list.map(r => r.id), undo: !!undo });
+        const res = await api('sapPost', { ids: list.map(r => r.id), undo: !!undo, doc });
         const done = new Set(res.ids || []);
         (rv.rows || []).forEach(r => {
           if (!done.has(r.id)) return;
           r.sapStatus = undo ? '' : SAP_POSTED;
           r.sapAt = undo ? null : res.at;
+          r.sapDoc = undo ? '' : (res.doc !== undefined ? res.doc : r.sapDoc || '');   // an older script does not save the number
         });
         local.set('all', rv.rows);
         done.forEach(id => rp.sel.delete(id));
-        toast(undo ? L(`បានដក ${done.size} ជួរ`, `${done.size} rows undone`) : L(`✔ ${done.size} ជួរ Posted SAP`, `✔ ${done.size} rows marked Posted SAP`));
+        toast(undo ? L(`បានដក ${done.size} ជួរ`, `${done.size} rows undone`) : L(`✔ ${done.size} ជួរ Posted SAP · Doc ${doc}`, `✔ ${done.size} rows marked Posted SAP · Doc ${doc}`));
       } catch (e) { toast(e.message); }
       rp.busy = false;
       paintReport();

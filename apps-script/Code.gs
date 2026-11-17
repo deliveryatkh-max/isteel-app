@@ -43,6 +43,7 @@ const COL = {
   SAP_STATUS: 'SAP Status',
   SAP_BY: 'SAP Posted By',
   SAP_AT: 'SAP Posted At',
+  SAP_DOC: 'Doc No.',   // SAP Material document typed when marking Posted SAP (Kim, 17 Nov 2026)
 };
 const SAP_POSTED = 'Posted SAP';
 
@@ -1046,12 +1047,14 @@ function sapPost_(p, user) {
   if (!want.size) throw new Error('No entries to mark.');
   if (want.size > 5000) throw new Error('Too many entries at once (max 5000).');
   if (p.undo && user.role !== 'admin') throw new Error('Only admins can undo Posted SAP.');
+  const doc = String(p.doc || '').trim();
+  if (!p.undo && !/^\d{10}$/.test(doc)) throw new Error('Type the 10-digit SAP Material document number.');
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     const sheet = refillSheet_();
     const cols = headerIndex_(sheet);
-    [COL.SAP_STATUS, COL.SAP_BY, COL.SAP_AT].forEach(name => {
+    [COL.SAP_STATUS, COL.SAP_BY, COL.SAP_AT, COL.SAP_DOC].forEach(name => {
       if (cols[name] === undefined) {
         const c = sheet.getLastColumn() + 1;
         sheet.getRange(1, c).setValue(name);
@@ -1063,6 +1066,7 @@ function sapPost_(p, user) {
     const col = name => sheet.getRange(2, cols[name] + 1, n, 1);
     const ids = col(COL.ID_FR).getValues(), status = col(COL.STATUS).getValues();
     const sap = col(COL.SAP_STATUS).getValues(), by = col(COL.SAP_BY).getValues(), at = col(COL.SAP_AT).getValues();
+    const docs = col(COL.SAP_DOC).getValues();
     const now = new Date(), done = [];
     for (let i = 0; i < n; i++) {
       const id = String(ids[i][0]);
@@ -1070,10 +1074,10 @@ function sapPost_(p, user) {
       const posted = String(sap[i][0]).trim() === SAP_POSTED;
       if (p.undo) {
         if (!posted) continue;
-        sap[i][0] = ''; by[i][0] = ''; at[i][0] = '';
+        sap[i][0] = ''; by[i][0] = ''; at[i][0] = ''; docs[i][0] = '';
       } else {
         if (posted || String(status[i][0]).trim() !== STATUS_OK) continue;
-        sap[i][0] = SAP_POSTED; by[i][0] = user.email; at[i][0] = now;
+        sap[i][0] = SAP_POSTED; by[i][0] = user.email; at[i][0] = now; docs[i][0] = doc;
       }
       done.push(id);
     }
@@ -1081,8 +1085,9 @@ function sapPost_(p, user) {
       col(COL.SAP_STATUS).setValues(sap);
       col(COL.SAP_BY).setValues(by);
       col(COL.SAP_AT).setNumberFormat('dd-MMM-yyyy HH:mm').setValues(at);
+      col(COL.SAP_DOC).setNumberFormat('@').setValues(docs);   // plain text, so the number is never shown as 4.9E+09
     }
-    return { marked: done.length, skipped: want.size - done.length, ids: done, at: p.undo ? null : now.getTime(), undo: !!p.undo };
+    return { marked: done.length, skipped: want.size - done.length, ids: done, at: p.undo ? null : now.getTime(), undo: !!p.undo, doc: p.undo ? '' : doc };
   } finally {
     lock.releaseLock();
   }
@@ -2545,6 +2550,7 @@ function allRefills_() {
       signature: String(get(r, COL.SIGNATURE)),
       sapStatus: String(get(r, COL.SAP_STATUS)),
       sapAt: get(r, COL.SAP_AT) instanceof Date ? get(r, COL.SAP_AT).getTime() : null,
+      sapDoc: String(get(r, COL.SAP_DOC) == null ? '' : get(r, COL.SAP_DOC)),
     };
   });
 }
