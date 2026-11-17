@@ -600,19 +600,20 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     if (c.err) return `<div class="scbox wait">⚖️ ${t('អានជញ្ជីងមិនបាន', 'Scale not available')}: ${esc(c.err)}</div>`;
     const m = scaleMatch(r, c.tickets);
     if (!m) return `<div class="scbox wait">⚖️ ${t('មិនទាន់មានប័ណ្ណជញ្ជីងសម្រាប់ ', 'No scale ticket yet for ')}${esc(r.truck || '–')}</div>`;
-    const net = Math.round(+m.t.net || 0), kg = kgOf(r), diff = kg - net, bad = !!diff;
+    const net = Math.round(+m.t.net || 0), kg = kgOf(r), diff = kg - net, bad = Math.abs(diff) > SC_TOL;
     return `<div class="scbox ${bad ? 'bad' : 'ok'}">
       <div class="scrow"><span>⚖️ ${t('ជញ្ជីង (Net)', 'Scale net')}</span><b>${fmt(net)} Kg</b></div>
       <div class="scrow"><span>📦 ${t('បញ្ចូលនៅទីនេះ', 'Entered here')}</span><b>${fmt(kg)} Kg</b></div>
-      <div class="scrow big"><span>${bad ? '⚠️ ' + t('ខុសគ្នា', 'Difference') : '✅ ' + t('ត្រូវគ្នា', 'Same')}</span><b>${bad ? (diff > 0 ? '+' : '') + fmt(diff) + ' Kg' : '0 Kg'}</b></div>
+      <div class="scrow big"><span>${bad ? '⚠️ ' + t('ខុសគ្នា', 'Difference') : '✅ ' + t('ត្រូវគ្នា (±' + SC_TOL + ' Kg)', 'OK (±' + SC_TOL + ' Kg)')}</span><b>${(diff > 0 ? '+' : '') + fmt(diff) + ' Kg'}</b></div>
       <small>${t('ប័ណ្ណ', 'Ticket')} ${esc(m.t.no)} · ${esc(m.t.plate)}${m.st === 'typo' ? ' · ' + t('ផ្លាកលេខខុសគ្នាបន្តិច សូមពិនិត្យ', 'plate typed a little differently, please check') : ''}</small></div>`;
   }
   // the same check on every truck card (Kim, 14 Nov 2026: "so that users notice and take action")
+  const SC_TOL = 100;   // GR kg within ±100 Kg of the scale net is fine: green, no action (Kim, 17 Nov 2026)
   function cardLine(r, c) {
     const m = c && !c.err && scaleMatch(r, c.tickets); if (!m) return '';
     const net = Math.round(+m.t.net || 0), diff = kgOf(r) - net;
-    return diff ? `<span class="scbad">⚠️ ${t('ជញ្ជីង', 'Scale')} ${fmt(net)} Kg · ${t('ខុសគ្នា', 'Difference')} ${diff > 0 ? '+' : ''}${fmt(diff)} Kg</span>`
-      : `<span class="scok">✅ ${t('ត្រូវនឹងជញ្ជីង', 'Same as scale')} ${fmt(net)} Kg</span>`;
+    return Math.abs(diff) > SC_TOL ? `<span class="scbad">⚠️ ${t('ជញ្ជីង', 'Scale')} ${fmt(net)} Kg · ${t('ខុសគ្នា', 'Difference')} ${diff > 0 ? '+' : ''}${fmt(diff)} Kg</span>`
+      : `<span class="scok">✅ ${t('ជញ្ជីង', 'Scale')} ${fmt(net)} Kg${diff ? ` · ${diff > 0 ? '+' : ''}${fmt(diff)} Kg` : ''}</span>`;
   }
   function paintCards() {
     const els = $$('[data-sc]'); if (!els.length || (!SC_URL && !DEMO)) return;
