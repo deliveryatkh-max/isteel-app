@@ -763,8 +763,8 @@ function scaleArrive_(p, user) {
   const now = new Date(), time = clip_(p.time, 5) || fmt_(now, 'HH:mm');
   sh.appendRow([no, fmt_(now, 'yyyy-MM-dd'), time, truck, clip_(p.company, 60), ves, pos.join(', '), num_(p.kg) || '', user.name, '']);
   const u = setting_('APP_URL');
-  telegram_(Object.assign({ text: ['⚖️ <b>Truck on the scale · Unload</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
-    '🚢 ' + (ves ? esc_(ves) : 'No Vessel Number'), '⚖️ 1st weigh ' + esc_(time) + (num_(p.kg) ? ' · ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
+  telegram_(Object.assign({ text: ['⚖️ <b>ឡានចូលថ្លឹង ត្រៀមទំលាក់</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
+    '🚢 លេខកប៉ាល់៖ ' + (ves ? esc_(ves) : 'មិនទាន់មាន'), '⚖️ ថ្លឹងលើកទី1 @' + esc_(time) + (num_(p.kg) ? ' | សរុប ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
     u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Receive · ទទួល', url: u + '#/newtk/' + encodeURIComponent(no) }]] }) } : {}));
   return { no: no };
 }
