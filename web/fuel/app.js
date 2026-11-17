@@ -2011,6 +2011,9 @@
   // It only reads the refills the Reviewer tab already loaded; nothing is written except the SAP Status columns.
 
   const SAP_POSTED = 'Posted SAP';
+  // Plates starting with 1 are motorbikes: no SAP posting, no tick box (Kim, 17 Nov 2026). Shown only; the sheet is not changed.
+  const noSap = r => /^1/.test(String(r.plate || '').trim());
+  const SAP_NONE = 'No SAP Posting';
   const SAP_DEF_KEY = 'fr_sap_defaults';
   const SAP_FIELDS = [['mat', 'Mat. Short Text', 'Gasline/Deisel'], ['batch', 'Batch', 'Gasoline'], ['plnt', 'Plnt', 'Chaom Chao'],
     ['sloc', 'Sloc', '3rdParty'], ['cc', 'CC', '10300001'], ['gl', 'GL', '64002260']];
@@ -2018,7 +2021,7 @@
   const RP_PERIODS = [['today', 'ថ្ងៃនេះ', 'Today'], ['yday', 'ម្សិលមិញ', 'Yesterday'], ['7d', '៧ ថ្ងៃ', '7 days'], ['month', 'ខែនេះ', 'This month'], ['lmonth', 'ខែមុន', 'Last month'], ['all', 'ទាំងអស់', 'All']];
   const RP_STATUS = [['all', 'ទាំងអស់', 'All', () => true], ['ok', '✅ ត្រឹមត្រូវ', '✅ Correct', r => r.status === STATUS_OK],
     ['pending', '⏳ រង់ចាំ', '⏳ Pending', r => !r.status], ['bad', '✖ មិនត្រឹមត្រូវ', '✖ Not correct', r => r.status === STATUS_BAD]];
-  const RP_SAP = [['all', 'SAP: ទាំងអស់', 'SAP: All', () => true], ['new', 'មិនទាន់ Post', 'Not posted', r => r.sapStatus !== SAP_POSTED],
+  const RP_SAP = [['all', 'SAP: ទាំងអស់', 'SAP: All', () => true], ['new', 'មិនទាន់ Post', 'Not posted', r => r.sapStatus !== SAP_POSTED && !noSap(r)],
     ['posted', '✔ Posted SAP', '✔ Posted SAP', r => r.sapStatus === SAP_POSTED]];
   const ymdOf = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   const dmyOf = ms => { const d = new Date(ms); return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`; };
@@ -2059,7 +2062,7 @@
   /** Rows that go into the SAP Excel and get "Posted SAP": correct ones not posted yet (or every row shown, when the tick is off). */
   // Tick boxes (Kim, 12 Nov 2026): only the rows ticked in the table go into the SAP table. Only ✅ correct rows
   // not posted yet can be ticked. Ticks stay while filters change; only ticked rows still shown count.
-  const sapOk = r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED;
+  const sapOk = r => r.status === STATUS_OK && r.sapStatus !== SAP_POSTED && !noSap(r);
   const sapRows = rows => rows.filter(r => rp.sel.has(r.id) && sapOk(r));
   // SAP Text: forklifts and the generator are saved with Khmer names; SAP gets English (Kim, 12 Nov 2026).
   const SAP_TEXT_EN = [
@@ -2098,7 +2101,7 @@
     RC('status', 'Review Status', r => `<td>${rpStatus(r.status)}</td>`),
     RC('reviewedby', 'Reviewed By', r => tdTxt(r.reviewedByName || r.reviewedBy)),
     RC('reviewedat', 'Reviewed At', r => tdTxt(r.reviewedAt ? `${dmyOf(r.reviewedAt)} ${hmsOf(r.reviewedAt)}` : '')),
-    RC('sap', 'SAP Status', r => `<td>${r.sapStatus === SAP_POSTED ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>'}</td>`),
+    RC('sap', 'SAP Status', r => `<td>${r.sapStatus === SAP_POSTED ? `<span class="sap-pill" title="${r.sapAt ? esc(fmtDate(r.sapAt)) : ''}">✔ Posted SAP</span>` : noSap(r) ? `<span class="sap-pill none">${SAP_NONE}</span>` : r.sapStatus ? esc(r.sapStatus) : '<span class="dim">—</span>'}</td>`),
     // SAP Material document number typed when marking Posted SAP (Kim, 17 Nov 2026), e.g. 4900878335.
     RC('docno', 'Doc No.', r => tdTxt(r.sapDoc || '')),
     RC('sapat', 'SAP Posted At', r => tdTxt(r.sapAt ? `${dmyOf(r.sapAt)} ${hmsOf(r.sapAt)}` : '')),
@@ -2271,7 +2274,7 @@
     const rows = rpRows();
     const sum = list => list.reduce((s, r) => s + (Number(r.litres) || 0), 0);
     const ok = rows.filter(r => r.status === STATUS_OK), pend = rows.filter(r => !r.status).length, bad = rows.filter(r => r.status === STATUS_BAD).length;
-    const posted = rows.filter(r => r.sapStatus === SAP_POSTED).length;
+    const posted = rows.filter(r => r.sapStatus === SAP_POSTED).length, needSap = rows.filter(r => !noSap(r)).length;
     const plates = new Set(rows.map(r => r.plate).filter(Boolean)).size;
     const dmy = v => (v ? dmyOf(new Date(v + 'T00:00:00').getTime()) : '…');
     const span = !rp.from && !rp.to ? L('គ្រប់ថ្ងៃ', 'All dates') : rp.from === rp.to ? dmy(rp.from) : `${dmy(rp.from)} – ${dmy(rp.to)}`;
@@ -2279,7 +2282,7 @@
     $('#rpKpi').innerHTML =
       kpi('ចាក់សាំង', 'Refills', fmtNum(rows.length), esc(span)) +
       kpi('លីត្រសរុប', 'Total litres', `${fmtNum(sum(rows))}<em>L</em>`, `${L('ត្រឹមត្រូវ', 'Correct')} ${fmtNum(sum(ok))} L`) +
-      kpi('ឡាន', 'Trucks', fmtNum(plates), `✔ Posted SAP ${fmtNum(posted)} / ${fmtNum(rows.length)}`) +
+      kpi('ឡាន', 'Trucks', fmtNum(plates), `✔ Posted SAP ${fmtNum(posted)} / ${fmtNum(needSap)}`) +
       kpi('រង់ចាំពិនិត្យ', 'Waiting review', fmtNum(pend), `${fmtNum(bad)} ${L('មិនត្រឹមត្រូវ', 'not correct')}`, pend ? 'warn' : '');
     if (!rows.length) {
       $('#rpTable').innerHTML = `<div class="empty"><div class="big">📭</div>${L('គ្មានទិន្នន័យ', 'No entries')}</div>`;
@@ -2288,7 +2291,7 @@
       const drag = adm ? ` draggable="true" title="${esc(L('អូសដើម្បីរៀបចំជួរឈរ', 'Drag to move the column'))}"` : '';
       const foot = cols.map((c, i) => c.sum ? `<th class="n">${fmtNum(sum(rows))} L</th>`
         : i === cols.findIndex(x => !x.sum) ? `<th>${fmtNum(rows.length)} ${L('ដង', 'refills')}${rows.length > RP_MAX ? ` · ${L(`បង្ហាញ ${fmtNum(RP_MAX)} ថ្មីបំផុត (Excel មានទាំងអស់)`, `showing newest ${fmtNum(RP_MAX)} (Excel has all)`)}` : ''}</th>` : '<th></th>');
-      const ck = r => `<td class="rp-ck">${sapOk(r) ? `<input type="checkbox" data-sel="${esc(r.id)}"${rp.sel.has(r.id) ? ' checked' : ''} aria-label="SAP">` : `<input type="checkbox" disabled title="${esc(r.sapStatus === SAP_POSTED ? 'Posted SAP' : L('តែ ✅ ត្រឹមត្រូវ ទើបដាក់ SAP បាន', 'Only ✅ correct rows go to SAP'))}">`}</td>`;
+      const ck = r => `<td class="rp-ck">${sapOk(r) ? `<input type="checkbox" data-sel="${esc(r.id)}"${rp.sel.has(r.id) ? ' checked' : ''} aria-label="SAP">` : `<input type="checkbox" disabled title="${esc(r.sapStatus === SAP_POSTED ? 'Posted SAP' : noSap(r) ? L('ម៉ូតូ (លេខផ្លាកចាប់ផ្តើមដោយ 1) មិនត្រូវ Post SAP', 'Motorbike (plate starts with 1): no SAP posting') : L('តែ ✅ ត្រឹមត្រូវ ទើបដាក់ SAP បាន', 'Only ✅ correct rows go to SAP'))}">`}</td>`;
       $('#rpTable').innerHTML = `<table class="rp-t" data-nocols><thead><tr><th class="rp-ck" data-nosort><input type="checkbox" id="rpSelAll" title="${esc(L('ធីកទាំងអស់', 'Tick all'))}" aria-label="${esc(L('ធីកទាំងអស់', 'Tick all'))}"></th>${cols.map(c => `<th data-ck="${c.k}"${c.num ? ' class="n"' : ''}${drag}>${esc(c.h)}</th>`).join('')}</tr></thead>
         <tbody>${rows.slice(0, RP_MAX).map(r => `<tr data-id="${esc(r.id)}">${ck(r)}${cols.map(c => c.td(r)).join('')}</tr>`).join('')}</tbody>
         <tfoot><tr><th class="rp-ck"></th>${foot.join('')}</tr></tfoot></table>`;

@@ -1067,6 +1067,7 @@ function sapPost_(p, user) {
     const ids = col(COL.ID_FR).getValues(), status = col(COL.STATUS).getValues();
     const sap = col(COL.SAP_STATUS).getValues(), by = col(COL.SAP_BY).getValues(), at = col(COL.SAP_AT).getValues();
     const docs = col(COL.SAP_DOC).getValues();
+    const plates = col(COL.PLATE).getValues();
     const now = new Date(), done = [];
     for (let i = 0; i < n; i++) {
       const id = String(ids[i][0]);
@@ -1076,7 +1077,7 @@ function sapPost_(p, user) {
         if (!posted) continue;
         sap[i][0] = ''; by[i][0] = ''; at[i][0] = ''; docs[i][0] = '';
       } else {
-        if (posted || String(status[i][0]).trim() !== STATUS_OK) continue;
+        if (posted || String(status[i][0]).trim() !== STATUS_OK || /^1/.test(String(plates[i][0]).trim())) continue;   // plate 1… = motorbike, no SAP (Kim, 17 Nov 2026)
         sap[i][0] = SAP_POSTED; by[i][0] = user.email; at[i][0] = now; docs[i][0] = doc;
       }
       done.push(id);
