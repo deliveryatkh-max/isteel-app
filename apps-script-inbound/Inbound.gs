@@ -666,6 +666,7 @@ function update_(p, user, finish) {
     if (clip_(p.dn3pl, 40)) rec.dn3pl = clip_(p.dn3pl, 40);
     rec.owner = p.owner === 'ISI' || p.owner === '3PL' ? p.owner : rec.owner;
     rec.carrier = rec.owner === '3PL' ? clip_(p.carrier, 60) : '';
+    if (p.company) rec.company = clip_(p.company, 60);   // Truck company from the weigh scale (Kim, 17 Nov 2026)
     const mp = num_(p.manpower);
     rec.manpower = mp > 0 ? Math.round(mp) : rec.manpower;
     rec.remark = clip_(p.remark, 500);

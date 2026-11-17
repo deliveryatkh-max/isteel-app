@@ -637,13 +637,26 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     scaleTickets(r.date || today()).then(x => { const b = $('#scBox'); if (b && b.dataset.for === (r.id || 'new')) b.innerHTML = scaleHtml(r === F ? F : r, x); });
   }
   const siteLocked = r => !!(r.site && (r.id ? !(USER && (USER.admin || USER.reviewer)) && !DEMO : SITE));
-  // Truck owner + 3PL company picked from the scale's truck company (Kim, 17 Nov 2026); the receiver can still change them
+  // Truck Company comes from the weigh scale and decides the truck owner + 3PL company (Kim, 17 Nov 2026: owner buttons removed)
+  const coOf = r => String(r.company || (ARRIVALS.find(a => a.no === r.scaleNo) || {}).company || '').trim();
   function ownerFromScale(r) {
-    const co = String(r.company || (ARRIVALS.find(a => a.no === r.scaleNo) || {}).company || '').trim();
-    if (!r.scaleNo || r.owner || !co) return;
+    const co = coOf(r); if (!co) return;
+    r.company = co;
     if (/^ISI\b|ISI STEEL/i.test(co)) { r.owner = 'ISI'; r.carrier = ''; return; }
     const lc = co.toLowerCase(), m = CARRIERS.find(x => x.toLowerCase() === lc) || CARRIERS.find(x => lc.indexOf(x.toLowerCase()) >= 0 || x.toLowerCase().indexOf(lc) >= 0);
-    r.owner = '3PL'; r.carrier = m || co; if (!m) { r.newCarrier = true; CARRIERS.push(co); }
+    r.owner = '3PL'; r.carrier = m || co; r.newCarrier = !m; if (!m && CARRIERS.indexOf(co) < 0) CARRIERS.push(co);
+  }
+  // no company on the receipt yet: take it from today's scale ticket of this plate, then hide the owner buttons
+  function paintCo(r) {
+    if (coOf(r) || !r.truck || (!SC_URL && !DEMO)) return;
+    const put = c => {
+      const m = c && !c.err && scaleMatch(r, c.tickets), co = m && String(m.t.company || '').trim(); if (!co || r !== F) return;
+      r.company = co; ownerFromScale(r);
+      const el = $('#coBox input'); if (el) el.value = co;
+      const ob = $('#ownBox'); if (ob) ob.remove();
+    };
+    if (DEMO) return;
+    scaleTickets(r.date || today()).then(put);
   }
   function renderForm(id) {
     paintTabs('');
@@ -651,7 +664,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
       // Finish unloading: Actual GR Qty starts with the Arrival Qty (Kim, 31 Oct 2026)
       if (id && isLive(F)) F.items.forEach(i => { if (i.grQty === '' || i.grQty == null) i.grQty = i.arrQty; });
-      if (id && isLive(F)) ownerFromScale(F);
+      if (id) ownerFromScale(F);
     }
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
@@ -676,7 +689,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <div class="row2">
           <div class="field"><label class="f">${t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck number / trailer')} <span class="req">*</span></label>
             ${pickBtn('truck', r.truck, '', r.newTruck)}</div>
-          ${grey(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}
+          <div id="coBox">${grey(t('ក្រុមហ៊ុនឡាន', 'Truck company'), coOf(r))}</div>
         </div>
         <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><div class="scanrow"><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"><button type="button" class="scanb" id="dnScan" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
@@ -687,9 +700,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
 
       ${started ? `
       <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
-        <div class="field"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
-          <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>
-        ${r.owner === '3PL' ? `<div class="field"><label class="f">${t('ក្រុមហ៊ុន 3PL', '3PL company')}</label>${pickBtn('carrier', r.carrier, '', r.newCarrier)}</div>` : ''}
+        ${coOf(r) ? '' : `<div class="field" id="ownBox"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
+          <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>`}
         <div class="field"><label class="f">${t('ចំនួនបុគ្គលិកឃ្លាំងលើក/ទទួល', 'Manpower to unload/receive')} <span class="req">*</span></label>
           <div class="stepper" id="mpBox"><button type="button" id="mpm">−</button><b id="mp">${esc(r.manpower || '–')}</b><button type="button" id="mpp">＋</button><span class="hint">👷 ${t('នាក់', 'people')}</span></div></div>
       </section>
@@ -704,6 +716,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div style="height:16px"></div>`);
     bindForm();
     if (started) paintScale(F);
+    paintCo(F);
   }
   function collect() {
     ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
@@ -847,7 +860,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const plate = v => String(v || '').toUpperCase().replace(/\s+/g, '');
     pk('truck', () => { const used = Array.from(new Set(DATA.map(r => r.truck).concat(PLATES))); return { title: t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck number / trailer'), value: F.truck,
       groups: [{ items: used.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមឡានថ្មី', 'Add new truck'), clean: plate },
-      onPick: (v, isNew) => { F.truck = v; F.newTruck = !!isNew; re(); } }; });
+      onPick: (v, isNew) => { if (F.truck !== v && !F.scaleNo) F.company = ''; F.truck = v; F.newTruck = !!isNew; re(); } }; });
     pk('carrier', () => ({ title: t('ក្រុមហ៊ុន 3PL', '3PL company'), value: F.carrier,
       groups: [{ items: CARRIERS.map(x => ({ value: x })) }], addNew: { label: t('បន្ថែមក្រុមហ៊ុនថ្មី', 'Add new company'), clean: v => String(v || '').trim() },
       onPick: (v, isNew) => { F.carrier = v; F.newCarrier = !!isNew; if (isNew && CARRIERS.indexOf(v) < 0) CARRIERS.push(v); re(); } }));
