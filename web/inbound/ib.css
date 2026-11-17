@@ -395,3 +395,4 @@ img[data-zoom] { cursor: zoom-in; }
 .wtr .rcv { grid-row: span 3; background: #1e7b46; color: #fff; border-radius: 10px; padding: 7px 12px; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .fromsc { background: #eef7ff; border: 1.5px dashed #0b76a0; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
 :root[data-theme="dark"] .fromsc { background: #0d2a3d; }
+.wtr .ves.none { color: #c25e00; }

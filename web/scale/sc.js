@@ -935,7 +935,7 @@
     const opts = l.map(x => `<option value="${esc(x.vessel)}"${x.vessel === F.vessel ? ' selected' : ''}>${esc(x.vessel)} · ${x.pos.length} PO · ${kg(Math.round(x.kg / 1000))} t</option>`).join('');
     return `<div class="field span2"><label class="f lc-blue">🚢 ${t('លេខកប៉ាល់', 'Vessel No')} ${vesNeed() ? '<span class="req">*</span>' : ''}</label>
       <div><select class="in${vesNeed() && !F.vessel ? ' need' : ''}" id="fVessel"><option value="">${t('— ជ្រើសរើស —', '— Select —')}</option>${opts}
-        <option value="${NO_VES}"${F.vessel === NO_VES ? ' selected' : ''}>🚚 ${t('គ្មានកប៉ាល់ (ក្នុងស្រុក)', 'No vessel (local)')}</option></select>
+        <option value="${NO_VES}"${F.vessel === NO_VES ? ' selected' : ''}>🚫 ${t('មិនទាន់មានលេខកប៉ាល់', 'No Vessel No.')}</option></select>
       ${!l.length ? `<div class="hint">${IB_API ? t('កំពុងទាញបញ្ជីកប៉ាល់…', 'Loading the vessel list…') : ''}</div>` : ''}
       ${v ? `<div class="vespos"><small>📑 PO ${t('ក្នុងកប៉ាល់នេះ', 'in this vessel')}:</small> ${v.pos.map(o => `<span class="vpo" title="${esc(o.supplier || '')}">${esc(o.po)}</span>`).join('')}</div>` : ''}</div></div>`;
   }

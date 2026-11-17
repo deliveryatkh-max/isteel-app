@@ -763,7 +763,7 @@ function scaleArrive_(p, user) {
   sh.appendRow([no, fmt_(now, 'yyyy-MM-dd'), time, truck, clip_(p.company, 60), ves, pos.join(', '), num_(p.kg) || '', user.name, '']);
   const u = setting_('APP_URL');
   telegram_(Object.assign({ text: ['⚖️ <b>Truck on the scale · Unload</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
-    '🚢 ' + esc_(ves || '–'), '⚖️ 1st weigh ' + esc_(time) + (num_(p.kg) ? ' · ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
+    '🚢 ' + (ves ? esc_(ves) : 'No Vessel Number'), '⚖️ 1st weigh ' + esc_(time) + (num_(p.kg) ? ' · ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
     u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Receive · ទទួល', url: u + '#/newtk/' + encodeURIComponent(no) }]] }) } : {}));
   return { no: no };
 }
