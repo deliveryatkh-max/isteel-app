@@ -81,7 +81,7 @@
       ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]], 'WH IB'),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
       ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]], 'WH METAL'));
-  PLAN.forEach(x => { x.po = npo(x.po); });
+  PLAN.forEach(x => { x.po = npo(x.po); x.vessel = x.supplier === 'Regency' ? 'MV HAI PHONG 08' : x.supplier === 'Sample Supplier A' ? 'MV ORIENT 12' : ''; });
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { p.forEach(x => { x.po = npo(x.po); }); PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
@@ -357,6 +357,8 @@
     return ARRIVALS.filter(a => !got[a.no]).filter(a => !q || [a.truck, a.company, a.vessel].concat(a.pos, a.pos.map(po => (PLAN.find(x => x.po === npo(po)) || {}).supplier || ''), vesPOs(a.vessel).map(x => x.po + ' ' + x.supplier))
       .join(' ').toLowerCase().includes(q)).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
   };
+  // Vessel No. of a receipt (Kim, 17 Nov 2026: shown in place of Ref. No., greyed): from the scale, else the plan
+  const vesOf = r => r.vessel || (PLAN.find(x => posOf(r).indexOf(x.po) >= 0 && x.vessel) || {}).vessel || '';
   const vesPOs = v => { const o = []; if (v) PLAN.forEach(x => { if (x.vessel === v && !o.some(y => y.po === x.po)) o.push({ po: x.po, supplier: x.supplier }); }); return o; };
   const waitRows = () => { const l = waitList(); return l.length ? l.map(a => `<a class="wtr" href="#/newtk/${encodeURIComponent(a.no)}"><span class="wt1"><b class="pl">${esc(a.truck)}</b>${a.vessel ? `<span class="ves">🚢 ${esc(a.vessel)}</span>` : `<span class="ves none">🚫 ${t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</span>`}</span><span class="rcv">📥 ${t('ទទួល', 'Receive')}</span>
       <small>${esc(a.company || '–')}</small><small>⚖️ ${a.date === today() ? '' : showDate(a.date) + ' '}${esc(a.time)}${a.kg ? ' · ' + fmt(a.kg) + ' kg' : ''}</small></a>`).join('')
@@ -643,7 +645,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
         ${r.po ? `
-        <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey('Ref. No.', r.ref)}</div>
+        <div class="row2">${grey(t('លេខ Inbound', 'Inbound Number'), r.inbound)}${grey(t('លេខកប៉ាល់', 'Vessel No.'), vesOf(r))}</div>
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
         ${r.items.length ? itemsTable(r, mode) : ''}` : ''}

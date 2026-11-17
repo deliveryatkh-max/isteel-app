@@ -618,7 +618,8 @@ function start_(p, user) {
     };
     const sNo = clip_(p.scaleNo, 30), ves = clip_(p.vessel, 60);
     if (sNo) { rec.scaleNo = sNo; arrivalDone_(sNo, id); }
-    if (ves) rec.vessel = ves;
+    const pv = ves || (heads.find(h => h.vessel) || {}).vessel;   // Vessel No. from the plan when not from the scale
+    if (pv) rec.vessel = pv;
     const tg = telegramArrived_(rec);
     if (tg && tg.ok && tg.result) rec.tg = tg.result.message_id;   // the finish post replies to it
     store_(rec);
