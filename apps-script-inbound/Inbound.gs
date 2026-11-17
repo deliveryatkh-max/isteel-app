@@ -617,7 +617,7 @@ function start_(p, user) {
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
     const sNo = clip_(p.scaleNo, 30), ves = clip_(p.vessel, 60);
-    if (sNo) { rec.scaleNo = sNo; arrivalDone_(sNo, id); }
+    if (sNo) { rec.scaleNo = sNo; rec.company = clip_(p.company, 60); arrivalDone_(sNo, id); }   // company: truck owner at finish
     const pv = ves || (heads.find(h => h.vessel) || {}).vessel;   // Vessel No. from the plan when not from the scale
     if (pv) rec.vessel = pv;
     const tg = telegramArrived_(rec);

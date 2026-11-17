@@ -387,7 +387,7 @@
       return;
     }
     if (!a) { toast(t('រកមិនឃើញឡាននេះ ឬបានទទួលរួច', 'Truck not found or already received')); location.hash = '#/today'; return; }
-    F = blank(); F.scaleNo = a.no; F.vessel = a.vessel || ''; F.company = a.company || ''; F.truck = a.truck;
+    F = blank(); F.scaleNo = a.no; F.vessel = a.vessel || ''; F.company = a.company || ''; F.truck = a.truck; ownerFromScale(F);
     const ps = vesPOs(a.vessel).map(x => x.po).filter(po => pendingPOs().indexOf(po) >= 0);
     if (ps.length === 1) pickPOs(ps);
     location.replace('#/new');
@@ -637,12 +637,21 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     scaleTickets(r.date || today()).then(x => { const b = $('#scBox'); if (b && b.dataset.for === (r.id || 'new')) b.innerHTML = scaleHtml(r === F ? F : r, x); });
   }
   const siteLocked = r => !!(r.site && (r.id ? !(USER && (USER.admin || USER.reviewer)) && !DEMO : SITE));
+  // Truck owner + 3PL company picked from the scale's truck company (Kim, 17 Nov 2026); the receiver can still change them
+  function ownerFromScale(r) {
+    const co = String(r.company || (ARRIVALS.find(a => a.no === r.scaleNo) || {}).company || '').trim();
+    if (!r.scaleNo || r.owner || !co) return;
+    if (/^ISI\b|ISI STEEL/i.test(co)) { r.owner = 'ISI'; r.carrier = ''; return; }
+    const lc = co.toLowerCase(), m = CARRIERS.find(x => x.toLowerCase() === lc) || CARRIERS.find(x => lc.indexOf(x.toLowerCase()) >= 0 || x.toLowerCase().indexOf(lc) >= 0);
+    r.owner = '3PL'; r.carrier = m || co; if (!m) { r.newCarrier = true; CARRIERS.push(co); }
+  }
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) {
       F = id ? JSON.parse(JSON.stringify(byId(id))) : blank();
       // Finish unloading: Actual GR Qty starts with the Arrival Qty (Kim, 31 Oct 2026)
       if (id && isLive(F)) F.items.forEach(i => { if (i.grQty === '' || i.grQty == null) i.grQty = i.arrQty; });
+      if (id && isLive(F)) ownerFromScale(F);
     }
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
@@ -701,7 +710,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
   }
   function pickPOs(list) {
-    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company };
+    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company, owner: F.owner, carrier: F.carrier, newCarrier: F.newCarrier };
     const old = F.items || [], was = F;
     const b = blank(); const l = PLAN.find(x => x.po === list[0]);
     F = Object.assign(b, list.length ? headerOf(list) : {}, keep);
