@@ -43,7 +43,7 @@ ok(/^AUTH/.test(env.post({ action: 'boot', token: '', payload: {} }).error), 'no
 let b = must(call('sok@x.com', 'boot', {}));
 eq(b.plan.length, 3, 'plan lines');
 eq(b.plan[0], { po: '5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
-  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '' }, 'plan line read by heading');
+  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '', vessel: '' }, 'plan line read by heading');
 eq(b.plates, ['2A-2233', '3E-2588'], 'plates from Driver & Truck');
 eq(b.carriers, ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'], '3PL list from settings');
 ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
@@ -313,4 +313,20 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
 { ok(/^DENIED/.test(call('sok@x.com', 'reportCols', { cols: ['id'] }).error), 'user cannot change report columns');
   eq(must(call('sai@x.com', 'reportCols', { cols: ['id', 'truck', 'bad col!', 'grQty'] })).cols, ['id', 'truck', 'grQty'], 'reviewer saves report columns');
   eq(must(call('sok@x.com', 'boot', {})).reportCols, ['id', 'truck', 'grQty'], 'report columns in boot'); }
+// Truck Scale → Inbound (Kim, 17 Nov 2026): vessel list, arrival from the 1st weigh, receive links it
+{ const hd = plan.rows[0]; while (hd.length < 18) hd.push(''); hd[17] = 'Vessel No.';
+  plan.rows.push([5, 1300000002, 'COIL V', 'KMH1', 1020, 20000, 20, 1, '', 1, 5100088888, 'IN 8', 'V-1', eta, 'Vessel Co', '', '', 'MV HAI PHONG 08']);
+  const v = must(call('nobody@x.com', 'vessels', {}));
+  eq(v.map(x => [x.vessel, x.pos.map(o => o.po), x.kg]), [['MV HAI PHONG 08', ['5100088888'], 20000]], 'vessels for any active user');
+  ok(/^NOACCESS/.test(call('nobody@x.com', 'boot', {}).error), 'still no Inbound access');
+  const n0 = env.telegrams.length;
+  must(call('nobody@x.com', 'scaleArrive', { no: 'WB-1', plate: '3e 7777', company: 'SRONG SAL', vessel: 'MV HAI PHONG 08', pos: ['5100088888'], kg: 41250, time: '09:12' }));
+  ok(must(call('nobody@x.com', 'scaleArrive', { no: 'WB-1', plate: '3E7777' })).dup, 'same ticket once');
+  eq(env.telegrams.length, n0 + 1, 'one Telegram alert');
+  ok(/MV HAI PHONG 08/.test(JSON.stringify(env.telegrams[env.telegrams.length - 1])), 'alert shows the vessel');
+  let a = must(call('sok@x.com', 'boot', {})).arrivals;
+  eq(a.map(x => [x.no, x.truck, x.vessel, x.pos, x.kg]), [['WB-1', '3E7777', 'MV HAI PHONG 08', ['5100088888'], 41250]], 'arrival in boot');
+  const r = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: '', pos: ['5100088888'], dn3pl: 'DN-V1', truck: '3E-7777', scaleNo: 'WB-1', vessel: 'MV HAI PHONG 08', items: [{ po: '5100088888', material: '1300000002', arrQty: 20000 }] }) }));
+  eq([r.scaleNo, r.vessel], ['WB-1', 'MV HAI PHONG 08'], 'receipt keeps ticket and vessel');
+  eq(must(call('sok@x.com', 'boot', {})).arrivals, [], 'received truck leaves the list'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

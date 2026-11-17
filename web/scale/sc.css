@@ -546,3 +546,7 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .popbox.stdlg .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .popbox.stdlg .chip[disabled] { opacity: .45; cursor: not-allowed; }
 .popbox.stdlg textarea { width: 100%; margin-top: 4px; }
+/* Vessel No. at the 1st weigh of an unloading truck (Kim, 17 Nov 2026) */
+.vespos { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.vespos small { color: var(--muted, #5b6b80); margin-right: 2px; }
+.vpo { background: #d4e1f5; color: #011e41; border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; }
