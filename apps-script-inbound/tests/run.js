@@ -328,5 +328,13 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   eq(a.map(x => [x.no, x.truck, x.vessel, x.pos, x.kg]), [['WB-1', '3E7777', 'MV HAI PHONG 08', ['5100088888'], 41250]], 'arrival in boot');
   const r = must(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { po: '', pos: ['5100088888'], dn3pl: 'DN-V1', truck: '3E-7777', scaleNo: 'WB-1', vessel: 'MV HAI PHONG 08', company: 'SRONG SAL', items: [{ po: '5100088888', material: '1300000002', arrQty: 20000 }] }) }));
   eq([r.scaleNo, r.vessel, r.company], ['WB-1', 'MV HAI PHONG 08', 'SRONG SAL'], 'receipt keeps ticket, vessel and company');
-  eq(must(call('sok@x.com', 'boot', {})).arrivals, [], 'received truck leaves the list'); }
+  eq(must(call('sok@x.com', 'boot', {})).arrivals, [], 'received truck leaves the list');
+  plan.rows.push([6, 1300000003, 'COIL W', 'KMH1', 1020, 15000, 15, 1, '', 1, 5100088888, 'IN 8', 'V-1', eta, 'Vessel Co', '', '', 'MV HAI PHONG 08']);
+  const ed = [{ po: '5100088888', material: '1300000003', arrQty: 5000 }];
+  eq(must(call('sok@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: ed } })).items.map(i => i.material), ['1300000002'], 'user cannot add/delete rows');
+  let e2 = must(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: [{ po: '5100088888', material: '1300000002', arrQty: 20000 }].concat(ed) } }));
+  eq(e2.items.map(i => [i.material, i.arrQty]), [['1300000002', 20000], ['1300000003', 5000]], 'admin adds a row');
+  e2 = must(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: ed } }));
+  eq([e2.items.map(i => i.material), e2.po], [['1300000003'], '5100088888'], 'admin deletes a row');
+  ok(/^BAD/.test(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: [] } }).error), 'keeps one row'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

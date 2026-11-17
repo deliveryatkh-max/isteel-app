@@ -153,6 +153,7 @@
   // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
   function npo(v) { return String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, ''); }   // as in Kim's Excel, no "PO" (13 Nov 2026)
   const posOf = r => (r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/)).map(npo).filter(Boolean);
+  function syncPos(r) { const ps = []; r.items.forEach(i => { const x = itemPo(i, r); if (x && ps.indexOf(x) < 0) ps.push(x); }); r.pos = ps; r.po = ps.join(', '); }
   const itemPo = (i, r) => npo(i.po) || posOf(r)[0] || '';
   const multi = r => posOf(r).length > 1;
   function headerOf(pos) {
@@ -531,10 +532,13 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   }
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
+  // Reviewers fix an open (still unloading) receipt: delete item rows, add POs/items (Kim, 17 Nov 2026, mockup)
+  const canEditItems = (r, mode) => mode === 'fin' && !!r.id && isLive(r) && canPlan();
   function itemsTable(r, mode) {
     const cs = mode === 'arr' ? 2 : 4;   // GR + Damaged columns are hidden at Start unloading; PO Qty sits under the item name (Kim, 15 Nov 2026)
     const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
+    const ed = canEditItems(r, mode), canDel = ed && r.items.length > 1;
     const mp = multi(r); let lastPo = null;
     const rows = r.items.map((i, n) => {
       const less = isLessItem(i), dm = +i.dmgQty > 0;
@@ -543,7 +547,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
         head = `<tr class="porow"><td colspan="${cs}"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
       }
-      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}</td></tr>
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}${i.isNew ? ` <span class="newpill">${t('ថ្មី', 'New')}</span>` : ''}${canDel ? `<button type="button" class="rmrow" data-rmask="${n}" aria-label="${esc(t('លុបជួរនេះ', 'Delete row'))}">🗑</button>` : ''}${canDel && r.delAsk === n ? `<div class="rmask"><b>🗑 ${t('លុបជួរនេះ?', 'Delete this row?')}</b><button type="button" class="btn sm" data-rmno>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn sm danger" data-rm="${n}">${t('លុប', 'Delete')}</button></div>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
@@ -674,7 +678,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
       ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ' · 🚫 ' + t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</div>` : ''}
-      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${canEditItems(r, mode) ? `<div class="additrow"><button type="button" class="btn sm primary" id="addIt">＋ ${t('បន្ថែម PO / ទំនិញ', 'Add PO / item')}</button></div>` : ''}${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
@@ -834,7 +838,20 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: po + '|' + x.material, label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
       onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
         F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
-    $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); re(); }; });
+    $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); F.delAsk = null; if (F.id) { F.itemsEdit = true; syncPos(F); } $$('[data-it]').forEach(el => el.removeAttribute('data-it')); re(); }; });
+    $$('[data-rmask]').forEach(b => { b.onclick = () => { collect(); F.delAsk = +b.dataset.rmask; re(); }; });
+    $$('[data-rmno]').forEach(b => { b.onclick = () => { collect(); F.delAsk = null; re(); }; });
+    const notOn = (po, x) => !F.items.some(i => itemPo(i, F) === po && i.material === x.material);
+    const ad = $('#addIt');
+    if (ad) ad.onclick = () => { collect(); openMulti({ title: t('បន្ថែម PO / ទំនិញ · លេខ PO', 'Add PO / item · PO Number'), value: [],
+      items: pendingPOs(F.id).filter(x => pendingLines(x, F.id).some(y => notOn(x, y))).map(x => ({ value: x, label: x,
+        sub: ((PLAN.find(y => y.po === x) || {}).supplier || '') + ' · ' + pendingLines(x, F.id).filter(y => notOn(x, y)).length + t(' មុខមិនទាន់ទទួល', ' lines pending') })),
+      onDone: ps => { if (!ps.length) return; setTimeout(() => openMulti({ title: t('ទំនិញមិនទាន់ទទួល', 'Pending items'), value: [],
+        items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).filter(x => notOn(po, x))
+          .map(x => ({ value: po + '|' + x.material, label: x.desc, sub: po + ' · ' + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' Kg' })))),
+        onDone: keys => { keys.forEach(k => { const po = k.split('|')[0], l = lineOf(po, k.slice(k.indexOf('|') + 1)); if (!l) return;
+          const it = item(l); it.isNew = true; F.items.push(it); });
+          if (keys.length) { F.itemsEdit = true; syncPos(F); } re(); } }), 50); } }); };
     const ds = $('#dnScan'); if (ds) ds.onclick = () => { collect(); scanCode(code => { F.dn3pl = code; const el = $('#dn3pl'); if (el) el.value = code; markNeed(); toast('✓ ' + code); }); };
     $$('[data-calc]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, k] = b.dataset.calc.split(':'), i = F.items[+n];
       const col = { arrQty: t('ចំនួន (ដល់)', 'Arrival Qty'), grQty: t('ទទួល', 'Actual GR Qty'), dmgQty: t('ខូចខាត', 'Damaged Qty') }[k] || k;
