@@ -638,6 +638,27 @@ function update_(p, user, finish) {
     if (!siteOk_(user, rec.site)) fail_('DENIED', 'This truck belongs to ' + rec.site + '.', 'ឡាននេះជារបស់ ' + rec.site + '។');
     const folder = folder_(rec.id);
     const sent = Array.isArray(p.items) ? p.items : [];
+    // reviewers fix an open receipt: rows left out are deleted, new PO lines are added (Kim, 17 Nov 2026)
+    if (p.itemsEdit && live && (user.admin || user.reviewer)) {
+      const key = (po, m) => poOf_(po) + '|' + String(m || '');
+      const sentKeys = sent.map(x => key(x.po || rec.po, x.material));
+      const kept = rec.items.filter(i => sentKeys.indexOf(key(itemPo_(i, rec), i.material)) >= 0);
+      const plan = plan_();
+      const added = sent.filter(x => !kept.some(i => key(itemPo_(i, rec), i.material) === key(x.po || rec.po, x.material))).map(x => {
+        const line = plan.find(l => l.po === poOf_(x.po) && l.material === String(x.material || ''));
+        if (!line) fail_('BAD', 'Item ' + clip_(x.material, 30) + ' is not on ' + (poOf_(x.po) || 'this PO') + '.', 'ទំនិញ ' + clip_(x.material, 30) + ' មិនមែនរបស់ ' + (poOf_(x.po) || 'PO នេះ') + ' ទេ។');
+        if (!(num_(x.arrQty) > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
+        return { po: line.po, inbound: line.inbound, material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: num_(x.arrQty), grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+      });
+      const items = kept.concat(added).slice(0, MAX_ITEMS);
+      if (!items.length) fail_('BAD', 'Keep at least one item.', 'សូមទុកទំនិញយ៉ាងហោចណាស់មួយ។');
+      items.forEach(i => { if (!i.po) i.po = itemPo_(i, rec); });
+      const pos = []; items.forEach(i => { if (pos.indexOf(i.po) < 0) pos.push(i.po); });
+      const heads = pos.map(x => plan.find(l => l.po === x)).filter(Boolean);
+      const join = k => heads.map(l => l[k]).filter((v, n, a2) => v && a2.indexOf(v) === n).join(', ');
+      rec.items = items; rec.pos = pos; rec.po = pos.join(', ');
+      if (heads.length) { rec.inbound = join('inbound'); rec.ref = join('ref'); rec.supplier = join('supplier'); }
+    }
     rec.items.forEach(i => {
       const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po)) || {};
       const gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);

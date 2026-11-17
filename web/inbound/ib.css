@@ -396,3 +396,11 @@ img[data-zoom] { cursor: zoom-in; }
 .fromsc { background: #eef7ff; border: 1.5px dashed #0b76a0; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
 :root[data-theme="dark"] .fromsc { background: #0d2a3d; }
 .wtr .ves.none { color: #c25e00; }
+
+/* reviewer edits an open receipt: delete rows, add PO / items (Kim, 17 Nov 2026) */
+.additrow { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
+.itbl .rmrow { position: absolute; top: 4px; right: 0; width: 30px; height: 30px; border-radius: 8px; border: 1px solid #f0b4b4; background: #fff5f5; color: #c62828; cursor: pointer; font-size: 14px; }
+.itbl td.nm:has(.rmrow) { padding-right: 36px; }
+.newpill { font-size: 10px; background: #f2b705; color: #000; border-radius: 6px; padding: 1px 6px; font-weight: 700; }
+.rmask { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fff5f5; border: 1px solid #f0b4b4; }
+.rmask b { color: #c62828; margin-right: auto; font-size: 12px; }
