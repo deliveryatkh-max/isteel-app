@@ -358,7 +358,7 @@
       .join(' ').toLowerCase().includes(q)).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
   };
   const vesPOs = v => { const o = []; if (v) PLAN.forEach(x => { if (x.vessel === v && !o.some(y => y.po === x.po)) o.push({ po: x.po, supplier: x.supplier }); }); return o; };
-  const waitRows = () => { const l = waitList(); return l.length ? l.map(a => `<a class="wtr" href="#/newtk/${encodeURIComponent(a.no)}"><span class="wt1"><b class="pl">${esc(a.truck)}</b>${a.vessel ? `<span class="ves">🚢 ${esc(a.vessel)}</span>` : ''}</span><span class="rcv">📥 ${t('ទទួល', 'Receive')}</span>
+  const waitRows = () => { const l = waitList(); return l.length ? l.map(a => `<a class="wtr" href="#/newtk/${encodeURIComponent(a.no)}"><span class="wt1"><b class="pl">${esc(a.truck)}</b>${a.vessel ? `<span class="ves">🚢 ${esc(a.vessel)}</span>` : `<span class="ves none">🚫 ${t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</span>`}</span><span class="rcv">📥 ${t('ទទួល', 'Receive')}</span>
       <small>${esc(a.company || '–')}</small><small>⚖️ ${a.date === today() ? '' : showDate(a.date) + ' '}${esc(a.time)}${a.kg ? ' · ' + fmt(a.kg) + ' kg' : ''}</small></a>`).join('')
       : `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`; };
   function waitBox() {
@@ -637,7 +637,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
-      ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ''}</div>` : ''}
+      ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ' · 🚫 ' + t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</div>` : ''}
       ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
