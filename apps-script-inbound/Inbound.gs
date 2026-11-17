@@ -765,7 +765,7 @@ function scaleArrive_(p, user) {
   const u = setting_('APP_URL');
   telegram_(Object.assign({ text: ['⚖️ <b>ឡានចូលថ្លឹង ត្រៀមទំលាក់</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
     '🚢 លេខកប៉ាល់៖ ' + (ves ? esc_(ves) : 'មិនទាន់មាន'), '⚖️ ថ្លឹងលើកទី1' + (num_(p.kg) ? ' សរុប ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
-    u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Receive · ទទួល', url: u + '#/newtk/' + encodeURIComponent(no) }]] }) } : {}));
+    u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Receive · ទទួល', url: u + 'go.html?tk=' + encodeURIComponent(no) }]] }) } : {}));
   return { no: no };
 }
 /** trucks weighed for unloading in the last 2 days and not received yet */
