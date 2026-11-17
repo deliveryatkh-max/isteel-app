@@ -59,6 +59,39 @@
     if (data.session) set(TOKEN_KEY, data.session);
     return data.data;
   }
+  // Inbound Apps Script (Kim, 17 Nov 2026): Vessel No. list from the Incoming Plan, and the 1st weigh of an unloading
+  // truck is sent to Inbound (Telegram + "Trucks on the scale" box). Same sign-in as the scale.
+  const IB_API = (window.IB_CONFIG || {}).API_URL;
+  let VESSELS = getJ('sc_vessels', null), vesAt = 0;
+  async function ibApi(action, payload) {
+    const res = await fetch(IB_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token: get(TOKEN_KEY), payload: payload || {} }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(msgOf(data.error).text);
+    if (data.session) set(TOKEN_KEY, data.session);
+    return data.data;
+  }
+  function loadVessels(force) {
+    if (DEMO) { VESSELS = [{ vessel: 'MV HAI PHONG 08', kg: 412000, pos: [{ po: '5100012725', supplier: 'Regency', kg: 212400 }, { po: '5100012751', supplier: 'Zinc Co', kg: 150000 }, { po: '5100012760', supplier: 'Regency', kg: 49600 }] },
+      { vessel: 'MV ORIENT 12', kg: 96000, pos: [{ po: '5100012790', supplier: 'Nippon', kg: 96000 }] }]; return; }
+    if (!IB_API || (!force && Date.now() - vesAt < 10 * 60000)) return;
+    vesAt = Date.now();
+    flushArrive();
+    ibApi('vessels').then(v => { if (Array.isArray(v)) { VESSELS = v; set('sc_vessels', JSON.stringify(v)); if (F && F.type === 'In' && !ticketBy(F.cid)) paintForm(); } }).catch(() => { /* old Inbound script or offline: the box stays as it was */ });
+  }
+  const NO_VES = '—';
+  // the alert to Inbound; kept on this PC and sent again when it fails (no internet)
+  function sendArrive(a) {
+    if (DEMO || !IB_API) return;
+    const q = getJ('sc_arrq', []).filter(x => x.no !== a.no).concat([a]).slice(-30);
+    set('sc_arrq', JSON.stringify(q)); flushArrive();
+  }
+  let arrBusy = false;
+  async function flushArrive() {
+    if (arrBusy || DEMO || !IB_API) return;
+    arrBusy = true;
+    try { for (const a of getJ('sc_arrq', [])) { await ibApi('scaleArrive', a); set('sc_arrq', JSON.stringify(getJ('sc_arrq', []).filter(x => x.no !== a.no))); } }
+    catch (e) { /* tried again at the next weigh or refresh */ } finally { arrBusy = false; }
+  }
   function claims() {
     try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); }
     catch (e) { return null; }
@@ -363,7 +396,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], dnkg: {}, driver: '', dest: '', note: '', load: get('sc_load') || LOAD_DEF });
+  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], dnkg: {}, driver: '', dest: '', note: '', vessel: '', load: get('sc_load') || LOAD_DEF });
   const LOAD_DEF = 'ISI Steel';   // loading place when this PC has none set (Kim, 8 Nov 2026)
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
   const places = () => { const s = []; [get('sc_load'), LOAD_DEF].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
@@ -751,7 +784,7 @@
           ${F.dns.length ? `<div class="dnkg" id="dnKg"><table><tr><th>🧾 DN</th><th class="r">${t('ទម្ងន់លើ DN (kg)', 'Kg on the DN')} ${req}</th></tr>
             ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono${dnKgOf(F, d) ? '' : ' need'}" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
             <tr class="tot"><td>${t('សរុប DN', 'DN total')}</td><td class="r mono" id="dnTot">—</td></tr></table><div id="dnCmp"></div></div>` : ''}</div>` : ''}
-        <div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>
+        ${!sel && F.type === 'In' ? vesselHtml() : `<div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>`}
       </div>
       ${sel ? againRows(sel) : ''}
       <div id="warnBox"></div>
@@ -812,7 +845,8 @@
       paintTags();
     }
     // Loading place is not asked on the weigh form (Kim, 8 Nov 2026): it is this PC's default, else ISI Steel; change it on the ticket page.
-    $('#fNote').oninput = e => upd('note', e.target.value);
+    if ($('#fNote')) $('#fNote').oninput = e => upd('note', e.target.value);
+    if ($('#fVessel')) $('#fVessel').onchange = e => { upd('vessel', e.target.value); paintForm(); };
     const addDn = raw => {
       if (document.querySelector('.popwrap')) return;   // a message is open: the input's blur must not open a 2nd one
       if ($('#fDn')) $('#fDn').value = '';   // else repainting the form blurs the box and adds the same text again
@@ -893,10 +927,23 @@
     setTimeout(() => document.addEventListener('keydown', key, true), 300);   // a scanner's own Enter must not close it at once
     o.querySelector('#popOk').focus();
   }
+  // Vessel No. at the 1st weigh of an unloading truck (Kim, 17 Nov 2026), from column R of the Incoming Plan; its POs are listed
+  const vesNeed = () => !!(VESSELS && VESSELS.length);
+  function vesselHtml() {
+    loadVessels();
+    const l = VESSELS || [], v = l.find(x => x.vessel === F.vessel);
+    const opts = l.map(x => `<option value="${esc(x.vessel)}"${x.vessel === F.vessel ? ' selected' : ''}>${esc(x.vessel)} · ${x.pos.length} PO · ${kg(Math.round(x.kg / 1000))} t</option>`).join('');
+    return `<div class="field span2"><label class="f lc-blue">🚢 ${t('លេខកប៉ាល់', 'Vessel No')} ${vesNeed() ? '<span class="req">*</span>' : ''}</label>
+      <div><select class="in${vesNeed() && !F.vessel ? ' need' : ''}" id="fVessel"><option value="">${t('— ជ្រើសរើស —', '— Select —')}</option>${opts}
+        <option value="${NO_VES}"${F.vessel === NO_VES ? ' selected' : ''}>🚚 ${t('គ្មានកប៉ាល់ (ក្នុងស្រុក)', 'No vessel (local)')}</option></select>
+      ${!l.length ? `<div class="hint">${IB_API ? t('កំពុងទាញបញ្ជីកប៉ាល់…', 'Loading the vessel list…') : ''}</div>` : ''}
+      ${v ? `<div class="vespos"><small>📑 PO ${t('ក្នុងកប៉ាល់នេះ', 'in this vessel')}:</small> ${v.pos.map(o => `<span class="vpo" title="${esc(o.supplier || '')}">${esc(o.po)}</span>`).join('')}</div>` : ''}</div></div>`;
+  }
   function formOk(second) {
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
-    if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
+    if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');
+    if (!ticketBy(F.cid) && F.type === 'In' && vesNeed() && !F.vessel) miss.push('#fVessel');   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
@@ -918,7 +965,7 @@
   // Typing a weight by hand: Admins always; everyone when an Admin ticks it in Settings (Kim, 10 Nov 2026). A reason is always needed.
   const manAll = () => String(S().SCALE_MANUAL_ALL || '').toLowerCase() === 'yes';
   const canType = () => isAdmin() || manAll();
-  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.note, load: F.type === 'In' ? '' : F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
+  const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.type === 'In' && F.vessel && F.vessel !== NO_VES && !ticketBy(F.cid) ? 'Vessel No: ' + F.vessel : F.note, load: F.type === 'In' ? '' : F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
 
   function weigh1() {
     if (!formOk(false)) return;
@@ -930,6 +977,8 @@
       w1: w.kg, t1: iso(new Date()), s1: w.src, w2: '', t2: '', s2: '', warn: '', op: me().name || '', reason: w.src === 'Manual' ? MANUAL.reason : '' });
     keepPhoto(tk.cid, 1, tk.plate + ' · 1st ' + kg(tk.w1) + ' kg');   // webcam photo (Kim, 10 Nov 2026)
     putTicket(tk);
+    if (tk.type === 'In') { const v = (VESSELS || []).find(x => x.vessel === F.vessel);
+      sendArrive({ no: tk.no, plate: tk.plate, company: tk.company, vessel: F.vessel === NO_VES ? '' : F.vessel, pos: v ? v.pos.map(o => o.po) : [], kg: tk.w1, time: new Date().toTimeString().slice(0, 5) }); }
     MANUAL = null; LASTDONE = '';
     F = EMPTY_F(); keepForm();
     toast('✅ ' + tk.no + ' · ' + t('លើកទី១', '1st') + ' ' + kg(tk.w1) + ' kg');

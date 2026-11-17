@@ -69,7 +69,7 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
-    const user = authenticate_(body.token);
+    const user = authenticate_(body.token, OPEN_ACTIONS_[body.action]);
     const out = { ok: true, data: route_(body.action, body.payload || {}, user) };
     if (user.session) out.session = user.session;
     return json_(out);
@@ -104,6 +104,8 @@ function route_(action, p, user) {
       setSetting_('IB_REPORT_COLS', cols.join(','));
       return { cols: cols };
     }
+    case 'vessels': return vessels_();
+    case 'scaleArrive': return withLock_(() => scaleArrive_(p, user));
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
     case 'delete': return withLock_(() => del_(p.id, p.reason, user));   // admin removes a pending unloading record (Kim, 3 Nov 2026)
@@ -227,7 +229,9 @@ function verifyGoogle_(token) {
   return email;
 }
 
-function authenticate_(token) {
+// Called from the Truck Scale by security guards, who may not have the Inbound tick: any active user (Kim, 17 Nov 2026)
+const OPEN_ACTIONS_ = { vessels: 1, scaleArrive: 1 };
+function authenticate_(token, open) {
   if (!token) fail_('AUTH', 'Please sign in.', 'សូមចូលគណនី។');
   let email, session = null;
   const own = readSession_(token);
@@ -238,7 +242,7 @@ function authenticate_(token) {
     email = verifyGoogle_(token);
     session = makeSession_(email);
   }
-  const u = usersCached_().find(x => x.email === email && x.ok);
+  const u = usersCached_().find(x => x.email === email && (open ? x.active : x.ok));
   if (!u) fail_('NOACCESS', email + ' has no Inbound access. Ask the admin to tick ' + APP_COL + ' in Users.',
     email + ' មិនទាន់មានសិទ្ធិប្រើ ' + APP_COL + ' ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
   return { email: email, name: u.name || email, admin: u.admin, reviewer: u.reviewer, wh: u.wh || [], session: session };
@@ -258,16 +262,16 @@ function users_() {
     const role = r >= 0 ? text_(x[r]) : '';
     const admin = /admin/i.test(role);
     return { email: String(x[e]).trim().toLowerCase(), name: n >= 0 ? text_(x[n]) : '', admin: admin, reviewer: admin || /review|supervis/i.test(role),
-      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))),
+      ok: (a < 0 || yes_(x[a])) && (admin || (tick >= 0 && yes_(x[tick]))), active: a < 0 || yes_(x[a]),
       wh: w >= 0 ? String(x[w] || '').split(',').map(s => s.trim()).filter(Boolean) : [] };
   });
 }
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('ib_users2');
+  const hit = cache.get('ib_users3');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('ib_users2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('ib_users3', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
@@ -304,6 +308,8 @@ function plan_() {
   const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('kg', 'qty'),
     iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
     iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
+  // Vessel No. (Kim, 17 Nov 2026: column R of the Incoming Plan)
+  let iVes = c('vessel no', 'vessel number', 'vessel'); if (iVes < 0 && head.length > 17 && !head[17]) iVes = 17;
   const cell = (r, i) => (i < 0 ? '' : r[i] instanceof Date ? fmt_(r[i], 'yyyy-MM-dd') : String(r[i] == null ? '' : r[i]).trim());
   const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], p2 = n => ('0' + n).slice(-2);
   const eta = v => { let m; const t = String(v || '');   // 31-Oct-2026, 31.10.2026, 31/10/2026 typed as text → 2026-10-31
@@ -314,7 +320,7 @@ function plan_() {
   return v.slice(1).map(r => ({
     // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
     po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite),
+    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
 
@@ -421,6 +427,7 @@ function boot_(user) {
   recs.forEach(r => { if (r.carrier && carriers.indexOf(r.carrier) < 0) carriers.push(r.carrier); });
   return { user: { email: user.email, name: user.name, admin: user.admin, reviewer: user.reviewer }, plan: plan, receipts: recs, plates: plates_(), carriers: carriers,
     warehouses: warehouses_(), sites: us.list, allSites: us.all,
+    arrivals: arrivals_(recs),
     reportCols: String(setting_('IB_REPORT_COLS') || '').split(',').map(c => c.trim()).filter(Boolean),
     lists: mailLists_().filter(l => l.active && l.emails.length).map(l => ({ name: l.name, count: l.emails.length })) };
 }
@@ -609,6 +616,9 @@ function start_(p, user) {
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
+    const sNo = clip_(p.scaleNo, 30), ves = clip_(p.vessel, 60);
+    if (sNo) { rec.scaleNo = sNo; arrivalDone_(sNo, id); }
+    if (ves) rec.vessel = ves;
     const tg = telegramArrived_(rec);
     if (tg && tg.ok && tg.result) rec.tg = tg.result.message_id;   // the finish post replies to it
     store_(rec);
@@ -728,6 +738,51 @@ function del_(id, reason, user) {
   return { deleted: f.rec.id };
 }
 
+// ---------------------------------------------------------------- Truck Scale → Inbound (Kim, 17 Nov 2026)
+// Security picks the Vessel No. at the 1st weigh of an unloading truck; the receiver sees the truck waiting in Inbound.
+const ARR_SH = 'Scale Arrivals', ARR_COLS = ['Ticket No', 'Date', 'Time', 'Truck', 'Company', 'Vessel No', 'PO', 'Kg (1st weigh)', 'By', 'Receipt'];
+/** vessels still to receive, with their POs (Incoming Plan column R) */
+function vessels_() {
+  const got = {}; receipts_().forEach(r => (r.items || []).forEach(i => { const k = itemPo_(i, r) + '|' + i.material; got[k] = (got[k] || 0) + (num_(r.status === STATUS.live ? i.arrQty : i.grQty) || 0); }));
+  const by = {};
+  plan_().filter(x => x.vessel).forEach(x => {
+    const left = Math.max(0, x.kg - (got[x.po + '|' + x.material] || 0));
+    const v = by[x.vessel] || (by[x.vessel] = { vessel: x.vessel, eta: x.eta, pos: [], kg: 0 });
+    let po = v.pos.find(o => o.po === x.po); if (!po) v.pos.push(po = { po: x.po, supplier: x.supplier, kg: 0 });
+    po.kg += left; v.kg += left; if (x.eta && (!v.eta || x.eta < v.eta)) v.eta = x.eta;
+  });
+  return Object.keys(by).map(k => by[k]).filter(v => v.kg > 0).sort((a, b) => String(a.eta).localeCompare(String(b.eta)) || a.vessel.localeCompare(b.vessel));
+}
+function scaleArrive_(p, user) {
+  const no = clip_(p.no, 30), truck = clip_(p.plate, 20).toUpperCase().replace(/\s+/g, '');
+  if (!no || !truck) fail_('BAD', 'Ticket number and truck are needed.', 'ត្រូវការលេខប័ណ្ណ និងលេខឡាន។');
+  const sh = sheet_(ARR_SH, ARR_COLS), n = sh.getLastRow();
+  if (n > 1 && sh.getRange(2, 1, n - 1, 1).getDisplayValues().some(r => r[0] === no)) return { no: no, dup: true };
+  const ves = clip_(p.vessel, 60), pos = (Array.isArray(p.pos) ? p.pos : []).map(poOf_).filter(Boolean).slice(0, 20);
+  const now = new Date(), time = clip_(p.time, 5) || fmt_(now, 'HH:mm');
+  sh.appendRow([no, fmt_(now, 'yyyy-MM-dd'), time, truck, clip_(p.company, 60), ves, pos.join(', '), num_(p.kg) || '', user.name, '']);
+  const u = setting_('APP_URL');
+  telegram_(Object.assign({ text: ['⚖️ <b>Truck on the scale · Unload</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
+    '🚢 ' + esc_(ves || '–'), '⚖️ 1st weigh ' + esc_(time) + (num_(p.kg) ? ' · ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },
+    u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Receive · ទទួល', url: u + '#/newtk/' + encodeURIComponent(no) }]] }) } : {}));
+  return { no: no };
+}
+/** trucks weighed for unloading in the last 2 days and not received yet */
+function arrivals_(recs) {
+  const sh = ss_().getSheetByName(ARR_SH);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const from = fmt_(new Date(Date.now() - 2 * 86400000), 'yyyy-MM-dd'), linked = {};
+  (recs || []).forEach(r => { if (r.scaleNo) linked[r.scaleNo] = 1; });
+  return sh.getRange(2, 1, sh.getLastRow() - 1, ARR_COLS.length).getDisplayValues()
+    .filter(r => r[0] && !r[9] && !linked[r[0]] && r[1] >= from)
+    .map(r => ({ no: r[0], date: r[1], time: r[2], truck: r[3], company: r[4], vessel: r[5], pos: r[6] ? r[6].split(',').map(x => x.trim()) : [], kg: num_(r[7]) || 0 }));
+}
+function arrivalDone_(no, id) {
+  const sh = ss_().getSheetByName(ARR_SH); if (!sh || sh.getLastRow() < 2) return;
+  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues();
+  for (let i = 0; i < v.length; i++) if (v[i][0] === no) { sh.getRange(i + 2, ARR_COLS.length).setValue(id); return; }
+}
+
 // ---------------------------------------------------------------- Telegram
 function telegram_(payload, moved) {
   const token = prop_('TELEGRAM_BOT_TOKEN'), chat = setting_('TELEGRAM_CHAT_ID');
@@ -798,7 +853,7 @@ function alertTomorrow() {
   const text = incomingText_(day, today);
   if (!text) return 'Nothing due tomorrow.';
   const u = setting_('APP_URL');
-  telegram_(Object.assign({ text: text }, u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Schedule · កាលវិភាគ', url: u + '#/sum' }]] }) } : {}));
+  telegram_(Object.assign({ text: text }, u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Schedule · កាលវិភាគ', url: u + '#/sched' }]] }) } : {}));
   return text;
 }
 /** Run once from the editor after adding the bot to the Inbound Telegram group and sending any message there:

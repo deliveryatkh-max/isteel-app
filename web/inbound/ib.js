@@ -34,6 +34,7 @@
     const many = SITES.length > 1 || ALLS;
     return `<div class="whbar"><span class="whi">🏭</span><span class="wht"><small>${t('ឃ្លាំង', 'Warehouse')}</small><b>${SITE ? esc(SITE) : '🌐 ' + t('ទាំងអស់', 'All warehouses')}</b></span>${many ? `<a class="whsw" href="#/site">⇄ ${t('ប្តូរ', 'Change')}</a>` : ''}</div>`;
   }
+  let ARRIVALS = [];   // trucks weighed in for unloading at the Truck Scale, not received yet (Kim, 17 Nov 2026)
   let LISTS = [{ name: 'Warehouse', count: 3 }, { name: 'Procurement', count: 2 }, { name: 'Finance', count: 1 }];   // email lists (Email Lists tab)
 
   // ------------------------------------------------------------------ time helpers
@@ -174,6 +175,7 @@
     if (d.plates && d.plates.length) PLATES = d.plates;
     if (d.carriers && d.carriers.length) CARRIERS = d.carriers;
     LISTS = d.lists || [];
+    ARRIVALS = d.arrivals || [];   // an older Apps Script sends none
     WAREHOUSES = d.warehouses || [];   // an older Apps Script sends none: the Entrance box is then hidden
     SITES = d.sites || []; ALLS = !!d.allSites;   // an older Apps Script sends none: no warehouse split
     REPC = d.reportCols && d.reportCols.length ? d.reportCols : null;   // an older Apps Script sends none
@@ -181,6 +183,8 @@
   }
   function load() {
     if (!DEMO) { try { const b = JSON.parse(get('ib_boot') || 'null'); if (b) applyBoot(b); else setPlan([]), DATA = []; } catch (e) { setPlan([]); DATA = []; } return; }
+    ARRIVALS = [{ no: 'WB-DEMO-1', date: today(), time: '09:12', truck: '3E-7465', company: 'SRONG SAL', vessel: 'MV HAI PHONG 08', pos: [], kg: 41250 },
+      { no: 'WB-DEMO-2', date: today(), time: '08:55', truck: '3A-2399', company: 'S.V (SENG LINDA)', vessel: 'MV ORIENT 12', pos: [], kg: 33230 }];
     const s = get('ib_demo_v5');
     if (s) { try { const o = JSON.parse(s); if (o.day === today()) { DATA = o.rows; return; } } catch (e) { /* reseed */ } }
     DATA = seed(); save();
@@ -329,6 +333,7 @@
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
     view(siteBar() + tomorrowBar() + `
+      ${waitBox()}
       <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
@@ -340,8 +345,39 @@
       <div class="list">${live.length ? live.map(itemHTML).join('') : `<div class="empty">${t('គ្មានឡានកំពុងទម្លាក់', 'No truck unloading')}</div>`}</div>
       <div class="head2"><h2>✅ ${t('រួចរាល់ថ្ងៃនេះ', 'Done today')}</h2><a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')} ›</a></div>
       <div class="list">${done.length ? done.slice().reverse().map(itemHTML).join('') : `<div class="empty">${t('មិនទាន់មាន', 'None yet')}</div>`}</div>`);
-    $('#newBtn').onclick = () => { location.hash = '#/new'; };
+    $('#newBtn').onclick = () => { if (F && F.scaleNo && !F.id) F = null; location.hash = '#/new'; };
+    bindWait();
     bindGo();
+  }
+  // Trucks on the scale, waiting to be received (Kim, 17 Nov 2026, mockup A): weighed in at the Truck Scale with Unload ticked
+  let WQ = '';
+  const waitList = () => {
+    const got = {}; DATA.forEach(r => { if (r.scaleNo) got[r.scaleNo] = 1; });
+    const q = WQ.toLowerCase();
+    return ARRIVALS.filter(a => !got[a.no]).filter(a => !q || [a.truck, a.company, a.vessel].concat(a.pos, a.pos.map(po => (PLAN.find(x => x.po === npo(po)) || {}).supplier || ''), vesPOs(a.vessel).map(x => x.po + ' ' + x.supplier))
+      .join(' ').toLowerCase().includes(q)).sort((x, y) => (y.date + y.time).localeCompare(x.date + x.time));
+  };
+  const vesPOs = v => { const o = []; if (v) PLAN.forEach(x => { if (x.vessel === v && !o.some(y => y.po === x.po)) o.push({ po: x.po, supplier: x.supplier }); }); return o; };
+  const waitRows = () => { const l = waitList(); return l.length ? l.map(a => `<a class="wtr" href="#/newtk/${encodeURIComponent(a.no)}"><span class="wt1"><b class="pl">${esc(a.truck)}</b>${a.vessel ? `<span class="ves">🚢 ${esc(a.vessel)}</span>` : ''}</span><span class="rcv">📥 ${t('ទទួល', 'Receive')}</span>
+      <small>${esc(a.company || '–')}</small><small>⚖️ ${a.date === today() ? '' : showDate(a.date) + ' '}${esc(a.time)}${a.kg ? ' · ' + fmt(a.kg) + ' kg' : ''}</small></a>`).join('')
+      : `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`; };
+  function waitBox() {
+    const got = {}; DATA.forEach(r => { if (r.scaleNo) got[r.scaleNo] = 1; });
+    const n = ARRIVALS.filter(a => !got[a.no]).length;
+    if (!n) return '';
+    return `<section class="waitbox"><h3>⚖️ ${t('ឡានថ្លឹងរួច រង់ចាំទទួល', 'Trucks on the scale, to receive')} <span class="c">${n}</span></h3>
+      <label class="search"><span aria-hidden="true">🔍</span><input type="search" id="wq" value="${esc(WQ)}" placeholder="${esc(t('ស្វែងរក៖ ផ្លាកលេខ, PO, អ្នកផ្គត់ផ្គង់', 'Search: plate, PO, supplier'))}" autocomplete="off"></label>
+      <div id="wlist">${waitRows()}</div></section>`;
+  }
+  function bindWait() { const q = $('#wq'); if (q) q.oninput = () => { WQ = q.value; $('#wlist').innerHTML = waitRows(); }; }
+  // Receive a truck from the scale: step 1 opens with the truck, company and vessel already filled
+  function renderFromScale(no) {
+    const a = ARRIVALS.find(x => x.no === no);
+    if (!a) { toast(t('រកមិនឃើញឡាននេះ ឬបានទទួលរួច', 'Truck not found or already received')); location.hash = '#/today'; return; }
+    F = blank(); F.scaleNo = a.no; F.vessel = a.vessel || ''; F.company = a.company || ''; F.truck = a.truck;
+    const ps = vesPOs(a.vessel).map(x => x.po).filter(po => pendingPOs().indexOf(po) >= 0);
+    if (ps.length === 1) pickPOs(ps);
+    location.replace('#/new');
   }
 
   // ------------------------------------------------------------------ Log
@@ -601,6 +637,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
+      ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ''}</div>` : ''}
       ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
@@ -650,7 +687,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
   }
   function pickPOs(list) {
-    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower };
+    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company };
     const old = F.items || [], was = F;
     const b = blank(); const l = PLAN.find(x => x.po === list[0]);
     F = Object.assign(b, list.length ? headerOf(list) : {}, keep);
@@ -754,7 +791,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
     const pob = $('#po');
     if (pob && !pob.classList.contains('off')) pob.onclick = () => { collect(); openMulti({ title: t('លេខ PO (ជ្រើសបានច្រើន)', 'PO Number (one or more)'), value: posOf(F),
-      items: pendingPOs(F.id).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
+      items: (vesPOs(F.vessel).length ? pendingPOs(F.id).filter(x => vesPOs(F.vessel).some(y => y.po === x)) : pendingPOs(F.id)).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
       onDone: v => { pickPOs(v); re(); } }); };
     const it = $('#items');
     if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material; openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
@@ -1442,7 +1479,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <a class="mtile" href="#/plan"><span class="mi">📑</span><b>${t('ផែនការទំនិញចូល', 'Incoming Plan')}</b>
           <small>${t('ផ្ទុកផែនការទំនិញចូល', 'Upload the Incoming Plan')}</small>
           <em>${VPOS().length} PO · ${t('សម្រាប់ Supervisor / Admin', 'Supervisor / Admin only')}</em></a>
-      </div>`);
+      </div>${waitBox()}`);
+    bindWait();
   }
 
   // ------------------------------------------------------------------ Incoming Plan (Supervisor / Admin)
@@ -1636,6 +1674,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const h = location.hash.replace(/^#\/?/, '');
     document.body.classList.toggle('wide', h === 'sum');   // the report table uses the full width on computers
     if (h === 'site' || (siteOn() && SITE === null)) return renderSite();
+    if (h.indexOf('newtk/') === 0) return renderFromScale(decodeURIComponent(h.slice(6)));
     if (h === 'new') return renderForm('');
     if (h.indexOf('edit/') === 0) return renderForm(h.slice(5));
     if (h.indexOf('r/') === 0) return renderOne(h.slice(2));
