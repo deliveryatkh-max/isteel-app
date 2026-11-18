@@ -809,16 +809,16 @@ function arrivalDone_(no, id) {
 }
 
 // ---------------------------------------------------------------- Telegram
-function telegram_(payload, moved) {
+function telegram_(payload, moved, method) {
   const token = prop_('TELEGRAM_BOT_TOKEN'), chat = setting_('TELEGRAM_CHAT_ID');
   if (!token || !chat) return null;
   try {
-    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', { method: 'post', payload: Object.assign({ chat_id: String(chat), parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + (method || 'sendMessage'), { method: 'post', payload: Object.assign({ chat_id: String(chat), parse_mode: 'HTML' }, payload), muteHttpExceptions: true });
     const out = JSON.parse(res.getContentText() || '{}');
     const to = out.parameters && out.parameters.migrate_to_chat_id;
     if (!out.ok && to && !moved) {   // the group became a supergroup: save the new id and send again
       setSetting_('TELEGRAM_CHAT_ID', String(to));
-      return telegram_(payload, true);
+      return telegram_(payload, true, method);
     }
     if (!out.ok) console.error('telegram: ' + res.getContentText());
     return out;
@@ -845,6 +845,16 @@ function telegramDone_(r) {
   dmg.forEach(i => lines.push('💥 ខូចខាត៖ ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
   const reply = r.tg ? { reply_to_message_id: String(r.tg), allow_sending_without_reply: 'true' } : {};
+  // with the truck front and document photos (Kim, 18 Nov 2026); the text post is the fallback
+  const pics = ['front', 'doc'].map(k => { try { return r.ph && r.ph[k] ? DriveApp.getFileById(r.ph[k]).getBlob().setName(k + '.jpg') : null; } catch (e) { return null; } }).filter(Boolean);
+  if (pics.length) {
+    const u = setting_('APP_URL'), cap = lines.join('\n') + (u ? '\n🔗 <a href="' + u + '#/r/' + encodeURIComponent(r.id) + '">បើកមើល · Open</a>' : '');
+    const media = pics.map((b, n) => Object.assign({ type: 'photo', media: 'attach://p' + n }, n ? {} : { caption: cap.slice(0, 1024), parse_mode: 'HTML' }));
+    const pay = Object.assign({ media: JSON.stringify(media) }, reply);
+    pics.forEach((b, n) => { pay['p' + n] = b; });
+    const out = telegram_(pay, false, 'sendMediaGroup');
+    if (out && out.ok) return;
+  }
   telegram_(Object.assign({ text: lines.join('\n') }, reply, button_(r)));
 }
 

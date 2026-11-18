@@ -92,12 +92,14 @@ eq(r.items.map(i => [i.grQty, i.dmgQty, i.dmgType, i.dmgPh.length]), [[19800, 2,
 ok(/^\d\d:\d\d$/.test(r.end), 'end time stamped');
 eq(r.items.map(i => i.dmgUom), ['PCS', ''], 'damage UoM kept');
 ok(log().find(x => x[0] === r.id && x[8] === '1100000230')[33] === 'PCS', 'damage UoM in GR Log');
-ok(env.telegrams.some(t => /2 PCS/.test(t.payload.text)), 'damage UoM in Telegram');
+ok(env.telegrams.some(t => /2 PCS/.test(String(t.payload.text || t.payload.media || ''))), 'damage UoM in Telegram');
 const row = log().find(x => x[8] === '1100000230' && x[0] === r.id);
 eq([row[1], row[13], row[14], row[15], row[16], row[24], row[25]], ['Done', '19800', '2', 'Rust', 'Yes', '3PL Truck', 'FOXS'], 'log row');
 eq(log().length, 3, 'rows replaced, not added');
-ok(env.telegrams.some(t => /ទទួលខ្វះ/.test(t.payload.text) && /ខូចខាត/.test(t.payload.text)), 'short + damage posted');
-{ const fin = env.telegrams.filter(t => /បញ្ចប់ 3E2588/.test(t.payload.text)).pop();
+const tgTxt = t => String(t.payload.text || t.payload.media || '');
+ok(env.telegrams.some(t => /ទទួលខ្វះ/.test(tgTxt(t)) && /ខូចខាត/.test(tgTxt(t))), 'short + damage posted');
+ok(env.telegrams.some(t => t.method === 'sendMediaGroup' && t.payload.p0 && t.payload.p1), 'finish post has front + document photos');
+{ const fin = env.telegrams.filter(t => /បញ្ចប់ 3E2588/.test(tgTxt(t))).pop();
   ok(fin && fin.payload.reply_to_message_id === String(r.tg) && r.tg > 0, 'finish posted as a reply to the arrival post'); }
 ok(/already finished/.test(call('sok@x.com', 'finish', { receipt: FIN }).error), 'cannot finish twice');
 
