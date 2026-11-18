@@ -610,7 +610,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="scrow"><span>⚖️ ${t('ជញ្ជីង (Net)', 'Scale net')}</span><b>${fmt(net)} Kg</b></div>
       <div class="scrow"><span>📦 ${t('បញ្ចូលនៅទីនេះ', 'Entered here')}</span><b>${fmt(kg)} Kg</b></div>
       <div class="scrow big"><span>${bad ? '⚠️ ' + t('ខុសគ្នា', 'Difference') : '✅ ' + t('ត្រូវគ្នា (±' + SC_TOL + ' Kg)', 'OK (±' + SC_TOL + ' Kg)')}</span><b>${(diff > 0 ? '+' : '') + fmt(diff) + ' Kg'}</b></div>
-      <small>${t('ប័ណ្ណ', 'Ticket')} ${esc(m.t.no)} · ${esc(m.t.plate)}${m.st === 'typo' ? ' · ' + t('ផ្លាកលេខខុសគ្នាបន្តិច សូមពិនិត្យ', 'plate typed a little differently, please check') : ''}</small></div>`;
+      <small>${t('ប័ណ្ណ', 'Ticket')} <a class="sclink" href="../scale/#/t/${encodeURIComponent(m.t.no)}">${esc(m.t.no)} ↗</a> · ${esc(m.t.plate)}${m.st === 'typo' ? ' · ' + t('ផ្លាកលេខខុសគ្នាបន្តិច សូមពិនិត្យ', 'plate typed a little differently, please check') : ''}</small></div>`;
   }
   // the same check on every truck card (Kim, 14 Nov 2026: "so that users notice and take action")
   const SC_TOL = 100;   // GR kg within ±100 Kg of the scale net is fine: green, no action (Kim, 17 Nov 2026)

@@ -404,3 +404,6 @@ img[data-zoom] { cursor: zoom-in; }
 .newpill { font-size: 10px; background: #f2b705; color: #000; border-radius: 6px; padding: 1px 6px; font-weight: 700; }
 .rmask { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fff5f5; border: 1px solid #f0b4b4; }
 .rmask b { color: #c62828; margin-right: auto; font-size: 12px; }
+
+/* scale ticket no. opens the ticket in the Truck Scale app (Kim, 18 Nov 2026) */
+.scbox .sclink { color: inherit; font-weight: 700; text-decoration: underline; }
