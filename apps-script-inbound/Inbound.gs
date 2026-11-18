@@ -783,7 +783,9 @@ function scaleArrive_(p, user) {
   if (n > 1 && sh.getRange(2, 1, n - 1, 1).getDisplayValues().some(r => r[0] === no)) return { no: no, dup: true };
   const ves = clip_(p.vessel, 60), pos = (Array.isArray(p.pos) ? p.pos : []).map(poOf_).filter(Boolean).slice(0, 20);
   const now = new Date(), time = clip_(p.time, 5) || fmt_(now, 'HH:mm');
-  sh.appendRow([no, fmt_(now, 'yyyy-MM-dd'), time, truck, clip_(p.company, 60), ves, pos.join(', '), num_(p.kg) || '', user.name, '']);
+  // plain text cells: a plate like 0E00 or 3E10 must not turn into a number (0.00E+00)
+  const row = [no, fmt_(now, 'yyyy-MM-dd'), time, truck, clip_(p.company, 60), ves, pos.join(', '), String(num_(p.kg) || ''), user.name, ''];
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setNumberFormat('@').setValues([row]);
   const u = setting_('APP_URL');
   telegram_(Object.assign({ text: ['⚖️ <b>ឡានចូលថ្លឹង ត្រៀមទំលាក់</b>', '🚚 ' + esc_(truck) + (p.company ? ' · ' + esc_(clip_(p.company, 60)) : ''),
     '🚢 លេខកប៉ាល់៖ ' + (ves ? esc_(ves) : 'មិនទាន់មាន'), '⚖️ ថ្លឹងលើកទី1' + (num_(p.kg) ? ' សរុប ' + kg_(num_(p.kg)) + ' kg' : '')].join('\n') },

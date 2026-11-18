@@ -533,7 +533,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // the items table: Item | PO Qty | Arrival Qty | Actual GR Qty | Damaged Qty | UoM.
   // Columns that are not asked yet are greyed (arrival: GR + damaged; finish: arrival).
   // Reviewers fix an open (still unloading) receipt: delete item rows, add POs/items (Kim, 17 Nov 2026, mockup)
-  const canEditItems = (r, mode) => mode === 'fin' && !!r.id && isLive(r) && canPlan();
+  const canEditItems = (r, mode) => (mode === 'fin' || mode === 'view') && !!r.id && isLive(r) && canPlan();
+  let EDIT_GO = null;   // { id, act: 'add' | 'del', n } from the receipt page, done once the edit form is open
   function itemsTable(r, mode) {
     const cs = mode === 'arr' ? 2 : 4;   // GR + Damaged columns are hidden at Start unloading; PO Qty sits under the item name (Kim, 15 Nov 2026)
     const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
@@ -678,7 +679,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
       ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ' · 🚫 ' + t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</div>` : ''}
-      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${canEditItems(r, mode) ? `<div class="additrow"><button type="button" class="btn sm primary" id="addIt">＋ ${t('បន្ថែម PO / ទំនិញ', 'Add PO / item')}</button></div>` : ''}${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
+      ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${canEditItems(r, mode) ? `<div class="additrow"><button type="button" class="btn sm ok" id="addIt">＋ ${t('បន្ថែម PO / ទំនិញ', 'Add PO / item')}</button></div>` : ''}${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
       <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
@@ -720,6 +721,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div style="height:16px"></div>`);
     bindForm();
     if (started) paintScale(F);
+    if (EDIT_GO && EDIT_GO.id === F.id) { const g = EDIT_GO; EDIT_GO = null;
+      if (g.act === 'add' && $('#addIt')) setTimeout(() => $('#addIt').click(), 50);
+      if (g.act === 'del' && F.delAsk !== g.n) { F.delAsk = g.n; setTimeout(() => renderForm(F.id), 0); } }
     paintCo(F);
   }
   function collect() {
@@ -1114,7 +1118,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
         ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
-      <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${itemsTable(r, 'view')}<div id="scBox" data-for="${esc(r.id)}"></div></section>
+      <section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')}</h2>${canEditItems(r, 'view') ? `<div class="additrow"><button type="button" class="btn sm ok" id="addIt">＋ ${t('បន្ថែម PO / ទំនិញ', 'Add PO / item')}</button></div>` : ''}${itemsTable(r, 'view')}<div id="scBox" data-for="${esc(r.id)}"></div></section>
       <section class="card"><div class="kvs">
         ${kv(t('ថ្ងៃទទួល', 'Receipt date'), showDate(r.date))}${kv(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'), '👷 ' + esc(r.manpower))}
         ${kv(t('ម៉ោងចាប់ផ្តើម', 'Start time'), esc(r.start))}${kv(t('ម៉ោងបញ្ចប់', 'End time'), esc(r.end || '–'))}
@@ -1155,6 +1159,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       $('#pdfBtn').onclick = () => makePdf(r, $('#pdfBtn'));
       $('#mailBtn').onclick = () => paintMail(r);
     }
+    const go = (act, n) => { EDIT_GO = { id: id, act: act, n: n }; F = null; location.hash = '#/edit/' + id; };
+    if ($('#addIt')) $('#addIt').onclick = () => go('add');
+    $$('[data-rmask]').forEach(x => { x.onclick = () => go('del', +x.dataset.rmask); });
     const b = $('#fin') || $('#edit'); if (!canEdit(r) && !isLive(r)) { b.remove(); return; } b.onclick = () => { F = null; location.hash = '#/edit/' + id; };
   }
 
