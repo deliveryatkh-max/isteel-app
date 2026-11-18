@@ -2465,6 +2465,8 @@
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
       Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
       Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
+      // {{Again}}: each Scale again with its Empty truck answer (Kim, 18 Nov 2026)
+      Again: (x.again || []).map(c => kg(c.kg) + ' kg' + (c.e === 'Yes' ? ' (ទទេ)' : c.e === 'Pallet' ? ' (ទទេ+ផាឡែត)' : c.e === 'No' ? ' (មានទំនិញ)' : '')).join(' · '),
       Printed: dmy(iso(new Date())) + ' ' + hm(iso(new Date())), CompanyName: S().SCALE_COMPANY || 'ISI STEEL',
     };
   }
