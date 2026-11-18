@@ -239,7 +239,7 @@ function scDnIndex_(rows) {
 function scAgain_(v) {
   if (Array.isArray(v)) return v;
   return String(v || '').split('\n').map(l => l.split('|').map(x => x.trim())).filter(a => a.length >= 3 && a[0] && num_(a[1]) !== '')
-    .map(a => ({ t: a[0].replace(' ', 'T'), kg: num_(a[1]), diff: num_(a[2]) === '' ? 0 : num_(a[2]), by: a[3] || '', src: a[4] || 'Scale' }));
+    .map(a => ({ t: a[0].replace(' ', 'T'), kg: num_(a[1]), diff: num_(a[2]) === '' ? 0 : num_(a[2]), by: a[3] || '', src: a[4] || 'Scale', e: a[5] || '' }));
 }
 /** DN kg (Kim, 10 Nov 2026): one cell "DN: kg, DN: kg" -> { DN: kg }. */
 function scDnKg_(v) {
@@ -256,10 +256,10 @@ function scAgainText_(oldCell, list, user) {
     const src = SC_WEIGHT_SRC.indexOf(c.src) >= 0 ? c.src : 'Scale';
     if (src === 'Manual' && !user.admin) return;   // typed weights stay Admin only
     seen[tt] = 1;
-    have.push({ t: tt, kg: Math.round(kgv), diff: Math.round(num_(c.diff) || 0), by: clip_(c.by || user.name, 60), src: src });
+    have.push({ t: tt, kg: Math.round(kgv), diff: Math.round(num_(c.diff) || 0), by: clip_(c.by || user.name, 60), src: src, e: ['Yes', 'No', 'Pallet'].indexOf(c.e) >= 0 ? c.e : '' });
   });
   have.sort((a, b) => String(a.t).localeCompare(String(b.t)));
-  return have.map(c => [String(c.t).replace('T', ' '), c.kg, (c.diff > 0 ? '+' : '') + c.diff, c.by, c.src].join(' | ')).join('\n');
+  return have.map(c => [String(c.t).replace('T', ' '), c.kg, (c.diff > 0 ? '+' : '') + c.diff, c.by, c.src].concat(c.e ? [c.e] : []).join(' | ')).join('\n');
 }
 
 function scBoot_(user) {

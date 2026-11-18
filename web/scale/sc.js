@@ -888,7 +888,7 @@
     if ($('#newBtn')) $('#newBtn').onclick = () => { F = EMPTY_F(); keepForm(); PENDING = null; paintForm(); paintLcd(); };
     if ($('#w1Btn')) $('#w1Btn').onclick = weigh1;
     if ($('#w2Btn')) $('#w2Btn').onclick = () => weigh2(false);
-    if ($('#agBtn')) $('#agBtn').onclick = scaleAgain;
+    if ($('#agBtn')) $('#agBtn').onclick = () => scaleAgain();
     if ($('#saveOpen')) $('#saveOpen').onclick = saveOpen;
     if ($('#manOn')) $('#manOn').onclick = () => {
       $('#manBox').innerHTML = `<div class="manform"><input class="in" id="manKg" inputmode="numeric" placeholder="kg"><input class="in" id="manWhy" placeholder="${t('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}"><button type="button" class="btn ok" id="manUse">${t('ប្រើ', 'Use')}</button></div>`;
@@ -1026,14 +1026,28 @@
     }
     if (box._h !== h) { box._h = h; box.innerHTML = h; }
   }
-  function scaleAgain() {
+  // Each "Scale again" asks Empty truck? (Kim, 18 Nov 2026)
+  function scaleAgain(e) {
     const sel = ticketBy(F.cid);
     if (!sel || !formOk(false)) return;
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     const a = lastAgain(sel);
     if (a && Date.now() - new Date(a.t) < 60000 && Math.abs(Number(a.kg) - w.kg) <= againTol()) { toast(t('បានរក្សាទុករួចហើយ', 'Already saved')); return; }   // one tap = one row
-    const c = { t: iso(new Date()), kg: w.kg, diff: Math.round(w.kg - (a ? Number(a.kg) : Number(sel.w1))), by: me().name || '', src: w.src };
+    if (typeof e !== 'string') {
+      const back = document.createElement('div');
+      back.className = 'popwrap';
+      back.innerHTML = `<div class="popbox stdlg" role="dialog" aria-modal="true"><h3>🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')} · ${esc(sel.plate)}</h3>
+        <p class="hint">${t('ឡានទទេ?', 'Empty truck?')} <span class="req">*</span></p>
+        <div class="chips">${EMPTY_OPTS.map(o => `<button type="button" class="chip" data-ae="${o[0]}">${t(o[1], o[2])}</button>`).join('')}</div>
+        <div class="btns mt"><span class="sp"></span><button type="button" class="btn" id="aeNo">${t('បោះបង់', 'Cancel')}</button></div></div>`;
+      back.querySelectorAll('[data-ae]').forEach(b => { b.onclick = () => { back.remove(); scaleAgain(b.dataset.ae); }; });
+      back.querySelector('#aeNo').onclick = () => back.remove();
+      back.addEventListener('click', ev => { if (ev.target === back) back.remove(); });
+      document.body.appendChild(back);
+      return;
+    }
+    const c = { t: iso(new Date()), kg: w.kg, diff: Math.round(w.kg - (a ? Number(a.kg) : Number(sel.w1))), by: me().name || '', src: w.src, e: e };
     putTicket(Object.assign({}, sel, fromForm(), { again: (sel.again || []).concat(c) }));
     MANUAL = null; PENDING = null; LASTDONE = sel.cid;   // Print / PDF under the buttons, as after the 2nd weigh
     F = EMPTY_F(); keepForm();
@@ -1043,7 +1057,7 @@
   }
   function againRows(x) {
     const l = x.again || [];
-    return l.map((c, i) => `<div class="agrow">🔁 <span>${t('ថ្លឹងម្តងទៀត', 'Scale again')} #${i + 1}</span> <b class="mono">${kg(c.kg)} kg</b> <span class="muted">· ${dmy(c.t).slice(0, 5)} ${hm(c.t)}${c.by ? ' · ' + esc(c.by) : ''}</span>${i === l.length - 1 ? `<span class="agnow">${t('ឥឡូវ', 'Now')} <b id="agNow" class="agd">—</b></span>` : ''}</div>`).join('');
+    return l.map((c, i) => `<div class="agrow">🔁 <span>${t('ថ្លឹងម្តងទៀត', 'Scale again')} #${i + 1}</span> <b class="mono">${kg(c.kg)} kg</b> <span class="muted">· ${dmy(c.t).slice(0, 5)} ${hm(c.t)}${c.e ? ' · ' + emptyTxt(c.e) : ''}${c.by ? ' · ' + esc(c.by) : ''}</span>${i === l.length - 1 ? `<span class="agnow">${t('ឥឡូវ', 'Now')} <b id="agNow" class="agd">—</b></span>` : ''}</div>`).join('');
   }
   function saveOpen() {
     const sel = ticketBy(F.cid);
@@ -2142,14 +2156,14 @@
       ${x.status !== 'Open' ? `<div class="tprev" id="tPrev"><div class="spinner"></div></div>` : `<div class="emp">
         ${kv(t('លេខឡាន', 'Truck No'), esc(x.plate))}${kv(t('ក្រុមហ៊ុនឡាន', 'Truck company'), esc(x.company))}${kv(t('អតិថិជន', 'Customer'), esc(x.customer))}
         ${kv(t('ទំនិញ', 'Item'), esc(x.item))}${kv(t('ឡើង / ទំលាក់', 'Load / Unload'), esc(typeName(typeOf(x))))}${kv('DN No', esc(dnList(x)))}
-        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), x.emptyTxt(x.empty1))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
+        ${kv(t('អ្នកបើកបរ', 'Driver'), esc(x.driver))}${kv(t('កន្លែងផ្ទុក', 'Loading place'), esc(x.load))}${kv(t('តង់', 'Canvas'), x.tarp === 'Yes' ? t('គ្របតង់', 'Covered') : x.tarp === 'No' ? t('មិនគ្របតង់', 'Not covered') : '')}${kv(t('ឡានទទេ (លើកទី១)', 'Empty truck (1st weigh)'), emptyTxt(x.empty1))}${kv(t('គោលដៅ', 'Destination'), esc(x.dest))}${kv(t('កំណត់ចំណាំ', 'Note'), esc(x.note))}
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
         <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
       ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(x.net)} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
       ${phSrc(x, 1) || phSrc(x, 2) ? `<div class="camths mt">${camThumb(phSrc(x, 1), '📷 ' + t('លើកទី១', '1st weigh') + ' · ' + hm(x.t1), t('គ្មានរូប', 'No photo'))}${camThumb(phSrc(x, 2), '📷 ' + t('លើកទី២', '2nd weigh') + (x.t2 ? ' · ' + hm(x.t2) : ''), t('គ្មានរូប', 'No photo'))}</div>` : ''}
-      ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
+      ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th>${t('ឡានទទេ', 'Empty Truck')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td>${emptyTxt(c.e)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
