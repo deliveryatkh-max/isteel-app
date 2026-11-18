@@ -824,7 +824,7 @@ function telegram_(payload, moved, method) {
     return out;
   } catch (e) { console.error('telegram: ' + e); return null; }
 }
-function button_(r) { const u = setting_('APP_URL'); return u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Open · បើក', url: u + '#/r/' + encodeURIComponent(r.id) }]] }) } : {}; }
+function button_(r) { const u = setting_('APP_URL'); return u ? { reply_markup: JSON.stringify({ inline_keyboard: [[{ text: 'Open · បើក', url: u + 'go.html?r=' + encodeURIComponent(r.id) }]] }) } : {}; }
 const kg_ = n => Number(n || 0).toLocaleString('en-US');
 const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
 const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
@@ -848,7 +848,7 @@ function telegramDone_(r) {
   // with the truck front and document photos (Kim, 18 Nov 2026); the text post is the fallback
   const pics = ['front', 'doc'].map(k => { try { return r.ph && r.ph[k] ? DriveApp.getFileById(r.ph[k]).getBlob().setName(k + '.jpg') : null; } catch (e) { return null; } }).filter(Boolean);
   if (pics.length) {
-    const u = setting_('APP_URL'), cap = lines.join('\n') + (u ? '\n🔗 <a href="' + u + '#/r/' + encodeURIComponent(r.id) + '">បើកមើល · Open</a>' : '');
+    const u = setting_('APP_URL'), cap = lines.join('\n') + (u ? '\n🔗 <a href="' + u + 'go.html?r=' + encodeURIComponent(r.id) + '">បើកមើល · Open</a>' : '');
     const media = pics.map((b, n) => Object.assign({ type: 'photo', media: 'attach://p' + n }, n ? {} : { caption: cap.slice(0, 1024), parse_mode: 'HTML' }));
     const pay = Object.assign({ media: JSON.stringify(media) }, reply);
     pics.forEach((b, n) => { pay['p' + n] = b; });

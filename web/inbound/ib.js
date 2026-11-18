@@ -1104,7 +1104,16 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // ------------------------------------------------------------------ one receipt
   function renderOne(id) {
     paintTabs('');
-    const r = byId(id); if (!r) { location.hash = '#/today'; return; }
+    const r = byId(id);
+    // opened from a Telegram link: the receipt is newer than the data kept on the phone, so fetch first (Kim, 18 Nov 2026)
+    if (!r && !DEMO && !TK_TRIED['r:' + id]) {
+      TK_TRIED['r:' + id] = 1;
+      view(`<div class="card empty"><div class="spinner"></div><p>📄 ${t('កំពុងបើក ', 'Opening ')}${esc(id)}…</p></div>`);
+      const here = location.hash;
+      refresh().then(() => { if (location.hash === here) renderOne(id); });
+      return;
+    }
+    if (!r) { toast(t('រកមិនឃើញ ', 'Not found ') + id); location.hash = '#/today'; return; }
     const m = spentMin(r), p = prod(r);
     const kv = (lbl, v, full) => `<div${full ? ' class="full"' : ''}><small>${lbl}</small><b>${v}</b></div>`;
     const ph = r.ph || {};
@@ -1774,6 +1783,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   window.ISTEEL_REFRESH = () => { if (formOpen()) { toast(t('កំពុងបំពេញទម្រង់', 'Form in progress')); return; } screen(); refresh(); };
   // opened from the Telegram button through go.html (?tk=ticket): go to that truck (Kim, 17 Nov 2026)
   { const m = location.search.match(/[?&]tk=([^&]+)/); if (m) history.replaceState(null, '', location.pathname + '#/newtk/' + m[1]); }
+  { const m = location.search.match(/[?&]r=([^&]+)/); if (m) history.replaceState(null, '', location.pathname + '#/r/' + m[1]); }
   load(); paintStatic(); window.addEventListener('hashchange', screen);
   if (!DEMO && !signedIn()) showBlocked({ code: 'AUTH', message: t('ការចូលគណនីត្រូវធ្វើនៅទំព័រដើម STEEL។', 'Sign in once on the STEEL home menu, then come back.') });
   else { screen(); refresh(); }

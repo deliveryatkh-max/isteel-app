@@ -17,9 +17,11 @@ a.l{color:#0b76a0;font-size:14px}p{font-size:13.5px;color:#5b6b80;line-height:1.
 // On Android an intent:// link hands the address to the phone, so the installed STEEL app (or Chrome) opens it.
 (function () {
   var tk = (location.search.match(/[?&]tk=([^&]+)/) || [])[1] || '';
-  var target = location.origin + '/inbound/' + (tk ? '?tk=' + tk : '');
+  var rid = (location.search.match(/[?&]r=([^&]+)/) || [])[1] || '';   // a receipt (finish post Open link)
+  var q = tk ? '?tk=' + tk : rid ? '?r=' + rid : '';
+  var target = location.origin + '/inbound/' + q;
   var ua = navigator.userAgent || '', android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
-  var intent = 'intent://' + location.host + '/inbound/' + (tk ? '?tk=' + tk : '') + '#Intent;scheme=https;S.browser_fallback_url=' + encodeURIComponent(target) + ';end';
+  var intent = 'intent://' + location.host + '/inbound/' + q + '#Intent;scheme=https;S.browser_fallback_url=' + encodeURIComponent(target) + ';end';
   document.getElementById('here').href = target;
   document.getElementById('app').href = android ? intent : target;
   if (ios) document.getElementById('ios').hidden = false;
