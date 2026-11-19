@@ -373,11 +373,15 @@
     const got = {}; DATA.forEach(r => { if (r.scaleNo) got[r.scaleNo] = 1; });
     const n = ARRIVALS.filter(a => !got[a.no]).length;
     if (!n) return '';
-    return `<section class="waitbox"><h3>⚖️ ${t('ឡានថ្លឹងរួច រង់ចាំទទួល', 'Trucks on the scale, to receive')} <span class="c">${n}</span></h3>
-      <label class="search"><span aria-hidden="true">🔍</span><input type="search" id="wq" value="${esc(WQ)}" placeholder="${esc(t('ស្វែងរក៖ ផ្លាកលេខ, PO, អ្នកផ្គត់ផ្គង់', 'Search: plate, PO, supplier'))}" autocomplete="off"></label>
-      <div id="wlist">${waitRows()}</div></section>`;
+    // Hide / Show the list (Kim, 19 Nov 2026), remembered on this phone
+    const hid = get('ib_wait_hide') === '1';
+    return `<section class="waitbox${hid ? ' hid' : ''}"><h3>⚖️ ${t('ឡានថ្លឹងរួច រង់ចាំទទួល', 'Trucks on the scale, to receive')} <span class="c">${n}</span>
+      <button type="button" class="whide" id="wHide">${hid ? '👁 ' + t('បង្ហាញ', 'Show') : '🙈 ' + t('លាក់', 'Hide')}</button></h3>
+      ${hid ? '' : `<label class="search"><span aria-hidden="true">🔍</span><input type="search" id="wq" value="${esc(WQ)}" placeholder="${esc(t('ស្វែងរក៖ ផ្លាកលេខ, PO, អ្នកផ្គត់ផ្គង់', 'Search: plate, PO, supplier'))}" autocomplete="off"></label>
+      <div id="wlist">${waitRows()}</div>`}</section>`;
   }
-  function bindWait() { const q = $('#wq'); if (q) q.oninput = () => { WQ = q.value; $('#wlist').innerHTML = waitRows(); }; }
+  function bindWait() { const h = $('#wHide'); if (h) h.onclick = () => { set('ib_wait_hide', get('ib_wait_hide') === '1' ? '0' : '1'); const b = h.closest('.waitbox'); if (b) { b.outerHTML = waitBox(); bindWait(); } };
+    const q = $('#wq'); if (q) q.oninput = () => { WQ = q.value; $('#wlist').innerHTML = waitRows(); }; }
   // Receive a truck from the scale: step 1 opens with the truck, company and vessel already filled
   const TK_TRIED = {};
   function renderFromScale(no) {

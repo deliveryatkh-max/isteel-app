@@ -420,3 +420,5 @@ img[data-zoom] { cursor: zoom-in; }
 .dnbad { color: #c62828; background: #fff0f0; border-radius: 6px; padding: 0 6px; font-weight: 700; }
 .itbl td.nm small b.pono { display: inline; font-size: 11px; color: var(--accent); padding: 0; }
 .itbl .rm { background: #e53935; color: #fff; font-weight: 700; }
+.waitbox .whide { border: 1px solid #f39200; background: #fff; color: #a55a00; border-radius: 999px; padding: 2px 10px; font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.waitbox.hid h3 { margin: 0; }
