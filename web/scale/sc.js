@@ -1320,7 +1320,7 @@
   const FCLR = {
     list: () => { Object.assign(LIST, { from: ALL_FROM, to: today(), q: '', st: '' }); renderList(); },
     rep: () => { Object.assign(REP, { from: today(), to: today(), q: '', st: '', co: '', ty: '' }); renderReport(); },
-    tat: () => { Object.assign(TAT, { from: monthStart(), to: today(), slow: 120 }); renderTat(); },
+    tat: () => { Object.assign(TAT, { from: monthStart(), to: today(), slow: 120, fl: '', jb: '', yr: '12' }); renderTat(); },
     dnc: () => { Object.assign(DNC, { from: monthStart(), to: today(), co: '', q: '', de: '' }); renderDnc(); }
   };
   document.addEventListener('click', e => {
@@ -1773,27 +1773,43 @@
     finally { if (btn) btn.disabled = false; }
   }
 
-  // ---------------------------------------------------------------- turnaround per 3PL (Kim, feature 8)
-  // Time on site = 1st weigh (truck arrives on the scale) to 2nd weigh (truck leaves). Per truck company, for
-  // finished tickets in the dates picked, plus the trucks still on site now. Feeds the 3PL scorecard.
+  // ---------------------------------------------------------------- turnaround dashboard (Kim, feature 8; dashboard A, 19 Nov 2026)
+  // Time on site = 1st weigh (truck arrives on the scale) to 2nd weigh (truck leaves), for finished tickets in the dates
+  // picked, plus the trucks still on site now. Split by fleet (ISI truck / 3PL / customer truck) and by job (Load / Unload),
+  // with a month-by-month trend for the last 12 months or a year. Feeds the 3PL scorecard.
   const monthStart = () => today().slice(0, 8) + '01';
-  let TAT = { from: monthStart(), to: today(), rows: null, slow: 120 };
+  let TAT = { from: monthStart(), to: today(), rows: null, slow: 120, fl: '', jb: '', yr: '12', mon: null, monKey: '' };
   const mins = x => { const a = new Date(x.t1), b = new Date(x.t2); const m = (b - a) / 60000; return isFinite(m) && m >= 0 ? Math.round(m) : null; };
   const dur = m => (m == null ? '—' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60));
+  // Fleet: company "ISI…" = ISI truck; no company (on the ticket or in the Truck master) = customer truck; else 3PL
+  const FLEETS = [['ISI', '🚛', 'ឡាន ISI', 'ISI Truck', '#011e41'], ['3PL', '🚚', 'ឡាន 3PL', '3PL', '#e08a1e'], ['Cust', '🧑‍💼', 'ឡានអតិថិជន', 'Customer', '#15a08c']];
+  const JOBS = [['Out', '⬆️', 'ឡើងទំនិញ', 'Load'], ['In', '⬇️', 'ទំលាក់ទំនិញ', 'Unload'], ['Scrap', '♻️', 'យកសំណល់ដែក', 'Pickup Scrap']];
+  const fleetCo = (co, plate) => String(co || (truckOf(plate) || {}).company || '').trim();
+  const fleetOf = (co, plate) => { const c = fleetCo(co, plate); return !c ? 'Cust' : /\bisi\b/i.test(c) ? 'ISI' : '3PL'; };
+  const fleetName = k => { const f = FLEETS.find(x => x[0] === k); return f ? f[1] + ' ' + t(f[2], f[3]) : ''; };
+  const jobOf = x => (typeOf(x) === 'In' ? 'In' : typeOf(x) === 'Scrap' ? 'Scrap' : 'Out');
+  const avgOf = l => (l.length ? Math.round(l.reduce((a, b) => a + b, 0) / l.length) : null);
+  const medOf = l => { const s = l.slice().sort((a, b) => a - b); return s.length ? Math.round((s[Math.floor((s.length - 1) / 2)] + s[Math.ceil((s.length - 1) / 2)]) / 2) : null; };
+  const tatPass = (fl, jb) => (!TAT.fl || TAT.fl === fl) && (!TAT.jb || TAT.jb === jb);
   function renderTat() {
     screen = renderTat;
     document.body.classList.add('wide');
+    const chip = (k, v, label, on) => `<button type="button" class="chip${on ? ' on' : ''}" data-${k}="${v}">${label}</button>`;
     $('#view').innerHTML = `<section class="card"><div class="fwrap">
-      ${fHead('tat', `⏱️ ${t('រយៈពេលឡាននៅក្នុងរោងចក្រ តាមក្រុមហ៊ុនឡាន', 'Turnaround time per truck company')}`, `<button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
+      ${fHead('tat', `⏱️ ${t('ផ្ទាំងរយៈពេលឡាននៅក្នុងរោងចក្រ', 'Turnaround dashboard')}`, `<button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
       ${fPanel('tat', `${fRange('tFrom', 'tTo', TAT.from, TAT.to)}${fShow('tGo')}
+        <label>${t('ឡាន', 'Fleet')}<span class="qchips">${chip('tfl', '', t('ទាំងអស់', 'All'), !TAT.fl)}${FLEETS.map(f => chip('tfl', f[0], f[1] + ' ' + t(f[2], f[3]), TAT.fl === f[0])).join('')}</span></label>
+        <label>${t('ការងារ', 'Job')}<span class="qchips">${chip('tjb', '', t('ទាំងអស់', 'All'), !TAT.jb)}${JOBS.map(j => chip('tjb', j[0], j[1] + ' ' + t(j[2], j[3]), TAT.jb === j[0])).join('')}</span></label>
         <label>${t('យឺត បើលើស (នាទី)', 'Slow if over (min)')}<input type="number" class="in" id="tSlow" min="10" step="10" value="${TAT.slow}" style="width:110px"></label>
 `)}</div>
-      <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')}</p>
+      <p class="hint">${t('ពីការថ្លឹងលើកទី១ (ឡានមកដល់) ដល់ការថ្លឹងលើកទី២ (ឡានចេញ)', 'From the 1st weigh (truck arrives) to the 2nd weigh (truck leaves)')} · ${t('ឡាន ISI = ក្រុមហ៊ុន ISI · ឡានអតិថិជន = គ្មានក្រុមហ៊ុនឡាន · 3PL = ក្រុមហ៊ុនផ្សេងទៀត', 'ISI Truck = company ISI · Customer = no truck company · 3PL = every other company')}</p>
       <div id="tBody"><div class="spinner"></div></div></section>`;
     $('#tGo').onclick = () => { TAT.from = $('#tFrom').value; TAT.to = $('#tTo').value; loadTat(); };
     $('#tSlow').onchange = e => { TAT.slow = Math.max(10, +e.target.value || 120); paintTat(); };
+    $$('[data-tfl]').forEach(b => { b.onclick = () => { TAT.fl = b.dataset.tfl; $$('[data-tfl]').forEach(c => c.classList.toggle('on', c === b)); paintTat(); }; });
+    $$('[data-tjb]').forEach(b => { b.onclick = () => { TAT.jb = b.dataset.tjb; $$('[data-tjb]').forEach(c => c.classList.toggle('on', c === b)); paintTat(); }; });
     $('#tXls').onclick = tatXls;
-    loadTat();
+    loadTat(); loadTatMonths();
   }
   async function loadTat() {
     const local = tickets().filter(x => { const d = String(x.t1 || '').slice(0, 10); return d >= TAT.from && d <= TAT.to; });
@@ -1808,48 +1824,124 @@
       paintTat();
     } catch (e) { if (e.code !== 'NET') toast(e.message); }
   }
+  // Months of the trend: the last 12 months, or January to December of the year picked
+  function tatMonths() {
+    const out = [];
+    if (TAT.yr === '12') { const d = new Date(today().slice(0, 7) + '-01T00:00:00'); d.setMonth(d.getMonth() - 11); for (let i = 0; i < 12; i++) { out.push(d.getFullYear() + '-' + pad(d.getMonth() + 1)); d.setMonth(d.getMonth() + 1); } }
+    else for (let i = 1; i <= 12; i++) out.push(TAT.yr + '-' + pad(i));
+    return out;
+  }
+  // Server sums per month × job × company (Scale.gs scTatMonths). An older Scale.gs: the tickets on screen are used.
+  async function loadTatMonths() {
+    const ms = tatMonths(), from = ms[0] + '-01', to = ms[11] + '-31', key = from + to;
+    if (TAT.monKey === key && TAT.mon) { paintTat(); return; }
+    TAT.monKey = key; TAT.mon = null;
+    if (DEMO) return;
+    try { const r = await api('scTatMonths', { from: from, to: to }); if (TAT.monKey === key) { TAT.mon = r.rows || []; paintTat(); } }
+    catch (e) { if (TAT.monKey === key) { TAT.mon = 'old'; paintTat(); } }
+  }
+  function tatMonRows() {
+    if (Array.isArray(TAT.mon)) return TAT.mon.map(r => ({ m: r[0], jb: r[1], fl: fleetOf(r[2], r[3]), n: +r[4] || 0, sum: +r[5] || 0 }));
+    const agg = {};   // fallback: the finished tickets on screen
+    (TAT.rows || []).forEach(x => { if (x.status !== 'Done') return; const m = mins(x); if (m == null) return; const k = String(x.t1).slice(0, 7) + '|' + jobOf(x) + '|' + fleetOf(x.company, x.plate); const o = agg[k] || (agg[k] = { n: 0, sum: 0 }); o.n++; o.sum += m; });
+    return Object.keys(agg).map(k => { const a = k.split('|'); return { m: a[0], jb: a[1], fl: a[2], n: agg[k].n, sum: agg[k].sum }; });
+  }
   function tatStats() {
     const by = {};
-    const row = c => by[c] || (by[c] = { co: c, m: [], net: 0, slow: 0, onsite: 0, wait: 0, inn: 0, out: 0 });
+    const row = (c, fl) => by[c] || (by[c] = { co: c, fl: fl, m: [], mo: [], mi: [], net: 0, slow: 0, onsite: 0, wait: 0, inn: 0, out: 0 });
     (TAT.rows || []).forEach(x => {
-      if (x.status === 'Done') {
-        const m = mins(x); if (m == null) return;
-        const r = row(x.company || '—'); r.m.push(m); r.net += Number(x.net || 0); if (m > TAT.slow) r.slow++;
-        if (typeOf(x) === 'In') r.inn++; else r.out++;
-      }
+      if (x.status !== 'Done') return;
+      const m = mins(x), fl = fleetOf(x.company, x.plate), jb = jobOf(x);
+      if (m == null || !tatPass(fl, jb)) return;
+      const r = row(x.company || fleetCo('', x.plate) || '—', fl); r.m.push(m); r.net += Number(x.net || 0); if (m > TAT.slow) r.slow++;
+      if (jb === 'In') { r.inn++; r.mi.push(m); } else { r.out++; if (jb === 'Out') r.mo.push(m); }
     });
-    openTickets().forEach(x => { const r = row(x.company || '—'); r.onsite++; r.wait = Math.max(r.wait, Math.round((Date.now() - new Date(x.t1)) / 60000)); });
-    const list = Object.keys(by).map(k => by[k]).map(r => {
-      const s = r.m.slice().sort((a, b) => a - b);
-      return Object.assign(r, { n: s.length, avg: s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : null, med: s.length ? Math.round((s[Math.floor((s.length - 1) / 2)] + s[Math.ceil((s.length - 1) / 2)]) / 2) : null, max: s.length ? s[s.length - 1] : null });
-    });
-    return list.sort((a, b) => (b.avg || 0) - (a.avg || 0) || b.onsite - a.onsite);
+    openTickets().forEach(x => { const fl = fleetOf(x.company, x.plate); if (!tatPass(fl, jobOf(x))) return; const r = row(x.company || fleetCo('', x.plate) || '—', fl); r.onsite++; r.wait = Math.max(r.wait, Math.round((Date.now() - new Date(x.t1)) / 60000)); });
+    const ord = k => FLEETS.findIndex(f => f[0] === k);
+    return Object.keys(by).map(k => by[k]).map(r => Object.assign(r, { n: r.m.length, avg: avgOf(r.m), med: medOf(r.m), max: r.m.length ? Math.max.apply(null, r.m) : null, avo: avgOf(r.mo), avi: avgOf(r.mi) }))
+      .sort((a, b) => ord(a.fl) - ord(b.fl) || b.n - a.n || b.onsite - a.onsite);
   }
   function paintTat() {
     if (!$('#tBody')) return;
-    const L = tatStats(), all = [].concat.apply([], L.map(r => r.m)).sort((a, b) => a - b);
-    const avg = all.length ? Math.round(all.reduce((a, b) => a + b, 0) / all.length) : null;
-    const slow = (TAT.rows || []).filter(x => x.status === 'Done' && mins(x) > TAT.slow).sort((a, b) => mins(b) - mins(a)).slice(0, 10);
-    const maxAvg = Math.max.apply(null, [1].concat(L.map(r => r.avg || 0)));
+    const done = (TAT.rows || []).filter(x => x.status === 'Done' && mins(x) != null).map(x => ({ x: x, m: mins(x), fl: fleetOf(x.company, x.plate), jb: jobOf(x) }));
+    const sel = done.filter(d => tatPass(d.fl, d.jb)), all = sel.map(d => d.m);
+    const open = openTickets().filter(x => tatPass(fleetOf(x.company, x.plate), jobOf(x))).map(x => ({ x: x, w: Math.max(0, Math.round((Date.now() - new Date(x.t1)) / 60000)) })).sort((a, b) => b.w - a.w);
+    const nSlow = all.filter(m => m > TAT.slow).length, pct = (a, b) => (b ? Math.round(a / b * 100) : 0);
+    const avgJ = j => avgOf(sel.filter(d => d.jb === j).map(d => d.m));
+    // fleet × job
+    const cell = (fl, jb) => done.filter(d => d.fl === fl && (!jb || d.jb === jb)).map(d => d.m);
+    const MX = FLEETS.map(f => ({ f: f, n: cell(f[0]).length, lo: avgOf(cell(f[0], 'Out')), un: avgOf(cell(f[0], 'In')), all: avgOf(cell(f[0])), sl: pct(cell(f[0]).filter(m => m > TAT.slow).length, cell(f[0]).length) }));
+    const mxMax = Math.max.apply(null, [1].concat(MX.map(r => Math.max(r.lo || 0, r.un || 0))));
+    const mbar = (v, cls, fl, jb) => `<button type="button" class="tmxb" data-tmx="${fl}|${jb}"><i class="${cls}" style="width:${Math.round((v || 0) / mxMax * 100)}%"></i><span>${dur(v)}</span></button>`;
+    const slCls = p => (p >= 60 ? 'rejected' : p >= 30 ? 'pending' : 'approved');
+    // how long trucks stay
+    const BK = [[0, 60, '<1 h'], [60, 120, '1–2 h'], [120, 240, '2–4 h'], [240, 480, '4–8 h'], [480, 1440, '8–24 h'], [1440, 2880, '1–2 d'], [2880, 1e9, '>2 d']];
+    const hc = BK.map(b => all.filter(m => m >= b[0] && m < b[1]).length), hMax = Math.max.apply(null, [1].concat(hc));
+    // monthly trend
+    const MS = tatMonths(), MR = tatMonRows().filter(r => !TAT.jb || r.jb === TAT.jb), FL = TAT.fl ? FLEETS.filter(f => f[0] === TAT.fl) : FLEETS;
+    const mAvg = (m, fl) => { const l = MR.filter(r => r.m === m && (!fl || r.fl === fl)); const n = l.reduce((a, r) => a + r.n, 0); return n ? Math.round(l.reduce((a, r) => a + r.sum, 0) / n) : null; };
+    const mN = (m, fl) => MR.filter(r => r.m === m && (!fl || r.fl === fl)).reduce((a, r) => a + r.n, 0);
+    const series = FL.map(f => ({ f: f, v: MS.map(m => mAvg(m, f[0])) })).concat([{ f: ['All', '', 'ទាំងអស់', 'All', '#8a94a6'], v: MS.map(m => mAvg(m, TAT.fl)), all: true }]);
+    const yMax = Math.max(TAT.slow, ...series.map(s => Math.max(0, ...s.v.filter(v => v != null)))) * 1.1, W = 1100, H = 230, X0 = 46, Y0 = 196;
+    const px = i => X0 + i * (W - X0 - 16) / 11, py = v => Y0 - v / yMax * (Y0 - 14);
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const path = s => { let d = '', on = false; s.v.forEach((v, i) => { if (v == null) { on = false; return; } d += (on ? 'L' : 'M') + px(i).toFixed(1) + ',' + py(v).toFixed(1); on = true; }); return d; };
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(k => Math.round(yMax / 1.1 * k / 60));
+    const yrNow = +today().slice(0, 4), yrs = [['12', t('១២ ខែចុងក្រោយ', 'Last 12 months')], [String(yrNow), String(yrNow)], [String(yrNow - 1), String(yrNow - 1)]];
+    const L = tatStats(), maxAvg = Math.max.apply(null, [1].concat(L.map(r => r.avg || 0)));
+    const slowest = sel.filter(d => d.m > TAT.slow).sort((a, b) => b.m - a.m).slice(0, 10);
     $('#tBody').innerHTML = `
-      <div class="sumline"><b>${all.length}</b> ${t('ជើងឡានចប់', 'finished trips')} · ${t('មធ្យម', 'average')} <b>${dur(avg)}</b> · ${t('យឺត', 'slow')} <b>${all.filter(m => m > TAT.slow).length}</b> · ${t('នៅលើទីតាំងឥឡូវ', 'on site now')} <b>${openTickets().length}</b></div>
-      ${L.length ? `<div class="tbl"><table class="tt"><tr><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th class="r">${t('ជើង', 'Trips')}</th><th class="r">${t('ឡើង/ទំលាក់', 'Load/Unload')}</th><th>${t('មធ្យម', 'Average')}</th><th class="r">${t('កណ្តាល', 'Median')}</th><th class="r">${t('យូរបំផុត', 'Longest')}</th><th class="r">${t('យឺត', 'Slow')}</th><th class="r">${t('ទម្ងន់សុទ្ធ', 'Net')} (t)</th><th class="r">${t('នៅលើទីតាំងឥឡូវ', 'On site now')}</th></tr>
-        ${L.map(r => `<tr><td><b>${esc(r.co)}</b></td><td class="r">${r.n}</td><td class="r">${r.out}/${r.inn}</td>
+      <div class="tkpi">
+        <div class="tk"><small>${t('ជើងឡានចប់', 'Finished trips')}</small><b>${all.length}</b><span>${t('នៅលើទីតាំងឥឡូវ', 'On site now')} <b>${open.length}</b></span></div>
+        <div class="tk"><small>${t('រយៈពេលមធ្យម', 'Average turnaround')}</small><b>${dur(avgOf(all))}</b><span>⬆️ ${dur(avgJ('Out'))} · ⬇️ ${dur(avgJ('In'))}</span></div>
+        <div class="tk"><small>${t('កណ្តាល', 'Median')}</small><b>${dur(medOf(all))}</b><span>${t('ពាក់កណ្តាលនៃឡានចេញក្នុងរយៈពេលនេះ', 'half of trucks leave within')}</span></div>
+        <div class="tk"><small>${t('ជើងយឺត', 'Slow trips')} (&gt;${TAT.slow} min)</small><b>${nSlow}</b><span class="${pct(nSlow, all.length) >= 50 ? 'bad' : ''}">${pct(nSlow, all.length)}% ${t('នៃជើងទាំងអស់', 'of trips')}</span></div>
+        <div class="tk"><small>${t('នៅយូរបំផុតឥឡូវ', 'Longest on site now')}</small><b>${open.length ? dur(open[0].w) : '—'}</b><span>${open.length ? esc(open[0].x.plate) + ' · ' + esc(open[0].x.company || fleetName(fleetOf('', open[0].x.plate))) : ''}</span></div>
+      </div>
+      <div class="tgrid">
+        <div class="tbox"><h3>${t('រយៈពេលមធ្យម · ឡាន × ការងារ', 'Average turnaround · Fleet × Job')}</h3>
+          <div class="tbl"><table class="tmx" data-nocols><tr><th>${t('ឡាន', 'Fleet')}</th><th class="r">${t('ជើង', 'Trips')}</th><th>⬆️ ${t('ឡើង', 'Load')}</th><th>⬇️ ${t('ទំលាក់', 'Unload')}</th><th class="r">${t('ទាំងអស់', 'All')}</th><th class="r">${t('យឺត', 'Slow')}</th></tr>
+          ${MX.map(r => `<tr class="${TAT.fl === r.f[0] ? 'on' : ''}"><td><span class="tdot" style="background:${r.f[4]}"></span><b>${r.f[1]} ${t(r.f[2], r.f[3])}</b></td><td class="r">${r.n}</td><td>${mbar(r.lo, 'lo', r.f[0], 'Out')}</td><td>${mbar(r.un, 'un', r.f[0], 'In')}</td><td class="r"><b>${dur(r.all)}</b></td><td class="r">${r.n ? `<span class="badge ${slCls(r.sl)}">${r.sl}%</span>` : ''}</td></tr>`).join('')}</table></div>
+          <p class="hint">${t('ចុចលើរបារ ដើម្បីច្រោះតារាងខាងក្រោម', 'Tap a bar to filter the tables below')}</p></div>
+        <div class="tbox"><h3>${t('ឡាននៅប៉ុន្មានម៉ោង', 'How long trucks stay')}</h3>
+          <div class="thist">${BK.map((b, i) => `<div class="hc"><em>${hc[i]}</em><i class="${b[0] >= TAT.slow * 4 ? 'r2' : b[0] >= TAT.slow ? 'r1' : ''}" style="height:${Math.round(hc[i] / hMax * 100)}%"></i><small>${b[2]}</small></div>`).join('')}</div>
+          <p class="hint">${t('ពណ៌ខៀវ = មិនយឺត · ពណ៌លឿង/ក្រហម = យឺត', 'Blue = on time · amber/red = slow')} (&gt;${TAT.slow} min)</p></div>
+      </div>
+      <div class="tbox mt"><div class="thd"><h3>📈 ${t('រយៈពេលមធ្យមតាមខែ', 'Average turnaround by month')}</h3><span class="qchips">${yrs.map(y => `<button type="button" class="chip${TAT.yr === y[0] ? ' on' : ''}" data-tyr="${y[0]}">${y[1]}</button>`).join('')}</span></div>
+        ${TAT.mon === null && !DEMO ? '<div class="spinner"></div>' : `<svg class="ttrend" viewBox="0 0 ${W} ${H}" role="img" aria-label="Average turnaround by month">
+          ${yTicks.map((h, i) => { const y = py(yMax / 1.1 * i / 4); return `<line x1="${X0}" x2="${W - 10}" y1="${y}" y2="${y}" class="gl"/><text x="${X0 - 6}" y="${y + 4}" text-anchor="end">${h} h</text>`; }).join('')}
+          <line x1="${X0}" x2="${W - 10}" y1="${py(TAT.slow)}" y2="${py(TAT.slow)}" class="sl"/><text x="${W - 12}" y="${py(TAT.slow) - 5}" text-anchor="end" class="slt">${t('យឺត', 'Slow')} ${TAT.slow} min</text>
+          ${MS.map((m, i) => `<text x="${px(i)}" y="${H - 14}" text-anchor="middle">${MON[+m.slice(5) - 1]}</text>${i === 0 || m.slice(5) === '01' ? `<text x="${px(i)}" y="${H - 1}" text-anchor="middle" class="yr">${m.slice(0, 4)}</text>` : ''}`).join('')}
+          ${series.map(s => `<path d="${path(s)}" fill="none" stroke="${s.f[4]}" stroke-width="${s.all ? 2 : 3}"${s.all ? ' stroke-dasharray="6 4"' : ''}/>${s.v.map((v, i) => v == null ? '' : `<circle cx="${px(i)}" cy="${py(v)}" r="${s.all ? 3 : 4}" fill="${s.f[4]}"><title>${MON[+MS[i].slice(5) - 1]} ${MS[i].slice(0, 4)} · ${s.all ? t('ទាំងអស់', 'All') : t(s.f[2], s.f[3])}: ${dur(v)} (${mN(MS[i], s.all ? TAT.fl : s.f[0])} ${t('ជើង', 'trips')})</title></circle>`).join('')}`).join('')}
+        </svg>
+        <div class="tleg">${series.map(s => `<span><i style="background:${s.f[4]}"></i>${s.all ? t('ទាំងអស់', 'All') : s.f[1] + ' ' + t(s.f[2], s.f[3])}</span>`).join('')}${TAT.mon === 'old' ? `<span class="muted">· ${t('បង្ហាញតែថ្ងៃដែលបានរើស (សូមដាក់ Scale.gs ថ្មី)', 'Only the dates picked (re-paste Scale.gs for all months)')}</span>` : ''}</div>
+        <div class="tbl"><table class="tt tmon" data-nocols><tr><th></th>${MS.map(m => `<th class="r">${MON[+m.slice(5) - 1]}</th>`).join('')}</tr>
+          <tr><td>${t('ជើង', 'Trips')}</td>${MS.map(m => `<td class="r">${mN(m, TAT.fl) || ''}</td>`).join('')}</tr>
+          ${series.map(s => `<tr><td><span class="tdot" style="background:${s.f[4]}"></span>${s.all ? t('ទាំងអស់', 'All') : t(s.f[2], s.f[3])}</td>${s.v.map(v => `<td class="r${v != null && v > TAT.slow ? ' slowv' : ''}">${v == null ? '' : dur(v)}</td>`).join('')}</tr>`).join('')}</table></div>`}
+      </div>
+      <h3 class="mt">🚚 ${t('ក្រុមហ៊ុនឡាន', 'Truck companies')}${TAT.fl || TAT.jb ? ` <span class="badge follow">${[TAT.fl ? fleetName(TAT.fl) : '', TAT.jb ? JOBS.filter(j => j[0] === TAT.jb).map(j => j[1] + ' ' + t(j[2], j[3]))[0] : ''].filter(Boolean).join(' · ')}</span>` : ''}</h3>
+      ${L.length ? `<div class="tbl"><table class="tt"><tr><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('ឡាន', 'Fleet')}</th><th class="r">${t('ជើង', 'Trips')}</th><th class="r">⬆️ ${t('ឡើង', 'Load')}</th><th class="r">⬇️ ${t('ទំលាក់', 'Unload')}</th><th>${t('មធ្យម', 'Average')}</th><th class="r">${t('កណ្តាល', 'Median')}</th><th class="r">${t('យូរបំផុត', 'Longest')}</th><th class="r">${t('យឺត', 'Slow')}</th><th class="r">${t('ទម្ងន់សុទ្ធ', 'Net')} (t)</th><th class="r">${t('នៅលើទីតាំងឥឡូវ', 'On site now')}</th></tr>
+        ${L.map(r => `<tr><td><b>${esc(r.co)}</b></td><td class="nw">${fleetName(r.fl)}</td><td class="r">${r.n}</td><td class="r">${r.out ? dur(r.avo) + ` <small class="muted">(${r.out})</small>` : '—'}</td><td class="r">${r.inn ? dur(r.avi) + ` <small class="muted">(${r.inn})</small>` : '—'}</td>
           <td><div class="tatbar"><i style="width:${Math.round((r.avg || 0) / maxAvg * 100)}%" class="${r.avg > TAT.slow ? 'bad' : ''}"></i><span>${dur(r.avg)}</span></div></td>
           <td class="r">${dur(r.med)}</td><td class="r">${dur(r.max)}</td><td class="r">${r.slow ? `<span class="badge pending">${r.slow} (${Math.round(r.slow / r.n * 100)}%)</span>` : r.n ? '0' : ''}</td>
           <td class="r mono">${kg(r.net / 1000)}</td><td class="r">${r.onsite ? `<span class="badge follow">${r.onsite} · ${dur(r.wait)}</span>` : ''}</td></tr>`).join('')}</table></div>`
         : `<div class="empty">${t('គ្មានប័ណ្ណ', 'No tickets')}</div>`}
-      ${slow.length ? `<h3 class="mt">🐢 ${t('ជើងយឺតបំផុត', 'Slowest trips')}</h3><div class="tbl"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ចូល', 'In')}</th><th>${t('ចេញ', 'Out')}</th><th class="r">${t('រយៈពេល', 'Time')}</th></tr>
-        ${slow.map(x => `<tr class="pick" data-tk="${esc(x.cid || x.no)}"><td class="mono">${esc(x.no)}</td><td>${esc(x.plate)}</td><td>${esc(x.company || '')}</td><td>${String(x.t1 || '').slice(5, 16).replace('T', ' ')}</td><td>${String(x.t2 || '').slice(5, 16).replace('T', ' ')}</td><td class="r"><b>${dur(mins(x))}</b></td></tr>`).join('')}</table></div>` : ''}`;
+      ${slowest.length ? `<h3 class="mt">🐢 ${t('ជើងយឺតបំផុត', 'Slowest trips')}</h3><div class="tbl"><table class="tt"><tr><th>${t('លេខប័ណ្ណ', 'Ticket')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ការងារ', 'Job')}</th><th>${t('ចូល', 'In')}</th><th>${t('ចេញ', 'Out')}</th><th class="r">${t('រយៈពេល', 'Time')}</th></tr>
+        ${slowest.map(d => `<tr class="pick" data-tk="${esc(d.x.cid || d.x.no)}"><td class="mono">${esc(d.x.no)}</td><td>${esc(d.x.plate)}</td><td>${esc(d.x.company || '')}</td><td>${JOBS.filter(j => j[0] === d.jb).map(j => j[1] + ' ' + t(j[2], j[3]))[0]}</td><td>${String(d.x.t1 || '').slice(5, 16).replace('T', ' ')}</td><td>${String(d.x.t2 || '').slice(5, 16).replace('T', ' ')}</td><td class="r"><b>${dur(d.m)}</b></td></tr>`).join('')}</table></div>` : ''}`;
+    $$('[data-tmx]').forEach(b => { b.onclick = () => { const a = b.dataset.tmx.split('|'); const same = TAT.fl === a[0] && TAT.jb === a[1]; TAT.fl = same ? '' : a[0]; TAT.jb = same ? '' : a[1]; $$('[data-tfl]').forEach(c => c.classList.toggle('on', c.dataset.tfl === TAT.fl)); $$('[data-tjb]').forEach(c => c.classList.toggle('on', c.dataset.tjb === TAT.jb)); paintTat(); }; });
+    $$('[data-tyr]').forEach(b => { b.onclick = () => { TAT.yr = b.dataset.tyr; loadTatMonths(); paintTat(); }; });
     bindTable();
   }
   function tatXls() {
     if (!window.XLSX) return;
-    const L = tatStats();
-    const a = [['Truck company', 'Trips', 'Load', 'Unload', 'Average (min)', 'Median (min)', 'Longest (min)', 'Slow (> ' + TAT.slow + ' min)', 'Net (t)', 'On site now']].concat(L.map(r => [r.co, r.n, r.out, r.inn, r.avg, r.med, r.max, r.slow, Math.round(r.net) / 1000, r.onsite]));
-    const b = [['Ticket No', 'Truck No', 'Company', 'Load/Unload', '1st Time', '2nd Time', 'Minutes']].concat((TAT.rows || []).filter(x => x.status === 'Done').map(x => [x.no, x.plate, x.company, (typeOf(x) === 'In' ? 'Unload' : typeOf(x) === 'Scrap' ? 'Pickup Scrap' : 'Load'), String(x.t1 || '').replace('T', ' '), String(x.t2 || '').replace('T', ' '), mins(x)]));
+    const L = tatStats(), JN = x => (jobOf(x) === 'In' ? 'Unload' : jobOf(x) === 'Scrap' ? 'Pickup Scrap' : 'Load');
+    const a = [['Truck company', 'Fleet', 'Trips', 'Load', 'Load avg (min)', 'Unload', 'Unload avg (min)', 'Average (min)', 'Median (min)', 'Longest (min)', 'Slow (> ' + TAT.slow + ' min)', 'Net (t)', 'On site now']].concat(L.map(r => [r.co, fleetName(r.fl).replace(/^\S+\s/, ''), r.n, r.out, r.avo, r.inn, r.avi, r.avg, r.med, r.max, r.slow, Math.round(r.net) / 1000, r.onsite]));
+    const b = [['Ticket No', 'Truck No', 'Company', 'Fleet', 'Load/Unload', '1st Time', '2nd Time', 'Minutes']].concat((TAT.rows || []).filter(x => x.status === 'Done').map(x => [x.no, x.plate, x.company, fleetName(fleetOf(x.company, x.plate)).replace(/^\S+\s/, ''), JN(x), String(x.t1 || '').replace('T', ' '), String(x.t2 || '').replace('T', ' '), mins(x)]));
+    const MR = tatMonRows();
+    const c = [['Month', 'Fleet', 'Job', 'Trips', 'Average (min)']].concat(MR.slice().sort((p, q) => p.m.localeCompare(q.m) || p.fl.localeCompare(q.fl)).map(r => [r.m, fleetName(r.fl).replace(/^\S+\s/, ''), r.jb === 'In' ? 'Unload' : r.jb === 'Scrap' ? 'Pickup Scrap' : 'Load', r.n, Math.round(r.sum / (r.n || 1))]));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), 'By company');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(c), 'By month');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(b), 'Trips');
     XLSX.writeFile(wb, 'Turnaround_' + TAT.from + '_' + TAT.to + '.xlsx');
   }

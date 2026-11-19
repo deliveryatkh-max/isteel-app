@@ -550,3 +550,33 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .vespos { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .vespos small { color: var(--muted, #5b6b80); margin-right: 2px; }
 .vpo { background: #d4e1f5; color: #011e41; border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* Turnaround dashboard (Kim, dashboard A, 19 Nov 2026) */
+.tkpi { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 6px 0 12px; }
+.tk { border: 1px solid var(--line, #e1e6ee); border-radius: 12px; padding: 10px 14px; background: var(--card, #fff); }
+.tk small { display: block; color: var(--muted, #667085); font-size: 12px; }
+.tk > b { display: block; font-size: 24px; line-height: 1.25; }
+.tk span { font-size: 12.5px; color: var(--muted, #667085); } .tk span.bad { color: #c0362c; font-weight: 700; }
+.tgrid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.tbox { border: 1px solid var(--line, #e1e6ee); border-radius: 12px; padding: 12px 14px; background: var(--card, #fff); min-width: 0; }
+.tbox h3 { margin: 0 0 8px; font-size: 15px; }
+.thd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .thd h3 { margin: 0; flex: 1; }
+.tdot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.tmx tr.on td { background: #fff6d6; }
+.tmxb { position: relative; display: block; width: 100%; min-width: 120px; height: 24px; border: 0; padding: 0; background: var(--soft, #eef3fb); border-radius: 6px; overflow: hidden; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.tmxb i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; } .tmxb i.lo { background: #f6c66a; } .tmxb i.un { background: #9ec1ef; }
+.tmxb span { position: relative; padding: 0 8px; line-height: 24px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+.tmxb:hover { outline: 2px solid #011e41; }
+.thist { display: flex; align-items: flex-end; gap: 8px; height: 170px; padding-top: 18px; }
+.thist .hc { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+.thist .hc i { display: block; width: 100%; background: #9ec1ef; border-radius: 5px 5px 0 0; min-height: 2px; }
+.thist .hc i.r1 { background: #f6c66a; } .thist .hc i.r2 { background: #d9534f; }
+.thist em { font-style: normal; font-size: 12px; color: var(--muted, #667085); }
+.thist small { font-size: 11.5px; color: var(--muted, #667085); margin-top: 4px; white-space: nowrap; }
+.ttrend { width: 100%; height: auto; display: block; }
+.ttrend text { font-size: 11px; fill: var(--muted, #667085); } .ttrend text.yr { font-weight: 700; }
+.ttrend .gl { stroke: var(--line, #e7ebf1); } .ttrend .sl { stroke: #c0362c; stroke-dasharray: 5 4; } .ttrend .slt { fill: #c0362c; }
+.tleg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; margin: 4px 0 8px; }
+.tleg i { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin-right: 5px; vertical-align: 3px; }
+.tmon td, .tmon th { font-size: 12.5px; padding: 5px 6px; } .tmon td:first-child, .tmon th:first-child { width: 120px; white-space: nowrap; } .tmon td.slowv { color: #b45f06; font-weight: 700; }
+@media (max-width: 900px) { .tkpi { grid-template-columns: repeat(2, 1fr); } .tgrid { grid-template-columns: 1fr; } }
