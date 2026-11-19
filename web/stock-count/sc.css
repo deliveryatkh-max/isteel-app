@@ -332,3 +332,9 @@ label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
 table.hist td { white-space: nowrap; padding-left: 3px; padding-right: 3px; }
 table.hist td:first-child small { display: block; }
 table.hist td { vertical-align: middle; }
+/* Stock list filter bar (Kim picked list mockup 1, 20 Nov): labelled dropdowns, frozen at the top, chips for active filters */
+.sfbar { position: sticky; top: 0; z-index: 3; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.fdd { display: flex; flex-direction: column; margin: 0; font-size: 11px; font-weight: 600; color: var(--muted); }
+.fdd select { min-height: 36px; font-size: 14px; padding: 4px 8px; }
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.fchip { border: 0; background: #e0ecff; color: #1d4ed8; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }

@@ -252,7 +252,8 @@ function stock_(bin) {
     // Pcs per Bundle typed in Stock On Hand wins; blank (or 1 on a pipe) falls back to the Product Master.
     const typed = num_(r['Pcs per Bundle']);
     return { bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
-      pcsPerBundle: (typed > 1 ? typed : m.ppb) || typed || 1, kgPerPc: m.kg || 0, book: num_(r['Book Qty']) };
+      pcsPerBundle: (typed > 1 ? typed : m.ppb) || typed || 1, kgPerPc: m.kg || 0, book: num_(r['Book Qty']),
+      group: m.group || '', countDate: [r['Count Date'] || '', r['Count Time'] || ''].join(' ').trim() };
   });
 }
 // Product Master list, kept 10 minutes. An empty tab is filled from PM_SEED (ProductMaster.gs) first.

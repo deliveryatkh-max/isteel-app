@@ -127,25 +127,69 @@
   }
 
   // ------------------------------------------------------------------ stock list
-  const F = { q: '', wh: '', mq: '', mt: '', onlyVar: true };
+  const F = { q: '', wh: '', mq: '', mt: '', onlyVar: true, zone: '', grp: '', sloc: '', uom: '', qty: '', sd: '', cd: '' };
   const hit = (q, vals) => !q || vals.join(' ').toLowerCase().indexOf(q.toLowerCase()) >= 0;
+  // Stock list filters (Kim picked list mockup 1, 20 Nov): Warehouse, Bin Zone, Material Group, SLoc, UoM, Stock,
+  // Stock Date (last IN of the line, from the ledger) and Count Date (last count, Stock On Hand). Chips show what is on.
+  const zoneOf = bin => String(bin || '').split('-')[1] || '';
+  const groupOf = l => {
+    if (l.group) return l.group;
+    const p = (S.products || []).find(x => String(x.material).toUpperCase() === String(l.material).toUpperCase());
+    if (p && p.group) return p.group;
+    const d = String(l.desc || '').toUpperCase();   // demo, or no group in the Product Master yet
+    return /DEBAR|DEFORMED/.test(d) ? 'Deformed Bar' : /PIPE/.test(d) ? 'Pipe' : /PURLIN/.test(d) ? 'Purlin' : /COIL/.test(d) ? 'Coil' : /ROOF/.test(d) ? 'Roofing' : '';
+  };
+  const lineKey = l => [l.bin, l.material, l.batch, l.sloc].join('|').toUpperCase();
+  function lineDates() {
+    const sd = {}, cd = {};
+    D.ledger.forEach(r => { if (r.type === 'IN' || r.type === 'TRANSFER IN') { const k = lineKey(r), v = ((r.date || '') + ' ' + (r.time || '')).trim(); if (!sd[k] || v > sd[k]) sd[k] = v; } });
+    (D.counts || []).forEach(c => { const k = lineKey(c), v = ((c.date || '') + ' ' + (c.time || '')).trim(); if (!cd[k] || v > cd[k]) cd[k] = v; });
+    return { sd: sd, cd: cd };
+  }
+  const daysAgo = v => (v ? Math.floor((Date.now() - new Date(String(v).slice(0, 10) + 'T00:00:00').getTime()) / 86400000) : null);
+  const SD_OPT = [['', T('ទាំងអស់', 'All')], ['0', T('ថ្ងៃនេះ', 'Today')], ['7', T('៧ ថ្ងៃចុងក្រោយ', 'Last 7 days')], ['30', T('៣០ ថ្ងៃចុងក្រោយ', 'Last 30 days')], ['old', T('ចាស់ជាង ៣០ ថ្ងៃ', 'Older than 30 days')]];
+  const CD_OPT = [['', T('ទាំងអស់', 'All')], ['7', T('រាប់ ៧ ថ្ងៃចុងក្រោយ', 'Counted last 7 days')], ['30', T('រាប់ ៣០ ថ្ងៃចុងក្រោយ', 'Counted last 30 days')], ['old', T('មិនបានរាប់ ៣០ ថ្ងៃ+', 'Not counted 30 days+')], ['never', T('មិនទាន់រាប់', 'Never counted')]];
+  const QTY_OPT = [['', T('ទាំងអស់', 'All')], ['pos', T('មានស្តុក', 'Has stock')], ['zero', T('ទទេ (0)', 'Empty (0)')]];
+  const dateOk = (v, f, isCount) => {
+    if (!f) return true;
+    const d = daysAgo(v);
+    if (f === 'never') return d == null;
+    if (f === 'old') return d == null ? isCount : d > 30;
+    return d != null && d <= Number(f);
+  };
   function stock() {
-    wide();
-    const whs = Array.from(new Set(D.bins.map(b => b.warehouse)));
-    const rows = D.stock.filter(l => (!F.wh || whOf(l.bin) === F.wh) && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc]));
+    wide(); loadLedger('stock');
+    const dt = lineDates();
+    const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '' }));
+    const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
+    const rows = all.filter(l => (!F.wh || l.wh === F.wh) && (!F.zone || l.zone === F.zone) && (!F.grp || l.grp === F.grp) && (!F.sloc || l.sloc === F.sloc)
+      && (!F.uom || l.uom === F.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
+      && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp]));
+    const sel = (id, label, key, opts) => `<label class="fdd"><span>${label}</span><select id="${id}">${opts.map(o => `<option value="${esc(o[0])}"${o[0] === F[key] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+    const list = f => [['', T('ទាំងអស់', 'All')]].concat(uniq(f).map(v => [v, v]));
+    const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh')], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone')],
+      ['fgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', list('grp')], ['fsloc', 'SLoc', 'sloc', list('sloc')], ['fuom', 'UoM', 'uom', list('uom')],
+      ['fqty', T('ស្តុក', 'Stock'), 'qty', QTY_OPT], ['fsd', T('ថ្ងៃចូលស្តុក', 'Stock Date'), 'sd', SD_OPT], ['fcd', T('ថ្ងៃរាប់', 'Count Date'), 'cd', CD_OPT]];
+    const chips = FILTERS.filter(f => F[f[2]]).map(f => `<button type="button" class="fchip" data-clr="${f[2]}">${esc(f[1])}: ${esc((f[3].find(o => o[0] === F[f[2]]) || ['', F[f[2]]])[1])} ✕</button>`).join('');
+    const tot = kg => rows.filter(l => kg === SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
     view(`
-      <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')}</small></h2>
-      <div class="fbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
-        <select id="fwh"><option value="">${T('គ្រប់ឃ្លាំង', 'All warehouses')}</option>${whs.map(w => `<option${w === F.wh ? ' selected' : ''}>${esc(w)}</option>`).join('')}</select>
-        ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
-      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th></tr>
-        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(whOf(l.bin))}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td></tr>`).join('')
-          || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
-      <p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
+      <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')} · ${fmtQty(tot(false))} PC · ${fmtQty(tot(true))} KG</small></h2>
+      <div class="fbar sfbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
+        ${FILTERS.map(f => sel(f[0], f[1], f[2], f[3])).join('')}
+        ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ Excel</button>` : ''}
+        ${chips || F.q ? `<button type="button" class="btn ghost sm" id="fclr">✕ ${T('សម្អាត', 'Clear')}</button>` : ''}</div>
+      ${chips ? `<div class="fchips">${chips}</div>` : ''}
+      <section class="card scroll tall"><table class="lines hist stocktbl"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th></tr>
+        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td class="${l.cd ? '' : 'red-text'}">${esc(l.cd || T('មិនទាន់រាប់', 'Never'))}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="12">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
+      ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
     keep('#fq', v => { F.q = v; stock(); });
-    $('#fwh').onchange = e => { F.wh = e.target.value; stock(); };
+    FILTERS.forEach(f => { $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
+    $$('[data-clr]').forEach(b => { b.onclick = () => { F[b.dataset.clr] = ''; stock(); }; });
+    if ($('#fclr')) $('#fclr').onclick = () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); };
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
-    if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM']].concat(rows.map(l => [l.bin, whOf(l.bin), l.material, l.desc, l.batch, l.sloc, l.book, l.uom])));
+    if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date']]
+      .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd])));
   }
   // Search box that keeps the cursor when the table is drawn again.
   function keep(sel, fn) {
