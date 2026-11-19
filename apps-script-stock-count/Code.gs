@@ -254,19 +254,32 @@ function stock_(bin) {
       pcsPerBundle: (typed > 1 ? typed : m.ppb) || typed || 1, kgPerPc: m.kg || 0, book: num_(r['Book Qty']) };
   });
 }
-// Product Master as { MATERIAL: { ppb, kg } }, kept 10 minutes. An empty tab is filled from PM_SEED (ProductMaster.gs) first.
-function pm_() {
+// Product Master list, kept 10 minutes. An empty tab is filled from PM_SEED (ProductMaster.gs) first.
+// Columns are found by name, so Kim's own headers work: "PC/Bundle" or "Pcs per Bundle", "Kg/PC" or "Kg per Pc",
+// and an optional "UoM" / "SAP UoM" / "Base UoM" (the unit SAP books the material in).
+function pmList_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('pm');
+  const hit = cache.get('pml');
   if (hit) { try { return JSON.parse(hit); } catch (e) { /* read again */ } }
   const sh = sheet_(SH.PM, PM_COLS);
   if (sh.getLastRow() < 2 && typeof PM_SEED !== 'undefined' && PM_SEED.length) {
     sh.getRange(1, 1, 1, PM_COLS.length).setValues([PM_COLS]);
     sh.getRange(2, 1, PM_SEED.length, PM_COLS.length).setNumberFormat('@').setValues(PM_SEED.map(r => r.map(String)));
   }
+  const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const get = (r, names) => { for (const k in r) if (names.indexOf(norm(k)) >= 0 && r[k] !== '') return r[k]; return ''; };
+  const out = objs_(SH.PM, PM_COLS).filter(r => get(r, ['material', 'materialcode', 'sku'])).map(r => ({
+    material: get(r, ['material', 'materialcode', 'sku']), desc: get(r, ['description', 'materialdescription']),
+    group: get(r, ['materialgroupl4', 'group']), size: get(r, ['size', 'pipesize']),
+    ppb: num_(get(r, ['pcbundle', 'pcsbundle', 'pcsperbundle', 'pcperbundle'])), kg: num_(get(r, ['kgpc', 'kgperpc', 'kgpcs', 'kgperpcs'])),
+    uom: String(get(r, ['uom', 'sapuom', 'baseuom', 'unit'])).toUpperCase() }));
+  try { cache.put('pml', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
+  return out;
+}
+// Product Master as { MATERIAL: { ppb, kg, desc, uom } }.
+function pm_() {
   const out = {};
-  objs_(SH.PM, PM_COLS).forEach(r => { if (r.Material) out[r.Material.toUpperCase()] = { ppb: num_(r['Pcs per Bundle']), kg: num_(r['Kg per Pc']) }; });
-  try { cache.put('pm', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
+  pmList_().forEach(p => { out[p.material.toUpperCase()] = p; });
   return out;
 }
 // Sheet text to number: '4,620.00' -> 4620, blank -> 0.
@@ -288,7 +301,7 @@ function boot_(user) {
   stock.forEach(l => { per[l.bin.toUpperCase()] = (per[l.bin.toUpperCase()] || 0) + 1; });
   const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: per[b.bin.toUpperCase()] || 0 }));
   return { user: { email: user.email, name: who.Name || user.email }, settings: { tolerance: st.tol },
-    today: todayList(list, st.listSize), bins: list, stock: stock, binCount: list.length, dash: dash_(stock.length, list.length) };
+    today: todayList(list, st.listSize), bins: list, stock: stock, products: pmList_(), binCount: list.length, dash: dash_(stock.length, list.length) };
 }
 
 // Home numbers: bins, stock lines, movements posted today, and the last 10 movements.
@@ -436,16 +449,19 @@ const ledgerRow_ = (id, now, type, bin, s, qty, balance, extra) => Object.assign
   Bin: bin, Material: s.material, Description: s.desc, Batch: s.batch, SLOC: s.sloc, UoM: s.uom,
   In: type === 'IN' || type === 'TRANSFER IN' ? qty : '', Out: type === 'OUT' || type === 'TRANSFER OUT' ? qty : '', Balance: balance }, extra);
 
-// A new stock line in a bin. The material must already be known in Stock On Hand (its description and unit are copied);
-// only an admin may bring in a material the sheet has never seen, and must give its description and unit.
+// A new stock line in a bin. The material must be in Stock On Hand or in the Product Master (description, unit and
+// pcs per bundle are copied); only an admin may bring in a material neither list has, and must give its description and unit.
 function newLine_(who, bin, p) {
   const material = clip_(p.material, 40);
   if (!material) fail_('BAD', 'Choose a stock line or enter the material code.');
   const known = stock_('').find(x => x.material.toUpperCase() === material.toUpperCase());
-  if (!known && !who.admin) fail_('NOMAT', 'Material ' + material + ' is not in Stock On Hand. Ask an admin to add it.', 'សម្ភារៈ ' + material + ' មិនមានក្នុង Stock On Hand ទេ។ សូមស្នើអ្នកគ្រប់គ្រងបន្ថែម។');
-  if (!known && !clip_(p.desc, 120)) fail_('BAD', 'Enter the description for a new material.');
-  const s = { bin: bin, material: known ? known.material : material, desc: known ? known.desc : clip_(p.desc, 120), batch: clip_(p.batch, 40), sloc: clip_(p.sloc, 20),
-    uom: known ? known.uom : (clip_(p.uom, 10) || 'PC'), pcsPerBundle: known ? known.pcsPerBundle : 1, book: 0 };
+  const m = pm_()[material.toUpperCase()];
+  if (!known && !m && !who.admin) fail_('NOMAT', 'Material ' + material + ' is not in the Product Master. Ask an admin to add it.', 'សម្ភារៈ ' + material + ' មិនមានក្នុង Product Master ទេ។ សូមស្នើអ្នកគ្រប់គ្រងបន្ថែម។');
+  const desc = known ? known.desc : m && m.desc ? m.desc : clip_(p.desc, 120);
+  if (!desc) fail_('BAD', 'Enter the description for a new material.');
+  const s = { bin: bin, material: known ? known.material : m ? m.material : material, desc: desc, batch: clip_(p.batch, 40), sloc: clip_(p.sloc, 20),
+    uom: known ? known.uom : (m && m.uom) || clip_(p.uom, 10).toUpperCase() || 'PC',
+    pcsPerBundle: known ? known.pcsPerBundle : (m && m.ppb) || 1, kgPerPc: m ? m.kg : 0, book: 0 };
   sheet_(SH.STK, STK_COLS).appendRow([s.bin, s.material, s.desc, s.batch, s.sloc, s.uom, s.pcsPerBundle, 0]);
   return s;
 }
@@ -462,7 +478,8 @@ function move_(user, p) {
   const b = activeBin_(p.bin);
   let s = findLine_(stock_(b.bin), b.bin, p);
   if (!s && type === 'OUT') fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងកុងតឺន័រនេះទេ។');
-  const bad = moveOk(type, p.qty, s ? s.book : 0, s ? s.uom : (p.uom || 'PC'));
+  const pmU = s ? '' : ((pm_()[String(p.material || '').toUpperCase()] || {}).uom || '');
+  const bad = moveOk(type, p.qty, s ? s.book : 0, s ? s.uom : (pmU || p.uom || 'PC'));
   if (bad) fail_('BAD', bad);
   if (!s) s = newLine_(who, b.bin, p);
   const qty = Number(p.qty), now = new Date(), id = txnId_(type === 'IN' ? 'IN' : 'OUT', now), balance = balanceAfter(type, qty, s.book);
