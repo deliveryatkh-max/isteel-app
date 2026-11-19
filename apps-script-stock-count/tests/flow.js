@@ -108,6 +108,7 @@ eq([pr[8], pr[10], pr[11], pr[12]], [2, 5, 1523.17, 5], '2 bundles x 150 + 5 pcs
 eq([soh[0][13], soh[0][14], /^\d{4}-\d\d-\d\d$/.test(pr[13]), /^\d\d:\d\d$/.test(pr[14])], ['Count Date', 'Count Time', true, true], 'count date and time stamped (columns added)');
 call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch: 'L9', sloc: '2010', bundles: '', kg: '', pieces: 298 }] } });
 eq([pr[8], pr[10], pr[12]], ['', 298, -2], 'a new count replaces the old one (no adding up)');
+eq([soh[0][15], soh[0][16], pr[15], typeof pr[16]], ['Counted Qty', 'Counted By', 298, 'string'], 'counted qty (book unit) and counter name saved');
 
 // Kim's own Product Master headers (19 Nov): PC/Bundle, Kg/PC, UoM. Boot sends the list; an operator may bring a
 // Product Master material into a bin for the first time, with its description, unit and pcs per bundle copied.
