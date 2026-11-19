@@ -161,6 +161,16 @@
     wide(); loadLedger('stock');
     const dt = lineDates();
     const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '' }));
+    if (pvMode('stock')) {
+      const data = all.map(l => ({ bin: l.bin, wh: l.wh, zone: l.zone, grp: l.grp, material: l.material, desc: l.desc, batch: l.batch, sloc: l.sloc, uom: l.uom,
+        sd: String(l.sd).slice(0, 10), cd: String(l.cd).slice(0, 10), book: Number(l.book) || 0,
+        kg: SC.isKg(l.uom) ? Number(l.book) || 0 : SC.round3((Number(l.book) || 0) * (Number(l.kgPerPc) || 0)) }));
+      return pivotScreen('stock', T('បញ្ជីស្តុក', 'Stock list'), data, [
+        ['wh', 'ឃ្លាំង', 'Warehouse'], ['zone', 'តំបន់', 'Bin Zone'], ['bin', 'ទីតាំង', 'Bin'], ['grp', 'ក្រុមសម្ភារៈ', 'Material Group'], ['material', 'សម្ភារៈ', 'Material'],
+        ['desc', 'បរិយាយ', 'Description'], ['batch', 'Batch', 'Batch'], ['sloc', 'SLoc', 'SLoc'], ['uom', 'UoM', 'UoM'], ['sd', 'ថ្ងៃចូលស្តុក', 'Stock Date'], ['cd', 'ថ្ងៃរាប់', 'Count Date'],
+        ['book', 'ស្តុក', 'On hand', 1], ['kg', 'ទម្ងន់ Kg', 'Weight Kg', 1]],
+        { rows: ['grp', 'material'], cols: ['uom'], vals: [{ k: 'book', agg: 'sum' }], filters: {} }, stock);
+    }
     const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
     const rows = all.filter(l => (!F.wh || l.wh === F.wh) && (!F.zone || l.zone === F.zone) && (!F.grp || l.grp === F.grp) && (!F.sloc || l.sloc === F.sloc)
       && (!F.uom || l.uom === F.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
@@ -173,7 +183,7 @@
     const chips = FILTERS.filter(f => F[f[2]]).map(f => `<button type="button" class="fchip" data-clr="${f[2]}">${esc(f[1])}: ${esc((f[3].find(o => o[0] === F[f[2]]) || ['', F[f[2]]])[1])} ✕</button>`).join('');
     const tot = kg => rows.filter(l => kg === SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
     view(`
-      <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')} · ${fmtQty(tot(false))} PC · ${fmtQty(tot(true))} KG</small></h2>
+      <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')} · ${fmtQty(tot(false))} PC · ${fmtQty(tot(true))} KG</small>${pvToggle('stock')}</h2>
       <div class="fbar sfbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
         ${FILTERS.map(f => sel(f[0], f[1], f[2], f[3])).join('')}
         ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ Excel</button>` : ''}
@@ -183,6 +193,7 @@
         ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td class="${l.cd ? '' : 'red-text'}">${esc(l.cd || T('មិនទាន់រាប់', 'Never'))}</td></tr>`).join('')
           || `<tr><td class="muted" colspan="12">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
       ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
+    pvWire('stock', stock);
     keep('#fq', v => { F.q = v; stock(); });
     FILTERS.forEach(f => { $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
     $$('[data-clr]').forEach(b => { b.onclick = () => { F[b.dataset.clr] = ''; stock(); }; });
@@ -190,6 +201,18 @@
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
     if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date']]
       .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd])));
+  }
+  // Table | Pivot switch on Stock list and Movements (Kim, 20 Nov: drag and drop like an Excel pivot table).
+  const pvMode = id => { try { return localStorage.getItem('sc_view_' + id) === 'pivot'; } catch (e) { return false; } };
+  const pvToggle = id => `<span class="seg pvseg"><button type="button" data-pv="${id}" data-m="table" class="${pvMode(id) ? '' : 'on'}">▤ ${T('តារាង', 'Table')}</button><button type="button" data-pv="${id}" data-m="pivot" class="${pvMode(id) ? 'on' : ''}">⊞ Pivot</button></span>`;
+  function pvWire(id, redraw) {
+    $$(`[data-pv="${id}"]`).forEach(b => { b.onclick = () => { try { localStorage.setItem('sc_view_' + id, b.dataset.m); } catch (e) { /* private mode */ } redraw(); }; });
+  }
+  function pivotScreen(id, title, data, fields, def, redraw) {
+    view(`<h2 class="ptitle">${title} <small class="muted">${data.length} ${T('ជួរ', 'rows')}</small>${pvToggle(id)}</h2>${oldNote()}<div id="pvBox"></div>`);
+    pvWire(id, redraw);
+    window.SCPivot.mount($('#pvBox'), { id: id, data: data, T: T, def: def, fields: fields.map(f => ({ k: f[0], km: f[1], en: f[2], num: !!f[3] })),
+      onExport: grid => download(id + '-pivot.csv', grid) });
   }
   // Search box that keeps the cursor when the table is drawn again.
   function keep(sel, fn) {
@@ -201,9 +224,20 @@
   function moves() {
     wide(); loadLedger('moves');
     const types = ['IN', 'OUT', 'TRANSFER OUT', 'TRANSFER IN', 'ADJUST'];
+    if (pvMode('moves')) {
+      const data = newest().map(r => ({ date: r.date, month: String(r.date || '').slice(0, 7), type: tLabel(r.type), bin: r.bin, wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r),
+        material: r.material, desc: r.desc, batch: r.batch, sloc: r.sloc, uom: r.uom, reference: r.reference, user: String(r.user || '').split('@')[0],
+        qin: Number(r.qtyIn) || 0, qout: Number(r.qtyOut) || 0, net: (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0) }));
+      return pivotScreen('moves', T('ចលនាស្តុក', 'Movements'), data, [
+        ['date', 'ថ្ងៃ', 'Date'], ['month', 'ខែ', 'Month'], ['type', 'ប្រភេទ', 'Type'], ['wh', 'ឃ្លាំង', 'Warehouse'], ['zone', 'តំបន់', 'Bin Zone'], ['bin', 'ទីតាំង', 'Bin'],
+        ['grp', 'ក្រុមសម្ភារៈ', 'Material Group'], ['material', 'សម្ភារៈ', 'Material'], ['desc', 'បរិយាយ', 'Description'], ['batch', 'Batch', 'Batch'], ['sloc', 'SLoc', 'SLoc'],
+        ['uom', 'UoM', 'UoM'], ['reference', 'ឯកសារយោង', 'Reference'], ['user', 'អ្នកប្រើ', 'User'],
+        ['qin', 'ចូល', 'In', 1], ['qout', 'ចេញ', 'Out', 1], ['net', 'សុទ្ធ', 'Net', 1]],
+        { rows: ['date'], cols: ['type'], vals: [{ k: 'net', agg: 'sum' }], filters: {} }, moves);
+    }
     const rows = newest().filter(r => (!F.mt || r.type === F.mt) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user]));
     view(`
-      <h2 class="ptitle">${T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)')} <small class="muted">${rows.length} ${T('ជួរ', 'rows')}</small></h2>
+      <h2 class="ptitle">${T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)')} <small class="muted">${rows.length} ${T('ជួរ', 'rows')}</small>${pvToggle('moves')}</h2>
       <div class="fbar"><input type="search" id="mq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference')}" value="${esc(F.mq)}">
         <select id="mt"><option value="">${T('គ្រប់ប្រភេទ', 'All types')}</option>${types.map(t => `<option value="${t}"${t === F.mt ? ' selected' : ''}>${esc(tLabel(t))}</option>`).join('')}</select>
         ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
@@ -212,6 +246,7 @@
           || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
       ${oldNote()}
       <p class="muted">${T('ជួរនីមួយៗមិនអាចកែ ឬលុបបានទេ។ កំហុសត្រូវកែដោយប្រតិបត្តិការថ្មី។', 'Rows are never edited or deleted. A mistake is corrected with a new transaction.')}</p>`);
+    pvWire('moves', moves);
     keep('#mq', v => { F.mq = v; moves(); });
     $('#mt').onchange = e => { F.mt = e.target.value; moves(); };
     if ($('#exp')) $('#exp').onclick = () => download('stock-ledger.csv', [['Txn ID', 'Date', 'Time', 'Type', 'Bin', 'Material', 'Description', 'Batch', 'SLoc', 'UoM', 'In', 'Out', 'Balance', 'Reference', 'Other Bin', 'User']]

@@ -338,3 +338,40 @@ table.hist td { vertical-align: middle; }
 .fdd select { min-height: 36px; font-size: 14px; padding: 4px 8px; }
 .fchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .fchip { border: 0; background: #e0ecff; color: #1d4ed8; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+/* Pivot (Kim, 20 Nov): field list + Filters / Columns / Rows / Values boxes, Excel-like table */
+.pvseg { display: inline-grid; grid-template-columns: 1fr 1fr; margin: 0 0 0 10px; padding: 3px; vertical-align: middle; width: auto; }
+.pvseg button { font-size: 13px; padding: 5px 12px; }
+.pv { display: grid; grid-template-columns: 260px 1fr; gap: 12px; align-items: start; }
+.pv-side { position: sticky; top: 0; display: flex; flex-direction: column; gap: 8px; }
+.pv-zone { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; }
+.pv-zone.over, .pv-zone.target { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.25); }
+.pv-zh { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; cursor: pointer; }
+.pv-zc { display: flex; flex-wrap: wrap; gap: 5px; min-height: 30px; }
+.pv-list .pv-zc { max-height: 210px; overflow: auto; }
+.pv-empty { color: var(--muted); font-size: 12px; padding: 5px; }
+.pv-chip { display: inline-flex; align-items: center; gap: 4px; background: #e8eef8; color: #14213d; border: 1px solid #c9d6ea; border-radius: 8px; padding: 4px 8px; font-size: 13px; font-weight: 600; cursor: grab; user-select: none; }
+.pv-chip.n { background: #e6f4ea; border-color: #b7dfc3; }
+.pv-chip.v { background: #fff4e0; border-color: #f1d29a; }
+.pv-chip.on { outline: 2px solid #2563eb; }
+.pv-chip.drag { opacity: .4; }
+.pv-chip select { font: inherit; font-size: 12px; border: 0; background: transparent; padding: 0; min-height: 0; }
+.pv-x, .pv-f { border: 0; background: none; padding: 0 2px; cursor: pointer; color: #6b7280; font-size: 12px; }
+.pv-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pv-fbox { background: var(--card); border: 1px solid #2563eb; border-radius: 12px; padding: 8px; }
+.pv-fh { display: flex; justify-content: space-between; }
+.pv-fa { display: flex; gap: 6px; margin: 6px 0; }
+.pv-fl { max-height: 220px; overflow: auto; display: flex; flex-direction: column; font-size: 13px; }
+.pv-fl label { display: flex; gap: 6px; align-items: center; margin: 0; padding: 2px 0; font-weight: 400; }
+.pv-out { overflow: auto; max-height: calc(100vh - 170px); background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.pv-t { border-collapse: collapse; font-size: 13px; width: max-content; min-width: 100%; }
+.pv-t th { position: sticky; top: 0; background: #011e41; color: #fff; padding: 6px 8px; border: 1px solid #23395d; white-space: nowrap; text-align: left; }
+.pv-t thead tr:nth-child(2) th { top: 30px; } .pv-t thead tr:nth-child(3) th { top: 60px; }
+.pv-t td { padding: 5px 8px; border: 1px solid var(--line); white-space: nowrap; }
+.pv-t td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pv-t .pv-tot { background: rgba(37,99,235,.08); font-weight: 700; }
+.pv-t th.pv-tot { background: #0b3a75; }
+.pv-t tr.pv-sub td { background: #eef3fa; font-weight: 700; }
+.pv-t tr.pv-grand td { background: #dbe6f6; font-weight: 800; border-top: 2px solid #011e41; }
+:root[data-theme="dark"] .pv-chip { background: #1e3050; color: #e8eef8; border-color: #2c4369; } :root[data-theme="dark"] .pv-t tr.pv-sub td, :root[data-theme="dark"] .pv-t tr.pv-grand td { background: #1a2b47; }
+.pv-hint { padding: 16px; }
+@media (max-width: 760px) { .pv { grid-template-columns: 1fr; } .pv-side { position: static; } .pv-list .pv-zc { max-height: none; } }
