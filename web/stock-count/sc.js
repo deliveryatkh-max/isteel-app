@@ -724,10 +724,10 @@
       $('#mKgIn').disabled = noConv && !isKg(u.uom);
       // Form 5 (Kim, 19 Nov): chosen item as a card, Bundle | Kg | Pcs tabs, big on-screen keypad.
       const chosen = isIn ? m.pick : l;
-      $('#mPick').hidden = !!chosen;
-      $('#mHeroItem').innerHTML = chosen ? `<b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>` : '';
-      $('#mCard').hidden = !chosen;
-      if (chosen) {
+      const hb = isIn ? $('#mBatch').value.trim() : (l ? l.batch : '');
+      $('#mHeroItem').innerHTML = chosen ? `<b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>${hb ? `<span>Batch: ${esc(hb)}</span>` : ''}` : '';
+      $('#mCard').hidden = true;   // Kim, 19 Nov: no item card; code + name are in the header, the picker stays
+      if (false) {
         const bt = isIn ? $('#mBatch').value.trim() : l.batch;
         $('#mCard').innerHTML = `<span class="icard-ic">🏗️</span><div class="icard-t">
           <div class="chips">${bt ? `<i>Batch ${esc(bt)}</i>` : ''}${u.ppb > 1 ? `<i>${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(u.uom)}</i></div></div>
@@ -904,8 +904,8 @@
     const isCount = mode === 'count';
     const rows = (b.lines || []).map((l, i) => isCount
       ? `<div class="cline" data-line="${i}">
-        <div class="icard"><span class="icard-ic">🏗️</span><div class="icard-t"><b>${esc(l.material)}</b><span>${esc(l.desc)}</span>
-          <div class="chips">${l.batch ? `<i>Batch ${esc(l.batch)}</i>` : ''}${Number(l.pcsPerBundle) > 1 ? `<i>${fmtQty(l.pcsPerBundle)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(l.uom)}</i></div></div></div>
+        <div class="cdesc">${esc(l.desc)}</div>
+        <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></div>
         <div class="seg">
           <button type="button" data-i="${i}" data-box="bundles"><span>${T('បាច់', 'Bundle')}</span> <b></b></button>
           <button type="button" data-i="${i}" data-box="kg"><span>Kg</span> <b></b></button>
