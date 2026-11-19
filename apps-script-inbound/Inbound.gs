@@ -322,7 +322,7 @@ function plan_() {
     // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
     po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
     ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes), batch: cell(r, iBatch),
-  })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
+  })).filter(x => x.po && x.material && x.kg > 0 && !seen[lineKey_(x)] && (seen[lineKey_(x)] = 1));
 }
 
 // ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
@@ -333,11 +333,17 @@ const itemPo_ = (i, r) => poOf_(i.po) || posOf_(r)[0] || '';
 // PO number as in Kim's Excel: no "PO" in front (Kim, 13 Nov 2026); "PO 5100013709" and "PO5100013709" both become 5100013709
 const poOf_ = v => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, '');
 /** kg arrived (still unloading) or received per PO|material */
-function recvdMap_() {
+/** a plan line: PO + material, plus the batch when the Incoming Plan has one (one row per coil, Kim 19 Nov 2026) */
+const lineKey_ = x => x.po + '|' + x.material + (x.batch ? '|' + x.batch : '');
+/** kg per plan line: m[po|material] counts every item of the material, m[po|material|batch] only that batch */
+function gotMap_(live) {
   const m = {};
-  receipts_().forEach(r => (r.items || []).forEach(i => { const k = itemPo_(i, r) + '|' + i.material; m[k] = (m[k] || 0) + (num_(r.end ? i.grQty : i.arrQty) || 0); }));
+  receipts_().forEach(r => (r.items || []).forEach(i => { const q = num_(live(r) ? i.arrQty : i.grQty) || 0, k = itemPo_(i, r) + '|' + i.material;
+    m[k] = (m[k] || 0) + q; if (i.batch) m[k + '|' + i.batch] = (m[k + '|' + i.batch] || 0) + q; }));
   return m;
 }
+const gotOf_ = (m, x) => m[lineKey_(x)] || 0;
+function recvdMap_() { return gotMap_(r => !r.end); }
 /** Rewrites the Incoming Plan tab: rows of other POs stay as they are (all columns). */
 function planWrite_(keep, add) {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
@@ -579,7 +585,7 @@ function start_(p, user) {
   if (asked.length > 10) fail_('BAD', 'Up to 10 POs per truck.', 'ច្រើនបំផុត 10 PO ក្នុងមួយឡាន។');
   const items = (Array.isArray(p.items) ? p.items : []).slice(0, MAX_ITEMS).map(i => {
     const ipo = poOf_(i.po) || (asked.length === 1 ? asked[0] : '');
-    const line = plan.find(x => x.po === ipo && x.material === String(i.material || ''));
+    const line = plan.find(x => x.po === ipo && x.material === String(i.material || '') && (!i.batch || x.batch === String(i.batch))) || plan.find(x => x.po === ipo && x.material === String(i.material || ''));
     if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on ' + (ipo || 'this PO') + '.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ ' + (ipo || 'PO នេះ') + ' ទេ។');
     const arr = num_(i.arrQty);
     if (!(arr > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
@@ -641,15 +647,15 @@ function update_(p, user, finish) {
     const sent = Array.isArray(p.items) ? p.items : [];
     // reviewers fix an open receipt: rows left out are deleted, new PO lines are added (Kim, 17 Nov 2026)
     if (p.itemsEdit && live && (user.admin || user.reviewer)) {
-      const key = (po, m) => poOf_(po) + '|' + String(m || '');
-      const sentKeys = sent.map(x => key(x.po || rec.po, x.material));
-      const kept = rec.items.filter(i => sentKeys.indexOf(key(itemPo_(i, rec), i.material)) >= 0);
+      const key = (po, m, b) => poOf_(po) + '|' + String(m || '') + (b ? '|' + b : '');
+      const sentKeys = sent.map(x => key(x.po || rec.po, x.material, x.batch));
+      const kept = rec.items.filter(i => sentKeys.indexOf(key(itemPo_(i, rec), i.material, i.batch)) >= 0);
       const plan = plan_();
-      const added = sent.filter(x => !kept.some(i => key(itemPo_(i, rec), i.material) === key(x.po || rec.po, x.material))).map(x => {
-        const line = plan.find(l => l.po === poOf_(x.po) && l.material === String(x.material || ''));
+      const added = sent.filter(x => !kept.some(i => key(itemPo_(i, rec), i.material, i.batch) === key(x.po || rec.po, x.material, x.batch))).map(x => {
+        const line = plan.find(l => l.po === poOf_(x.po) && l.material === String(x.material || '') && (!x.batch || l.batch === String(x.batch))) || plan.find(l => l.po === poOf_(x.po) && l.material === String(x.material || ''));
         if (!line) fail_('BAD', 'Item ' + clip_(x.material, 30) + ' is not on ' + (poOf_(x.po) || 'this PO') + '.', 'ទំនិញ ' + clip_(x.material, 30) + ' មិនមែនរបស់ ' + (poOf_(x.po) || 'PO នេះ') + ' ទេ។');
         if (!(num_(x.arrQty) > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
-        return { po: line.po, inbound: line.inbound, material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: num_(x.arrQty), grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+        return { po: line.po, inbound: line.inbound, material: line.material, batch: line.batch || '', desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: num_(x.arrQty), grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
       });
       const items = kept.concat(added).slice(0, MAX_ITEMS);
       if (!items.length) fail_('BAD', 'Keep at least one item.', 'សូមទុកទំនិញយ៉ាងហោចណាស់មួយ។');
@@ -661,7 +667,7 @@ function update_(p, user, finish) {
       if (heads.length) { rec.inbound = join('inbound'); rec.ref = join('ref'); rec.supplier = join('supplier'); }
     }
     rec.items.forEach(i => {
-      const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po)) || {};
+      const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po) && (!x.batch || !i.batch || String(x.batch) === i.batch)) || {};
       const gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);
       const dm = s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
       if (gr !== '' && !(gr >= 0)) fail_('BAD', 'Actual GR Qty must be a number.', 'បរិមាណទទួលត្រូវតែជាលេខ។');
@@ -767,10 +773,10 @@ function del_(id, reason, user) {
 const ARR_SH = 'Scale Arrivals', ARR_COLS = ['Ticket No', 'Date', 'Time', 'Truck', 'Company', 'Vessel No', 'PO', 'Kg (1st weigh)', 'By', 'Receipt'];
 /** vessels still to receive, with their POs (Incoming Plan column R) */
 function vessels_() {
-  const got = {}; receipts_().forEach(r => (r.items || []).forEach(i => { const k = itemPo_(i, r) + '|' + i.material; got[k] = (got[k] || 0) + (num_(r.status === STATUS.live ? i.arrQty : i.grQty) || 0); }));
+  const got = gotMap_(r => r.status === STATUS.live);
   const by = {};
   plan_().filter(x => x.vessel).forEach(x => {
-    const left = Math.max(0, x.kg - (got[x.po + '|' + x.material] || 0));
+    const left = Math.max(0, x.kg - gotOf_(got, x));
     const v = by[x.vessel] || (by[x.vessel] = { vessel: x.vessel, eta: x.eta, pos: [], kg: 0 });
     let po = v.pos.find(o => o.po === x.po); if (!po) v.pos.push(po = { po: x.po, supplier: x.supplier, kg: 0 });
     po.kg += left; v.kg += left; if (x.eta && (!v.eta || x.eta < v.eta)) v.eta = x.eta;
@@ -867,7 +873,7 @@ function telegramDone_(r) {
 function pendingPOs_() {
   const got = recvdMap_(), by = {};
   plan_().forEach(x => {
-    const left = Math.max(0, x.kg - (got[x.po + '|' + x.material] || 0));
+    const left = Math.max(0, x.kg - gotOf_(got, x));
     if (!(left > 0)) return;
     const o = by[x.po] || (by[x.po] = { po: x.po, site: x.site, supplier: x.supplier, eta: x.eta, inbound: x.inbound, kg: 0, lines: 0 });
     o.kg += left; o.lines++;
