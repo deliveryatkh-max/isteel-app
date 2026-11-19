@@ -556,7 +556,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
         head = `<tr class="porow"><td colspan="${cs}"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
       }
-      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm">${i.batch ? `<span class="bbadge">✅ ${esc(i.batch)}</span>` : ''}<b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}${i.isNew ? ` <span class="newpill">${t('ថ្មី', 'New')}</span>` : ''}${canDel ? `<button type="button" class="rmrow" data-rmask="${n}" aria-label="${esc(t('លុបជួរនេះ', 'Delete row'))}">🗑</button>` : ''}${canDel && r.delAsk === n ? `<div class="rmask"><b>🗑 ${t('លុបជួរនេះ?', 'Delete this row?')}</b><button type="button" class="btn sm" data-rmno>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn sm danger" data-rm="${n}">${t('លុប', 'Delete')}</button></div>` : ''}</td></tr>
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm">${i.batch ? `<span class="bbadge">✅ ${esc(i.batch)}</span>` : ''}<b>${n + 1}. ${esc(i.desc)}</b><small><b class="pono">PO ${esc(itemPo(i, r))}</b> · ${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}${i.isNew ? ` <span class="newpill">${t('ថ្មី', 'New')}</span>` : ''}${canDel ? `<button type="button" class="rmrow" data-rmask="${n}" aria-label="${esc(t('លុបជួរនេះ', 'Delete row'))}">🗑</button>` : ''}${canDel && r.delAsk === n ? `<div class="rmask"><b>🗑 ${t('លុបជួរនេះ?', 'Delete this row?')}</b><button type="button" class="btn sm" data-rmno>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn sm danger" data-rm="${n}">${t('លុប', 'Delete')}</button></div>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
@@ -684,13 +684,15 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const c = String(code || '').trim().toUpperCase(), same = x => String(x || '').trim().toUpperCase() === c;
     const el = $('#bscan'); if (el) el.value = '';
     if (!c) return;
-    if (F.items.some(i => same(i.batch))) { toast('⚠️ ' + c + t(' បានស្កេនរួច', ' already scanned')); return; }
-    const l = PLAN.find(x => same(x.batch) && left(x, F.id) > 0 && (!SITE || !x.site || x.site === SITE));
-    if (!l) {
+    // one batch can sit on several plan rows (e.g. one per PO): every row with Kg left comes in (Kim, 19 Nov 2026)
+    const ls = PLAN.filter(x => same(x.batch) && left(x, F.id) > 0 && (!SITE || !x.site || x.site === SITE))
+      .filter(x => !F.items.some(i => same(i.batch) && itemPo(i, F) === x.po && i.material === x.material));
+    if (!ls.length && F.items.some(i => same(i.batch))) { toast('⚠️ ' + c + t(' បានស្កេនរួច', ' already scanned')); return; }
+    if (!ls.length) {
       F.badB = (F.badB || []).filter(x => x !== c).concat([c]); if (navigator.vibrate) navigator.vibrate(200);
     } else {
-      F.items.push(item(l)); syncPos(F); Object.assign(F, headerOf(F.pos)); if (!F.site && l.site) F.site = l.site;
-      toast('✅ ' + c + ' · ' + l.desc);
+      ls.slice(0, 10).forEach(l => F.items.push(item(l))); syncPos(F); Object.assign(F, headerOf(F.pos)); if (!F.site && ls[0].site) F.site = ls[0].site;
+      toast('✅ ' + c + ' · ' + ls[0].desc + (ls.length > 1 ? ' · ' + ls.length + ' PO' : ''));
     }
     renderForm(F.id); setTimeout(() => { const b = $('#bscan'); if (b) b.focus(); }, 0);
   }
