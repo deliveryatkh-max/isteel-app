@@ -106,4 +106,15 @@ call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch:
 const pr = soh[soh.length - 1];
 eq([pr[8], pr[10], pr[11], pr[12]], [2, 5, 1523.17, 5], '2 bundles x 150 + 5 pcs = 305 pcs = 1,523.17 kg, 5 pcs over the book');
 
+// Kim's own Product Master headers (19 Nov): PC/Bundle, Kg/PC, UoM. Boot sends the list; an operator may bring a
+// Product Master material into a bin for the first time, with its description, unit and pcs per bundle copied.
+sheets['Product Master'].grid = [['Material Group L4', 'Material', 'Description', 'ABC Class', 'Size', 'PC/Bundle', 'Kg/PC', 'UoM'],
+  ['Deformed Bar', '1500000000', 'Debar SD390 12mm ISI', 'A', '', '100', '10.66', 'PC']];
+Object.keys(cache).filter(k => k === 'pml').forEach(k => delete cache[k]);
+r = call('boot', {});
+eq([r.products.length, r.products[0].ppb, r.products[0].kg, r.products[0].uom], [1, 100, 10.66, 'PC'], 'boot sends the Product Master read by header name');
+r = call('move', { requestId: 'r40', type: 'IN', bin: 'BIN-B', material: '1500000000', batch: 'DB-7', sloc: '2010', qty: 205, reference: 'GR-40' });
+const nl = soh[soh.length - 1];
+eq([r.balance, nl[1], nl[2], nl[5], nl[6]], [205, '1500000000', 'Debar SD390 12mm ISI', 'PC', 100], 'first IN of a Product Master material makes the line');
+
 console.log('Stock Count flow tests: ' + pass + ' passed');

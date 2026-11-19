@@ -50,6 +50,11 @@
     ['C1-FG-A-01-01-23', 'CPURLIN-100', 'C Purlin 100 x 50 x 2.0', '26100007', '2010', 'PC', 50, 200, 17.8],
     ['C1-FG-A-01-01-24', 'ROOF-760', 'Roofing Sheet 760 x 0.35 Blue', '26100112', '2010', 'PC', 100, 650],
   ].map(x => ({ bin: x[0], material: x[1], desc: x[2], batch: x[3], sloc: x[4], uom: x[5], pcsPerBundle: x[6], book: x[7], kgPerPc: x[8] || 0 }));
+  // Demo Product Master (part of Kim's list, 19 Nov) for the IN material picker.
+  const DEMO_PRODUCTS = [
+    ['1500000000', 'Debar SD390 12mm ISI', 100, 10.66], ['1500000001', 'Debar SD390 14mm ISI', 100, 14.5], ['1500000002', 'Debar SD390 16mm ISI', 100, 18.95],
+    ['1500000004', 'Debar SD390 20mm ISI', 50, 29.6], ['1500000016', 'Debar SD295 10mm ISI', 150, 7.4], ['1500000034', 'Debar SD390 16mm HOA PHAT', 100, 18.95],
+  ].map(x => ({ material: x[0], desc: x[1], uom: 'PC', ppb: x[2], kg: x[3] }));
   // Opening movements, so every stock card has a history and its last balance equals the stock above.
   const DEMO_LEDGER = [];
   (function seed() {
@@ -136,7 +141,7 @@
 
   // ------------------------------------------------------------------ boot and queue
   async function boot() {
-    if (DEMO) { S.bins = demoBinList(); S.stock = DEMO_STOCK; S.list = S.bins.slice(0, 5); S.user = { name: 'Demo' }; S.dash = demoDash(); return route(); }
+    if (DEMO) { S.bins = demoBinList(); S.stock = DEMO_STOCK; S.products = DEMO_PRODUCTS; S.list = S.bins.slice(0, 5); S.user = { name: 'Demo' }; S.dash = demoDash(); return route(); }
     if (!signedIn()) { S.signedOut = true; return route(); }
     const cached = jget(CACHE_KEY, null);
     if (cached && !S.user) { useBoot(cached); route(); }   // fast: last data at once, fresh data follows
@@ -153,7 +158,7 @@
   }
 
   function useBoot(b) {
-    S.user = b.user; S.list = b.today || []; S.bins = b.bins || []; S.stock = b.stock || []; S.dash = b.dash || null;
+    S.user = b.user; S.list = b.today || []; S.bins = b.bins || []; S.stock = b.stock || []; S.products = b.products || []; S.dash = b.dash || null;
     S.signedOut = false; S.blocked = ''; S.loadError = '';
   }
   // Bin from the booted data (no request). null when the bin is not in Bin Master.
@@ -461,25 +466,54 @@
     S.move = { type: type, requestId: newId(), from: S.view, line: lineIdx == null ? ((S.bin.lines || []).length === 1 ? 0 : -1) : lineIdx };
     S.view = 'move'; route();
   }
+  // Product Master list for the IN material picker: the server's list plus any material already in stock.
+  function products() {
+    const out = {}, list = [];
+    (S.products || []).forEach(p => { const k = String(p.material).toUpperCase(); if (!out[k]) { out[k] = Object.assign({}, p); list.push(out[k]); } });
+    (S.stock || []).forEach(l => {
+      const k = String(l.material).toUpperCase(), p = out[k];
+      if (!p) { out[k] = { material: l.material, desc: l.desc, uom: l.uom, ppb: l.pcsPerBundle, kg: l.kgPerPc || 0 }; list.push(out[k]); }
+      else if (!p.uom) p.uom = l.uom;
+    });
+    return list;
+  }
+  // Total in the SAP unit (Kim, 19 Nov): bundles x pcs per bundle + loose pcs, turned into kg when SAP books the line in kg.
+  function moveQty(u) {
+    const bd = $('#mBd').value, pc = $('#mPc').value, kgBox = $('#mKg');
+    if (kgBox && !kgBox.hidden) return { qty: kgBox.querySelector('input').value, text: '' };
+    if (bd === '' && pc === '') return { qty: '', text: '' };
+    const pcs = (Number(bd) || 0) * (u.ppb || 1) + (Number(pc) || 0);
+    const qty = isKg(u.uom) ? round3(pcs * u.kg) : pcs;
+    const parts = [];
+    if (Number(bd)) parts.push(`${fmtQty(Number(bd))} ${T('បាច់', 'bundle')} × ${fmtQty(u.ppb || 1)}`);
+    if (Number(pc)) parts.push(`${fmtQty(Number(pc))} ${T('រាយ', 'pcs')}`);
+    const kgText = !isKg(u.uom) && u.kg ? ` · ≈ ${fmtQty(round3(pcs * u.kg))} KG` : '';
+    return { qty: String(qty), text: `${parts.join(' + ')} = <b>${fmtQty(qty)} ${esc(u.uom)}</b>${isKg(u.uom) ? ` (${fmtQty(pcs)} ${T('រាយ', 'pcs')})` : ''}${kgText}` };
+  }
   function moveScreen() {
-    const b = S.bin, m = S.move, isIn = m.type === 'IN', isTr = m.type === 'TRANSFER';
-    const opts = (b.lines || []).map((l, i) => `<option value="${i}" ${m.line === i ? 'selected' : ''}>${esc(l.material)} · ${esc(l.batch)} · ${fmtQty(l.book)} ${esc(l.uom)}</option>`).join('');
+    const b = S.bin, m = S.move, isIn = m.type === 'IN', isTr = m.type === 'TRANSFER', lines = b.lines || [];
+    const opts = lines.map((l, i) => `<option value="${i}" ${m.line === i ? 'selected' : ''}>${esc(l.material)} · ${esc(l.batch)} · ${fmtQty(l.book)} ${esc(l.uom)}</option>`).join('');
+    const pre = m.line >= 0 && lines[m.line] ? lines[m.line] : null;
+    if (isIn && m.pick === undefined) m.pick = pre ? (products().find(p => String(p.material).toUpperCase() === String(pre.material).toUpperCase()) || null) : null;
+    const pickText = p => (p ? `${p.material} · ${p.desc || ''}` : '');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${typeLabel(m.type)}</div></section>
       <section class="card form">
-        <label for="mLine">${T('សម្ភារៈ / បាច់', 'Material / batch')}</label>
-        <div class="row"><select id="mLine"><option value="-1">${T('— ជ្រើសរើស —', '— choose —')}</option>${opts}${isIn ? `<option value="new" ${m.line === 'new' ? 'selected' : ''}>➕ ${T('សម្ភារៈ ឬបាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New material or batch in this bin')}</option>` : ''}</select>
+        ${isIn ? `<label for="mMat">${T('សម្ភារៈ (វាយកូដ ឬបរិយាយ)', 'Material (type code or description)')}</label>
+        <div class="row"><input id="mMat" type="search" autocomplete="off" placeholder="${T('ឧ. 1500000000 ឬ Debar 12mm', 'e.g. 1500000000 or Debar 12mm')}" value="${esc(pickText(m.pick))}">
           <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>
+        <div class="sug" id="mSug" hidden></div>
+        <label for="mBatch">${T('លេខបាច់ផលិត (Batch)', 'Batch number')}</label>
+        <div class="row"><input id="mBatch" type="text" autocapitalize="characters" autocomplete="off" value="${esc(pre ? pre.batch : '')}">
+          <button type="button" class="btn ghost shrink" id="mBatchScan" title="Scan">📷</button></div>`
+        : `<label for="mLine">${T('សម្ភារៈ / បាច់', 'Material / batch')}</label>
+        <div class="row"><select id="mLine"><option value="-1">${T('— ជ្រើសរើស —', '— choose —')}</option>${opts}</select>
+          <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>`}
         <p class="muted" id="mInfo"></p>
-        <div id="mNew" hidden>
-          <div class="fields"><div><label for="nMat">${T('កូដសម្ភារៈ', 'Material code')}</label><input id="nMat" type="text" autocapitalize="characters" autocomplete="off"></div>
-            <div><label for="nBatch">Batch</label><input id="nBatch" type="text" autocapitalize="characters" autocomplete="off"></div></div>
-          <div class="fields"><div><label for="nSloc">SLOC</label><input id="nSloc" type="text" autocomplete="off"></div>
-            <div><label for="nUom">${T('ឯកតា (សម្ភារៈថ្មីប៉ុណ្ណោះ)', 'Unit (new material only)')}</label><input id="nUom" type="text" placeholder="KG / PC" autocomplete="off"></div></div>
-          <label for="nDesc">${T('បរិយាយ (សម្ភារៈថ្មីប៉ុណ្ណោះ)', 'Description (new material only)')}</label><input id="nDesc" type="text" autocomplete="off">
-        </div>
-        <label for="mQty">${T('ចំនួន', 'Quantity')} <span id="mUom"></span></label>
-        <input id="mQty" type="number" inputmode="decimal" min="0" step="any" class="need">
+        <div class="fields"><div><label for="mBd">${T('បាច់', 'Bundle')}</label><input id="mBd" type="number" inputmode="numeric" min="0" step="1"></div>
+          <div><label for="mPc">${T('រាយ', 'Pcs')}</label><input id="mPc" type="number" inputmode="numeric" min="0" step="1"></div></div>
+        <div id="mKg" hidden><label for="mKgIn">${T('គីឡូ (Kg)', 'Kg')}</label><input id="mKgIn" type="number" inputmode="decimal" min="0" step="any"></div>
+        <div class="tot" id="mTot"></div>
         ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
         <label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : isTr ? T('លេខឯកសារយោង (ស្រេចចិត្ត)', 'Reference (optional)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
@@ -491,48 +525,92 @@
       <button type="button" class="btn big ${isIn ? 'ok' : isTr ? 'blue' : 'warn'}" id="mSave" disabled>${T('បញ្ជាក់', 'Confirm')} ${typeLabel(m.type)}</button>
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
 
-    const sel = () => { const v = $('#mLine').value; return v === 'new' ? 'new' : Number(v); };
-    const line = () => (typeof sel() === 'number' && sel() >= 0 ? b.lines[sel()] : null);
+    // IN: the line of this bin with the same material + batch, else a new line (SLOC taken from this bin or the material).
+    const inLine = () => {
+      const p = m.pick, bt = $('#mBatch').value.trim().toUpperCase();
+      if (!p) return null;
+      return lines.find(l => String(l.material).toUpperCase() === String(p.material).toUpperCase() && String(l.batch).toUpperCase() === bt) || null;
+    };
+    const guessSloc = p => { const same = (S.stock || []).find(l => String(l.material).toUpperCase() === String(p.material).toUpperCase()); return (lines[0] && lines[0].sloc) || (same && same.sloc) || ''; };
+    const line = () => (isIn ? inLine() : (Number($('#mLine').value) >= 0 ? lines[Number($('#mLine').value)] : null));
+    const unit = () => {
+      const l = line(), p = isIn ? m.pick : null;
+      if (l) return { uom: l.uom, ppb: Number(l.pcsPerBundle) || (p && p.ppb) || 1, kg: Number(l.kgPerPc) || (p && p.kg) || 0, book: l.book };
+      if (p) return { uom: p.uom || 'PC', ppb: Number(p.ppb) || 1, kg: Number(p.kg) || 0, book: 0 };
+      return null;
+    };
     const refresh = () => {
-      const l = line(), isNew = sel() === 'new', qty = $('#mQty').value, ref = $('#mRef').value.trim();
-      $('#mNew').hidden = !isNew;
-      $('#mUom').textContent = l ? '(' + l.uom + ')' : '';
-      $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : '';
-      const uom = l ? l.uom : ($('#nUom').value.trim() || 'KG'), bal = l ? l.book : 0;
-      let bad = !l && !isNew ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isNew && !$('#nMat').value.trim() ? T('សូមបញ្ចូលកូដសម្ភារៈ', 'Enter the material code') : moveBad(m.type, qty, bal, uom);
+      const l = line(), u = unit(), ref = $('#mRef').value.trim();
+      // A kg line with no kg per piece in the master can only be entered in kg.
+      const kgOnly = !!u && isKg(u.uom) && !u.kg;
+      $('#mKg').hidden = !kgOnly; $('#mBd').closest('.fields').hidden = kgOnly;
+      const q = u ? moveQty(u) : { qty: '', text: '' };
+      $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
+      $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
+      let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
-      $('#mQty').classList.toggle('need', qty === '');
+      const empty = q.qty === '';
+      ['#mBd', '#mPc', '#mKgIn'].forEach(id => $(id).classList.toggle('need', empty));
+      if (isIn) { $('#mMat').classList.toggle('need', !m.pick); $('#mBatch').classList.toggle('need', !$('#mBatch').value.trim()); }
       if ($('#mTo')) $('#mTo').classList.toggle('need', !$('#mTo').value.trim());
       if (!isTr) $('#mRef').classList.toggle('need', !ref);
-      const after = qty !== '' && isFinite(Number(qty)) ? round3(isIn ? bal + Number(qty) : bal - Number(qty)) : null;
-      $('#mAfter').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : `${T('សមតុល្យក្រោយ', 'Balance after')}: <b>${fmtQty(after)} ${esc(uom)}</b>`;
+      const after = u && !empty && isFinite(Number(q.qty)) ? round3(isIn ? u.book + Number(q.qty) : u.book - Number(q.qty)) : null;
+      $('#mAfter').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : `${T('សមតុល្យក្រោយ', 'Balance after')}: <b>${fmtQty(after)} ${esc(u.uom)}</b>`;
       $('#mSave').disabled = !!bad;
+      m.qty = q.qty; m.unit = u;
     };
-    document.querySelectorAll('.form input, .form select').forEach(el => { el.oninput = refresh; el.onchange = refresh; });
-    // Product barcode: matched to a line of this bin when the scanned text contains its batch or its material code.
+    document.querySelectorAll('.form input, .form select').forEach(el => { if (el.id !== 'mMat') { el.oninput = refresh; el.onchange = refresh; } });
+
+    // Material picker: type part of the code or description (any order of words), tap an item.
+    const choose = p => { m.pick = p; $('#mMat').value = pickText(p); $('#mSug').hidden = true; refresh(); };
+    if (isIn) {
+      const sug = $('#mSug');
+      const show = () => {
+        const words = $('#mMat').value.trim().toUpperCase().split(/\s+/).filter(Boolean);
+        const inBin = lines.map(l => String(l.material).toUpperCase());
+        let list = products().filter(p => { const t = (p.material + ' ' + (p.desc || '')).toUpperCase(); return words.every(w => t.indexOf(w) >= 0); });
+        if (!words.length) list = list.filter(p => inBin.indexOf(String(p.material).toUpperCase()) >= 0);
+        list = list.slice(0, 30);
+        sug.innerHTML = list.length ? list.map((p, i) => `<button type="button" data-i="${i}"><b>${esc(p.material)}</b><span>${esc(p.desc || '')}</span>${p.ppb > 1 ? `<i>${fmtQty(p.ppb)} ${T('រាយ/បាច់', 'pcs/bd')}</i>` : ''}</button>`).join('')
+          : words.length ? `<p class="muted">${T('រកមិនឃើញក្នុង Product Master', 'Not found in the Product Master')}</p>` : '';
+        sug.hidden = !sug.innerHTML;
+        sug.querySelectorAll('[data-i]').forEach(el => { el.onclick = () => choose(list[Number(el.dataset.i)]); });
+      };
+      $('#mMat').oninput = () => { m.pick = null; show(); refresh(); };
+      $('#mMat').onfocus = show;
+      document.addEventListener('click', function off(e) { if (!document.body.contains(sug)) return document.removeEventListener('click', off); if (!e.target.closest('#mSug, #mMat')) sug.hidden = true; });
+      $('#mBatchScan').onclick = () => scanSheet(T('ស្កេន QR លេខបាច់', 'Scan the batch QR code'), text => { $('#mBatch').value = text.trim(); refresh(); }, 'D261119007');
+    }
+    // Product barcode: matched to a line of this bin (batch or material code), or for IN to a Product Master material.
     $('#mScan').onclick = () => scanSheet(T('ស្កេនបាកូដទំនិញ', 'Scan the product barcode'), text => {
       const up = text.toUpperCase();
-      const i = (b.lines || []).findIndex(l => (l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) || (l.material && up.indexOf(String(l.material).toUpperCase()) >= 0));
+      const i = lines.findIndex(l => (l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) || (l.material && up.indexOf(String(l.material).toUpperCase()) >= 0));
+      if (isIn) {
+        const l = lines[i], p = products().find(x => up.indexOf(String(x.material).toUpperCase()) >= 0 || (l && String(x.material).toUpperCase() === String(l.material).toUpperCase()));
+        if (p) { if (l && l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) $('#mBatch').value = l.batch; choose(p); }
+        else { $('#mMat').value = text; m.pick = null; $('#mMat').focus(); toast(T('រកមិនឃើញក្នុង Product Master', 'Not found in the Product Master')); refresh(); }
+        return;
+      }
       if (i >= 0) $('#mLine').value = String(i);
-      else if (isIn) { $('#mLine').value = 'new'; $('#nMat').value = text; toast(T('មិនមានក្នុងកុងតឺន័រនេះ។ សូមពិនិត្យកូដ។', 'Not in this bin yet. Check the code.')); }
       else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងកុងតឺន័រនេះទេ', 'This barcode does not match the stock in this bin'));
       refresh();
-    }, ((b.lines || [])[0] || {}).batch);
+    }, (lines[0] || {}).batch || (products()[0] || {}).material);
     // Reference barcode (Kim, 14 Nov): scan the GR / PO / DN barcode instead of typing it.
     $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
     if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
-    $('#mSave').onclick = () => saveMove(line(), sel() === 'new');
+    $('#mSave').onclick = () => { const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
     refresh();
   }
 
-  async function saveMove(l, isNew) {
-    const b = S.bin, m = S.move, isTr = m.type === 'TRANSFER', qty = Number($('#mQty').value);
-    const src = l || { material: $('#nMat').value.trim(), batch: $('#nBatch').value.trim(), sloc: $('#nSloc').value.trim(), desc: $('#nDesc').value.trim(), uom: $('#nUom').value.trim() };
+  async function saveMove(l, isNew, fresh) {
+    const b = S.bin, m = S.move, isTr = m.type === 'TRANSFER', qty = Number(m.qty);
+    const src = l || fresh;
     const pl = { requestId: m.requestId, type: m.type, bin: b.bin, material: src.material, batch: src.batch, sloc: src.sloc, qty: qty,
       reference: $('#mRef').value.trim(), remark: $('#mRemark').value.trim() };
     if (isNew) { pl.desc = src.desc; pl.uom = src.uom; }
+    if ($('#mBd').value || $('#mPc').value) { pl.bundles = Number($('#mBd').value) || 0; pl.pieces = Number($('#mPc').value) || 0; }
     if (isTr) pl.toBin = $('#mTo').value.trim();
     const action = isTr ? 'transfer' : 'move';
     const btn = $('#mSave'); btn.disabled = true; btn.textContent = T('កំពុងរក្សាទុក…', 'Saving…');
