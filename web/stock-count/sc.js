@@ -238,8 +238,38 @@
   window.SC_REFRESH = () => { boot(); };
 
   // ------------------------------------------------------------------ screens
+  // Screens go into the browser history (Kim, 19 Nov): the ‹ button and the phone's back gesture return to the previous
+  // screen instead of leaving the app. A result replaces its form, so Back from a result goes to the bin, not the form.
+  const HIST = [];
+  let histAt = -1, histPop = false, histSkip = false;
+  const histKey = () => S.view + '|' + (S.bin ? S.bin.bin : '') + '|' + (S.view === 'card' ? S.lineIdx : '');
+  function histSave() {
+    if (histPop) { histPop = false; return; }
+    const snap = { key: histKey(), view: S.view, bin: S.bin, card: S.card, move: S.move, edit: S.edit, result: S.result, lineIdx: S.lineIdx, mode: S.mode };
+    try {
+      if (histAt < 0) { HIST.length = 0; HIST.push(snap); histAt = 0; history.replaceState({ scAt: 0 }, ''); return; }
+      if (HIST[histAt] && HIST[histAt].key === snap.key) { HIST[histAt] = snap; return; }
+      const prev = HIST[histAt];
+      // An in-app Back to the screen just before: step the history back too, so ‹ never bounces forward.
+      if (histAt > 0 && HIST[histAt - 1].key === snap.key) { histAt--; HIST[histAt] = snap; histSkip = true; history.back(); return; }
+      if (S.view === 'result' && prev && /^(move|edit|count)$/.test(prev.view)) { HIST[histAt] = snap; history.replaceState({ scAt: histAt }, ''); return; }
+      HIST.length = histAt + 1; HIST.push(snap); histAt++;
+      history.pushState({ scAt: histAt }, '');
+    } catch (e) { /* history not available: the in-app Back buttons still work */ }
+  }
+  window.addEventListener('popstate', e => {
+    if (histSkip) { histSkip = false; return; }
+    const i = e.state && typeof e.state.scAt === 'number' ? e.state.scAt : -1, h = HIST[i];
+    if (!h) return;
+    histAt = i; histPop = true;
+    Object.assign(S, { view: h.view, bin: h.bin, card: h.card, move: h.move, edit: h.edit, result: h.result, lineIdx: h.lineIdx, mode: h.mode });
+    if (S.move && S.view === 'move') S.move = Object.assign({}, S.move, { requestId: newId() });   // a new post, never a repeat
+    if (S.edit && S.view === 'edit') S.edit = Object.assign({}, S.edit, { requestId: newId(), confirm: false });
+    if (S.bin && !DEMO) { const nb = localBin(S.bin.bin.toUpperCase()); if (nb) S.bin = nb; }
+    route(); window.scrollTo(0, 0);
+  });
   function route() {
-    try { route_(); }
+    try { route_(); histSave(); }
     catch (e) {   // a drawing error must never leave the loading bars on screen
       view(`<div class="card blocked"><div class="emoji">⚠️</div><h2>${T('មានបញ្ហាបង្ហាញទំព័រ', 'Could not show the page')}</h2><p class="muted">${esc(e && e.message || e)}</p>
         <button type="button" class="btn" onclick="location.reload()">${T('ផ្ទុកឡើងវិញ', 'Reload')}</button></div>`);
