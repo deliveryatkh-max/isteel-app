@@ -283,7 +283,6 @@
         <div class="qr-view" id="qrView" hidden><video playsinline muted></video><div class="qr-frame"></div></div>
         <p class="muted center" id="binMsg" hidden></p>
         <button type="button" class="btn ok big" id="scanBtn">📷 ${T('ស្កេន QR Code', 'Scan QR code')}</button>
-        <label class="btn ghost photo" id="photoBtn"><input type="file" accept="image/*" capture="environment" hidden>🖼️ ${T('ថតរូប QR ជំនួសវិញ', 'Take a photo of the QR instead')}</label>
         <div class="row" style="margin-top:12px">
           <input id="binIn" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('ឬវាយកូដកុងតឺន័រ', 'or type the bin code')}">
           <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
@@ -303,7 +302,7 @@
     $('#goBin').onclick = go;
     $('#binIn').onkeydown = e => { if (e.key === 'Enter') go(); };
     $('#scanBtn').onclick = () => (scanner.on ? stopScan() : startScan());
-    $('#photoBtn input').onchange = scanPhoto;
+    if ($('#photoBtn input')) $('#photoBtn input').onchange = scanPhoto;
     if ($('#sendQ')) $('#sendQ').onclick = () => flush().then(route);
     if ($('#retry')) $('#retry').onclick = () => { view('<div class="loading"><div class="skel"></div><div class="skel short"></div></div>'); boot(); };
     document.querySelectorAll('[data-bin]').forEach(el => { el.onclick = () => openBin(el.dataset.bin); });
@@ -662,7 +661,7 @@
         <div class="kdisp" id="mDisp"><button type="button" class="calcb" id="mCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
         <div class="kpad" id="mPad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div>
         <div class="tot" id="mTot"></div>
-        ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
+        ${isTr ? `<label for="mTo">${T('ប្តូរទៅទីតាំង៖', 'Move to location:')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
         ${isTr ? '' : `<label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
         <div class="row"><input id="mRef" type="text" maxlength="60" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mRefScan" title="Scan">📷</button></div>`}
