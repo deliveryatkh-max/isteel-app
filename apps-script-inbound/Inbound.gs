@@ -29,7 +29,7 @@ const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse', '3PL DN Qty'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
@@ -589,7 +589,12 @@ function start_(p, user) {
     if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on ' + (ipo || 'this PO') + '.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ ' + (ipo || 'PO នេះ') + ' ទេ។');
     const arr = num_(i.arrQty);
     if (!(arr > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
-    return { po: line.po, inbound: line.inbound, material: line.material, batch: line.batch || '', desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+    // damage is recorded at Start unloading (Kim, 19 Nov 2026)
+    const dm = num_(i.dmgQty) > 0 ? num_(i.dmgQty) : 0, dph = dm > 0 && Array.isArray(i.dmgPh) ? i.dmgPh.slice(0, MAX_DMG_PHOTOS) : [];
+    if (dm > 0 && !i.dmgType) fail_('BAD', 'Choose the damage type for ' + line.desc + '.', 'សូមជ្រើសប្រភេទខូចខាតសម្រាប់ ' + line.desc + '។');
+    if (dm > 0 && !dph.length) fail_('BAD', 'Take a damage photo for ' + line.desc + '.', 'សូមថតរូបខូចខាតសម្រាប់ ' + line.desc + '។');
+    return { po: line.po, inbound: line.inbound, material: line.material, batch: line.batch || '', desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '',
+      dmgQty: dm || '', dmgType: dm > 0 ? (DMG[i.dmgType] ? i.dmgType : clip_(i.dmgType, 40)) : '', dmgUom: dm > 0 ? clip_(i.dmgUom, 15) || 'Kg' : '', dmgPh: dph };
   });
   if (!items.length) fail_('BAD', 'Choose the items on this truck.', 'សូមជ្រើសទំនិញលើឡាននេះ។');
   const pos = asked.filter(x => items.some(i => i.po === x));   // a PO with no item on the truck is left out
@@ -598,8 +603,7 @@ function start_(p, user) {
   const join = k => heads.map(l => l[k]).filter((v, n, a) => v && a.indexOf(v) === n).join(', ');
   const truck = clip_(p.truck, 20).toUpperCase().replace(/\s+/g, '');
   if (!truck) fail_('BAD', 'Truck number is missing.', 'សូមបញ្ចូលផ្លាកលេខឡាន។');
-  const dn = clip_(p.dn3pl, 40);
-  if (!dn) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
+  const dn = clip_(p.dn3pl, 40) === '-' ? '' : clip_(p.dn3pl, 40);   // 3PL DN is asked at Finish unloading (Kim, 19 Nov 2026)
   const us = userSites_(user);
   const site = site_(p.site, user) || heads[0].site || (us.list.length === 1 && !us.all ? us.list[0] : '');
   const wh = warehouse_(p.warehouse, true, site);
@@ -615,6 +619,7 @@ function start_(p, user) {
     const id = res[want] && !recRows_().some(r => String(r[0]) === want) ? want : nextId_(res);
     if (res[want]) { delete res[want]; saveReserved_(res); }
     const folder = folder_(id);
+    items.forEach(i => { i.dmgPh = i.dmgPh.map((v, n) => photo_(folder, v, [], 'damage-' + i.material + '-' + (n + 1) + '.jpg')).filter(Boolean); });
     const now = new Date();
     const l = heads[0];
     const rec = {
@@ -668,8 +673,9 @@ function update_(p, user, finish) {
     }
     rec.items.forEach(i => {
       const s = sent.find(x => String(x.material) === i.material && (!x.po || !i.po || poOf_(x.po) === i.po) && (!x.batch || !i.batch || String(x.batch) === i.batch)) || {};
-      const gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);
-      const dm = s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
+      const keepDm = s.dmgQty === undefined;   // damage comes from Start unloading (Kim, 19 Nov 2026)
+      let gr = s.grQty === '' || s.grQty == null ? '' : num_(s.grQty);
+      const dm = keepDm ? num_(i.dmgQty) || 0 : s.dmgQty === '' || s.dmgQty == null ? 0 : num_(s.dmgQty);
       if (gr !== '' && !(gr >= 0)) fail_('BAD', 'Actual GR Qty must be a number.', 'បរិមាណទទួលត្រូវតែជាលេខ។');
       if (!(dm >= 0)) fail_('BAD', 'Damaged Qty must be a number.', 'បរិមាណខូចខាតត្រូវតែជាលេខ។');
       // reviewers and admins can correct the Arrival Qty after arrival (Kim, 31 Oct 2026)
@@ -678,9 +684,10 @@ function update_(p, user, finish) {
         if (!(arr > 0)) fail_('BAD', 'Arrival Qty must be more than 0 for ' + i.desc + '.', 'បរិមាណមកដល់ត្រូវធំជាង 0 សម្រាប់ ' + i.desc + '។');
         i.arrQty = arr;
       }
-      if (finish && gr === '') fail_('BAD', 'Actual GR Qty is missing for ' + i.desc + '.', 'សូមបញ្ចូលបរិមាណទទួលសម្រាប់ ' + i.desc + '។');
+      if (gr === '' && (finish || !live)) gr = i.arrQty;   // the Arrival Qty (Kg from the Incoming Plan) is the received qty (Kim, 19 Nov 2026)
       i.grQty = gr;
       i.dmgQty = gr === '' && !dm ? '' : dm;
+      if (keepDm) return;
       i.dmgType = dm > 0 ? (DMG[s.dmgType] ? s.dmgType : clip_(s.dmgType, 40)) : '';
       i.dmgUom = dm > 0 ? clip_(s.dmgUom, 15) || i.dmgUom || rec.uom : '';   // unit of the damaged qty (Kim, 31 Oct 2026)
       const keep = i.dmgPh || [];
@@ -691,7 +698,8 @@ function update_(p, user, finish) {
     });
     const truck = clip_(p.truck, 20).toUpperCase().replace(/\s+/g, '');
     if (truck) rec.truck = truck;
-    if (clip_(p.dn3pl, 40)) rec.dn3pl = clip_(p.dn3pl, 40);
+    if (clip_(p.dn3pl, 40) && p.dn3pl !== '-') rec.dn3pl = clip_(p.dn3pl, 40);
+    if (p.dnQty !== undefined && p.dnQty !== '') { const q = num_(p.dnQty); if (!(q > 0)) fail_('BAD', 'Total Qty on the 3PL DN must be more than 0.', 'បរិមាណសរុបលើ DN 3PL ត្រូវធំជាង 0។'); rec.dnQty = q; }
     rec.owner = p.owner === 'ISI' || p.owner === '3PL' ? p.owner : rec.owner;
     rec.carrier = rec.owner === '3PL' ? clip_(p.carrier, 60) : '';
     if (p.company) rec.company = clip_(p.company, 60);   // Truck company from the weigh scale (Kim, 17 Nov 2026)
@@ -709,6 +717,8 @@ function update_(p, user, finish) {
     if (finish) {
       if (!rec.owner) fail_('BAD', 'Choose ISI or 3PL truck.', 'សូមជ្រើសឡាន ISI ឬ 3PL។');
       if (!(rec.manpower > 0)) fail_('BAD', 'Manpower is missing.', 'សូមបញ្ចូលចំនួនបុគ្គលិកឃ្លាំង។');
+      if (!rec.dn3pl) fail_('BAD', '3PL DN Number is missing.', 'សូមបញ្ចូលលេខ DN របស់ 3PL។');
+      if (!(rec.dnQty > 0)) fail_('BAD', 'Total Qty on the 3PL DN is missing.', 'សូមបញ្ចូលបរិមាណសរុបលើ DN 3PL។');
       rec.end = fmt_(new Date(), 'HH:mm');
       rec.status = STATUS.done;
       rec.finishedBy = user.name;
@@ -737,11 +747,11 @@ function store_(rec, row) {
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
   const sh = sheet_(SH.LOG, LOG_COLS);
-  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Entrance, Voice Note, Damage UoM, Warehouse)
+  if (sh.getLastColumn() < LOG_COLS.length) sh.getRange(1, 1, 1, LOG_COLS.length).setValues([LOG_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');   // new columns (Entrance, Voice Note, Damage UoM, Warehouse, 3PL DN Qty)
   const rows = rec.items.map(i => [rec.id, rec.status, itemPo_(i, rec), i.inbound || rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || ''].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || '', rec.dnQty || ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
@@ -840,7 +850,7 @@ function telegramArrived_(r) {
   const ent = r.warehouse ? (warehouses_().find(w => w.code === r.warehouse && (!w.site || !r.site || w.site === r.site)) || {}) : {};
   const where = r.warehouse ? '🏭 Entrance ' + esc_(r.warehouse) + (ent.desc ? ' ' + esc_(ent.desc) : '') : r.site ? '🏭 ' + esc_(r.site) : '';
   return telegram_(Object.assign({ text: ['🚛 <b>ចាប់ផ្តើមទំលាក់ ' + esc_(r.truck) + '</b> · ' + esc_(r.start)].concat(where ? [where] : [], [
-    '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
+    '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
     '📦 ចំនួន ' + r.items.length + ' មុខ · ទម្ងន់ ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)]).join('\n') }, button_(r)));
 }
 /** Posted for every finished truck (Kim, 3 Nov 2026), as a reply to its arrival post; damage and short lines are added. */
@@ -849,7 +859,7 @@ function telegramDone_(r) {
   const lines = [(bad ? '⚠️' : '✅') + ' <b>បញ្ចប់ ' + esc_(r.truck) + '</b>' + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
     '⏱️ ចំណាយពេល ' + spent_(r) + ' min · ' + esc_(r.start) + '–' + esc_(r.end),
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.id) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
-    '📦 បានទទួល ' + kg_(tot_(r, 'grQty')) + ' / ' + kg_(tot_(r, 'arrQty')) + ' ' + esc_(r.uom) + ' · 👷 ' + esc_(r.manpower)];
+    '📦 បានទទួល ' + kg_(tot_(r, 'grQty')) + ' ' + esc_(r.uom) + (r.dnQty ? ' · DN ' + kg_(r.dnQty) : '') + ' · 👷 ' + esc_(r.manpower)];
   if (posOf_(r).length > 1) posOf_(r).forEach(x => { const its = r.items.filter(i => itemPo_(i, r) === x); lines.push('   • ' + esc_(x) + ': ' + kg_(its.reduce((s, i) => s + (Number(i.grQty) || 0), 0)) + ' ' + esc_(r.uom)); });
   less.forEach(i => lines.push('⬇ ទទួលខ្វះ៖ ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
   dmg.forEach(i => lines.push('💥 ខូចខាត៖ ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));

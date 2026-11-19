@@ -163,7 +163,9 @@
   }
   // Batch scan (Kim, 19 Nov 2026, option A): each batch in the Incoming Plan's Batch column is one plan line
   const HAS_BATCH = () => PLAN.some(x => x.batch);
-  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, batch: p.batch || '', desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
+  // Arrival Qty starts with the Kg left on the plan line (Incoming Plan column F), Kim 19 Nov 2026
+  const kgLeft = p => { try { return left(p, F && F.id) || ''; } catch (e) { return ''; } };
+  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, batch: p.batch || '', desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: kgLeft(p), grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
   const recvd = (po, mat, skip, b) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po && (!b || i.batch === b)).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip, x.batch));
@@ -539,7 +541,10 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   const canEditItems = (r, mode) => (mode === 'fin' || mode === 'view') && !!r.id && isLive(r) && canPlan();
   let EDIT_GO = null;   // { id, act: 'add' | 'del', n } from the receipt page, done once the edit form is open
   function itemsTable(r, mode) {
-    const cs = mode === 'arr' ? 2 : 4;   // GR + Damaged columns are hidden at Start unloading; PO Qty sits under the item name (Kim, 15 Nov 2026)
+    // Kim, 19 Nov 2026: Arrival Qty = received qty (no Actual GR column); Damaged Qty is typed at Start unloading.
+    // Old receipts with a GR different from the arrival still show the GR column on the receipt page.
+    const showGr = mode === 'view' && r.items.some(i => i.grQty !== '' && i.grQty != null && +i.grQty !== +i.arrQty);
+    const cs = showGr ? 4 : 3, de = mode === 'arr' || (mode === 'fin' && canPlan());
     const cell = (i, n, k, on) => on ? `<span class="qwrap"><button type="button" class="calcb" data-calc="${n}:${k}" aria-label="${esc(t('ម៉ាស៊ីនគិតលេខ', 'Calculator'))}">🧮</button><input class="qin" data-it="${n}" data-k="${k}" inputmode="decimal" value="${esc(i[k])}" placeholder="0"></span>`
       : `<span class="qro">${i[k] === '' || i[k] == null ? '—' : fmt(i[k])}</span>`;
     const ed = canEditItems(r, mode), canDel = ed && r.items.length > 1;
@@ -555,27 +560,27 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
-        <td class="n c4">${cell(i, n, 'dmgQty', mode === 'fin')}</td>
+        <td class="n c4">${cell(i, n, 'dmgQty', de)}</td>
         <td class="u c5"><span class="qro">${esc(r.uom)}</span></td></tr>`;
       if (dm) {
         const ph = i.dmgPh || [];
         out += `<tr class="dmgrow"><td colspan="${cs}">
           <div class="dmgbox">
-            <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
-            ${mode === 'fin' ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
-            <label class="f mt">📏 ${t('ឯកតាខូចខាត', 'Damage UoM')}${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
-            ${mode === 'fin' ? pickBtn('du' + n, i.dmgUom || '') : `<b>${esc(fmt(i.dmgQty) + ' ' + (i.dmgUom || r.uom))}</b>`}
-            <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${mode === 'fin' ? ' <span class="req">*</span>' : ''}</label>
-            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${mode === 'fin' ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${mode === 'fin' && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
+            <label class="f">⚠️ ${t('ប្រភេទខូចខាត', 'Damage type')}${de ? ' <span class="req">*</span>' : ''}</label>
+            ${de ? pickBtn('dt' + n, i.dmgType ? dmgName(i.dmgType) : '') : `<b>${esc(dmgName(i.dmgType) || '–')}</b>`}
+            <label class="f mt">📏 ${t('ឯកតាខូចខាត', 'Damage UoM')}${de ? ' <span class="req">*</span>' : ''}</label>
+            ${de ? pickBtn('du' + n, i.dmgUom || '') : `<b>${esc(fmt(i.dmgQty) + ' ' + (i.dmgUom || r.uom))}</b>`}
+            <label class="f mt">📷 ${t('រូបថតការខូចខាត', 'Damage photos')} <small class="il">${ph.length}/${MAX_DMG_PH}</small>${de ? ' <span class="req">*</span>' : ''}</label>
+            <div class="photos">${ph.map((v, j) => `<div class="ph">${phImg(v, '⚠️')}${de ? `<button type="button" data-delph="${n}:${j}" aria-label="remove">✕</button>` : ''}</div>`).join('')}${de && ph.length < MAX_DMG_PH ? `<label class="ph add"><input type="file" accept="image/*" multiple data-dph="${n}" hidden>📷</label>` : ''}</div>
           </div></td></tr>`;
       }
       return head + out;
     }).join('');
     const sum = k => fmt(tot(r, k));
-    return `<div class="tblwrap"><table class="itbl${mode === 'arr' ? ' arr' : ''}">
+    return `<div class="tblwrap"><table class="itbl${showGr ? '' : ' nogr'}">
       <thead><tr><th class="n c2">${t('ចំនួន (ដល់)', 'Arrival Qty')}</th><th class="n c3">${t('ទទួល', 'Actual GR Qty')}</th><th class="n c4">${t('ខូចខាត', 'Damaged Qty')}</th><th class="u c5">${t('ឯកតា', 'UoM')}</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="${cs}" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${sum('poQty')} ${esc(r.uom)}</span></td></tr><tr><td class="n">${sum('arrQty')}</td><td class="n c3">${mode === 'arr' ? '—' : sum('grQty')}</td><td class="n c4">${mode === 'arr' ? '—' : sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
+      <tfoot><tr><td colspan="${cs}" class="tl">${t('សរុប', 'Total')} · ${r.items.length} ${t('មុខ', 'items')} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${sum('poQty')} ${esc(r.uom)}</span></td></tr><tr><td class="n">${sum('arrQty')}</td><td class="n c3">${sum('grQty')}</td><td class="n c4">${sum('dmgQty')}</td><td class="u">${esc(r.uom)}</td></tr></tfoot>
     </table></div>`;
   }
   // Scale net vs the kg typed here (Kim, 14 Nov 2026): the Truck Scale ticket of the same plate (same day, or overnight / one
@@ -689,6 +694,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     }
     renderForm(F.id); setTimeout(() => { const b = $('#bscan'); if (b) b.focus(); }, 0);
   }
+  // DN total vs the Arrival Qty of the items: green when equal, red with the gap (Kim, 19 Nov 2026)
+  function dnCmp(r, short) {
+    const a = tot(r, 'arrQty'), d = +r.dnQty;
+    if (!(d > 0)) return short ? '' : `<p class="hint">${t('ចំនួនមកដល់សរុប', 'Total arrival qty')}: <b>${fmt(a)} ${esc(r.uom)}</b></p>`;
+    const g = Math.round((a - d) * 1000) / 1000;
+    const tag = g === 0 ? `<span class="dnok">✓ ${t('ត្រូវគ្នា', 'Matches')}</span>` : `<span class="dnbad">${g > 0 ? '+' : ''}${fmt(g)} ${esc(r.uom)}</span>`;
+    return short ? tag : `<p class="hint">${t('ចំនួនមកដល់សរុប', 'Total arrival qty')}: <b>${fmt(a)} ${esc(r.uom)}</b> · DN <b>${fmt(d)}</b> ${tag}</p>`;
+  }
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) {
@@ -723,7 +736,6 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
             ${pickBtn('truck', r.truck, '', r.newTruck)}</div>
           <div id="coBox">${grey(t('ក្រុមហ៊ុនឡាន', 'Truck company'), coOf(r))}</div>
         </div>
-        <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><div class="scanrow"><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"><button type="button" class="scanb" id="dnScan" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div></div>
         ${started ? '' : `<div class="shots">${PHOTOS.map(x => phTile(...x)).join('')}</div>`}
       </section>
       ${ents(r.site).length || siteOn() ? `<section class="card"><h2>🏭 ${t('ឃ្លាំង', 'Warehouse')}</h2>
@@ -731,6 +743,10 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         ${ents(r.site).length ? `<div class="field"><label class="f">${t('ច្រកចូល', 'Entrance')} <span class="req">*</span></label>${pickBtn('wh', whName(r.warehouse))}</div>` : ''}</section>` : ''}
 
       ${started ? `
+      <section class="card"><h2>🧾 ${t('ប័ណ្ណដឹកជញ្ជូន (DN) របស់ 3PL', '3PL Delivery Note')}</h2>
+        <div class="field"><label class="f">${t('លេខ DN របស់ 3PL', '3PL DN Number')} <span class="req">*</span></label><div class="scanrow"><input class="in" id="dn3pl" value="${esc(r.dn3pl)}" placeholder="DN-..." autocapitalize="characters"><button type="button" class="scanb" id="dnScan" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div></div>
+        <div class="field"><label class="f">${t('បរិមាណសរុបលើ DN', 'Total Qty on the DN')} (${esc(r.uom)}) <span class="req">*</span></label><input class="in" id="dnQty" inputmode="decimal" value="${esc(r.dnQty == null ? '' : r.dnQty)}" placeholder="0"></div>
+        <div id="dnCmp">${dnCmp(r)}</div></section>
       <section class="card"><h2>👷 ${t('ឡាន និងបុគ្គលិកឃ្លាំង', 'Truck owner and manpower')}</h2>
         ${coOf(r) ? '' : `<div class="field" id="ownBox"><label class="f">${t('ម្ចាស់ឡាន', 'Truck owner')} <span class="req">*</span></label>
           <div class="seg" data-seg="own"><button type="button" data-own="ISI" class="${r.owner === 'ISI' ? 'on' : ''}">🏭 ${t('ឡាន ISI', 'ISI truck')}</button><button type="button" data-own="3PL" class="${r.owner === '3PL' ? 'on' : ''}">🚚 ${t('ឡាន 3PL', '3PL truck')}</button></div></div>`}
@@ -740,7 +756,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
 
       <section class="card"><h2>📝 ${t('សំគាល់', 'Remark')}</h2><textarea class="in" id="remark" rows="2">${esc(r.remark)}</textarea>
         <div class="voice" id="voiceBox">${voiceHTML(r)}</div></section>` : `
-      <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ បរិមាណទទួលជាក់ស្តែង និងខូចខាត បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. Actual GR qty and damaged qty are filled at finish.')}</p>`}
+      <p class="hint">${t('ម៉ោងចាប់ផ្តើមកត់ត្រាដោយស្វ័យប្រវត្តិ ពេលចុចប៊ូតុងខាងក្រោម។ លេខ DN 3PL និងបរិមាណសរុប បំពេញពេលបញ្ចប់។', 'Start time is taken when you tap the button below. The 3PL DN number and total qty are filled at finish.')}</p>`}
 
       ${!started ? `<button class="btn ok big bigstart" id="startBtn">▶ ${t('ចាប់ផ្តើមទម្លាក់ឥឡូវ', 'Start unloading now')}</button>`
         : isLive(r) ? `<button class="btn big bigstart endbtn" id="endBtn">⏹ ${t('បញ្ចប់ការទម្លាក់ ហើយរក្សាទុក', 'Finish unloading & save')}</button><button class="btn mt" id="saveBtn">💾 ${t('រក្សាទុក (មិនទាន់បញ្ចប់)', 'Save (not finished)')}</button>`
@@ -755,7 +771,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   }
   function collect() {
     ['dn3pl', 'start', 'end', 'remark'].forEach(k => { const el = $('#' + k); if (el) F[k] = el.value.trim(); });
+    const dq = $('#dnQty'); if (dq) { const v = dq.value.replace(/,/g, '').trim(); F.dnQty = v === '' ? '' : +v; }
     $$('[data-it]').forEach(el => { const v = el.value.replace(/,/g, '').trim(); F.items[+el.dataset.it][el.dataset.k] = v === '' ? '' : +v; });
+    if (F.start) F.items.forEach(i => { i.grQty = i.arrQty; });   // received = arrival (Kim, 19 Nov 2026)
   }
   function pickPOs(list) {
     const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company, owner: F.owner, carrier: F.carrier, newCarrier: F.newCarrier };
@@ -845,7 +863,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     mark($('#bscan'), !r.items.length);
     mark($('#items'), r.po && !r.items.length);
     mark($('#truck'), !r.truck);
-    mark($('#dn3pl'), !r.dn3pl);
+    mark($('#dn3pl'), fin && !r.dn3pl);
+    mark($('#dnQty'), fin && !(+r.dnQty > 0));
     mark($('#wh'), ents(r.site).length && !r.warehouse);
     $$('[data-ph]').forEach(inp => mark(inp.closest('.shot'), !(r.ph && r.ph[inp.dataset.ph])));
     $$('[data-it]').forEach(el => { const i = r.items[+el.dataset.it], k = el.dataset.k;
@@ -856,8 +875,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   }
   function bindForm() {
     markNeed();
-    const live = () => { collect(); markNeed(); if (F.start && $('#scBox')) paintScale(F); };
-    ['dn3pl'].forEach(k => { const el = $('#' + k); if (el) el.oninput = live; });
+    const live = () => { collect(); markNeed(); if (F.start && $('#scBox')) paintScale(F); const dc = $('#dnCmp'); if (dc) dc.innerHTML = dnCmp(F); };
+    ['dn3pl', 'dnQty'].forEach(k => { const el = $('#' + k); if (el) el.oninput = live; });
     $$('[data-it]').forEach(el => { el.oninput = live; });
     const re = () => { collect(); const y = window.scrollY, m = $('main'), my = m ? m.scrollTop : 0; renderForm(F.id); window.scrollTo(0, y); if (m) m.scrollTop = my; };
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
@@ -933,7 +952,12 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       if (!F.po) miss.push(t('លេខ PO', 'PO number'));
       if (!F.items.length) miss.push(t('ទំនិញ', 'Items'));
       else if (F.items.some(i => !(+i.arrQty > 0))) miss.push(t('ចំនួន (ដល់)', 'Arrival Qty'));
-      if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number')); if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
+      if (!F.truck) miss.push(t('ផ្លាកលេខ', 'Truck number'));
+      F.items.forEach(i => { if (i.dmgQty === '' || i.dmgQty == null) i.dmgQty = 0; });
+      const dm = F.items.filter(i => +i.dmgQty > 0);
+      if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
+      if (dm.some(i => !i.dmgUom)) miss.push(t('ឯកតាខូចខាត', 'Damage UoM'));
+      if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
       if (siteOn() && !F.site) miss.push(t('ឃ្លាំង', 'Warehouse'));
       if (ents(F.site).length && !F.warehouse) miss.push(t('ច្រកចូល', 'Entrance'));
       PHOTOS.forEach(x => { if (!F.ph || !F.ph[x[0]]) miss.push(x[1]); });
@@ -941,12 +965,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     };
     const needFin = () => {
       const miss = need();
-      if (F.items.some(i => i.grQty === '' || i.grQty == null)) miss.push(t('ទទួលជាក់ស្តែង', 'Actual GR Qty'));
-      F.items.forEach(i => { if (i.dmgQty === '' || i.dmgQty == null) i.dmgQty = 0; });
-      const dm = F.items.filter(i => +i.dmgQty > 0);
-      if (dm.some(i => !i.dmgType)) miss.push(t('ប្រភេទខូចខាត', 'Damage type'));
-      if (dm.some(i => !i.dmgUom)) miss.push(t('ឯកតាខូចខាត', 'Damage UoM'));
-      if (dm.some(i => !(i.dmgPh || []).length)) miss.push(t('រូបថតខូចខាត', 'Damage photo'));
+      if (!F.dn3pl) miss.push(t('លេខ DN 3PL', '3PL DN Number'));
+      if (!(+F.dnQty > 0)) miss.push(t('បរិមាណសរុបលើ DN', 'Total Qty on the DN'));
       if (!F.owner) miss.push(t('ម្ចាស់ឡាន', 'Truck owner'));
       if (!(+F.manpower > 0)) miss.push(t('ចំនួនបុគ្គលិកឃ្លាំង', 'Manpower'));
       return miss;
@@ -1138,7 +1158,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     try {
       if (action === 'start' && !F.resId) F.resId = await api('reserve').then(d => d && d.id).catch(() => '');
       const id = action === 'start' ? F.resId || F.po : F.id;   // old Apps Script has no reserve: PO no. instead
-      const body = await stamped(F, id); if (action === 'start') body.id = F.resId || '';
+      const body = await stamped(F, id); if (action === 'start') { body.id = F.resId || ''; if (!body.dn3pl) body.dn3pl = '-'; }
       const rec = await api(action, { receipt: body });
       TAKEN.clear();
       const i = DATA.findIndex(x => x.id === rec.id); if (i >= 0) DATA[i] = rec; else DATA.push(rec);
@@ -1172,7 +1192,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <section class="card"><div class="kvs">
         ${kv(t('លេខ PO', 'PO Number'), esc(posOf(r).join(", ")))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
-        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl || '–'))}
+        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl && r.dn3pl !== '-' ? r.dn3pl : '–'))}${r.dnQty ? kv(t('បរិមាណសរុបលើ DN', 'Total Qty on the DN'), fmt(r.dnQty) + ' ' + esc(r.uom) + ' ' + dnCmp(r, 1)) : ''}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
         ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
