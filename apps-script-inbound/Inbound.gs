@@ -310,6 +310,7 @@ function plan_() {
     iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   // Vessel No. (Kim, 17 Nov 2026: column R of the Incoming Plan)
   let iVes = c('vessel no', 'vessel number', 'vessel'); if (iVes < 0 && head.length > 17 && !head[17]) iVes = 17;
+  const iBatch = c('batch', 'batch no', 'batch number');   // Kim, 19 Nov 2026: one batch = one plan line, scanned at arrival
   const cell = (r, i) => (i < 0 ? '' : r[i] instanceof Date ? fmt_(r[i], 'yyyy-MM-dd') : String(r[i] == null ? '' : r[i]).trim());
   const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], p2 = n => ('0' + n).slice(-2);
   const eta = v => { let m; const t = String(v || '');   // 31-Oct-2026, 31.10.2026, 31/10/2026 typed as text → 2026-10-31
@@ -320,7 +321,7 @@ function plan_() {
   return v.slice(1).map(r => ({
     // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
     po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes),
+    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes), batch: cell(r, iBatch),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[x.po + '|' + x.material] && (seen[x.po + '|' + x.material] = 1));
 }
 
@@ -582,7 +583,7 @@ function start_(p, user) {
     if (!line) fail_('BAD', 'Item ' + clip_(i.material, 30) + ' is not on ' + (ipo || 'this PO') + '.', 'ទំនិញ ' + clip_(i.material, 30) + ' មិនមែនរបស់ ' + (ipo || 'PO នេះ') + ' ទេ។');
     const arr = num_(i.arrQty);
     if (!(arr > 0)) fail_('BAD', 'Arrival Qty is missing for ' + line.desc + '.', 'សូមបញ្ចូលបរិមាណមកដល់សម្រាប់ ' + line.desc + '។');
-    return { po: line.po, inbound: line.inbound, material: line.material, desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
+    return { po: line.po, inbound: line.inbound, material: line.material, batch: line.batch || '', desc: line.desc, poQty: line.kg, pcs: line.pcs, arrQty: arr, grQty: '', dmgQty: '', dmgType: '', dmgPh: [] };
   });
   if (!items.length) fail_('BAD', 'Choose the items on this truck.', 'សូមជ្រើសទំនិញលើឡាននេះ។');
   const pos = asked.filter(x => items.some(i => i.po === x));   // a PO with no item on the truck is left out
