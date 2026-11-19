@@ -204,6 +204,7 @@
     if (S.view === 'count' && S.bin) return lineScreen('count');
     if (S.view === 'card' && S.bin && S.card) return cardScreen();
     if (S.view === 'move' && S.bin && S.move) return moveScreen();
+    if (S.view === 'edit' && S.bin && S.edit) return editScreen();
     if (S.view === 'result' && S.result) return resultScreen();
     return homeScreen();
   }
@@ -352,9 +353,11 @@
   // Bin screen: the three choices, and the bin's SKU lines.
   function binScreen() {
     const b = S.bin;
-    const rows = (b.lines || []).map((l, i) => `<button type="button" class="item" data-line="${i}">
+    // Admins get a ⋮ menu on each line: stock card, edit, delete (Kim, 19 Nov, option 2).
+    const isAdmin = DEMO || !!(S.user && S.user.admin);
+    const rows = (b.lines || []).map((l, i) => `<div class="lwrap"><button type="button" class="item" data-line="${i}">
         <span><span class="sku"><b>${esc(l.material)}</b> · ${esc(l.desc)}</span><br><span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></span>
-        <span class="acc">${fmtQty(l.book)}<small>${esc(l.uom)}</small></span></button>`).join('');
+        <span class="acc">${fmtQty(l.book)}<small>${esc(l.uom)}</small></span></button>${isAdmin ? `<button type="button" class="kebab" data-menu="${i}" aria-label="${T('ជម្រើស', 'Options')}">⋮</button>` : ''}</div>`).join('');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${esc(b.warehouse)} · ${(b.lines || []).length} ${T('ប្រភេទ', 'SKU')}</div></section>
       <div class="quad">
@@ -371,6 +374,7 @@
     $('#actTr').onclick = () => openMove('TRANSFER');
     $('#actCount').onclick = () => { S.mode = 'count'; S.view = 'count'; S.photo = ''; route(); };
     document.querySelectorAll('[data-line]').forEach(el => { el.onclick = () => openCard(Number(el.dataset.line)); });
+    document.querySelectorAll('[data-menu]').forEach(el => { el.onclick = e => { e.stopPropagation(); lineMenu(el, Number(el.dataset.menu)); }; });
     $('#back').onclick = () => { S.view = 'home'; S.bin = null; route(); };
   }
 
@@ -416,6 +420,77 @@
         tick();
       } catch (e) { bg.querySelector('.qr-view').hidden = true; bg.querySelector('[data-msg]').textContent = T('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយកូដ។', 'Cannot open the camera. Please type the code.'); }
     })();
+  }
+
+  function lineMenu(btn, i) {
+    const old = document.querySelector('.lmenu'); if (old) { old.remove(); if (old.dataset.i === String(i)) return; }
+    const m = document.createElement('div');
+    m.className = 'lmenu'; m.dataset.i = String(i);
+    m.innerHTML = `<button type="button" data-a="card">📄 ${T('កាតស្តុក', 'Stock card')}</button><button type="button" data-a="edit">✏️ ${T('កែបន្ទាត់', 'Edit line')}</button><button type="button" data-a="del" class="red">🗑 ${T('លុបបន្ទាត់', 'Delete line')}</button>`;
+    btn.parentNode.appendChild(m);
+    m.onclick = e => { const a = e.target.closest('[data-a]'); if (!a) return; m.remove(); if (a.dataset.a === 'card') openCard(i); else openEdit(i, a.dataset.a === 'del'); };
+    setTimeout(() => document.addEventListener('click', function off(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+  }
+  function openEdit(i, del) { S.edit = { line: i, del: !!del, requestId: newId(), confirm: false }; S.view = 'edit'; route(); }
+  // Admin fix of one line: batch, SLOC, correct balance, or delete. A reason is always required.
+  function editScreen() {
+    const b = S.bin, e = S.edit, l = (b.lines || [])[e.line];
+    if (!l) { S.view = 'bin'; return route(); }
+    view(`
+      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${e.del ? '🗑 ' + T('លុបបន្ទាត់', 'Delete line') : '✏️ ' + T('កែបន្ទាត់', 'Edit line')}</div></section>
+      <section class="card form">
+        <label>${T('សម្ភារៈ', 'Material')}</label><input type="text" value="${esc(l.material + ' · ' + l.desc)}" disabled>
+        <div class="fields"><div><label for="eBatch">Batch</label><input id="eBatch" type="text" autocapitalize="characters" autocomplete="off" value="${esc(l.batch)}" ${e.del ? 'disabled' : ''}></div>
+          <div><label for="eSloc">SLOC</label><input id="eSloc" type="text" autocomplete="off" value="${esc(l.sloc)}" ${e.del ? 'disabled' : ''}></div></div>
+        <div class="fields"><div><label>${T('សមតុល្យឥឡូវ', 'Balance now')}</label><input type="text" value="${fmtQty(l.book)} ${esc(l.uom)}" disabled></div>
+          <div><label for="eBal">${T('សមតុល្យត្រឹមត្រូវ', 'Correct balance')} (${esc(l.uom)})</label><input id="eBal" type="number" inputmode="decimal" min="0" step="any" value="${e.del ? 0 : l.book}" ${e.del ? 'disabled' : ''}></div></div>
+        <label for="eWhy">${T('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}</label><input id="eWhy" type="text" maxlength="200" autocomplete="off" class="need">
+        <p class="note">${T('ការកែសមតុល្យ ត្រូវបានរក្សាទុកជាជួរ ADJUST ក្នុង Stock Ledger (ជួរចាស់មិនត្រូវកែ) ជាមួយឈ្មោះ និងមូលហេតុរបស់អ្នក។', 'A balance change is saved as an ADJUST row in the Stock Ledger (old rows are never changed), with your name and reason.')}</p>
+        <div class="live" id="eMsg"></div>
+      </section>
+      ${e.del ? `<button type="button" class="btn big bad" id="eDel">🗑 ${T('លុបបន្ទាត់ (សមតុល្យ → 0)', 'Delete line (balance → 0)')}</button>`
+        : `<button type="button" class="btn big blue" id="eSave">${T('រក្សាទុក', 'Save')}</button>
+           <button type="button" class="btn ghost big red-text" id="eToDel">🗑 ${T('លុបបន្ទាត់', 'Delete line')}</button>`}
+      <button type="button" class="btn ghost big" id="back">${T('បោះបង់', 'Cancel')}</button>`);
+    const go = $('#eSave') || $('#eDel');
+    const check = () => {
+      const why = $('#eWhy').value.trim(), bal = $('#eBal').value, q = Number(bal);
+      $('#eWhy').classList.toggle('need', !why);
+      let bad = !why ? T('សូមបញ្ចូលមូលហេតុ', 'Enter the reason') : bal === '' || !isFinite(q) || q < 0 ? T('សមតុល្យត្រូវ 0 ឬច្រើនជាងនេះ', 'Balance must be 0 or more')
+        : !isKg(l.uom) && Math.floor(q) !== q ? T('សមតុល្យត្រូវជាលេខគត់', 'Balance must be a whole number') : '';
+      if (!bad && !e.del && q === Number(l.book) && $('#eBatch').value.trim() === l.batch && $('#eSloc').value.trim() === l.sloc) bad = T('មិនមានការផ្លាស់ប្តូរ', 'Nothing changed');
+      $('#eMsg').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : e.del ? T('ចុចម្តងទៀតដើម្បីបញ្ជាក់ការលុប', 'Tap Delete, then tap again to confirm') : `${T('សមតុល្យថ្មី', 'New balance')}: <b>${fmtQty(q)} ${esc(l.uom)}</b>`;
+      go.disabled = !!bad;
+    };
+    document.querySelectorAll('.form input').forEach(el => { el.oninput = check; });
+    $('#back').onclick = () => { S.view = 'bin'; route(); };
+    if ($('#eToDel')) $('#eToDel').onclick = () => openEdit(e.line, true);
+    go.onclick = async () => {
+      if (e.del && !e.confirm) { e.confirm = true; go.textContent = '⚠️ ' + T('ចុចម្តងទៀត ដើម្បីលុប', 'Tap again to delete'); return; }
+      const pl = { requestId: e.requestId, bin: b.bin, material: l.material, batch: l.batch, sloc: l.sloc, reason: $('#eWhy').value.trim() };
+      if (e.del) pl.delete = true; else { pl.balance = Number($('#eBal').value); pl.newBatch = $('#eBatch').value.trim(); pl.newSloc = $('#eSloc').value.trim(); }
+      go.disabled = true; go.textContent = T('កំពុងរក្សាទុក…', 'Saving…');
+      let out;
+      try { out = DEMO ? demoEdit(pl, l) : await api('editLine', pl); }
+      catch (er) { if (er.code === 'AUTH') { S.signedOut = true; return route(); } toast(er.message); e.confirm = false; return route(); }
+      // Phone copy in step, then a quiet refresh from the server.
+      const idx = (S.stock || []).findIndex(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && sameLine(x, l));
+      if (out.deleted) { b.lines.splice(e.line, 1); if (idx >= 0 && !DEMO) S.stock.splice(idx, 1); }
+      else { Object.assign(l, { batch: out.batch, sloc: out.sloc, book: out.balance }); if (idx >= 0 && !DEMO) Object.assign(S.stock[idx], { batch: out.batch, sloc: out.sloc, book: out.balance }); }
+      refreshQuiet();
+      toast(out.deleted ? T('បានលុបបន្ទាត់', 'Line deleted') : T('បានរក្សាទុក', 'Saved'));
+      S.view = 'bin'; route();
+    };
+    check();
+  }
+  function demoEdit(pl, l) {
+    const s = demoLine(pl.bin, l);
+    const bal = pl.delete ? 0 : pl.balance, diff = round3(bal - (s ? s.book : 0));
+    const n = Object.assign({}, s, pl.delete ? {} : { batch: pl.newBatch, sloc: pl.newSloc });
+    const id = demoLog('ADJUST', pl.bin, n, diff > 0 ? diff : 0, diff < 0 ? -diff : 0, bal, { reference: '', remark: pl.reason, requestId: pl.requestId }, '', 'ADJ');
+    if (s) { if (pl.delete) DEMO_STOCK.splice(DEMO_STOCK.indexOf(s), 1); else Object.assign(s, { batch: n.batch, sloc: n.sloc, book: bal }); }
+    S.bins = demoBinList();
+    return { id: id, balance: bal, deleted: !!pl.delete, batch: n.batch, sloc: n.sloc };
   }
 
   // Stock card of one line: header, balance and every movement (newest first).

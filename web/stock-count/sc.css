@@ -251,3 +251,14 @@ body.wide table.hist td small { white-space: normal; }
 .sug p { margin: 0; padding: 10px 12px; }
 .tot { margin: 2px 0 10px; font-size: 14px; }
 .tot b { font-size: 17px; color: var(--blue); }
+
+/* Admin ⋮ menu on each bin line and the edit screen (Kim, 19 Nov 2026, option 2). */
+.lwrap { position: relative; display: flex; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+.lwrap > .item { flex: 1; min-width: 0; margin-bottom: 0; }
+.kebab { flex: none; width: 44px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 14px; font-size: 22px; font-weight: 700; cursor: pointer; padding: 0; }
+.lmenu { position: absolute; right: 52px; top: 50%; z-index: 20; min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 28px rgba(0, 0, 0, .2); overflow: hidden; }
+.lmenu button { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.lmenu button:last-child { border-bottom: 0; }
+.lmenu .red, .red-text { color: var(--bad) !important; }
+.btn.bad { background: var(--bad); color: #fff; }
+.form .note { background: var(--warn-bg); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
