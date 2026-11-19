@@ -143,8 +143,9 @@
   function lineDates() {
     const sd = {}, cd = {};
     D.ledger.forEach(r => { if (r.type === 'IN' || r.type === 'TRANSFER IN') { const k = lineKey(r), v = ((r.date || '') + ' ' + (r.time || '')).trim(); if (!sd[k] || v > sd[k]) sd[k] = v; } });
-    (D.counts || []).forEach(c => { const k = lineKey(c), v = ((c.date || '') + ' ' + (c.time || '')).trim(); if (!cd[k] || v > cd[k]) cd[k] = v; });
-    return { sd: sd, cd: cd };
+    const cr = {};
+    (D.counts || []).forEach(c => { const k = lineKey(c), v = ((c.date || '') + ' ' + (c.time || '')).trim(); if (!cd[k] || v > cd[k]) { cd[k] = v; cr[k] = c; } });
+    return { sd: sd, cd: cd, cr: cr };
   }
   const daysAgo = v => (v ? Math.floor((Date.now() - new Date(String(v).slice(0, 10) + 'T00:00:00').getTime()) / 86400000) : null);
   const SD_OPT = [['', T('ទាំងអស់', 'All')], ['0', T('ថ្ងៃនេះ', 'Today')], ['7', T('៧ ថ្ងៃចុងក្រោយ', 'Last 7 days')], ['30', T('៣០ ថ្ងៃចុងក្រោយ', 'Last 30 days')], ['old', T('ចាស់ជាង ៣០ ថ្ងៃ', 'Older than 30 days')]];
@@ -160,15 +161,18 @@
   function stock() {
     wide(); loadLedger('stock');
     const dt = lineDates();
-    const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '' }));
+    const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '',
+      counted: l.counted != null && l.counted !== '' ? l.counted : (dt.cr[lineKey(l)] || {}).counted, diff: l.diff != null && l.diff !== '' ? l.diff : (dt.cr[lineKey(l)] || {}).variance,
+      by: l.countedBy || String((dt.cr[lineKey(l)] || {}).by || '').split('@')[0] }));
     if (pvMode('stock')) {
       const data = all.map(l => ({ bin: l.bin, wh: l.wh, zone: l.zone, grp: l.grp, material: l.material, desc: l.desc, batch: l.batch, sloc: l.sloc, uom: l.uom,
-        sd: String(l.sd).slice(0, 10), cd: String(l.cd).slice(0, 10), book: Number(l.book) || 0,
+        sd: String(l.sd).slice(0, 10), cd: String(l.cd).slice(0, 10), book: Number(l.book) || 0, by: l.by || '',
+        counted: l.counted == null || l.counted === '' ? '' : Number(l.counted), diff: l.diff == null || l.diff === '' ? '' : Number(l.diff),
         kg: SC.isKg(l.uom) ? Number(l.book) || 0 : SC.round3((Number(l.book) || 0) * (Number(l.kgPerPc) || 0)) }));
       return pivotScreen('stock', T('បញ្ជីស្តុក', 'Stock list'), data, [
         ['wh', 'ឃ្លាំង', 'Warehouse'], ['zone', 'តំបន់', 'Bin Zone'], ['bin', 'ទីតាំង', 'Bin'], ['grp', 'ក្រុមសម្ភារៈ', 'Material Group'], ['material', 'សម្ភារៈ', 'Material'],
         ['desc', 'បរិយាយ', 'Description'], ['batch', 'Batch', 'Batch'], ['sloc', 'SLoc', 'SLoc'], ['uom', 'UoM', 'UoM'], ['sd', 'ថ្ងៃចូលស្តុក', 'Stock Date'], ['cd', 'ថ្ងៃរាប់', 'Count Date'],
-        ['book', 'ស្តុក', 'On hand', 1], ['kg', 'ទម្ងន់ Kg', 'Weight Kg', 1]],
+        ['by', 'រាប់ដោយ', 'Counted by'], ['book', 'ស្តុក', 'On hand', 1], ['kg', 'ទម្ងន់ Kg', 'Weight Kg', 1], ['counted', 'ចំនួនរាប់បាន', 'Counted Qty', 1], ['diff', 'ខុសគ្នា', 'Difference', 1]],
         { rows: ['grp', 'material'], cols: ['uom'], vals: [{ k: 'book', agg: 'sum' }], filters: {} }, stock);
     }
     const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
@@ -189,9 +193,9 @@
         ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ Excel</button>` : ''}
         ${chips || F.q ? `<button type="button" class="btn ghost sm" id="fclr">✕ ${T('សម្អាត', 'Clear')}</button>` : ''}</div>
       ${chips ? `<div class="fchips">${chips}</div>` : ''}
-      <section class="card scroll tall"><table class="lines hist stocktbl"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th></tr>
-        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td class="${l.cd ? '' : 'red-text'}">${esc(l.cd || T('មិនទាន់រាប់', 'Never'))}</td></tr>`).join('')
-          || `<tr><td class="muted" colspan="12">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
+      <section class="card scroll tall"><table class="lines hist stocktbl"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr>
+        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td class="${l.cd ? '' : 'red-text'}">${esc(l.cd || T('មិនទាន់រាប់', 'Never'))}</td><td class="num">${l.counted == null || l.counted === '' ? '' : fmtQty(l.counted)}</td><td class="num ${Number(l.diff) < 0 ? 'out' : Number(l.diff) > 0 ? 'in' : ''}">${l.diff == null || l.diff === '' ? '' : (Number(l.diff) > 0 ? '+' : '') + fmtQty(l.diff)}</td><td>${esc(l.by || '')}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
       ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
     pvWire('stock', stock);
     keep('#fq', v => { F.q = v; stock(); });
@@ -199,8 +203,8 @@
     $$('[data-clr]').forEach(b => { b.onclick = () => { F[b.dataset.clr] = ''; stock(); }; });
     if ($('#fclr')) $('#fclr').onclick = () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); };
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
-    if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date']]
-      .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd])));
+    if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date', 'Counted Qty', 'Difference', 'Counted By']]
+      .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd, l.counted == null ? '' : l.counted, l.diff == null ? '' : l.diff, l.by])));
   }
   // Table | Pivot switch on Stock list and Movements (Kim, 20 Nov: drag and drop like an Excel pivot table).
   const pvMode = id => { try { return localStorage.getItem('sc_view_' + id) === 'pivot'; } catch (e) { return false; } };

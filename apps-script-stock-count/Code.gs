@@ -253,7 +253,10 @@ function stock_(bin) {
     const typed = num_(r['Pcs per Bundle']);
     return { bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch, sloc: r.SLOC, uom: r.UoM || 'PC',
       pcsPerBundle: (typed > 1 ? typed : m.ppb) || typed || 1, kgPerPc: m.kg || 0, book: num_(r['Book Qty']),
-      group: m.group || '', countDate: [r['Count Date'] || '', r['Count Time'] || ''].join(' ').trim() };
+      group: m.group || '', countDate: [r['Count Date'] || '', r['Count Time'] || ''].join(' ').trim(),
+      // Counted Qty column (new) or, for counts before it, book + Difference; blank when never counted.
+      counted: r['Counted Qty'] !== undefined && r['Counted Qty'] !== '' ? num_(r['Counted Qty']) : (r.Difference !== undefined && r.Difference !== '' && r['Count Date'] ? num_(r['Book Qty']) + num_(r.Difference) : ''),
+      diff: r.Difference !== undefined && r.Difference !== '' ? num_(r.Difference) : '', countedBy: r['Counted By'] || '' };
   });
 }
 // Product Master list, kept 10 minutes. An empty tab is filled from PM_SEED (ProductMaster.gs) first.
@@ -371,7 +374,7 @@ function submit_(user, c) {
     const num = v => (v === '' || v == null ? '' : Number(v));
     appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
       counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: name_(who, user), remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
-    addCounted_(stk, r.s, l, now);   // latest count replaces the old one in Stock On Hand; Book Qty is not changed by a count
+    addCounted_(stk, r.s, l, now, name_(who, user));   // latest count replaces the old one in Stock On Hand; Book Qty is not changed by a count
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
   const hist = history_();
@@ -569,11 +572,11 @@ function editLine_(user, p) {
 // Counted Qty Bundle / Kg / Pcs (no more adding up) and stamps Count Date + Count Time. Every count stays in the
 // Counts tab, which is the history. Total Counted Qty Kg = the Kg total, Difference = counted - Book Qty.
 // Columns are found by header name; Count Date / Count Time are added at the end of the header if missing.
-function addCounted_(sh, s, l, now) {
+function addCounted_(sh, s, l, now, by) {
   const last = sh.getLastRow();
   if (last < 2) return;
   let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
-  ['Count Date', 'Count Time'].forEach(h => {
+  ['Count Date', 'Count Time', 'Counted Qty', 'Counted By'].forEach(h => {
     if (head.indexOf(h.toLowerCase()) < 0) { sh.getRange(1, head.length + 1).setValue(h); head.push(h.toLowerCase()); }
   });
   const col = n => head.indexOf(n) + 1;
@@ -589,10 +592,14 @@ function addCounted_(sh, s, l, now) {
   const tot = { bundles: put('counted qty bundle', l.bundles), kg: put('counted qty kg', l.kg), pieces: put('counted qty pcs', l.pieces) };
   // Total kg = kg counted + bundles and pieces turned into kg with the Product Master. Difference is in the book unit.
   if (col('total counted qty kg')) sh.getRange(row, col('total counted qty kg')).setValue(countedKg(tot, s.pcsPerBundle, s.kgPerPc));
-  if (col('difference')) sh.getRange(row, col('difference')).setValue(countDiff(tot, s.uom, s.pcsPerBundle, s.kgPerPc, s.book));
+  const diff = countDiff(tot, s.uom, s.pcsPerBundle, s.kgPerPc, s.book);
+  if (col('difference')) sh.getRange(row, col('difference')).setValue(diff);
   const t = now || new Date();
   sh.getRange(row, col('count date')).setValue(fmt_(t, 'yyyy-MM-dd'));
   sh.getRange(row, col('count time')).setValue(fmt_(t, 'HH:mm'));
+  // Counted Qty in the book unit (Kim, 20 Nov) = book at the count + difference; Counted By = the counter's name.
+  sh.getRange(row, col('counted qty')).setValue(Math.round((Number(s.book) + Number(diff)) * 1000) / 1000);
+  sh.getRange(row, col('counted by')).setValue(by || '');
 }
 
 // Writes the new book qty into the Stock On Hand row of this line.
