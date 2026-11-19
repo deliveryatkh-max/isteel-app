@@ -117,7 +117,60 @@
     el.textContent = msg; el.hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
   }
-  const view = html => { $('#view').innerHTML = html; };
+  const view = html => { $('#view').innerHTML = html; addCalc($('#view')); };
+  // 🧮 on every qty box, same as the Inbound app (Kim, 19 Nov): add several numbers (e.g. each coil's weight), put the total in.
+  function addCalc(root) {
+    root.querySelectorAll('input[type="number"]:not([disabled])').forEach(el => {
+      if (el.parentNode.classList.contains('qwrap')) return;
+      const w = document.createElement('span'); w.className = 'qwrap';
+      el.parentNode.insertBefore(w, el); w.appendChild(el);
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'calcb'; b.textContent = '🧮';
+      b.setAttribute('aria-label', T('ម៉ាស៊ីនគិតលេខ', 'Calculator'));
+      w.insertBefore(b, el);
+      b.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        const lb = el.id && document.querySelector(`label[for="${el.id}"]`);
+        openCalc(lb ? lb.textContent.trim() : T('ចំនួន', 'Quantity'), v => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+      };
+    });
+  }
+  function openCalc(title, onDone) {
+    let nums = [], cur = '';
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    const keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'];
+    bg.innerHTML = `<div class="sheet calc-sheet" role="dialog" aria-modal="true" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">
+        <div class="sheet-top"><b>🧮 ${esc(title)}</b><button type="button" class="icon-btn dark" data-close aria-label="${T('បិទ', 'Close')}">✕</button></div>
+        <div class="calc-list"></div>
+        <div class="calc-disp"><span class="calc-cur"></span></div>
+        <div class="calc-keys">${keys.map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}
+          <button type="button" data-k="C" class="calc-c">C</button><button type="button" data-k="+" class="calc-plus">＋</button></div>
+        <div class="calc-tot"><span>${T('សរុប', 'Total')}</span><b></b></div>
+        <button type="button" class="btn ok big" data-done>✓ ${T('ដាក់ក្នុងប្រអប់', 'Put in the box')}</button></div>`;
+    const total = () => nums.concat(cur && cur !== '.' ? [+cur] : []).reduce((a, x) => a + x, 0);
+    const show = x => round3(x).toLocaleString('en-US', { maximumFractionDigits: 3 });
+    const draw = () => {
+      bg.querySelector('.calc-list').innerHTML = nums.map((x, j) => `<span class="calc-n">${show(x)}<button type="button" data-del="${j}" aria-label="remove">✕</button></span>`).join('<span class="calc-op">+</span>');
+      bg.querySelector('.calc-cur').textContent = (nums.length ? '+ ' : '') + (cur || '0');
+      bg.querySelector('.calc-tot b').textContent = show(total());
+    };
+    const close = () => bg.remove();
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest('[data-close]')) return close();
+      const d = e.target.closest('[data-del]'); if (d) { nums.splice(+d.dataset.del, 1); return draw(); }
+      if (e.target.closest('[data-done]')) { close(); onDone(round3(total())); return; }
+      const b = e.target.closest('[data-k]'); if (!b) return;
+      const k = b.dataset.k;
+      if (k === '+') { if (cur && cur !== '.') nums.push(+cur); cur = ''; }
+      else if (k === 'C') { nums = []; cur = ''; }
+      else if (k === '⌫') cur = cur.slice(0, -1);
+      else if (k === '.') { if (cur.indexOf('.') < 0) cur += cur ? '.' : '0.'; }
+      else if (cur.length < 12) cur = cur === '0' ? k : cur + k;
+      draw();
+    };
+    document.body.appendChild(bg);
+    draw();
+  }
   const queue = () => jget(QUEUE_KEY, []);
   const saveQueue = q => put(QUEUE_KEY, JSON.stringify(q));
   const accText = a => (a == null ? '—' : a + '%');
