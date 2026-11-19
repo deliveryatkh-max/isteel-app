@@ -314,7 +314,7 @@
         <p class="muted center" id="binMsg" hidden></p>
         <button type="button" class="btn ok big" id="scanBtn">📷 ${T('ស្កេន QR Code', 'Scan QR code')}</button>
         <div class="row" style="margin-top:12px">
-          <input id="binIn" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('ឬវាយកូដកុងតឺន័រ', 'or type the bin code')}">
+          <input id="binIn" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('វាយបញ្ចូលលេខកូដទីតាំង', 'Type the location code')}">
           <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
         </div>
       </section>
