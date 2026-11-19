@@ -100,7 +100,7 @@
       <h2 class="ptitle">${T('ផ្ទាំងគ្រប់គ្រងស្តុក', 'Stock dashboard')} <small class="muted">${now()}</small></h2>
       <div class="dash-kpis">
         ${stat(new Set(D.stock.map(l => l.material)).size, T('សម្ភារៈ (SKU)', 'Active SKUs'), '', 'stock')}
-        ${stat(new Set(D.stock.map(l => l.bin)).size + ' / ' + D.bins.length, T('កុងតឺន័រមានស្តុក', 'Bins in use'), '', 'stock')}
+        ${stat(new Set(D.stock.map(l => l.bin)).size + ' / ' + D.bins.length, T('ទីតាំងមានស្តុក', 'Bins in use'), '', 'stock')}
         ${stat(fmtQty(kg), T('ស្តុកសរុប Kg', 'Total Kg'))}
         ${stat(fmtQty(pc), T('ស្តុកសរុប Pcs', 'Total Pcs'))}
         ${stat(td.filter(r => r.type === 'IN').length, T('ចូលថ្ងៃនេះ', 'IN today'), 'in', 'moves')}
@@ -114,13 +114,13 @@
           <div class="chart">${days.map(x => `<div class="cday"><div class="cbars"><i class="bi" style="height:${x.i / max * 100}%" title="IN ${x.i}">${x.i ? `<em>${x.i}</em>` : ''}</i><i class="bo" style="height:${x.o / max * 100}%" title="OUT ${x.o}">${x.o ? `<em>${x.o}</em>` : ''}</i></div><span>${x.d}</span></div>`).join('')}</div>
           <p class="legend"><i class="bi"></i> ${T('ចូល', 'IN')} <i class="bo"></i> ${T('ចេញ', 'OUT')}</p></section>
         <section class="card scroll"><h3>${T('ស្តុកតាមឃ្លាំង', 'Stock by warehouse')}</h3>
-          <table class="lines hist"><tr><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('កុងតឺន័រ', 'Bins')}</th><th>${T('ប្រភេទស្តុក', 'Lines')}</th><th>Kg</th><th>Pcs</th></tr>
+          <table class="lines hist"><tr><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('ទីតាំង', 'Bins')}</th><th>${T('ប្រភេទស្តុក', 'Lines')}</th><th>Kg</th><th>Pcs</th></tr>
           ${whs.map(w => `<tr><td><b>${esc(w.w)}</b></td><td class="num">${w.bins}</td><td class="num">${w.lines}</td><td class="num">${fmtQty(w.kg)}</td><td class="num">${fmtQty(w.pc)}</td></tr>`).join('')}</table></section>
         ${DEMO ? `<section class="card scroll"><h3>${T('ការរាប់ចុងក្រោយ', 'Latest counts')}</h3>
-          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('ស្ថានភាព', 'Status')}</th></tr>
+          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('ស្ថានភាព', 'Status')}</th></tr>
           ${D.counts.slice(0, 6).map(c => `<tr><td>${esc(c.date.slice(5))}</td><td>${esc(c.bin)}</td><td>${esc(c.material)}</td><td class="num ${c.variance < 0 ? 'out' : c.variance > 0 ? 'in' : ''}">${c.variance > 0 ? '+' : ''}${fmtQty(c.variance)}</td><td>${stBadge(c.status)}</td></tr>`).join('')}</table></section>` : ''}
         <section class="card scroll"><h3>${T('ប្រតិបត្តិការថ្មីៗ', 'Recent transactions')}</h3>
-          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
+          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
           ${newest().slice(0, 10).map(r => `<tr><td>${esc(r.date.slice(5))} <small class="muted">${esc(r.time)}</small></td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td>${qtyCell(r)}<td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')}</table></section>
       </div>`);
     $$('[data-go]').forEach(el => { el.onclick = () => { S.view = el.dataset.go; route(); }; });
@@ -135,13 +135,13 @@
     const rows = D.stock.filter(l => (!F.wh || whOf(l.bin) === F.wh) && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc]));
     view(`
       <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')}</small></h2>
-      <div class="fbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក កុងតឺន័រ សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
+      <div class="fbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
         <select id="fwh"><option value="">${T('គ្រប់ឃ្លាំង', 'All warehouses')}</option>${whs.map(w => `<option${w === F.wh ? ' selected' : ''}>${esc(w)}</option>`).join('')}</select>
         ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
-      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th></tr>
+      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th></tr>
         ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(whOf(l.bin))}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td></tr>`).join('')
           || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
-      <p class="muted">${T('ចុចលើជួរ ដើម្បីបើកកុងតឺន័រ។', 'Tap a row to open the bin.')}</p>`);
+      <p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
     keep('#fq', v => { F.q = v; stock(); });
     $('#fwh').onchange = e => { F.wh = e.target.value; stock(); };
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
@@ -160,10 +160,10 @@
     const rows = newest().filter(r => (!F.mt || r.type === F.mt) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user]));
     view(`
       <h2 class="ptitle">${T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)')} <small class="muted">${rows.length} ${T('ជួរ', 'rows')}</small></h2>
-      <div class="fbar"><input type="search" id="mq" placeholder="${T('ស្វែងរក កុងតឺន័រ សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference')}" value="${esc(F.mq)}">
+      <div class="fbar"><input type="search" id="mq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference')}" value="${esc(F.mq)}">
         <select id="mt"><option value="">${T('គ្រប់ប្រភេទ', 'All types')}</option>${types.map(t => `<option value="${t}"${t === F.mt ? ' selected' : ''}>${esc(tLabel(t))}</option>`).join('')}</select>
         ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
-      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
+      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
         ${rows.map(r => `<tr><td>${esc(r.date)} <small class="muted">${esc(r.time)}</small></td><td>${esc(r.id)}</td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}${r.otherBin ? ` <small class="muted">${isIn(r.type) ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td><td>${esc(r.material)}</td><td>${esc(r.batch)}</td>${qtyCell(r)}<td class="num">${fmtQty(r.balance)} ${esc(r.uom)}</td><td>${esc(r.reference)}</td><td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')
           || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
       ${oldNote()}
@@ -186,7 +186,7 @@
     view(`
       <h2 class="ptitle">${T('ពិនិត្យការរាប់ស្តុក', 'Count review')} <small class="muted">${pending()} ${T('រង់ចាំអនុម័ត', 'to review')}</small></h2>
       <div class="steps"><span>1 · ${T('បុគ្គលិករាប់', 'Operator counts')}</span><span>2 · ${T('ប្រធានក្រុមអនុម័ត ឬបដិសេធ', 'Supervisor approves or rejects')}</span><span>3 · ${T('អ្នកត្រួតពិនិត្យស្តុកកែតម្រូវស្តុក', 'Inventory Controller posts the adjustment')}</span></div>
-      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ក្នុងប្រព័ន្ធ', 'Book')}</th><th>${T('រាប់បាន', 'Counted')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th><th>${T('ស្ថានភាព', 'Status')}</th><th data-nosort>${T('សកម្មភាព', 'Action')}</th></tr>
+      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ក្នុងប្រព័ន្ធ', 'Book')}</th><th>${T('រាប់បាន', 'Counted')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th><th>${T('ស្ថានភាព', 'Status')}</th><th data-nosort>${T('សកម្មភាព', 'Action')}</th></tr>
         ${D.counts.map(c => `<tr><td>${esc(c.date.slice(5))} <small class="muted">${esc(c.time)}</small></td><td>${esc(c.bin)}</td><td>${esc(c.material)}<br><small class="muted">${esc(c.desc)}${c.remark ? ' · ' + esc(c.remark) : ''}</small></td><td>${esc(c.batch)}</td>
           <td class="num">${fmtQty(c.book)}</td><td class="num"><b>${fmtQty(c.counted)}</b> ${esc(c.uom)}</td><td class="num ${c.variance < 0 ? 'out' : c.variance > 0 ? 'in' : ''}">${c.variance > 0 ? '+' : ''}${fmtQty(c.variance)}</td><td>${esc(String(c.by || '').split('@')[0])}</td><td>${stBadge(c.status)}</td><td class="acts">${act(c)}</td></tr>`).join('')}</table></section>
       <p class="muted">${T('អ្នកកំពុងមើលជា', 'You are viewing as')} <b>${esc(who)}</b>. ${T('ស្តុកក្នុងប្រព័ន្ធមិនប្តូរទេ រហូតដល់ការកែតម្រូវត្រូវបានបញ្ចូល។', 'The book balance does not change until the adjustment is posted.')}</p>`);
@@ -280,7 +280,7 @@
       <section class="card">
         <div class="fbar"><label class="btn sm file">⬆ ${T('ជ្រើសឯកសារ CSV ពី SAP', 'Choose SAP CSV file')}<input type="file" id="sapFile" accept=".csv,.txt,text/csv" hidden></label>
           ${DEMO ? `<button type="button" class="btn ghost sm" data-sample="mb52">${T('គំរូ MB52', 'Sample MB52')}</button>
-          <button type="button" class="btn ghost sm" data-sample="ewm">${T('គំរូ EWM (មានកុងតឺន័រ)', 'Sample EWM (with bins)')}</button>` : ''}</div>
+          <button type="button" class="btn ghost sm" data-sample="ewm">${T('គំរូ EWM (មានទីតាំង)', 'Sample EWM (with bins)')}</button>` : ''}</div>
         <details class="paste"><summary>${T('ឬបិទភ្ជាប់ពី Excel', 'or paste from Excel')}</summary><textarea id="sapPaste" rows="4" placeholder="Material&#9;Batch&#9;Storage Location&#9;Unrestricted"></textarea>
           <button type="button" class="btn ghost sm" id="usePaste">${T('ប្រើទិន្នន័យនេះ', 'Use this data')}</button></details>
         ${R.error ? `<p class="bad">⚠️ ${esc(R.error)}</p>` : ''}
