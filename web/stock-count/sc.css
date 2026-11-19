@@ -313,3 +313,5 @@ label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
 .kpad button:active { background: var(--line); }
 .kpad button:disabled { opacity: .3; }
 #mTot { text-align: center; }
+.cline + .cline { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+#cPad { margin-top: 4px; }
