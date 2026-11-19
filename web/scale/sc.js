@@ -784,7 +784,7 @@
           ${F.dns.length ? `<div class="dnkg" id="dnKg"><table><tr><th>🧾 DN</th><th class="r">${t('ទម្ងន់លើ DN (kg)', 'Kg on the DN')} ${req}</th></tr>
             ${F.dns.map((d, i) => `<tr><td class="mono">${esc(d)}</td><td class="r"><input class="in dkin mono${dnKgOf(F, d) ? '' : ' need'}" data-dk="${i}" inputmode="numeric" autocomplete="off" value="${dnKgOf(F, d) || ''}"></td></tr>`).join('')}
             <tr class="tot"><td>${t('សរុប DN', 'DN total')}</td><td class="r mono" id="dnTot">—</td></tr></table><div id="dnCmp"></div></div>` : ''}</div>` : ''}
-        ${!sel && F.type === 'In' ? vesselHtml() : `<div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>`}
+        ${`<div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>`}
       </div>
       ${sel ? againRows(sel) : ''}
       <div id="warnBox"></div>
@@ -943,7 +943,7 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');
-    if (!ticketBy(F.cid) && F.type === 'In' && vesNeed() && !F.vessel) miss.push('#fVessel');   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
+    // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
