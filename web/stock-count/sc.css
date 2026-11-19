@@ -315,3 +315,16 @@ label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
 #mTot { text-align: center; }
 .cline + .cline { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
 #cPad { margin-top: 4px; }
+/* Move screen header (Kim, 19 Nov): item code + name under the bin, big coloured type badge on the right */
+.mhero { display: flex; align-items: flex-start; gap: 10px; }
+.mh-l { flex: 1; min-width: 0; }
+.mh-item { display: flex; flex-direction: column; margin-top: 4px; }
+.mh-item b { font-size: 18px; }
+.mh-item span { font-size: 15px; color: var(--muted); }
+.tbadge { flex: none; font-size: 20px; font-weight: 800; color: #fff; border-radius: 12px; padding: 8px 16px; }
+.tbadge.in { background: #16a34a; } .tbadge.out { background: #ea580c; } .tbadge.tr { background: #2563eb; }
+.icard-t .chips { margin-top: 0; }
+/* smaller keypad buttons */
+.kpad { gap: 6px; }
+.kpad button { font-size: 20px; padding: 7px 0; border-radius: 10px; }
+.kdisp { min-height: 52px; font-size: 32px; }
