@@ -668,7 +668,8 @@
     if (isIn && m.pick === undefined) m.pick = pre ? (products().find(p => String(p.material).toUpperCase() === String(pre.material).toUpperCase()) || null) : null;
     const pickText = p => (p ? `${p.material} · ${p.desc || ''}` : '');
     view(`
-      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${typeLabel(m.type)}</div></section>
+      <section class="card hero mhero"><div class="mh-l"><div class="bin">${esc(b.bin)}</div><div class="mh-item" id="mHeroItem"></div></div>
+        <span class="tbadge ${isIn ? 'in' : isTr ? 'tr' : 'out'}">${typeLabel(m.type)}</span></section>
       <section class="card form">
         <div class="icard" id="mCard" hidden></div>
         <div id="mPick">
@@ -724,10 +725,11 @@
       // Form 5 (Kim, 19 Nov): chosen item as a card, Bundle | Kg | Pcs tabs, big on-screen keypad.
       const chosen = isIn ? m.pick : l;
       $('#mPick').hidden = !!chosen;
+      $('#mHeroItem').innerHTML = chosen ? `<b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>` : '';
       $('#mCard').hidden = !chosen;
       if (chosen) {
         const bt = isIn ? $('#mBatch').value.trim() : l.batch;
-        $('#mCard').innerHTML = `<span class="icard-ic">🏗️</span><div class="icard-t"><b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>
+        $('#mCard').innerHTML = `<span class="icard-ic">🏗️</span><div class="icard-t">
           <div class="chips">${bt ? `<i>Batch ${esc(bt)}</i>` : ''}${u.ppb > 1 ? `<i>${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(u.uom)}</i></div></div>
           <button type="button" class="icard-ed" id="mEdit" aria-label="${T('ប្តូរ', 'Change')}">✏️</button>`;
         $('#mEdit').onclick = () => {
