@@ -338,10 +338,9 @@
     const live = VD().filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
-    // big New button hidden (Kim, 19 Nov 2026): trucks are received from the scale list; a small link stays for a truck not on the scale
-    view(siteBar() + tomorrowBar() + `
+    view(siteBar() + `
+      <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>` + tomorrowBar() + `
       ${waitBox()}
-      <a class="link small newlink" href="#/new" id="newBtn">＋ ${t('ទទួលទំនិញដោយមិនមានជញ្ជីង', 'Receive a truck not on the scale')}</a>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
         <a class="stat go" href="#/log" data-go="live"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></a>
@@ -352,7 +351,7 @@
       <div class="list">${live.length ? live.map(itemHTML).join('') : `<div class="empty">${t('គ្មានឡានកំពុងទម្លាក់', 'No truck unloading')}</div>`}</div>
       <div class="head2"><h2>✅ ${t('រួចរាល់ថ្ងៃនេះ', 'Done today')}</h2><a class="link" href="#/log">${t('មើលទាំងអស់', 'See all')} ›</a></div>
       <div class="list">${done.length ? done.slice().reverse().map(itemHTML).join('') : `<div class="empty">${t('មិនទាន់មាន', 'None yet')}</div>`}</div>`);
-    $('#newBtn').onclick = e => { e.preventDefault(); if (F && F.scaleNo && !F.id) F = null; location.hash = '#/new'; };
+    $('#newBtn').onclick = () => { if (F && F.scaleNo && !F.id) F = null; location.hash = '#/new'; };
     bindWait();
     bindGo();
   }
