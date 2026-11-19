@@ -15,7 +15,7 @@ function fakeSheet(name, grid) {
   const sh = {
     grid: grid,
     getName: () => name, getLastRow: () => sh.grid.length, getLastColumn: () => (sh.grid[0] || []).length, getMaxRows: () => 1000,
-    setFrozenRows: () => sh, appendRow: r => { sh.grid.push(r.slice()); return sh; },
+    setFrozenRows: () => sh, appendRow: r => { sh.grid.push(r.slice()); return sh; }, deleteRow: i => { sh.grid.splice(i - 1, 1); return sh; },
     getRange: (r, c, nr, nc) => {
       nr = nr || 1; nc = nc || 1;
       const read = () => { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = (sh.grid[r - 1 + i] || [])[c - 1 + j]; row.push(v == null ? '' : String(v)); } out.push(row); } return out; };
@@ -116,5 +116,15 @@ eq([r.products.length, r.products[0].ppb, r.products[0].kg, r.products[0].uom], 
 r = call('move', { requestId: 'r40', type: 'IN', bin: 'BIN-B', material: '1500000000', batch: 'DB-7', sloc: '2010', qty: 205, reference: 'GR-40' });
 const nl = soh[soh.length - 1];
 eq([r.balance, nl[1], nl[2], nl[5], nl[6]], [205, '1500000000', 'Debar SD390 12mm ISI', 'PC', 100], 'first IN of a Product Master material makes the line');
+
+// Admin edit / delete of a line (Kim, 19 Nov): balance fix is an ADJUST row; batch rename; delete; staff refused.
+fails(() => call('editLine', { requestId: 'e0', bin: 'BIN-B', material: '1500000000', batch: 'DB-7', sloc: '2010', balance: 200, reason: 'x' }), 'ADMIN', 'staff cannot edit a line');
+fails(() => call('editLine', { requestId: 'e1', bin: 'BIN-B', material: '1500000000', batch: 'DB-7', sloc: '2010', balance: 200, reason: '' }, admin), 'BAD', 'reason required');
+r = call('editLine', { requestId: 'e2', bin: 'BIN-B', material: '1500000000', batch: 'DB-7', sloc: '2010', balance: 200, newBatch: 'DB-8', reason: 'typo' }, admin);
+const led = sheets['Stock Ledger'].grid, lh = led[0], lr = led[led.length - 1];
+eq([r.balance, lr[lh.indexOf('Type')], lr[lh.indexOf('Out')], lr[lh.indexOf('Batch')], soh[soh.length - 1][3], soh[soh.length - 1][7]], [200, 'ADJUST', 5, 'DB-8', 'DB-8', 200], 'balance 205 -> 200 posts ADJUST out 5 and renames the batch');
+const before = soh.length;
+r = call('editLine', { requestId: 'e3', bin: 'BIN-B', material: '1500000000', batch: 'DB-8', sloc: '2010', delete: true, reason: 'wrong bin' }, admin);
+eq([r.deleted, soh.length, led[led.length - 1][lh.indexOf('Out')]], [true, before - 1, 200], 'delete adjusts to 0 and removes the line');
 
 console.log('Stock Count flow tests: ' + pass + ' passed');

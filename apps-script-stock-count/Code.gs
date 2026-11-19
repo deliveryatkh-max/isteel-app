@@ -71,6 +71,7 @@ function route_(action, p, user) {
     case 'move': return withLock_(() => move_(user, p));
     case 'transfer': return withLock_(() => transfer_(user, p));
     case 'card': return card_(user, p);
+    case 'editLine': return withLock_(() => editLine_(user, p));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -300,7 +301,7 @@ function boot_(user) {
   const stock = stock_(''), per = {};
   stock.forEach(l => { per[l.bin.toUpperCase()] = (per[l.bin.toUpperCase()] || 0) + 1; });
   const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: per[b.bin.toUpperCase()] || 0 }));
-  return { user: { email: user.email, name: who.Name || user.email }, settings: { tolerance: st.tol },
+  return { user: { email: user.email, name: who.Name || user.email, admin: !!who.admin }, settings: { tolerance: st.tol },
     today: todayList(list, st.listSize), bins: list, stock: stock, products: pmList_(), binCount: list.length, dash: dash_(stock.length, list.length) };
 }
 
@@ -524,6 +525,43 @@ function card_(user, p) {
   const key = lineKey_(s);
   const rows = objs_(SH.LED, LED_COLS).filter(r => lineKey_({ bin: r.Bin, material: r.Material, batch: r.Batch, sloc: r.SLOC }) === key);
   return { line: s, rows: rows.slice(-200).reverse().map(ledRow_) };
+}
+
+// Admin fix of one stock line (Kim, 19 Nov, option 2): change batch / SLOC / balance, or delete the line.
+// A balance change is an ADJUST row in the Stock Ledger (old rows are never changed); a reason is required.
+// Delete first adjusts the balance to 0, then removes the Stock On Hand row.
+function editLine_(user, p) {
+  const who = counter_(user);
+  if (!who.admin) fail_('ADMIN', 'Only an admin can edit or delete a stock line.', 'មានតែអ្នកគ្រប់គ្រងទេ ដែលអាចកែ ឬលុបបាន។');
+  const dup = posted_(p.requestId);
+  if (dup) return dup;
+  const reason = clip_(p.reason, 200);
+  if (!reason) fail_('BAD', 'Enter the reason.', 'សូមបញ្ចូលមូលហេតុ។');
+  const b = activeBin_(p.bin);
+  const s = findLine_(stock_(b.bin), b.bin, p);
+  if (!s) fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងកុងតឺន័រនេះទេ។');
+  const del = p.delete === true || p.delete === 'true';
+  const bal = del ? 0 : Number(p.balance);
+  if (!isFinite(bal) || bal < 0) fail_('BAD', 'Balance must be 0 or more.', 'សមតុល្យត្រូវ 0 ឬច្រើនជាងនេះ។');
+  if (!/^(kg|kgs|ton|t)$/i.test(String(s.uom || '').trim()) && Math.floor(bal) !== bal) fail_('BAD', 'Balance must be a whole number.', 'សមតុល្យត្រូវជាលេខគត់។');
+  const n = del ? s : Object.assign({}, s, { batch: p.newBatch == null ? s.batch : clip_(p.newBatch, 40), sloc: p.newSloc == null ? s.sloc : clip_(p.newSloc, 20) });
+  const moved = lineKey_(n) !== lineKey_(s);
+  if (moved && findLine_(stock_(b.bin), b.bin, n)) fail_('BAD', 'This bin already has a line with that batch and SLOC.', 'កុងតឺន័រនេះមានបាច់ និង SLOC នេះរួចហើយ។');
+  const diff = Math.round((bal - s.book) * 1000) / 1000;
+  if (!diff && !moved && !del) fail_('BAD', 'Nothing changed.', 'មិនមានការផ្លាស់ប្តូរទេ។');
+  const sh = sheet_(SH.STK, STK_COLS), last = sh.getLastRow();
+  const v = last < 2 ? [] : sh.getRange(2, 1, last - 1, 5).getDisplayValues();
+  const row = v.findIndex(r => lineKey_({ bin: r[0], material: r[1], batch: r[3], sloc: r[4] }) === lineKey_(s)) + 2;
+  if (row < 2) fail_('NOLINE', 'This line is not in Stock On Hand.');
+  const now = new Date(), id = txnId_('ADJ', now);
+  const note = [del ? 'Deleted line' : '', moved ? 'Batch/SLOC ' + s.batch + ' / ' + s.sloc + ' -> ' + n.batch + ' / ' + n.sloc : '', reason].filter(Boolean).join(' · ');
+  ledgerAppend_([ledgerRow_(id, now, 'ADJUST', b.bin, n, 0, bal, { In: diff > 0 ? diff : '', Out: diff < 0 ? -diff : '', Remark: note, User: name_(who, user), 'Request ID': clip_(p.requestId, 80) })]);
+  if (del) sh.deleteRow(row);
+  else {
+    if (moved) sh.getRange(row, 4, 1, 2).setValues([[n.batch, n.sloc]]);
+    if (diff) sh.getRange(row, 8).setValue(bal);
+  }
+  return { id: id, balance: bal, deleted: del, batch: n.batch, sloc: n.sloc };
 }
 
 // Adds one count to the Stock On Hand row of this line (Kim, 13 Nov): Counted Qty Bundle / Kg / Pcs each add up,
