@@ -728,7 +728,7 @@
       if (chosen) {
         const bt = isIn ? $('#mBatch').value.trim() : l.batch;
         $('#mCard').innerHTML = `<span class="icard-ic">🏗️</span><div class="icard-t"><b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>
-          <div class="chips">${bt ? `<i>Batch ${esc(bt)}</i>` : ''}${u.ppb > 1 ? `<i>${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(u.uom)}</i>${l ? `<i>${T('សមតុល្យ', 'Bal.')} ${fmtQty(l.book)}</i>` : ''}</div></div>
+          <div class="chips">${bt ? `<i>Batch ${esc(bt)}</i>` : ''}${u.ppb > 1 ? `<i>${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(u.uom)}</i></div></div>
           <button type="button" class="icard-ed" id="mEdit" aria-label="${T('ប្តូរ', 'Change')}">✏️</button>`;
         $('#mEdit').onclick = () => {
           if (isIn) { m.pick = null; $('#mMat').value = ''; refresh(); $('#mMat').focus(); }
@@ -750,7 +750,7 @@
       $('#mDisp').classList.toggle('need', q.qty === '');
       $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
       $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
-      $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
+      $('#mInfo').textContent = l ? '' : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
       let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
