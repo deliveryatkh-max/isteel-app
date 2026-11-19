@@ -835,7 +835,6 @@
           <input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg">
           <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces">
         </div>
-        <div class="muted chand">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</div>
       </div>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
