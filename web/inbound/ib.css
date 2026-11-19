@@ -353,7 +353,7 @@ img[data-zoom] { cursor: zoom-in; }
 .calc-tot { display: flex; justify-content: space-between; font-size: 18px; margin: 12px 2px 8px; }
 .calc-tot b { font-size: 22px; color: #1e7a3c; }
 /* Start unloading: only PO Qty, Arrival Qty and UoM; GR and Damaged show at Finish (Kim, 15 Nov 2026) */
-.itbl.arr .c3, .itbl.arr .c4 { display: none; }
+.itbl.nogr .c3 { display: none; }
 /* scan button beside the 3PL DN box */
 .scanrow { display: flex; gap: 8px; align-items: stretch; }
 .scanrow .in { flex: 1; min-width: 0; }
@@ -416,3 +416,5 @@ img[data-zoom] { cursor: zoom-in; }
 .bbad button { position: absolute; right: 6px; top: 6px; border: 0; background: transparent; color: #999; font-size: 14px; cursor: pointer; }
 #manPo { display: inline-block; margin-top: 10px; font-size: 12.5px; }
 .scanphoto { display: block; text-align: center; margin-top: 8px; cursor: pointer; }
+.dnok { color: #1b5e20; background: #e8f5e9; border-radius: 6px; padding: 0 6px; font-weight: 700; }
+.dnbad { color: #c62828; background: #fff0f0; border-radius: 6px; padding: 0 6px; font-weight: 700; }

@@ -54,7 +54,9 @@ const ARR = { po: '5100012725', truck: '3e 2588', dn3pl: 'DN-778', ph: { front: 
 ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), ph: { front: PHOTO } }) }).error), 'photos required');
 ok(/not on 5100012725/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1200000101', arrQty: 5 }] }) }).error), 'item of another PO refused');
 ok(/Arrival Qty/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), items: [{ material: '1100000230', arrQty: '' }] }) }).error), 'arrival qty required');
-ok(/3PL DN/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: '' }) }).error), '3PL DN required');
+ok(/Take the 3 photos/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: '', ph: {} }) }).error), '3PL DN not asked at start');
+ok(/damage photo/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000230', arrQty: 5, dmgQty: 1, dmgType: 'dent' }] }) }).error), 'damage photo at start');
+ok(/damage type/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, ARR, { items: [{ material: '1100000230', arrQty: 5, dmgQty: 1, dmgPh: [PHOTO] }] }) }).error), 'damage type at start');
 // Warehouse List (Kim, 30 Oct 2026): once the tab has codes, the warehouse is required and must be on the list
 const whTab = env.ss.getSheetByName('Warehouse List'); whTab.rows.push(['A1', 'Main'], ['I1', '']);
 eq(must(call('sok@x.com', 'boot', {})).warehouses, [{ code: 'A1', desc: 'Main', site: '' }, { code: 'I1', desc: '', site: '' }], 'warehouses in boot');
@@ -78,11 +80,11 @@ const log = () => env.ss.getSheetByName('GR Log').rows.slice(1).filter(x => x &&
 eq(log().length, 3, 'one log row per item');
 
 // finish
-const FIN = { id: r.id, owner: '3PL', carrier: 'FOXS', manpower: 3, remark: 'ok',
+const FIN = { id: r.id, owner: '3PL', carrier: 'FOXS', manpower: 3, remark: 'ok', dnQty: 43350,
   items: [{ material: '1100000230', grQty: 19800, dmgQty: 2, dmgType: 'rust', dmgUom: 'PCS', dmgPh: [PHOTO] }, { material: '1100000231', grQty: 23550, dmgQty: '' }] };
 ok(/Manpower/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { manpower: '' }) }).error), 'manpower required');
 ok(/damage photo/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: 1, dmgQty: 1, dmgType: 'dent' }, { material: '1100000231', grQty: 1 }] }) }).error), 'damage photo required');
-ok(/Actual GR Qty/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { items: [{ material: '1100000230', grQty: '' }] }) }).error), 'GR qty required');
+ok(/Total Qty on the 3PL DN/.test(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { dnQty: '' }) }).error), 'DN qty required');
 r = must(call('dara@x.com', 'finish', { receipt: Object.assign({}, FIN, { voice: 'data:audio/webm;codecs=opus;base64,' + Buffer.from('OggS-voice').toString('base64') }) }));
 ok(r.voice && env.files[r.voice] && /\.webm$/.test(env.files[r.voice].name), 'voice note saved');
 ok(/^data:audio\/webm;base64,/.test(must(call('dara@x.com', 'voice', { id: r.id })).url), 'voice note played back');
@@ -302,7 +304,7 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(/^BAD: 9 is not in the Incoming Plan/.test(call('sok@x.com', 'start', { receipt: Object.assign({}, M, { pos: ['PO9'] }) }).error), 'unknown PO refused');
   const m = must(call('sok@x.com', 'start', { receipt: M }));
   eq([m.po, m.pos, m.supplier, m.items.map(i => i.po)], ['5100012725, 5100012751', ['5100012725', '5100012751'], 'Regency, Zinc Co', ['5100012725', '5100012751']], 'two POs on one receipt, items in PO order');
-  const f = must(call('sok@x.com', 'finish', { receipt: { id: m.id, owner: 'ISI', manpower: 3, items: [{ po: '5100012725', material: '1100000230', grQty: 100 }, { po: '5100012751', material: '1200000101', grQty: 4900 }] } }));
+  const f = must(call('sok@x.com', 'finish', { receipt: { id: m.id, owner: 'ISI', manpower: 3, dn3pl: 'DN-9', dnQty: 5000, items: [{ po: '5100012725', material: '1100000230', grQty: 100 }, { po: '5100012751', material: '1200000101', grQty: 4900 }] } }));
   eq(f.items.map(i => i.grQty), [100, 4900], 'GR matched by PO + material');
   const lg = env.ss.getSheetByName('GR Log').rows.filter(r => r[0] === m.id);
   eq(lg.map(r => r[2]), ['5100012725', '5100012751'], 'log rows keep each item\'s PO');
