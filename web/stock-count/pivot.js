@@ -21,6 +21,7 @@
     let st = load(cfg.id) || clone(cfg.def);
     st.rows = (st.rows || []).filter(k => F[k]); st.cols = (st.cols || []).filter(k => F[k]);
     st.vals = (st.vals || []).filter(v => F[v.k]); st.filters = st.filters || {};
+    st.opt = Object.assign({ sub: true, gtr: true, gtc: true }, st.opt || {});   // Subtotals, Grand total row / column (Kim, 20 Nov)
     Object.keys(st.filters).forEach(k => { if (!F[k]) delete st.filters[k]; });
     let picked = null, openFilter = null;
     const used = () => new Set(st.rows.concat(st.cols, Object.keys(st.filters)));
@@ -56,6 +57,7 @@
       const colSpan = Math.max(1, nv);
       const vName = v => `${T(AGG[v.agg][0], AGG[v.agg][1])} ${label(v.k)}`;
       const showCols = st.cols.length ? p.colKeys : [];
+      const gtc = st.opt.gtc || !st.cols.length;   // with no Columns field the total column is the only value column
       let h = '<table class="pv-t" data-nocols data-nosort><thead>';
       // header rows: one per column field, then the value names
       st.cols.forEach((c, li) => {
@@ -66,13 +68,13 @@
           if (!same) { let span = 0; for (let j = i; j < showCols.length && showCols[j].slice(0, li + 1).join('\u0001') === ck.slice(0, li + 1).join('\u0001'); j++) span++; h += `<th colspan="${span * colSpan}">${esc(ck[li] || '(blank)')}</th>`; }
           prev = ck.slice(0, li + 1).join('\u0001');
         });
-        h += li === 0 ? `<th class="pv-tot" rowspan="${st.cols.length - li}" colspan="${colSpan}">${T('សរុបរួម', 'Grand total')}</th>` : '';
+        h += li === 0 && gtc ? `<th class="pv-tot" rowspan="${st.cols.length - li}" colspan="${colSpan}">${T('សរុបរួម', 'Grand total')}</th>` : '';
         h += '</tr>';
       });
       if (nv > 1 || !st.cols.length) {
         h += `<tr>${!st.cols.length ? `<th class="pv-corner" colspan="${Math.max(1, st.rows.length)}">${st.rows.map(label).map(esc).join(' / ')}</th>` : ''}`;
         (showCols.length ? showCols : []).forEach(() => st.vals.forEach(v => { h += `<th>${esc(vName(v))}</th>`; }));
-        st.vals.forEach(v => { h += `<th class="pv-tot">${esc(vName(v))}</th>`; });
+        if (gtc) st.vals.forEach(v => { h += `<th class="pv-tot">${esc(vName(v))}</th>`; });
         h += '</tr>';
       } else if (nv === 1 && st.cols.length) {
         h = h.replace('<th class="pv-corner"', `<th class="pv-corner" title="${esc(vName(st.vals[0]))}"`);
@@ -82,23 +84,23 @@
         let r = `<tr class="${cls || ''}">`;
         labels.forEach(l => { r += `<td class="pv-rl">${l}</td>`; });
         showCols.forEach(ck => st.vals.forEach((v, i) => { const x = p.val(rk, JSON.stringify(ck), i); r += `<td class="num">${fmt(x)}</td>`; }));
-        st.vals.forEach((v, i) => { r += `<td class="num pv-tot">${fmt(p.val(rk, '*', i))}</td>`; });
+        if (gtc) st.vals.forEach((v, i) => { r += `<td class="num pv-tot">${fmt(p.val(rk, '*', i))}</td>`; });
         return r + '</tr>';
       };
       if (st.rows.length) {
         let prevTop = null;
         p.rowKeys.forEach((rk, idx) => {
           if (st.rows.length > 1 && rk[0] !== prevTop) {
-            if (prevTop !== null) h += line(JSON.stringify([prevTop]) + '#sub', [`<b>${esc(prevTop || '(blank)')} ${T('សរុប', 'total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-sub');
+            if (prevTop !== null && st.opt.sub) h += line(JSON.stringify([prevTop]) + '#sub', [`<b>${esc(prevTop || '(blank)')} ${T('សរុប', 'total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-sub');
             prevTop = rk[0];
           }
           const prev = p.rowKeys[idx - 1];
           const labels = rk.map((v, li) => (prev && prev.slice(0, li + 1).join('\u0001') === rk.slice(0, li + 1).join('\u0001') ? '' : esc(v || '(blank)')));
           h += line(JSON.stringify(rk), labels);
         });
-        if (st.rows.length > 1 && prevTop !== null) h += line(JSON.stringify([prevTop]) + '#sub', [`<b>${esc(prevTop || '(blank)')} ${T('សរុប', 'total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-sub');
+        if (st.rows.length > 1 && prevTop !== null && st.opt.sub) h += line(JSON.stringify([prevTop]) + '#sub', [`<b>${esc(prevTop || '(blank)')} ${T('សរុប', 'total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-sub');
       }
-      h += line('*', [`<b>${T('សរុបរួម', 'Grand total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-grand');
+      if (st.opt.gtr || !st.rows.length) h += line('*', [`<b>${T('សរុបរួម', 'Grand total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-grand');
       return h + '</tbody></table>';
     }
 
@@ -131,6 +133,8 @@
           ${zone('rows', 'ជួរដេក', 'Rows', st.rows)}
           ${zone('vals', 'តម្លៃ', 'Values', st.vals.map(v => v.k))}
           <div class="pv-tools"><button type="button" class="btn ghost sm" data-reset="1">↺ ${T('ដើមវិញ', 'Reset')}</button><button type="button" class="btn ghost sm" data-xls="1">⬇ Excel</button><small class="muted">${p.data.length} ${T('ជួរ', 'rows')}</small></div>
+          <div class="pv-opts">${[['sub', 'សរុបរង', 'Subtotals'], ['gtr', 'សរុបរួម (ជួរដេក)', 'Grand total row'], ['gtc', 'សរុបរួម (ជួរឈរ)', 'Grand total column']]
+            .map(o => `<label><input type="checkbox" data-opt="${o[0]}"${st.opt[o[0]] ? ' checked' : ''}> ${T(o[1], o[2])}</label>`).join('')}</div>
           ${openFilter ? filterBox(openFilter) : ''}
         </div>
         <div class="pv-out">${table(p)}</div></div>`;
@@ -187,6 +191,7 @@
         fb.querySelector('[data-fnone]').onclick = () => { all().forEach(x => { x.checked = false; }); apply(); };
         fb.querySelector('[data-fclose]').onclick = () => { openFilter = null; draw(); };
       }
+      el.querySelectorAll('[data-opt]').forEach(c => { c.onchange = () => { st.opt[c.dataset.opt] = c.checked; draw(); }; });
       el.querySelector('[data-reset]').onclick = () => { st = clone(cfg.def); openFilter = null; picked = null; draw(); };
       el.querySelector('[data-xls]').onclick = () => exportCsv();
     }

@@ -375,3 +375,5 @@ table.hist td { vertical-align: middle; }
 :root[data-theme="dark"] .pv-chip { background: #1e3050; color: #e8eef8; border-color: #2c4369; } :root[data-theme="dark"] .pv-t tr.pv-sub td, :root[data-theme="dark"] .pv-t tr.pv-grand td { background: #1a2b47; }
 .pv-hint { padding: 16px; }
 @media (max-width: 760px) { .pv { grid-template-columns: 1fr; } .pv-side { position: static; } .pv-list .pv-zc { max-height: none; } }
+.pv-opts { display: flex; flex-direction: column; gap: 2px; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; }
+.pv-opts label { display: flex; gap: 6px; align-items: center; margin: 0; font-weight: 600; }
