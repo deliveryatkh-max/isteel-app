@@ -407,3 +407,11 @@ img[data-zoom] { cursor: zoom-in; }
 
 /* scale ticket no. opens the ticket in the Truck Scale app (Kim, 18 Nov 2026) */
 .scbox .sclink { color: inherit; font-weight: 700; text-decoration: underline; }
+
+/* batch scan (Kim, 19 Nov 2026, option A) */
+.bbadge { display: inline-block; font-size: 11.5px; font-weight: 700; color: #1b5e20; background: #e8f5e9; border-radius: 6px; padding: 1px 6px; margin-bottom: 2px; }
+.bbad { position: relative; margin-top: 8px; padding: 8px 34px 8px 10px; border-radius: 12px; border: 1px solid #f0b4b4; background: #fff5f5; }
+.bbad b { color: #c62828; display: block; font-size: 13px; }
+.bbad small { color: #8a3b3b; font-size: 11.5px; }
+.bbad button { position: absolute; right: 6px; top: 6px; border: 0; background: transparent; color: #999; font-size: 14px; cursor: pointer; }
+#manPo { display: inline-block; margin-top: 10px; font-size: 12.5px; }

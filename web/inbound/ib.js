@@ -81,7 +81,7 @@
       ['1100000300', 'HRC SS400 1219x2.00 (sample)', 41200, 2], ['1100000301', 'HRC SS400 1219x2.50 (sample)', 38900, 2], ['1100000302', 'HRC SS400 1219x3.00 (sample)', 44700, 2]], 'WH IB'),
     PL('PO5100012751', 'IN 1800049030', 'ZN-2026-117', '2026-10-27', 'Sample Supplier B', [
       ['1200000101', 'ZINC INGOT SHG 99.995% (sample)', 25000, 1000]], 'WH METAL'));
-  PLAN.forEach(x => { x.po = npo(x.po); x.vessel = x.supplier === 'Regency' ? 'MV HAI PHONG 08' : x.supplier === 'Sample Supplier A' ? 'MV ORIENT 12' : ''; });
+  PLAN.forEach(x => { x.po = npo(x.po); x.vessel = x.supplier === 'Regency' ? 'MV HAI PHONG 08' : x.supplier === 'Sample Supplier A' ? 'MV ORIENT 12' : ''; x.batch = 'B' + x.material.slice(-6); });
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { p.forEach(x => { x.po = npo(x.po); }); PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
   const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
@@ -160,7 +160,9 @@
     const ls = pos.map(po => PLAN.find(x => x.po === po)).filter(Boolean), j = k => Array.from(new Set(ls.map(l => l[k]).filter(Boolean))).join(', ');
     return { po: pos.join(', '), pos: pos.slice(), inbound: j('inbound'), ref: j('ref'), supplier: j('supplier'), eta: ls.length ? ls[0].eta : '', uom: 'Kg' };
   }
-  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
+  // Batch scan (Kim, 19 Nov 2026, option A): each batch in the Incoming Plan's Batch column is one plan line
+  const HAS_BATCH = () => PLAN.some(x => x.batch);
+  function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, batch: p.batch || '', desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
   const recvd = (po, mat, skip) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
   const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
@@ -390,7 +392,7 @@
     if (!a) { toast(t('រកមិនឃើញឡាននេះ ឬបានទទួលរួច', 'Truck not found or already received')); location.hash = '#/today'; return; }
     F = blank(); F.scaleNo = a.no; F.vessel = a.vessel || ''; F.company = a.company || ''; F.truck = a.truck; ownerFromScale(F);
     const ps = vesPOs(a.vessel).map(x => x.po).filter(po => pendingPOs().indexOf(po) >= 0);
-    if (ps.length === 1) pickPOs(ps);
+    if (ps.length === 1 && !HAS_BATCH()) pickPOs(ps);
     location.replace('#/new');
   }
 
@@ -548,7 +550,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         lastPo = itemPo(i, r); const ls = r.items.filter(x => itemPo(x, r) === lastPo), l = PLAN.find(x => x.po === lastPo);
         head = `<tr class="porow"><td colspan="${cs}"><b>📄 ${esc(lastPo)}</b>${l && l.supplier ? ' · ' + esc(l.supplier) : ''} <small>${ls.length} ${t('មុខ', 'items')} · ${fmt(ls.reduce((a, x) => a + (+(x.grQty === '' || x.grQty == null ? x.arrQty : x.grQty) || 0), 0))} ${esc(r.uom)}</small></td></tr>`;
       }
-      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm"><b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}${i.isNew ? ` <span class="newpill">${t('ថ្មី', 'New')}</span>` : ''}${canDel ? `<button type="button" class="rmrow" data-rmask="${n}" aria-label="${esc(t('លុបជួរនេះ', 'Delete row'))}">🗑</button>` : ''}${canDel && r.delAsk === n ? `<div class="rmask"><b>🗑 ${t('លុបជួរនេះ?', 'Delete this row?')}</b><button type="button" class="btn sm" data-rmno>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn sm danger" data-rm="${n}">${t('លុប', 'Delete')}</button></div>` : ''}</td></tr>
+      let out = `<tr class="nmrow${less ? ' lessrow' : ''}"><td colspan="${cs}" class="nm">${i.batch ? `<span class="bbadge">✅ ${esc(i.batch)}</span>` : ''}<b>${n + 1}. ${esc(i.desc)}</b><small>${esc(i.material)}${i.pcs ? ' · ' + esc(i.pcs) + ' PCS' : ''} · <span class="poq">${t('ចំនួន (PO)', 'PO Qty')} ${fmt(i.poQty)} ${esc(r.uom)}</span></small>${less ? ` ${lessBadge()} <small class="il">${fmt(i.grQty - i.arrQty)}</small>` : ''}${mode === 'arr' ? `<button type="button" class="rm" data-rm="${n}" aria-label="remove">✕</button>` : ''}${i.isNew ? ` <span class="newpill">${t('ថ្មី', 'New')}</span>` : ''}${canDel ? `<button type="button" class="rmrow" data-rmask="${n}" aria-label="${esc(t('លុបជួរនេះ', 'Delete row'))}">🗑</button>` : ''}${canDel && r.delAsk === n ? `<div class="rmask"><b>🗑 ${t('លុបជួរនេះ?', 'Delete this row?')}</b><button type="button" class="btn sm" data-rmno>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn sm danger" data-rm="${n}">${t('លុប', 'Delete')}</button></div>` : ''}</td></tr>
         <tr class="qrow${less ? ' lessrow' : ''}">
         <td class="n c2">${cell(i, n, 'arrQty', mode === 'arr' || (mode === 'fin' && canPlan()))}</td>
         <td class="n c3">${cell(i, n, 'grQty', mode === 'fin')}</td>
@@ -663,6 +665,29 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     if (DEMO) return;
     scaleTickets(r.date || today()).then(put);
   }
+  function batchCard(r, mode) {
+    return `<section class="card"><h2>📦 ${t('ស្កេនលេខ Batch', 'Scan batch numbers')}</h2>
+      <div class="scanrow"><input class="in" id="bscan" placeholder="${esc(t('ស្កេន ឬវាយលេខ Batch…', 'Scan or type the batch no.…'))}" autocapitalize="characters" autocomplete="off" enterkeyhint="done"><button type="button" class="scanb" id="bCam" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div>
+      <p class="hint">${t('ស្កេនម្តងមួយ — Batch ដែលត្រូវនឹងផែនការ នឹងបង្ហាញខាងក្រោម', 'One at a time: batches found in the Incoming Plan appear below')}</p>
+      ${(r.badB || []).map((b, n) => `<div class="bbad"><b>⚠️ ${esc(b)}</b><small>${t('មិនមានក្នុងផែនការទំនិញចូល', 'Not in the Incoming Plan')}</small><button type="button" data-bbad="${n}" aria-label="remove">✕</button></div>`).join('')}
+      ${r.items.length ? `<div class="row2">${grey(t('លេខ PO', 'PO Number'), r.po)}${grey(t('លេខកប៉ាល់', 'Vessel No.'), vesOf(r))}</div>${itemsTable(r, mode)}` : ''}
+      <a class="link small" href="#" id="manPo">${t('ឬជ្រើស PO ដោយដៃ', 'or choose the PO by hand')}</a></section>`;
+  }
+  function addBatch(code) {
+    collect();
+    const c = String(code || '').trim().toUpperCase(), same = x => String(x || '').trim().toUpperCase() === c;
+    const el = $('#bscan'); if (el) el.value = '';
+    if (!c) return;
+    if (F.items.some(i => same(i.batch))) { toast('⚠️ ' + c + t(' បានស្កេនរួច', ' already scanned')); return; }
+    const l = PLAN.find(x => same(x.batch) && left(x, F.id) > 0 && (!SITE || !x.site || x.site === SITE));
+    if (!l || F.items.some(i => itemPo(i, F) === l.po && i.material === l.material)) {
+      F.badB = (F.badB || []).filter(x => x !== c).concat([c]); if (navigator.vibrate) navigator.vibrate(200);
+    } else {
+      F.items.push(item(l)); syncPos(F); Object.assign(F, headerOf(F.pos)); if (!F.site && l.site) F.site = l.site;
+      toast('✅ ' + c + ' · ' + l.desc);
+    }
+    renderForm(F.id); setTimeout(() => { const b = $('#bscan'); if (b) b.focus(); }, 0);
+  }
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) {
@@ -674,13 +699,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const r = F, started = !!r.start, editing = !!r.id;
     const lock = editing ? ' off' : '';
     const mode = started ? 'fin' : 'arr';
+    const bmode = !editing && !started && HAS_BATCH() && !r.manualPo;
     const pend = [].concat.apply([], posOf(r).map(po => pendingLines(po, r.id)));
     view(`
       <div class="head2"><h2>${editing ? (isLive(r) ? '⏱ ' + t('បញ្ចប់ការទម្លាក់', 'Finish unloading') : '✏️ ' + t('កែប្រែ', 'Edit')) : '＋ ' + t('ទទួលទំនិញថ្មី', 'New goods receipt')}</h2><a class="link" href="${editing ? '#/r/' + r.id : '#/today'}">✕</a></div>
 
       ${r.scaleNo && !started ? `<div class="fromsc">⚖️ ${t('ពីជញ្ជីង', 'From the scale')}: <b>${esc(r.truck)}</b>${r.company ? ' · ' + esc(r.company) : ''}${r.vessel ? ' · 🚢 ' + esc(r.vessel) : ' · 🚫 ' + t('គ្មានលេខកប៉ាល់', 'No Vessel Number')}</div>` : ''}
       ${started ? `<section class="card"><h2>📦 ${t('បរិមាណទំនិញ', 'Items')} <small class="il">${esc(posOf(r).join(", "))}</small></h2>${canEditItems(r, mode) ? `<div class="additrow"><button type="button" class="btn sm ok" id="addIt">＋ ${t('បន្ថែម PO / ទំនិញ', 'Add PO / item')}</button></div>` : ''}${itemsTable(r, mode)}<div id="scBox" data-for="${esc(r.id || 'new')}"></div></section>` : `
-      <section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
+      ${bmode ? batchCard(r, mode) : `<section class="card"><h2>📄 ${t('ផែនការទំនិញចូល', 'Incoming plan')}</h2>
         <div class="field"><label class="f">${t('លេខ PO', 'PO Number')} <span class="req">*</span> <small class="il">${t('ជ្រើសបានច្រើន PO សម្រាប់ឡានមួយ', 'one or more POs on this truck')}</small></label>
           ${pickBtn('po', r.po, lock)}</div>
         ${r.po ? `
@@ -688,7 +714,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <div class="field"><label class="f">${t('ទំនិញលើឡាននេះ', 'Items on this truck')} <span class="req">*</span> <small class="il">${pend.length} ${t('មុខមិនទាន់ទទួល', 'pending')}</small></label>
           ${editing ? '' : `<button type="button" class="picker" id="items"><span class="${r.items.length ? '' : 'pph'}">${r.items.length ? '☑️ ' + r.items.length + ' ' + t('មុខបានជ្រើស', 'items chosen') : t('— ជ្រើសទំនិញ (ច្រើនមុខបាន) —', '— Choose items (several allowed) —')}</span><span class="pk-ic" aria-hidden="true">🔍</span></button>`}</div>
         ${r.items.length ? itemsTable(r, mode) : ''}` : ''}
-      </section>`}
+      </section>`}`}
 
       <section class="card"><h2>🚛 ${t('ឡាន និងរូបថត', 'Truck and photos')}</h2>
         <div class="row2">
@@ -815,6 +841,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const r = F, fin = !!r.start;
     const mark = (el, on) => { if (el) el.classList.toggle('need', !!on); };
     mark($('#po'), !r.po);
+    mark($('#bscan'), !r.items.length);
     mark($('#items'), r.po && !r.items.length);
     mark($('#truck'), !r.truck);
     mark($('#dn3pl'), !r.dn3pl);
@@ -856,6 +883,11 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         onDone: keys => { keys.forEach(k => { const po = k.split('|')[0], l = lineOf(po, k.slice(k.indexOf('|') + 1)); if (!l) return;
           const it = item(l); it.isNew = true; F.items.push(it); });
           if (keys.length) { F.itemsEdit = true; syncPos(F); } re(); } }), 50); } }); };
+    const bs = $('#bscan');
+    if (bs) { bs.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addBatch(bs.value); } }; bs.onchange = () => { if (bs.value.trim()) addBatch(bs.value); }; }
+    const bc = $('#bCam'); if (bc) bc.onclick = () => { collect(); scanCode(addBatch); };
+    $$('[data-bbad]').forEach(b => { b.onclick = () => { collect(); F.badB.splice(+b.dataset.bbad, 1); re(); }; });
+    const mpo = $('#manPo'); if (mpo) mpo.onclick = e => { e.preventDefault(); collect(); F.manualPo = true; re(); };
     const ds = $('#dnScan'); if (ds) ds.onclick = () => { collect(); scanCode(code => { F.dn3pl = code; const el = $('#dn3pl'); if (el) el.value = code; markNeed(); toast('✓ ' + code); }); };
     $$('[data-calc]').forEach(b => { b.onclick = e => { e.preventDefault(); collect(); const [n, k] = b.dataset.calc.split(':'), i = F.items[+n];
       const col = { arrQty: t('ចំនួន (ដល់)', 'Arrival Qty'), grQty: t('ទទួល', 'Actual GR Qty'), dmgQty: t('ខូចខាត', 'Damaged Qty') }[k] || k;

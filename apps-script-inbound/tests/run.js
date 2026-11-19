@@ -43,7 +43,7 @@ ok(/^AUTH/.test(env.post({ action: 'boot', token: '', payload: {} }).error), 'no
 let b = must(call('sok@x.com', 'boot', {}));
 eq(b.plan.length, 3, 'plan lines');
 eq(b.plan[0], { po: '5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
-  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '', vessel: '' }, 'plan line read by heading');
+  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '', vessel: '', batch: '' }, 'plan line read by heading');
 eq(b.plates, ['2A-2233', '3E-2588'], 'plates from Driver & Truck');
 eq(b.carriers, ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'], '3PL list from settings');
 ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
