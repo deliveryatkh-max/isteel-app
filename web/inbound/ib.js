@@ -84,7 +84,8 @@
   PLAN.forEach(x => { x.po = npo(x.po); x.vessel = x.supplier === 'Regency' ? 'MV HAI PHONG 08' : x.supplier === 'Sample Supplier A' ? 'MV ORIENT 12' : ''; x.batch = 'B' + x.material.slice(-6); });
   let POS = Array.from(new Set(PLAN.map(p => p.po)));
   function setPlan(p) { p.forEach(x => { x.po = npo(x.po); }); PLAN = p; POS = Array.from(new Set(PLAN.map(x => x.po))); }
-  const lineOf = (po, mat) => PLAN.find(p => p.po === po && p.material === mat);
+  const lineOf = (po, mat, b) => PLAN.find(p => p.po === po && p.material === mat && (!b || p.batch === b)) || PLAN.find(p => p.po === po && p.material === mat);
+  const lineKey = x => x.po + '|' + x.material + '|' + (x.batch || '');   // one plan row per coil when the Batch column is filled (Kim, 19 Nov 2026)
   const showEta = s => { const e = etaOf(s), m = String(e || '').match(/^(\d{4})-(\d\d)-(\d\d)$/);   // dd-mmm-yyyy like Kim's sheet
     return m ? m[3] + '-' + 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+m[2] - 1] + '-' + m[1] : (e || ''); };
 
@@ -164,8 +165,8 @@
   const HAS_BATCH = () => PLAN.some(x => x.batch);
   function item(p) { return { po: p.po, inbound: p.inbound, material: p.material, batch: p.batch || '', desc: p.desc, poQty: p.kg, pcs: p.pcs, arrQty: '', grQty: '', dmgQty: '', dmgType: '', dmgUom: '', dmgPh: [] }; }
   // kg already arrived (being unloaded) or received against one plan line
-  const recvd = (po, mat, skip) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
-  const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip));
+  const recvd = (po, mat, skip, b) => DATA.filter(r => r.id !== skip).reduce((s, r) => s + (r.items || []).filter(i => i.material === mat && itemPo(i, r) === po && (!b || i.batch === b)).reduce((a, i) => a + (+(r.end ? i.grQty : i.arrQty) || 0), 0), 0);
+  const left = (x, skip) => Math.max(0, x.kg - recvd(x.po, x.material, skip, x.batch));
   // a PO is pending while any of its lines still has kg to receive
   const pendingLines = (po, skip) => PLAN.filter(x => x.po === po && left(x, skip) > 0);
   const pendingPOs = skip => VPOS().filter(po => pendingLines(po, skip).length);
@@ -680,7 +681,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     if (!c) return;
     if (F.items.some(i => same(i.batch))) { toast('⚠️ ' + c + t(' បានស្កេនរួច', ' already scanned')); return; }
     const l = PLAN.find(x => same(x.batch) && left(x, F.id) > 0 && (!SITE || !x.site || x.site === SITE));
-    if (!l || F.items.some(i => itemPo(i, F) === l.po && i.material === l.material)) {
+    if (!l) {
       F.badB = (F.badB || []).filter(x => x !== c).concat([c]); if (navigator.vibrate) navigator.vibrate(200);
     } else {
       F.items.push(item(l)); syncPos(F); Object.assign(F, headerOf(F.pos)); if (!F.site && l.site) F.site = l.site;
@@ -865,22 +866,22 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       items: (vesPOs(F.vessel).length ? pendingPOs(F.id).filter(x => vesPOs(F.vessel).some(y => y.po === x)) : pendingPOs(F.id)).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
       onDone: v => { pickPOs(v); re(); } }); };
     const it = $('#items');
-    if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material; openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
-      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: po + '|' + x.material, label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
+    if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material + '|' + (i.batch || ''); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
+      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: lineKey(x), label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
       onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
-        F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf(k.split('|')[0], k.slice(k.indexOf('|') + 1)))); re(); } }); };
+        F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf.apply(null, k.split('|')))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); F.delAsk = null; if (F.id) { F.itemsEdit = true; syncPos(F); } $$('[data-it]').forEach(el => el.removeAttribute('data-it')); re(); }; });
     $$('[data-rmask]').forEach(b => { b.onclick = () => { collect(); F.delAsk = +b.dataset.rmask; re(); }; });
     $$('[data-rmno]').forEach(b => { b.onclick = () => { collect(); F.delAsk = null; re(); }; });
-    const notOn = (po, x) => !F.items.some(i => itemPo(i, F) === po && i.material === x.material);
+    const notOn = (po, x) => !F.items.some(i => itemPo(i, F) === po && i.material === x.material && (i.batch || '') === (x.batch || ''));
     const ad = $('#addIt');
     if (ad) ad.onclick = () => { collect(); openMulti({ title: t('បន្ថែម PO / ទំនិញ · លេខ PO', 'Add PO / item · PO Number'), value: [],
       items: pendingPOs(F.id).filter(x => pendingLines(x, F.id).some(y => notOn(x, y))).map(x => ({ value: x, label: x,
         sub: ((PLAN.find(y => y.po === x) || {}).supplier || '') + ' · ' + pendingLines(x, F.id).filter(y => notOn(x, y)).length + t(' មុខមិនទាន់ទទួល', ' lines pending') })),
       onDone: ps => { if (!ps.length) return; setTimeout(() => openMulti({ title: t('ទំនិញមិនទាន់ទទួល', 'Pending items'), value: [],
         items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).filter(x => notOn(po, x))
-          .map(x => ({ value: po + '|' + x.material, label: x.desc, sub: po + ' · ' + x.material + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' Kg' })))),
-        onDone: keys => { keys.forEach(k => { const po = k.split('|')[0], l = lineOf(po, k.slice(k.indexOf('|') + 1)); if (!l) return;
+          .map(x => ({ value: lineKey(x), label: x.desc, sub: po + ' · ' + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' Kg' })))),
+        onDone: keys => { keys.forEach(k => { const l = lineOf.apply(null, k.split('|')); if (!l) return;
           const it = item(l); it.isNew = true; F.items.push(it); });
           if (keys.length) { F.itemsEdit = true; syncPos(F); } re(); } }), 50); } }); };
     const bs = $('#bscan');
@@ -1046,11 +1047,25 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         <div class="sheet-grip"></div>
         <div class="sheet-top"><div class="sheet-h">${esc(t('ស្កេនបាកូដ ឬ QR', 'Scan barcode or QR code'))}</div><button type="button" class="icon-btn" data-close aria-label="${esc(t('បិទ', 'Close'))}">✕</button></div>
         <div class="scan-view"><video playsinline muted></video><div class="scan-frame"></div></div>
-        <p class="hint" id="scanMsg" style="text-align:center">${esc(t('ដាក់បាកូដក្នុងប្រអប់', 'Hold the code inside the box'))}</p></div>`;
+        <p class="hint" id="scanMsg" style="text-align:center">${esc(t('ដាក់បាកូដក្នុងប្រអប់', 'Hold the code inside the box'))}</p>
+        <label class="btn ghost scanphoto">📷 ${esc(t('ថតរូបបាកូដ (iPhone)', 'Take a photo of the code (iPhone)'))}<input type="file" accept="image/*" capture="environment" hidden></label></div>`;
     const video = bg.querySelector('video'), msg = bg.querySelector('#scanMsg');
     const close = () => { stopped = true; clearTimeout(timer); if (ctrl) try { ctrl.stop(); } catch (e) { /* already stopped */ } if (stream) stream.getTracks().forEach(x => x.stop()); bg.classList.remove('open'); setTimeout(() => bg.remove(), 200); };
     const done = code => { if (stopped || !code) return; code = String(code).trim(); close(); onCode(code); };
     bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) close(); };
+    // iPhone fallback: the phone's own camera (autofocus, full resolution), then read the code from the photo
+    bg.querySelector('.scanphoto input').onchange = async e => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      msg.textContent = t('កំពុងអាន…', 'Reading…');
+      const url = URL.createObjectURL(f);
+      try {
+        if ('BarcodeDetector' in window) { const r = await new window.BarcodeDetector().detect(await createImageBitmap(f)); if (r && r[0]) return done(r[0].rawValue); }
+        const z = await import('../vendor/zxing-browser.min.js');
+        const r = await new z.BrowserMultiFormatReader(new Map([[3, true]])).decodeFromImageUrl(url);
+        if (r) return done(r.getText());
+      } catch (er) { /* not found */ } finally { URL.revokeObjectURL(url); }
+      msg.textContent = t('រកមិនឃើញបាកូដ។ ថតម្តងទៀត ឲ្យជិត និងច្បាស់។', 'No code found. Take it again, closer and sharp.');
+    };
     document.body.appendChild(bg);
     requestAnimationFrame(() => bg.classList.add('open'));
     const fail = () => { if (stopped) return; msg.textContent = t('មិនអាចបើកកាមេរ៉ាបានទេ។ សូមវាយលេខ។', 'Camera not available. Please type the number.'); bg.querySelector('.scan-view').hidden = true; };
@@ -1058,7 +1073,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     (async () => {
       try {
         if ('BarcodeDetector' in window) {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
           if (stopped) { stream.getTracks().forEach(x => x.stop()); return; }
           video.srcObject = stream; await video.play();
           const det = new window.BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'codabar', 'data_matrix'] });
@@ -1067,7 +1082,9 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         } else {
           const z = await import('../vendor/zxing-browser.min.js');
           if (stopped) return;
-          ctrl = await new z.BrowserMultiFormatReader().decodeFromVideoDevice(undefined, video, r => { if (r) done(r.getText()); });
+          // iPhone: back camera at full HD and TRY_HARDER (hint 3), small 1D barcodes need both
+          ctrl = await new z.BrowserMultiFormatReader(new Map([[3, true]]), { delayBetweenScanAttempts: 100 })
+            .decodeFromConstraints({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }, video, r => { if (r) done(r.getText()); });
           if (stopped) ctrl.stop();
         }
       } catch (e) { fail(); }
@@ -1586,7 +1603,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
 
   // ------------------------------------------------------------------ Incoming Plan (Supervisor / Admin)
   const planKg = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + (+x.kg || 0), 0);
-  const poRecvd = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + recvd(x.po, x.material), 0);
+  const poRecvd = po => PLAN.filter(x => x.po === po).reduce((s, x) => s + recvd(x.po, x.material, undefined, x.batch), 0);
   const poHead = po => PLAN.find(x => x.po === po) || {};
   const hasTrucks = po => DATA.some(r => posOf(r).indexOf(po) >= 0);
   function poStatus(po) {
@@ -1643,7 +1660,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       </div></section>
       <section class="card"><h2>📦 ${t('មុខទំនិញ', 'Lines')} (${lines.length})</h2>
         <table class="tb pl"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ផែនការ', 'Plan')}</th><th class="n">${t('ទទួល', 'Recv.')}</th><th class="n">${t('នៅសល់', 'Left')}</th></tr>
-        ${lines.map(x => { const r = recvd(x.po, x.material); return `<tr><td><b>${esc(x.material)}</b><small>${esc(x.desc)}</small></td><td class="n">${fmt(x.kg)}</td><td class="n">${fmt(r)}</td><td class="n${left(x) ? '' : ' okc'}">${left(x) ? fmt(left(x)) : '✅'}</td></tr>`; }).join('')}
+        ${lines.map(x => { const r = recvd(x.po, x.material, undefined, x.batch); return `<tr><td><b>${esc(x.material)}</b><small>${esc(x.desc)}</small></td><td class="n">${fmt(x.kg)}</td><td class="n">${fmt(r)}</td><td class="n${left(x) ? '' : ' okc'}">${left(x) ? fmt(left(x)) : '✅'}</td></tr>`; }).join('')}
         </table><p class="hint">Kg · ${esc(h.plant || '')} ${esc(h.sloc || '')}</p></section>
       ${hasTrucks(po) ? `<p class="hint center">🔒 ${t('មានឡានទទួលរួចហើយ មិនអាចលុប PO នេះបានទេ។ ផ្ទុក Excel ម្តងទៀតដើម្បីកែ។', 'Trucks were received on this PO, so it cannot be deleted. Upload the Excel again to update it.')}</p>`
         : `<button class="btn bad" id="delPo" style="width:100%">🗑️ ${t('លុប PO នេះ', 'Delete this PO')}</button>`}`);
