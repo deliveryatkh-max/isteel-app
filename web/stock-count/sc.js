@@ -270,7 +270,7 @@
     const w = src.videoWidth || src.naturalWidth || src.width, h = src.videoHeight || src.naturalHeight || src.height;
     if (!w || !h) return '';
     if ('BarcodeDetector' in window) {
-      try { const r = await new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'data_matrix'] }).detect(src); if (r[0]) return r[0].rawValue; } catch (e) { /* fall back to jsQR */ }
+      try { const r = await new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'upc_a', 'codabar', 'data_matrix'] }).detect(src); if (r[0]) return r[0].rawValue; } catch (e) { /* fall back to jsQR */ }
     }
     const jsQR = await loadQrLib();
     const k = Math.min(1, 720 / Math.max(w, h));
@@ -279,8 +279,19 @@
     ctx.drawImage(src, 0, 0, qrCanvas.width, qrCanvas.height);
     const img = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
     const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-    return code ? code.data : '';
+    if (code) return code.data;
+    // Line barcodes (batch / material labels, Kim 19 Nov): iPhone has no BarcodeDetector, so the zxing reader reads them,
+    // at up to 1280px because thin bars are lost when the picture is made small.
+    const zx = await zxReader();
+    if (!zx) return '';
+    const k2 = Math.min(1, 1280 / Math.max(w, h));
+    zxCanvas.width = Math.round(w * k2); zxCanvas.height = Math.round(h * k2);
+    zxCanvas.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0, zxCanvas.width, zxCanvas.height);
+    try { return zx.decodeFromCanvas(zxCanvas).getText(); } catch (e) { return ''; }
   }
+  const zxCanvas = document.createElement('canvas');
+  let zxP = null;
+  const zxReader = () => (zxP = zxP || import('../vendor/zxing-browser.min.js').then(z => new z.BrowserMultiFormatReader(new Map([[3, true]]))).catch(() => { zxP = null; return null; }));
   const scanner = { on: false, stream: null, timer: 0 };
   function stopScan() {
     scanner.on = false; clearTimeout(scanner.timer);
@@ -295,7 +306,7 @@
     scanner.on = true;
     if (DEMO) { scanner.timer = setTimeout(() => { stopScan(); openBin(DEMO_BINS[5].bin); }, 1200); return; }
     try {
-      scanner.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      scanner.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
       if (!scanner.on) { stopScan(); return; }
       video.srcObject = scanner.stream; await video.play();
       const tick = async () => {
@@ -393,7 +404,7 @@
     if (DEMO) { timer = setTimeout(() => { close(); onText(demoText || ''); }, 1000); return; }
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
         if (!on) { stream.getTracks().forEach(x => x.stop()); return; }
         const video = bg.querySelector('video');
         video.srcObject = stream; await video.play();
