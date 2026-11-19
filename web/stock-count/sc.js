@@ -174,7 +174,7 @@
   const queue = () => jget(QUEUE_KEY, []);
   const saveQueue = q => put(QUEUE_KEY, JSON.stringify(q));
   const accText = a => (a == null ? '—' : a + '%');
-  const shortDate = s => (s ? s.slice(5, 16) : T('ยังไม่เคย', 'Never'));
+  const shortDate = s => (s ? s.slice(5, 16) : T('មិនទាន់រាប់', 'Never'));
   const statusLabel = s => ({ MATCH: T('ត្រូវ', 'Match'), SHORT: T('ខ្វះ', 'Short'), OVER: T('លើស', 'Over') }[s] || '');
 
   function shrink(file) {
