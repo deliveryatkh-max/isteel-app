@@ -69,7 +69,7 @@ eq(r.items.map(i => [i.poQty, i.arrQty]), [[32520, 20000], [23550, 23550]], 'qty
 ok(PHOTOS_SAVED(r), 'photos saved as Drive ids');
 function PHOTOS_SAVED(x) { return ['front', 'load', 'doc'].every(k => env.files[x.ph[k]] && env.files[x.ph[k]].name); }
 eq(env.telegrams.length, 1, 'arrival posted');
-ok(/មកដល់ 3E2588/.test(env.telegrams[0].payload.text), 'arrival text');
+ok(/ចាប់ផ្តើមទំលាក់ 3E2588/.test(env.telegrams[0].payload.text), 'arrival text');
 const r2 = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: 'DN-2', items: [{ material: '1100000230', arrQty: 12520 }] }) }));
 ok(/-02$/.test(r2.id), 'second id');
 const tg0 = env.telegrams.length, again = must(call('dara@x.com', 'start', { receipt: Object.assign({}, ARR, { dn3pl: 'DN-' + Math.random(), dn3pl: 'DN-2', items: [{ material: '1100000230', arrQty: 12520 }] }) }));
