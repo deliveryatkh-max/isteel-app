@@ -641,27 +641,31 @@
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${typeLabel(m.type)}</div></section>
       <section class="card form">
+        <div class="icard" id="mCard" hidden></div>
+        <div id="mPick">
         ${isIn ? `<label for="mMat">${T('សម្ភារៈ (វាយកូដ ឬបរិយាយ)', 'Material (type code or description)')}</label>
         <div class="row"><input id="mMat" type="search" autocomplete="off" placeholder="${T('ឧ. 1500000000 ឬ Debar 12mm', 'e.g. 1500000000 or Debar 12mm')}" value="${esc(pickText(m.pick))}">
           <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>
-        <div class="sug" id="mSug" hidden></div>
+        <div class="sug" id="mSug" hidden></div></div>
         <label for="mBatch">${T('លេខបាច់ផលិត (Batch)', 'Batch number')}</label>
         <div class="row"><input id="mBatch" type="text" autocapitalize="characters" autocomplete="off" value="${esc(pre ? pre.batch : '')}">
           <button type="button" class="btn ghost shrink" id="mBatchScan" title="Scan">📷</button></div>`
         : `<label for="mLine">${T('សម្ភារៈ / បាច់', 'Material / batch')}</label>
         <div class="row"><select id="mLine"><option value="-1">${T('— ជ្រើសរើស —', '— choose —')}</option>${opts}</select>
-          <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>`}
+          <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div></div>`}
         <p class="muted" id="mInfo"></p>
-        <div class="fields3"><div><label for="mBd">${T('បាច់', 'Bundle')}</label><input id="mBd" type="number" inputmode="numeric" min="0" step="1"></div>
-          <div><label for="mKgIn">Kg</label><input id="mKgIn" type="number" inputmode="decimal" min="0" step="any"></div>
-          <div><label for="mPc">${T('រាយ', 'Pcs')}</label><input id="mPc" type="number" inputmode="numeric" min="0" step="1"></div></div>
+        <div class="seg" id="mSeg">
+          <button type="button" data-box="mBd"><span>${T('បាច់', 'Bundle')}</span> <b></b></button>
+          <button type="button" data-box="mKgIn"><span>Kg</span> <b></b></button>
+          <button type="button" data-box="mPc"><span>${T('រាយ', 'Pcs')}</span> <b></b></button></div>
+        <input type="hidden" id="mBd"><input type="hidden" id="mKgIn"><input type="hidden" id="mPc">
+        <div class="kdisp" id="mDisp"><button type="button" class="calcb" id="mCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
+        <div class="kpad" id="mPad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div>
         <div class="tot" id="mTot"></div>
         ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
-        <label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : isTr ? T('លេខឯកសារយោង (ស្រេចចិត្ត)', 'Reference (optional)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
-        <div class="row"><input id="mRef" type="text" maxlength="60" autocomplete="off" ${isTr ? '' : 'class="need"'}><button type="button" class="btn ghost shrink" id="mRefScan" title="Scan">📷</button></div>
-        <label for="mRemark">${T('កំណត់សម្គាល់ (ស្រេចចិត្ត)', 'Remark (optional)')}</label>
-        <input id="mRemark" type="text" maxlength="200" autocomplete="off">
+        ${isTr ? '' : `<label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
+        <div class="row"><input id="mRef" type="text" maxlength="60" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mRefScan" title="Scan">📷</button></div>`}
         <div class="live" id="mAfter"></div>
       </section>
       <button type="button" class="btn big ${isIn ? 'ok' : isTr ? 'blue' : 'warn'}" id="mSave" disabled>${T('បញ្ជាក់', 'Confirm')} ${typeLabel(m.type)}</button>
@@ -682,20 +686,46 @@
       return null;
     };
     const refresh = () => {
-      const l = line(), u = unit(), ref = $('#mRef').value.trim();
+      const l = line(), u = unit(), ref = $('#mRef') ? $('#mRef').value.trim() : '';
       // A kg line with no kg per piece in the master can only be entered in kg.
       // No Kg/PC: a KG line can only take kg, a PC line can only take bundles and pieces.
       const noConv = !!u && !u.kg;
       $('#mBd').disabled = $('#mPc').disabled = noConv && isKg(u.uom);
       $('#mKgIn').disabled = noConv && !isKg(u.uom);
+      // Form 5 (Kim, 19 Nov): chosen item as a card, Bundle | Kg | Pcs tabs, big on-screen keypad.
+      const chosen = isIn ? m.pick : l;
+      $('#mPick').hidden = !!chosen;
+      $('#mCard').hidden = !chosen;
+      if (chosen) {
+        const bt = isIn ? $('#mBatch').value.trim() : l.batch;
+        $('#mCard').innerHTML = `<span class="icard-ic">🏗️</span><div class="icard-t"><b>${esc(chosen.material)}</b><span>${esc(chosen.desc || '')}</span>
+          <div class="chips">${bt ? `<i>Batch ${esc(bt)}</i>` : ''}${u.ppb > 1 ? `<i>${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(u.uom)}</i>${l ? `<i>${T('សមតុល្យ', 'Bal.')} ${fmtQty(l.book)}</i>` : ''}</div></div>
+          <button type="button" class="icard-ed" id="mEdit" aria-label="${T('ប្តូរ', 'Change')}">✏️</button>`;
+        $('#mEdit').onclick = () => {
+          if (isIn) { m.pick = null; $('#mMat').value = ''; refresh(); $('#mMat').focus(); }
+          else { $('#mLine').value = '-1'; refresh(); }
+        };
+      }
+      if (!act || $('#' + act).disabled) act = !u ? 'mPc' : isKg(u.uom) ? 'mKgIn' : 'mPc';
+      if ($('#' + act).disabled) act = ['mPc', 'mKgIn', 'mBd'].find(id => !$('#' + id).disabled);
       const q = u ? moveQty(u) : { qty: '', text: '' };
+      document.querySelectorAll('#mSeg [data-box]').forEach(bn => {
+        const el = $('#' + bn.dataset.box);
+        bn.disabled = el.disabled; bn.classList.toggle('on', bn.dataset.box === act);
+        bn.querySelector('b').textContent = el.value;
+        bn.classList.toggle('need', q.qty === '' && !el.disabled);
+      });
+      const av = act ? $('#' + act).value : '';
+      $('#mDisp span').textContent = av || '0';
+      $('#mDisp').classList.toggle('empty', !av);
+      $('#mDisp').classList.toggle('need', q.qty === '');
+      $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
       $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
       $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
       let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
       const empty = q.qty === '';
-      ['#mBd', '#mPc', '#mKgIn'].forEach(id => $(id).classList.toggle('need', empty && !$(id).disabled));
       if (isIn) { $('#mMat').classList.toggle('need', !m.pick); $('#mBatch').classList.toggle('need', !$('#mBatch').value.trim()); }
       if ($('#mTo')) $('#mTo').classList.toggle('need', !$('#mTo').value.trim());
       if (!isTr) $('#mRef').classList.toggle('need', !ref);
@@ -704,7 +734,23 @@
       $('#mSave').disabled = !!bad;
       m.qty = q.qty; m.unit = u;
     };
+    let act = null;
     document.querySelectorAll('.form input, .form select').forEach(el => { if (el.id !== 'mMat') { el.oninput = refresh; el.onchange = refresh; } });
+    document.querySelectorAll('#mSeg [data-box]').forEach(bn => { bn.onclick = () => { act = bn.dataset.box; refresh(); }; });
+    $('#mPad').onclick = e => {
+      const k = e.target.closest('[data-k]'); if (!k || k.disabled || !act) return;
+      const el = $('#' + act), key = k.dataset.k; let v = el.value;
+      if (el.disabled) return;
+      if (key === '⌫') v = v.slice(0, -1);
+      else if (key === '.') { if (v.indexOf('.') >= 0) return; v = v ? v + '.' : '0.'; }
+      else { if (v.replace('.', '').length >= 9) return; v = v === '0' ? key : v + key; }
+      el.value = v; refresh();
+    };
+    $('#mCalc').onclick = () => {
+      if (!act || $('#' + act).disabled) return;
+      const bn = document.querySelector(`#mSeg [data-box="${act}"] span`);
+      openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { $('#' + act).value = act === 'mKgIn' ? String(v) : String(Math.round(v)); refresh(); });
+    };
 
     // Material picker: type part of the code or description (any order of words), tap an item.
     const choose = p => { m.pick = p; $('#mMat').value = pickText(p); $('#mSug').hidden = true; refresh(); };
@@ -741,7 +787,7 @@
       refresh();
     }, (lines[0] || {}).batch || (products()[0] || {}).material);
     // Reference barcode (Kim, 14 Nov): scan the GR / PO / DN barcode instead of typing it.
-    $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
+    if ($('#mRefScan')) $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
     if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
     $('#mSave').onclick = () => { const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
@@ -752,7 +798,7 @@
     const b = S.bin, m = S.move, isTr = m.type === 'TRANSFER', qty = Number(m.qty);
     const src = l || fresh;
     const pl = { requestId: m.requestId, type: m.type, bin: b.bin, material: src.material, batch: src.batch, sloc: src.sloc, qty: qty,
-      reference: $('#mRef').value.trim(), remark: $('#mRemark').value.trim() };
+      reference: $('#mRef') ? $('#mRef').value.trim() : '', remark: '' };
     if (isNew) { pl.desc = src.desc; pl.uom = src.uom; }
     if ($('#mBd').value || $('#mPc').value) { pl.bundles = Number($('#mBd').value) || 0; pl.pieces = Number($('#mPc').value) || 0; }
     if (isTr) pl.toBin = $('#mTo').value.trim();
@@ -849,8 +895,6 @@
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
         <img id="photoPrev" alt="" hidden><span class="need-text" id="needTxt"></span></div>
       </section>
-      <label for="note">${T('កំណត់ចំណាំ (ស្រេចចិត្ត)', 'Note (optional)')}</label>
-      <input id="note" type="text" maxlength="200">
       <button type="button" class="btn big" id="submit" disabled>${isCount ? T('បញ្ជូនការរាប់', 'Submit count') : T('បញ្ជូនការចេញ', 'Submit Out')}</button>
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
 
@@ -905,7 +949,7 @@
   async function submitCount() {
     const b = S.bin;
     const lines = readLines(true);
-    const note = $('#note').value.trim();
+    const note = '';
     const pl = { bin: b.bin, lines: lines, photo: S.photo, note: note };
     const res = demoCount(b, lines) || null;
     const btn = $('#submit'); btn.disabled = true;
@@ -941,7 +985,7 @@
   async function submitOut() {
     const b = S.bin;
     const lines = readLines(false).filter(l => l.outQty > 0);
-    const pl = { bin: b.bin, lines: lines, note: $('#note').value.trim() };
+    const pl = { bin: b.bin, lines: lines, note: '' };
     const btn = $('#submit'); btn.disabled = true;
     let out;
     if (DEMO) {
