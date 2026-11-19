@@ -829,9 +829,12 @@ const kg_ = n => Number(n || 0).toLocaleString('en-US');
 const dmgUom_ = (i, r) => i.dmgUom || r.uom || 'Kg';
 const dmgQ_ = (i, r) => kg_(i.dmgQty || 0) + (Number(i.dmgQty) > 0 && dmgUom_(i, r) !== r.uom ? ' ' + dmgUom_(i, r) : '');
 function telegramArrived_(r) {
-  return telegram_(Object.assign({ text: ['🚛 <b>មកដល់ ' + esc_(r.truck) + '</b> · ' + esc_(r.start) + (r.site ? ' · 🏭 ' + esc_(r.site) : ''),
+  // Kim, 19 Nov 2026: "ចាប់ផ្តើមទំលាក់" and the entrance (code + description) on its own line instead of the warehouse
+  const ent = r.warehouse ? (warehouses_().find(w => w.code === r.warehouse && (!w.site || !r.site || w.site === r.site)) || {}) : {};
+  const where = r.warehouse ? '🏭 Entrance ' + esc_(r.warehouse) + (ent.desc ? ' ' + esc_(ent.desc) : '') : r.site ? '🏭 ' + esc_(r.site) : '';
+  return telegram_(Object.assign({ text: ['🚛 <b>ចាប់ផ្តើមទំលាក់ ' + esc_(r.truck) + '</b> · ' + esc_(r.start)].concat(where ? [where] : [], [
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + ' · DN ' + esc_(r.dn3pl),
-    '📦 ចំនួន ' + r.items.length + ' មុខ · ទម្ងន់ ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)].join('\n') }, button_(r)));
+    '📦 ចំនួន ' + r.items.length + ' មុខ · ទម្ងន់ ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)]).join('\n') }, button_(r)));
 }
 /** Posted for every finished truck (Kim, 3 Nov 2026), as a reply to its arrival post; damage and short lines are added. */
 function telegramDone_(r) {
