@@ -308,8 +308,8 @@
         <div class="gate-ic" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="7" y="7" width="4" height="4" rx=".5"/><rect x="13" y="7" width="4" height="4" rx=".5"/><rect x="7" y="13" width="4" height="4" rx=".5"/><path d="M13 13h1.5v1.5M17 13v4h-4"/></svg>
         </div>
-        <h2>${T('ស្កេន QR Code របស់កុងតឺន័រ', 'Scan the bin QR code')}</h2>
-        <p class="muted center">${T('សូមស្កេន QR Code ដែលបិទនៅកុងតឺន័រ ដើម្បីបើកកាតស្តុក។', 'Scan the QR code posted on the bin to open its stock card.')}</p>
+        <h2>${T('ស្កេន QR Code របស់ទីតាំង', 'Scan the bin QR code')}</h2>
+        <p class="muted center">${T('សូមស្កេន QR Code ដែលបិទនៅទីតាំង ដើម្បីបើកកាតស្តុក។', 'Scan the QR code posted on the bin to open its stock card.')}</p>
         <div class="qr-view" id="qrView" hidden><video playsinline muted></video><div class="qr-frame"></div></div>
         <p class="muted center" id="binMsg" hidden></p>
         <button type="button" class="btn ok big" id="scanBtn">📷 ${T('ស្កេន QR Code', 'Scan QR code')}</button>
@@ -318,14 +318,14 @@
           <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
         </div>
       </section>
-      ${S.dash ? `<div class="kpis"><div><b>${S.dash.bins}</b><span>${T('កុងតឺន័រ', 'Bins')}</span></div><div><b>${S.dash.lines}</b><span>${T('ប្រភេទស្តុក', 'Stock lines')}</span></div>
+      ${S.dash ? `<div class="kpis"><div><b>${S.dash.bins}</b><span>${T('ទីតាំង', 'Bins')}</span></div><div><b>${S.dash.lines}</b><span>${T('ប្រភេទស្តុក', 'Stock lines')}</span></div>
         <div class="in"><b>${S.dash.inToday}</b><span>${T('ចូលថ្ងៃនេះ', 'IN today')}</span></div><div class="out"><b>${S.dash.outToday}</b><span>${T('ចេញថ្ងៃនេះ', 'OUT today')}</span></div>
         <div><b>${S.dash.transferToday}</b><span>${T('ផ្ទេរថ្ងៃនេះ', 'Transfers today')}</span></div></div>` : ''}
       ${S.loadError ? `<div class="card err"><b>⚠️ ${T('ផ្ទុកទិន្នន័យមិនបាន', 'Could not load the data')}</b><p class="muted">${esc(S.loadError)}</p><button type="button" class="btn ghost" id="retry">${T('ព្យាយាមម្តងទៀត', 'Try again')}</button></div>` : ''}
       ${q.length ? `<div class="card"><span class="pill">${q.length} ${T('រង់ចាំផ្ញើ', 'waiting to send')}</span> <button type="button" class="btn ghost" id="sendQ">${T('ផ្ញើឥឡូវ', 'Send now')}</button></div>` : ''}
       <h2>${T('បញ្ជីរាប់ថ្ងៃនេះ', "Today's count list")} (${S.list.length})</h2>
-      ${list || `<p class="muted">${T('មិនទាន់មានកុងតឺន័រ។', 'No bins yet.')}</p>`}
-      ${S.dash && S.dash.recent && S.dash.recent.length ? `<h2>${T('សកម្មភាពថ្មីៗ', 'Recent activity')}</h2><section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('កុងតឺន័រ', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ចំនួន', 'Qty')}</th></tr>${
+      ${list || `<p class="muted">${T('មិនទាន់មានទីតាំង។', 'No bins yet.')}</p>`}
+      ${S.dash && S.dash.recent && S.dash.recent.length ? `<h2>${T('សកម្មភាពថ្មីៗ', 'Recent activity')}</h2><section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ចំនួន', 'Qty')}</th></tr>${
         S.dash.recent.map(r => `<tr><td>${esc((r.date || '').slice(5))} <small class="muted">${esc(r.time || '')}</small></td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td><td>${esc(typeLabel(r.type))}</td><td class="num ${r.qtyIn ? 'in' : 'out'}">${r.qtyIn ? '+' + fmtQty(r.qtyIn) : '-' + fmtQty(r.qtyOut)}</td></tr>`).join('')}</table></section>` : ''}
     `);
     const go = () => { const code = $('#binIn').value.trim(); if (code) openBin(code); };
@@ -426,7 +426,7 @@
       try { b = await api('bin', { bin: code }); }
       catch (e) { if (e.code === 'AUTH') S.signedOut = true; toast(e.message); return; }
     }
-    if (!b) { toast(T('រកមិនឃើញកុងតឺន័រនេះ', 'Bin not found')); return; }
+    if (!b) { toast(T('រកមិនឃើញទីតាំងនេះ', 'Bin not found')); return; }
     stopScan();
     S.bin = b; S.view = 'bin'; S.photo = '';
     route();
@@ -448,8 +448,8 @@
         <button type="button" class="btn blue" id="actTr">${typeLabel('TRANSFER')}</button>
         <button type="button" class="btn" id="actCount">${T('រាប់ស្តុក', 'Stock Count')}</button>
       </div>
-      <h2>${T('ស្តុកក្នុងកុងតឺន័រនេះ (ចុចដើម្បីមើលកាតស្តុក)', 'Stock in this bin (tap a line for its stock card)')}</h2>
-      ${rows || `<p class="muted">${T('កុងតឺន័រនេះទទេ។ ប្រើ ចូលស្តុក ដើម្បីដាក់ទំនិញ។', 'This bin is empty. Use Stock IN to put material here.')}</p>`}
+      <h2>${T('ស្តុកក្នុងទីតាំងនេះ (ចុចដើម្បីមើលកាតស្តុក)', 'Stock in this bin (tap a line for its stock card)')}</h2>
+      ${rows || `<p class="muted">${T('ទីតាំងនេះទទេ។ ប្រើ ចូលស្តុក ដើម្បីដាក់ទំនិញ។', 'This bin is empty. Use Stock IN to put material here.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
     $('#actIn').onclick = () => openMove('IN');
     $('#actOut').onclick = () => openMove('OUT');
@@ -472,7 +472,7 @@
     const q = Number(qty);
     if (qty === '' || !isFinite(q) || !(q > 0)) return T('ចំនួនត្រូវធំជាង 0', 'Quantity must be above 0');
     if (!isKg(uom) && Math.floor(q) !== q) return T('ចំនួនត្រូវជាលេខគត់', 'Quantity must be a whole number');
-    if (type !== 'IN' && q > Number(balance)) return T('ចំនួនច្រើនជាងស្តុកក្នុងកុងតឺន័រ', 'More than the stock in this bin');
+    if (type !== 'IN' && q > Number(balance)) return T('ចំនួនច្រើនជាងស្តុកក្នុងទីតាំង', 'More than the stock in this bin');
     return '';
   };
 
@@ -752,9 +752,9 @@
       $('#mDisp').classList.toggle('need', q.qty === '');
       $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
       $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
-      $('#mInfo').textContent = l ? '' : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
+      $('#mInfo').textContent = l ? '' : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងទីតាំងនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
       let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
-      if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
+      if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយទីតាំងទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('ទីតាំងទៅត្រូវខុសពីទីតាំងដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
       const empty = q.qty === '';
       if (isIn) { $('#mMat').classList.toggle('need', !m.pick); $('#mBatch').classList.toggle('need', !$('#mBatch').value.trim()); }
@@ -814,12 +814,12 @@
         return;
       }
       if (i >= 0) $('#mLine').value = String(i);
-      else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងកុងតឺន័រនេះទេ', 'This barcode does not match the stock in this bin'));
+      else toast(T('បាកូដនេះមិនត្រូវនឹងស្តុកក្នុងទីតាំងនេះទេ', 'This barcode does not match the stock in this bin'));
       refresh();
     }, (lines[0] || {}).batch || (products()[0] || {}).material);
     // Reference barcode (Kim, 14 Nov): scan the GR / PO / DN barcode instead of typing it.
     if ($('#mRefScan')) $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
-    if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនកុងតឺន័រទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
+    if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនទីតាំងទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
     $('#mSave').onclick = () => { const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
     refresh();
@@ -876,7 +876,7 @@
   function demoMove(pl, l) {
     if (DEMO_LEDGER.some(r => r.requestId === pl.requestId)) return { duplicate: true, balance: l ? l.book : 0 };
     const isTr = pl.type === 'TRANSFER', to = isTr ? pl.toBin.trim().toUpperCase() : '';
-    if (isTr && !DEMO_BINS.some(x => x.bin === to)) throw Object.assign(new Error(T('រកមិនឃើញកុងតឺន័រទៅ', 'Destination bin not found')), { code: 'NOBIN' });
+    if (isTr && !DEMO_BINS.some(x => x.bin === to)) throw Object.assign(new Error(T('រកមិនឃើញទីតាំងទៅ', 'Destination bin not found')), { code: 'NOBIN' });
     let s = l ? demoLine(pl.bin, l) : null;
     if (!s) {
       const known = DEMO_STOCK.find(x => x.material.toUpperCase() === String(pl.material).toUpperCase());
@@ -918,7 +918,7 @@
         <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
       </tr>`).join('');
     view(`
-      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
+      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងទីតាំង', 'Count every SKU in this bin') : T('ចេញស្តុកពីទីតាំង', 'Stock out from this bin')}</div></section>
       ${isCount ? `<section class="card">${rows}
         <div id="cPad"><div class="kdisp" id="cDisp"><button type="button" class="calcb" id="cCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
         <div class="kpad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div></div></section>`
@@ -1082,7 +1082,7 @@
       </section>
       <table class="lines" ${(r.lines || []).length ? '' : 'hidden'}>${r.kind === 'out' ? `<tr><th>Material</th><th>Out</th><th>After</th></tr>` : `<tr><th>Material</th><th>Book</th><th>Counted</th><th>Diff</th></tr>`}${rows}</table>
       <div style="height:12px"></div>
-      ${r.kind === 'move' && S.bin ? `<button type="button" class="btn big" id="toBin">${T('ត្រឡប់ទៅកុងតឺន័រ', 'Back to the bin')} ${esc(S.bin.bin)}</button>` : ''}
+      ${r.kind === 'move' && S.bin ? `<button type="button" class="btn big" id="toBin">${T('ត្រឡប់ទៅទីតាំង', 'Back to the bin')} ${esc(S.bin.bin)}</button>` : ''}
       <button type="button" class="btn big ${r.kind === 'move' ? 'ghost' : 'ok'}" id="next">${T('ត្រឡប់ទៅបញ្ជី', 'Back to list')}</button>`);
     if ($('#toBin')) $('#toBin').onclick = () => { S.view = 'bin'; S.result = null; route(); };
     $('#next').onclick = () => { S.view = 'home'; S.bin = null; S.result = null; route(); };

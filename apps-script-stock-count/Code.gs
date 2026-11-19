@@ -327,7 +327,7 @@ function binInfo_(user, code) {
   const st = settings_();
   const bin = String(code || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
-  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
+  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញទីតាំងនេះក្នុងបញ្ជីទេ។');
   const hist = history_();
   return { bin: b.bin, warehouse: b.warehouse, lastCount: b.lastCount, lastStatus: b.lastStatus,
     accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin) };
@@ -339,7 +339,7 @@ function submit_(user, c) {
   const st = settings_();
   const bin = String(c.bin || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
-  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
+  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញទីតាំងនេះក្នុងបញ្ជីទេ។');
   const stock = stock_(b.bin);
   const lines = Array.isArray(c.lines) ? c.lines : [];
   if (!lines.length) fail_('BAD', 'Nothing to count.');
@@ -383,7 +383,7 @@ function out_(user, c) {
   counter_(user);
   const bin = String(c.bin || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
-  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ។');
+  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញទីតាំងនេះក្នុងបញ្ជីទេ។');
   const stock = stock_(b.bin);
   const lines = (Array.isArray(c.lines) ? c.lines : []).filter(l => Number(l.outQty) > 0);
   if (!lines.length) fail_('BAD', 'Enter an Out Qty for at least one line.');
@@ -426,7 +426,7 @@ function appendCount_(sh, r) {
 const activeBin_ = code => {
   const bin = String(code || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
-  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master: ' + bin, 'រកមិនឃើញកុងតឺន័រនេះក្នុងបញ្ជីទេ៖ ' + bin);
+  if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master: ' + bin, 'រកមិនឃើញទីតាំងនេះក្នុងបញ្ជីទេ៖ ' + bin);
   return b;
 };
 const findLine_ = (stock, bin, l) => stock.find(x => lineKey_(Object.assign({}, x, { bin: bin })) === lineKey_({ bin: bin, material: String(l.material || '').trim(), batch: String(l.batch || '').trim(), sloc: String(l.sloc || '').trim() }));
@@ -478,7 +478,7 @@ function move_(user, p) {
   if (!reference) fail_('BAD', 'Enter the reference document.', 'សូមបញ្ចូលលេខឯកសារយោង។');
   const b = activeBin_(p.bin);
   let s = findLine_(stock_(b.bin), b.bin, p);
-  if (!s && type === 'OUT') fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងកុងតឺន័រនេះទេ។');
+  if (!s && type === 'OUT') fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងទីតាំងនេះទេ។');
   const pmU = s ? '' : ((pm_()[String(p.material || '').toUpperCase()] || {}).uom || '');
   const bad = moveOk(type, p.qty, s ? s.book : 0, s ? s.uom : (pmU || p.uom || 'PC'));
   if (bad) fail_('BAD', bad);
@@ -500,7 +500,7 @@ function transfer_(user, p) {
   if (badBin) fail_('BAD', badBin);
   const to = activeBin_(p.toBin);
   const s = findLine_(stock_(from.bin), from.bin, p);
-  if (!s) fail_('NOLINE', 'This material and batch is not in the source bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងកុងតឺន័រដើមទេ។');
+  if (!s) fail_('NOLINE', 'This material and batch is not in the source bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងទីតាំងដើមទេ។');
   const bad = moveOk('TRANSFER', p.qty, s.book, s.uom);
   if (bad) fail_('BAD', bad);
   const qty = Number(p.qty), now = new Date(), tid = txnId_('TR', now);
@@ -539,14 +539,14 @@ function editLine_(user, p) {
   if (!reason) fail_('BAD', 'Enter the reason.', 'សូមបញ្ចូលមូលហេតុ។');
   const b = activeBin_(p.bin);
   const s = findLine_(stock_(b.bin), b.bin, p);
-  if (!s) fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងកុងតឺន័រនេះទេ។');
+  if (!s) fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងទីតាំងនេះទេ។');
   const del = p.delete === true || p.delete === 'true';
   const bal = del ? 0 : Number(p.balance);
   if (!isFinite(bal) || bal < 0) fail_('BAD', 'Balance must be 0 or more.', 'សមតុល្យត្រូវ 0 ឬច្រើនជាងនេះ។');
   if (!/^(kg|kgs|ton|t)$/i.test(String(s.uom || '').trim()) && Math.floor(bal) !== bal) fail_('BAD', 'Balance must be a whole number.', 'សមតុល្យត្រូវជាលេខគត់។');
   const n = del ? s : Object.assign({}, s, { batch: p.newBatch == null ? s.batch : clip_(p.newBatch, 40), sloc: p.newSloc == null ? s.sloc : clip_(p.newSloc, 20) });
   const moved = lineKey_(n) !== lineKey_(s);
-  if (moved && findLine_(stock_(b.bin), b.bin, n)) fail_('BAD', 'This bin already has a line with that batch and SLOC.', 'កុងតឺន័រនេះមានបាច់ និង SLOC នេះរួចហើយ។');
+  if (moved && findLine_(stock_(b.bin), b.bin, n)) fail_('BAD', 'This bin already has a line with that batch and SLOC.', 'ទីតាំងនេះមានបាច់ និង SLOC នេះរួចហើយ។');
   const diff = Math.round((bal - s.book) * 1000) / 1000;
   if (!diff && !moved && !del) fail_('BAD', 'Nothing changed.', 'មិនមានការផ្លាស់ប្តូរទេ។');
   const sh = sheet_(SH.STK, STK_COLS), last = sh.getLastRow();
