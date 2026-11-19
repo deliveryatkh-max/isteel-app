@@ -52,9 +52,9 @@
     if (isPage && r.pages.indexOf(S.view) < 0) S.view = 'home';
     const on = isPage && r.pages.indexOf(S.view) >= 0 ? S.view : 'home';
     nav.hidden = false;
-    nav.innerHTML = PAGES.filter(p => r.pages.indexOf(p[0]) >= 0).map(p => `<button type="button" class="tab${p[0] === on ? ' on' : ''}" data-tab="${p[0]}"><span>${p[1]}</span><b>${T(p[2], p[3])}</b>${
+    nav.innerHTML = `<a href="../" class="tab home-tab"><span>🏠</span><b>${T('ទំព័រដើម', 'Home')}</b></a>` + PAGES.filter(p => r.pages.indexOf(p[0]) >= 0).map(p => `<button type="button" class="tab${p[0] === on ? ' on' : ''}" data-tab="${p[0]}"><span>${p[1]}</span><b>${T(p[2], p[3])}</b>${
       p[0] === 'review' && pending() ? `<i class="count">${pending()}</i>` : ''}</button>`).join('');
-    nav.querySelectorAll('.tab').forEach(b => { b.onclick = () => { S.view = b.dataset.tab; route(); window.scrollTo(0, 0); }; });
+    nav.querySelectorAll('.tab[data-tab]').forEach(b => { b.onclick = () => { S.view = b.dataset.tab; route(); window.scrollTo(0, 0); }; });
     if (!DEMO) return;
     const d = $('#demo');
     d.innerHTML = `${T('សាកល្បង៖ ទិន្នន័យគំរូ មិនមែនស្តុកពិត', 'Demo: sample data, not real stock')} · <label class="role-pick">${T('តួនាទី', 'Role')}
@@ -169,7 +169,7 @@
         sd: String(l.sd).slice(0, 10), cd: String(l.cd).slice(0, 10), book: Number(l.book) || 0, by: l.by || '',
         counted: l.counted == null || l.counted === '' ? '' : Number(l.counted), diff: l.diff == null || l.diff === '' ? '' : Number(l.diff),
         kg: SC.isKg(l.uom) ? Number(l.book) || 0 : SC.round3((Number(l.book) || 0) * (Number(l.kgPerPc) || 0)) }));
-      return pivotScreen('stock', T('បញ្ជីស្តុក', 'Stock list'), data, [
+      return pivotScreen('stock', '📦 ' + T('បញ្ជីស្តុក', 'Stock list'), data, [
         ['wh', 'ឃ្លាំង', 'Warehouse'], ['zone', 'តំបន់', 'Bin Zone'], ['bin', 'ទីតាំង', 'Bin'], ['grp', 'ក្រុមសម្ភារៈ', 'Material Group'], ['material', 'សម្ភារៈ', 'Material'],
         ['desc', 'បរិយាយ', 'Description'], ['batch', 'Batch', 'Batch'], ['sloc', 'SLoc', 'SLoc'], ['uom', 'UoM', 'UoM'], ['sd', 'ថ្ងៃចូលស្តុក', 'Stock Date'], ['cd', 'ថ្ងៃរាប់', 'Count Date'],
         ['by', 'រាប់ដោយ', 'Counted by'], ['book', 'ស្តុក', 'On hand', 1], ['kg', 'ទម្ងន់ Kg', 'Weight Kg', 1], ['counted', 'ចំនួនរាប់បាន', 'Counted Qty', 1], ['diff', 'ខុសគ្នា', 'Difference', 1]],
@@ -179,41 +179,44 @@
     const rows = all.filter(l => (!F.wh || l.wh === F.wh) && (!F.zone || l.zone === F.zone) && (!F.grp || l.grp === F.grp) && (!F.sloc || l.sloc === F.sloc)
       && (!F.uom || l.uom === F.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
       && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp]));
-    const sel = (id, label, key, opts) => `<label class="fdd"><span>${label}</span><select id="${id}">${opts.map(o => `<option value="${esc(o[0])}"${o[0] === F[key] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     const list = f => [['', T('ទាំងអស់', 'All')]].concat(uniq(f).map(v => [v, v]));
     const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh')], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone')],
       ['fgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', list('grp')], ['fsloc', 'SLoc', 'sloc', list('sloc')], ['fuom', 'UoM', 'uom', list('uom')],
       ['fqty', T('ស្តុក', 'Stock'), 'qty', QTY_OPT], ['fsd', T('ថ្ងៃចូលស្តុក', 'Stock Date'), 'sd', SD_OPT], ['fcd', T('ថ្ងៃរាប់', 'Count Date'), 'cd', CD_OPT]];
-    const chips = FILTERS.filter(f => F[f[2]]).map(f => `<button type="button" class="fchip" data-clr="${f[2]}">${esc(f[1])}: ${esc((f[3].find(o => o[0] === F[f[2]]) || ['', F[f[2]]])[1])} ✕</button>`).join('');
     const tot = kg => rows.filter(l => kg === SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
+    const sumU = f => { const pc = rows.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0), kg = rows.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0);
+      return [pc ? fmtQty(SC.round3(pc)) + ' PC' : '', kg ? fmtQty(SC.round3(kg)) + ' KG' : ''].filter(Boolean).join('<br>') || '0'; };
+    const nCounted = rows.filter(l => l.cd).length;
     view(`
-      <h2 class="ptitle">${T('បញ្ជីស្តុក', 'Stock list')} <small class="muted">${rows.length} ${T('ជួរ', 'lines')} · ${fmtQty(tot(false))} PC · ${fmtQty(tot(true))} KG</small>${pvToggle('stock')}</h2>
-      <div class="fbar sfbar"><input type="search" id="fq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch')}" value="${esc(F.q)}">
-        ${FILTERS.map(f => sel(f[0], f[1], f[2], f[3])).join('')}
-        ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ Excel</button>` : ''}
-        ${chips || F.q ? `<button type="button" class="btn ghost sm" id="fclr">✕ ${T('សម្អាត', 'Clear')}</button>` : ''}</div>
-      ${chips ? `<div class="fchips">${chips}</div>` : ''}
-      <section class="card scroll tall"><table class="lines hist stocktbl"><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr>
-        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td><b>${esc(l.bin)}</b></td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td>${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num"><b>${fmtQty(l.book)}</b></td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td class="${l.cd ? '' : 'red-text'}">${esc(l.cd || T('មិនទាន់រាប់', 'Never'))}</td><td class="num">${l.counted == null || l.counted === '' ? '' : fmtQty(l.counted)}</td><td class="num ${Number(l.diff) < 0 ? 'out' : Number(l.diff) > 0 ? 'in' : ''}">${l.diff == null || l.diff === '' ? '' : (Number(l.diff) > 0 ? '+' : '') + fmtQty(l.diff)}</td><td>${esc(l.by || '')}</td></tr>`).join('')
-          || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
+      <div class="fb-wrap">${repHead('stock', '📦 ' + T('បញ្ជីស្តុក', 'Stock list'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
+        () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); })}
+      ${FB.panel('stock', FILTERS.map(f => FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`)).join('')
+        + FB.search('fq', T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch'), F.q))}</div>
+      <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'lines')} · <b>${new Set(rows.map(l => l.bin)).size}</b> ${T('ទីតាំង', 'bins')} · ${T('ស្តុក', 'On hand')} <b>${fmtQty(tot(false))}</b> PC · <b>${fmtQty(tot(true))}</b> KG · ${T('បានរាប់', 'Counted')} <b>${nCounted}</b> · ${T('មិនទាន់រាប់', 'Never')} <b>${rows.length - nCounted}</b></div>
+      <section class="screp"><table class="rep stocktbl"><thead><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr></thead><tbody>
+        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td class="mono">${esc(l.bin)}</td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td class="mono">${esc(l.material)}</td><td>${esc(l.desc)}</td><td class="mono">${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num mono">${fmtQty(l.book)}</td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td>${l.cd ? esc(l.cd) : `<span class="pill never">${T('មិនទាន់រាប់', 'Never')}</span>`}</td><td class="num mono">${l.counted == null || l.counted === '' ? '' : fmtQty(l.counted)}</td><td class="num mono ${Number(l.diff) < 0 ? 'out' : Number(l.diff) > 0 ? 'in' : ''}">${l.diff == null || l.diff === '' ? '' : (Number(l.diff) > 0 ? '+' : '') + fmtQty(l.diff)}</td><td>${esc(l.by || '')}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th>${'<th></th>'.repeat(7)}<th class="num mono">${sumU('book')}</th>${'<th></th>'.repeat(3)}<th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table></section>
       ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
     pvWire('stock', stock);
     keep('#fq', v => { F.q = v; stock(); });
     FILTERS.forEach(f => { $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
-    $$('[data-clr]').forEach(b => { b.onclick = () => { F[b.dataset.clr] = ''; stock(); }; });
-    if ($('#fclr')) $('#fclr').onclick = () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); };
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
     if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date', 'Counted Qty', 'Difference', 'Counted By']]
       .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd, l.counted == null ? '' : l.counted, l.diff == null ? '' : l.diff, l.by])));
   }
   // Table | Pivot switch on Stock list and Movements (Kim, 20 Nov: drag and drop like an Excel pivot table).
   const pvMode = id => { try { return localStorage.getItem('sc_view_' + id) === 'pivot'; } catch (e) { return false; } };
+  // Report header in the Truck Scale "Trip report" style (Kim, 20 Nov): title, Clear all, Table|Pivot, actions, Columns, Filter.
+  const repHead = (id, title, acts, onClear, noCols) => FB.head(id, title, `<span class="fb-seg pvsw"><button type="button" data-pv="${id}" data-m="table" class="${pvMode(id) ? '' : 'on'}">▤ ${T('តារាង', 'Table')}</button><button type="button" data-pv="${id}" data-m="pivot" class="${pvMode(id) ? 'on' : ''}">⊞ Pivot</button></span>`
+    + (acts || '') + (noCols ? '' : `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`), onClear);
+  document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-tcopen]'); if (!b) return; let c = (document.querySelector('.screp') || {}).previousElementSibling; c = c && c.classList.contains('tc-bar') ? c.querySelector('.tc-btn') : null; if (c) c.click(); });
   const pvToggle = id => `<span class="seg pvseg"><button type="button" data-pv="${id}" data-m="table" class="${pvMode(id) ? '' : 'on'}">▤ ${T('តារាង', 'Table')}</button><button type="button" data-pv="${id}" data-m="pivot" class="${pvMode(id) ? 'on' : ''}">⊞ Pivot</button></span>`;
   function pvWire(id, redraw) {
     $$(`[data-pv="${id}"]`).forEach(b => { b.onclick = () => { try { localStorage.setItem('sc_view_' + id, b.dataset.m); } catch (e) { /* private mode */ } redraw(); }; });
   }
   function pivotScreen(id, title, data, fields, def, redraw) {
-    view(`<h2 class="ptitle">${title} <small class="muted">${data.length} ${T('ជួរ', 'rows')}</small>${pvToggle(id)}</h2>${oldNote()}<div id="pvBox"></div>`);
+    view(`<div class="fb-wrap">${repHead(id, title, '', null, true)}</div><div class="sumline"><b>${data.length}</b> ${T('ជួរ', 'rows')}</div>${oldNote()}<div id="pvBox"></div>`);
     pvWire(id, redraw);
     window.SCPivot.mount($('#pvBox'), { id: id, data: data, T: T, def: def, fields: fields.map(f => ({ k: f[0], km: f[1], en: f[2], num: !!f[3] })),
       onExport: grid => download(id + '-pivot.csv', grid) });
@@ -232,7 +235,7 @@
       const data = newest().map(r => ({ date: r.date, month: String(r.date || '').slice(0, 7), type: tLabel(r.type), bin: r.bin, wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r),
         material: r.material, desc: r.desc, batch: r.batch, sloc: r.sloc, uom: r.uom, reference: r.reference, user: String(r.user || '').split('@')[0],
         qin: Number(r.qtyIn) || 0, qout: Number(r.qtyOut) || 0, net: (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0) }));
-      return pivotScreen('moves', T('ចលនាស្តុក', 'Movements'), data, [
+      return pivotScreen('moves', '🔄 ' + T('ចលនាស្តុក', 'Movements'), data, [
         ['date', 'ថ្ងៃ', 'Date'], ['month', 'ខែ', 'Month'], ['type', 'ប្រភេទ', 'Type'], ['wh', 'ឃ្លាំង', 'Warehouse'], ['zone', 'តំបន់', 'Bin Zone'], ['bin', 'ទីតាំង', 'Bin'],
         ['grp', 'ក្រុមសម្ភារៈ', 'Material Group'], ['material', 'សម្ភារៈ', 'Material'], ['desc', 'បរិយាយ', 'Description'], ['batch', 'Batch', 'Batch'], ['sloc', 'SLoc', 'SLoc'],
         ['uom', 'UoM', 'UoM'], ['reference', 'ឯកសារយោង', 'Reference'], ['user', 'អ្នកប្រើ', 'User'],
@@ -241,13 +244,14 @@
     }
     const rows = newest().filter(r => (!F.mt || r.type === F.mt) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user]));
     view(`
-      <h2 class="ptitle">${T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)')} <small class="muted">${rows.length} ${T('ជួរ', 'rows')}</small>${pvToggle('moves')}</h2>
-      <div class="fbar"><input type="search" id="mq" placeholder="${T('ស្វែងរក ទីតាំង សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference')}" value="${esc(F.mq)}">
-        <select id="mt"><option value="">${T('គ្រប់ប្រភេទ', 'All types')}</option>${types.map(t => `<option value="${t}"${t === F.mt ? ' selected' : ''}>${esc(tLabel(t))}</option>`).join('')}</select>
-        ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
-      <section class="card scroll tall"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
-        ${rows.map(r => `<tr><td>${esc(r.date)} <small class="muted">${esc(r.time)}</small></td><td>${esc(r.id)}</td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}${r.otherBin ? ` <small class="muted">${isIn(r.type) ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td><td>${esc(r.material)}</td><td>${esc(r.batch)}</td>${qtyCell(r)}<td class="num">${fmtQty(r.balance)} ${esc(r.uom)}</td><td>${esc(r.reference)}</td><td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')
-          || `<tr><td class="muted">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</table></section>
+      <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
+        () => { F.mt = ''; F.mq = ''; moves(); })}
+      ${FB.panel('moves', FB.field(T('ប្រភេទ', 'Type'), `<select id="mt"><option value="">${T('ទាំងអស់', 'All')}</option>${types.map(t => `<option value="${t}"${t === F.mt ? ' selected' : ''}>${esc(tLabel(t))}</option>`).join('')}</select>`)
+        + FB.search('mq', T('ស្វែងរក ទីតាំង សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference'), F.mq))}</div>
+      <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'rows')} · ${T('ចូល', 'In')} <b>${rows.filter(r => isIn(r.type)).length}</b> · ${T('ចេញ', 'Out')} <b>${rows.filter(r => !isIn(r.type)).length}</b></div>
+      <section class="screp"><table class="rep"><thead><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td>${esc(r.date)} <small class="muted">${esc(r.time)}</small></td><td class="mono">${esc(r.id)}</td><td><span class="pill ${isIn(r.type) ? 'in' : 'out'}">${esc(tLabel(r.type))}</span></td><td>${esc(r.bin)}${r.otherBin ? ` <small class="muted">${isIn(r.type) ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td><td>${esc(r.material)}</td><td>${esc(r.batch)}</td>${qtyCell(r)}<td class="num">${fmtQty(r.balance)} ${esc(r.uom)}</td><td>${esc(r.reference)}</td><td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="10">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody></table></section>
       ${oldNote()}
       <p class="muted">${T('ជួរនីមួយៗមិនអាចកែ ឬលុបបានទេ។ កំហុសត្រូវកែដោយប្រតិបត្តិការថ្មី។', 'Rows are never edited or deleted. A mistake is corrected with a new transaction.')}</p>`);
     pvWire('moves', moves);
