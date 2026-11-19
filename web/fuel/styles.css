@@ -46,6 +46,8 @@ small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; 
 button { font: inherit; color: inherit; }
 
 .head { position: sticky; top: 0; z-index: 10; }
+/* Phone (Kim, 19 Nov 2026): ‹ › moved to the bar, so the title row under it is hidden to give the screen more room. */
+@media (max-width: 899px) { .head .navbar { display: none !important; } }
 .head::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; opacity: 0; transition: opacity .2s; pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--brand-2), transparent) no-repeat; background-size: 50% 100%;

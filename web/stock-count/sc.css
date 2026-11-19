@@ -159,6 +159,8 @@ nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: f
 nav.tabs .tab { position: relative; flex: 1 0 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 6px 2px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
 nav.tabs .tab span { font-size: 20px; line-height: 1; }
 nav.tabs .tab b { font-weight: 600; white-space: nowrap; }
+/* Phone (Kim, 19 Nov 2026): all menus fit the width, no sideways scroll. */
+@media (max-width: 899px) { nav.tabs .tab { flex: 1 1 0; min-width: 0; padding: 6px 1px; } nav.tabs .tab b { white-space: normal; text-align: center; line-height: 1.15; font-size: 10.5px; overflow-wrap: anywhere; } }
 nav.tabs .tab.on { color: var(--blue); background: rgba(37, 99, 235, .1); }
 nav.tabs .tab .count { position: absolute; top: 2px; right: 8px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-style: normal; line-height: 18px; }
 @media (min-width: 900px) {

@@ -65,6 +65,49 @@
     lang.parentNode.insertBefore(w, lang.nextSibling);
     buildMenu(lang, w);
     addNav();
+    unfreeze();
+  }
+
+  /**
+   * Phone screens (Kim, 19 Nov 2026): the page scrolls as one piece; nothing freezes except the top bar (‹ › ⚙️)
+   * and the bottom menu. Every "position: sticky" rule of the app's own CSS is switched off below 900px, so the
+   * computer layout keeps its frozen headers and filters. Tables keep their own sideways scroll.
+   */
+  function unfreeze() {
+    const nav = document.getElementById('vmNav') || document.getElementById('setBtn');
+    let bar = nav && nav.parentElement;
+    while (bar && bar !== document.body && !/sticky|fixed/.test(getComputedStyle(bar).position)) bar = bar.parentElement;
+    if (bar === document.body) bar = null;
+    const keep = sel => { try { return bar && (bar.matches(sel) || !!bar.querySelector(sel)); } catch (e) { return true; } };
+    const sticky = [], tall = [];
+    const POP = /sheet|modal|dialog|menu|pop|drop|sug|toast|lightbox|viewer|picker|opts|combo|overlay|panel|drawer|list|raw|dd\b/i;   // pop-ups keep their own scroll
+    const walk = rules => {
+      for (const ru of rules) {
+        if (ru.cssRules && !ru.selectorText) { walk(ru.cssRules); continue; }
+        if (!ru.selectorText || !ru.style) continue;
+        const parts = ru.selectorText.split(/,(?![^(]*\))/).map(x => x.trim()).filter(Boolean);
+        if (ru.style.position === 'sticky') parts.forEach(x => { if (!keep(x)) sticky.push(x); });
+        // Boxes that scroll inside the page (a table capped at 420px high) become full height on a phone.
+        const mh = ru.style.maxHeight;
+        if (mh && mh !== 'none' && /auto|scroll/.test(ru.style.overflow + ru.style.overflowY) && !/fixed|absolute/.test(ru.style.position)) {
+          parts.forEach(x => { if (!POP.test(x)) tall.push(x); });
+        }
+      }
+    };
+    for (const sh of document.styleSheets) {
+      if (sh.ownerNode && sh.ownerNode.id === 'vmFree') continue;
+      let rules; try { rules = sh.cssRules; } catch (e) { continue; }   // a stylesheet from another site
+      if (rules) walk(rules);
+    }
+    let st = document.getElementById('vmFree');
+    if (!st) { st = document.createElement('style'); st.id = 'vmFree'; document.head.appendChild(st); }
+    st.textContent = '@media (max-width: 899px){' +
+      // The app name shrinks with "…" so it never runs under ‹ › ⚙️.
+      '.bar .brand{min-width:0;flex:1 1 auto;overflow:hidden}.bar .brand>div:last-child{min-width:0;overflow:hidden}' +
+      '.bar .brand>div:last-child>b,.bar .brand>div:last-child>small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.bar-right,.top-right{flex:none}' +
+      (sticky.length ? sticky.join(',') + '{position:static!important}' : '') +
+      (tall.length ? tall.join(',') + '{max-height:none!important;overflow-y:visible!important}' : '') + '}';
   }
 
   /**
@@ -212,5 +255,6 @@
     mo.observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
+  window.addEventListener('load', () => { if (document.getElementById('vmSw')) unfreeze(); });
   window.VIEW_MODE = { get, pick };
 })();
