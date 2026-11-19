@@ -117,6 +117,20 @@
     el.textContent = msg; el.hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
   }
+  // Key click on every keypad and the calculator (Kim, 20 Nov): short beep + a tiny vibration where the phone allows it.
+  let keyAudio = null;
+  function keyClick() {
+    try {
+      keyAudio = keyAudio || new (window.AudioContext || window.webkitAudioContext)();
+      if (keyAudio.state === 'suspended') keyAudio.resume();
+      const o = keyAudio.createOscillator(), g = keyAudio.createGain(), t = keyAudio.currentTime;
+      o.type = 'square'; o.frequency.value = 1200;
+      g.gain.setValueAtTime(0.08, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      o.connect(g); g.connect(keyAudio.destination); o.start(t); o.stop(t + 0.06);
+    } catch (e) { /* no sound on this phone */ }
+    try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
+  }
+  document.addEventListener('pointerdown', e => { const k = e.target.closest && e.target.closest('.kpad button, .calc-keys button'); if (k && !k.disabled) keyClick(); }, true);
   const view = html => { $('#view').innerHTML = html; addCalc($('#view')); };
   // 🧮 on every qty box, same as the Inbound app (Kim, 19 Nov): add several numbers (e.g. each coil's weight), put the total in.
   function addCalc(root) {
