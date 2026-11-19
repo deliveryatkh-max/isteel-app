@@ -105,6 +105,9 @@ soh.push(['BIN-A', '1400000021', 'Galvanized Square Pipe 25x25x1.10x6m', 'L9', '
 call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch: 'L9', sloc: '2010', bundles: 2, kg: '', pieces: 5 }] } });
 const pr = soh[soh.length - 1];
 eq([pr[8], pr[10], pr[11], pr[12]], [2, 5, 1523.17, 5], '2 bundles x 150 + 5 pcs = 305 pcs = 1,523.17 kg, 5 pcs over the book');
+eq([soh[0][13], soh[0][14], /^\d{4}-\d\d-\d\d$/.test(pr[13]), /^\d\d:\d\d$/.test(pr[14])], ['Count Date', 'Count Time', true, true], 'count date and time stamped (columns added)');
+call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch: 'L9', sloc: '2010', bundles: '', kg: '', pieces: 298 }] } });
+eq([pr[8], pr[10], pr[12]], ['', 298, -2], 'a new count replaces the old one (no adding up)');
 
 // Kim's own Product Master headers (19 Nov): PC/Bundle, Kg/PC, UoM. Boot sends the list; an operator may bring a
 // Product Master material into a bin for the first time, with its description, unit and pcs per bundle copied.

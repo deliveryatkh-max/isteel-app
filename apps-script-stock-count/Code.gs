@@ -29,7 +29,7 @@ const LED_COLS = ['Txn ID', 'Date', 'Time', 'Type', 'Bin', 'Material', 'Descript
 // Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
 const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
 const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty',
-  'Counted Qty Bundle', 'Counted Qty Kg', 'Counted Qty Pcs', 'Total Counted Qty Kg', 'Difference'];
+  'Counted Qty Bundle', 'Counted Qty Kg', 'Counted Qty Pcs', 'Total Counted Qty Kg', 'Difference', 'Count Date', 'Count Time'];
 // Counts tab as Kim set it on 13 Nov. Rows are written by header name (appendCount_), so columns can be moved,
 // renamed back to the old names, or added (Out Qty, Counted Qty, Diff, Status, Photo, Note) without changing the code.
 const CNT_COLS = ['Count ID', 'Type', 'Date', 'Time', 'Bin', 'SKU', 'Description', 'Batch No', 'Sloc', 'On Hand', 'OH UoM',
@@ -370,7 +370,7 @@ function submit_(user, c) {
     const num = v => (v === '' || v == null ? '' : Number(v));
     appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
       counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: name_(who, user), remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
-    addCounted_(stk, r.s, l);   // every count adds up in Stock On Hand; Book Qty (from MB52) is not changed by a count
+    addCounted_(stk, r.s, l, now);   // latest count replaces the old one in Stock On Hand; Book Qty is not changed by a count
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
   const hist = history_();
@@ -564,29 +564,34 @@ function editLine_(user, p) {
   return { id: id, balance: bal, deleted: del, batch: n.batch, sloc: n.sloc };
 }
 
-// Adds one count to the Stock On Hand row of this line (Kim, 13 Nov): Counted Qty Bundle / Kg / Pcs each add up,
-// Total Counted Qty Kg = the Kg total, Difference = Total Counted Qty Kg - Book Qty. Columns are found by header name.
-// Clearing the three Counted cells of a row starts a new count round for it.
-function addCounted_(sh, s, l) {
+// Writes the latest count into the Stock On Hand row of this line (Kim, 19 Nov): a new count REPLACES the old
+// Counted Qty Bundle / Kg / Pcs (no more adding up) and stamps Count Date + Count Time. Every count stays in the
+// Counts tab, which is the history. Total Counted Qty Kg = the Kg total, Difference = counted - Book Qty.
+// Columns are found by header name; Count Date / Count Time are added at the end of the header if missing.
+function addCounted_(sh, s, l, now) {
   const last = sh.getLastRow();
   if (last < 2) return;
-  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  ['Count Date', 'Count Time'].forEach(h => {
+    if (head.indexOf(h.toLowerCase()) < 0) { sh.getRange(1, head.length + 1).setValue(h); head.push(h.toLowerCase()); }
+  });
   const col = n => head.indexOf(n) + 1;
   const v = sh.getRange(2, 1, last - 1, 5).getDisplayValues();
   const i = v.findIndex(r => lineKey_({ bin: r[0], material: r[1], batch: r[3], sloc: r[4] }) === lineKey_({ bin: s.bin, material: s.material, batch: s.batch, sloc: s.sloc }));
   if (i < 0) return;
   const row = i + 2;
-  const add = (name, x) => {
-    const c = col(name);
-    if (!c || x === '' || x == null) return c ? num_(sh.getRange(row, c).getDisplayValue()) : 0;
-    const total = num_(sh.getRange(row, c).getDisplayValue()) + Number(x);
-    sh.getRange(row, c).setValue(total);
-    return total;
+  const put = (name, x) => {
+    const c = col(name), val = (x === '' || x == null) ? '' : Number(x);
+    if (c) sh.getRange(row, c).setValue(val);
+    return val === '' ? 0 : val;
   };
-  const tot = { bundles: add('counted qty bundle', l.bundles), kg: add('counted qty kg', l.kg), pieces: add('counted qty pcs', l.pieces) };
+  const tot = { bundles: put('counted qty bundle', l.bundles), kg: put('counted qty kg', l.kg), pieces: put('counted qty pcs', l.pieces) };
   // Total kg = kg counted + bundles and pieces turned into kg with the Product Master. Difference is in the book unit.
   if (col('total counted qty kg')) sh.getRange(row, col('total counted qty kg')).setValue(countedKg(tot, s.pcsPerBundle, s.kgPerPc));
   if (col('difference')) sh.getRange(row, col('difference')).setValue(countDiff(tot, s.uom, s.pcsPerBundle, s.kgPerPc, s.book));
+  const t = now || new Date();
+  sh.getRange(row, col('count date')).setValue(fmt_(t, 'yyyy-MM-dd'));
+  sh.getRange(row, col('count time')).setValue(fmt_(t, 'HH:mm'));
 }
 
 // Writes the new book qty into the Stock On Hand row of this line.
