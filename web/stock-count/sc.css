@@ -288,3 +288,28 @@ body.wide table.hist td small { white-space: normal; }
 /* Field names bigger and darker, easy to read on a phone (Kim, 19 Nov 2026). */
 label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
 .form label { margin-top: 14px; margin-bottom: 6px; }
+
+/* Form 5 (Kim, 19 Nov): item card + Bundle | Kg | Pcs tabs + big keypad on In / Out / Transfer */
+.icard { display: flex; align-items: center; gap: 12px; background: #011e41; color: #fff; border-radius: 16px; padding: 12px 14px; margin: 4px 0 10px; }
+.icard-ic { font-size: 26px; background: rgba(255,255,255,.12); border-radius: 12px; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; flex: none; }
+.icard-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.icard-t b { font-size: 17px; }
+.icard-t > span { font-size: 14px; opacity: .9; }
+.icard .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.icard .chips i { font-style: normal; font-size: 12px; background: rgba(255,255,255,.14); border-radius: 999px; padding: 2px 9px; }
+.icard-ed { background: none; border: 0; font-size: 24px; cursor: pointer; flex: none; padding: 4px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: var(--line); border-radius: 14px; padding: 4px; margin: 10px 0 8px; }
+.seg button { border: 0; background: none; border-radius: 10px; padding: 10px 4px; font: inherit; font-size: 16px; font-weight: 700; color: var(--ink); cursor: pointer; }
+.seg button b { color: var(--blue); }
+.seg button.on { background: var(--card, #fff); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.seg button.need { color: #b91c1c; }
+.seg button:disabled { opacity: .35; cursor: default; }
+.kdisp { position: relative; display: flex; align-items: center; justify-content: flex-end; border: 2px solid var(--blue); border-radius: 14px; background: var(--card, #fff); min-height: 64px; padding: 6px 14px 6px 56px; font-size: 38px; font-weight: 800; color: var(--ink); }
+.kdisp.empty span { color: var(--muted, #94a3b8); }
+.kdisp.need { border-color: #ef4444; background: #fee2e2; }
+.kdisp .calcb { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); }
+.kpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
+.kpad button { font: inherit; font-size: 24px; font-weight: 700; padding: 12px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--card, #fff); color: var(--ink); cursor: pointer; }
+.kpad button:active { background: var(--line); }
+.kpad button:disabled { opacity: .3; }
+#mTot { text-align: center; }
