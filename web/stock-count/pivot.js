@@ -21,7 +21,7 @@
     let st = load(cfg.id) || clone(cfg.def);
     st.rows = (st.rows || []).filter(k => F[k]); st.cols = (st.cols || []).filter(k => F[k]);
     st.vals = (st.vals || []).filter(v => F[v.k]); st.filters = st.filters || {};
-    st.opt = Object.assign({ sub: true, gtr: true, gtc: true }, st.opt || {});   // Subtotals, Grand total row / column (Kim, 20 Nov)
+    st.opt = Object.assign({ sub: true, gtr: true, gtc: true, rep: false }, st.opt || {});   // Subtotals, Grand total row / column (Kim, 20 Nov)
     Object.keys(st.filters).forEach(k => { if (!F[k]) delete st.filters[k]; });
     let picked = null, openFilter = null;
     const used = () => new Set(st.rows.concat(st.cols, Object.keys(st.filters)));
@@ -95,7 +95,7 @@
             prevTop = rk[0];
           }
           const prev = p.rowKeys[idx - 1];
-          const labels = rk.map((v, li) => (prev && prev.slice(0, li + 1).join('\u0001') === rk.slice(0, li + 1).join('\u0001') ? '' : esc(v || '(blank)')));
+          const labels = rk.map((v, li) => (!st.opt.rep && prev && prev.slice(0, li + 1).join('\u0001') === rk.slice(0, li + 1).join('\u0001') ? '' : esc(v || '(blank)')));
           h += line(JSON.stringify(rk), labels);
         });
         if (st.rows.length > 1 && prevTop !== null && st.opt.sub) h += line(JSON.stringify([prevTop]) + '#sub', [`<b>${esc(prevTop || '(blank)')} ${T('សរុប', 'total')}</b>`].concat(st.rows.slice(1).map(() => '')), 'pv-sub');
@@ -133,7 +133,7 @@
           ${zone('rows', 'ជួរដេក', 'Rows', st.rows)}
           ${zone('vals', 'តម្លៃ', 'Values', st.vals.map(v => v.k))}
           <div class="pv-tools"><button type="button" class="btn ghost sm" data-reset="1">↺ ${T('ដើមវិញ', 'Reset')}</button><button type="button" class="btn ghost sm" data-xls="1">⬇ Excel</button><small class="muted">${p.data.length} ${T('ជួរ', 'rows')}</small></div>
-          <div class="pv-opts">${[['sub', 'សរុបរង', 'Subtotals'], ['gtr', 'សរុបរួម (ជួរដេក)', 'Grand total row'], ['gtc', 'សរុបរួម (ជួរឈរ)', 'Grand total column']]
+          <div class="pv-opts">${[['sub', 'សរុបរង', 'Subtotals'], ['gtr', 'សរុបរួម (ជួរដេក)', 'Grand total row'], ['gtc', 'សរុបរួម (ជួរឈរ)', 'Grand total column'], ['rep', 'បង្ហាញស្លាកជួរដេកឡើងវិញ', 'Repeat row labels']]
             .map(o => `<label><input type="checkbox" data-opt="${o[0]}"${st.opt[o[0]] ? ' checked' : ''}> ${T(o[1], o[2])}</label>`).join('')}</div>
           ${openFilter ? filterBox(openFilter) : ''}
         </div>
