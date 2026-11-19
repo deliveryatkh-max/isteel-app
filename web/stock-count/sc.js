@@ -617,17 +617,20 @@
     return list;
   }
   // Total in the SAP unit (Kim, 19 Nov): bundles x pcs per bundle + loose pcs, turned into kg when SAP books the line in kg.
+  // Total in the SAP unit (Kim, 19 Nov): Bundle | Kg | Pcs like the count screen. Pieces = bundles x pcs per bundle + pcs;
+  // a KG line adds the pieces as kg (x Kg/PC), a PC line adds the kg as pieces (÷ Kg/PC). A box that cannot be
+  // converted (no Kg/PC in the Product Master) is greyed.
   function moveQty(u) {
-    const bd = $('#mBd').value, pc = $('#mPc').value, kgBox = $('#mKg');
-    if (kgBox && !kgBox.hidden) return { qty: kgBox.querySelector('input').value, text: '' };
-    if (bd === '' && pc === '') return { qty: '', text: '' };
-    const pcs = (Number(bd) || 0) * (u.ppb || 1) + (Number(pc) || 0);
-    const qty = isKg(u.uom) ? round3(pcs * u.kg) : pcs;
+    const bd = $('#mBd').value, kg = $('#mKgIn').value, pc = $('#mPc').value;
+    const useBd = !$('#mBd').disabled && bd !== '', useKg = !$('#mKgIn').disabled && kg !== '', usePc = !$('#mPc').disabled && pc !== '';
+    if (!useBd && !useKg && !usePc) return { qty: '', text: '' };
+    const pcs = (useBd ? Number(bd) * (u.ppb || 1) : 0) + (usePc ? Number(pc) : 0), kgN = useKg ? Number(kg) : 0;
+    const qty = isKg(u.uom) ? round3(kgN + pcs * (u.kg || 0)) : pcs + (u.kg ? Math.round(kgN / u.kg) : 0);
     const parts = [];
-    if (Number(bd)) parts.push(`${fmtQty(Number(bd))} ${T('បាច់', 'bundle')} × ${fmtQty(u.ppb || 1)}`);
-    if (Number(pc)) parts.push(`${fmtQty(Number(pc))} ${T('រាយ', 'pcs')}`);
-    const kgText = !isKg(u.uom) && u.kg ? ` · ≈ ${fmtQty(round3(pcs * u.kg))} KG` : '';
-    return { qty: String(qty), text: `${parts.join(' + ')} = <b>${fmtQty(qty)} ${esc(u.uom)}</b>${isKg(u.uom) ? ` (${fmtQty(pcs)} ${T('រាយ', 'pcs')})` : ''}${kgText}` };
+    if (useBd && Number(bd)) parts.push(`${fmtQty(Number(bd))} ${T('បាច់', 'bundle')} × ${fmtQty(u.ppb || 1)}`);
+    if (useKg && kgN) parts.push(isKg(u.uom) ? `${fmtQty(kgN)} KG` : `${fmtQty(kgN)} KG ÷ ${fmtQty(u.kg)}`);
+    if (usePc && Number(pc)) parts.push(`${fmtQty(Number(pc))} ${T('រាយ', 'pcs')}${isKg(u.uom) ? ' × ' + fmtQty(u.kg) : ''}`);
+    return { qty: String(qty), text: `${parts.join(' + ')} = <b>${fmtQty(qty)} ${esc(u.uom)}</b>` };
   }
   function moveScreen() {
     const b = S.bin, m = S.move, isIn = m.type === 'IN', isTr = m.type === 'TRANSFER', lines = b.lines || [];
@@ -649,9 +652,9 @@
         <div class="row"><select id="mLine"><option value="-1">${T('— ជ្រើសរើស —', '— choose —')}</option>${opts}</select>
           <button type="button" class="btn ghost shrink" id="mScan" title="Scan">📷</button></div>`}
         <p class="muted" id="mInfo"></p>
-        <div class="fields"><div><label for="mBd">${T('បាច់', 'Bundle')}</label><input id="mBd" type="number" inputmode="numeric" min="0" step="1"></div>
+        <div class="fields3"><div><label for="mBd">${T('បាច់', 'Bundle')}</label><input id="mBd" type="number" inputmode="numeric" min="0" step="1"></div>
+          <div><label for="mKgIn">Kg</label><input id="mKgIn" type="number" inputmode="decimal" min="0" step="any"></div>
           <div><label for="mPc">${T('រាយ', 'Pcs')}</label><input id="mPc" type="number" inputmode="numeric" min="0" step="1"></div></div>
-        <div id="mKg" hidden><label for="mKgIn">${T('គីឡូ (Kg)', 'Kg')}</label><input id="mKgIn" type="number" inputmode="decimal" min="0" step="any"></div>
         <div class="tot" id="mTot"></div>
         ${isTr ? `<label for="mTo">${T('កុងតឺន័រទៅ', 'Destination bin')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
@@ -681,8 +684,10 @@
     const refresh = () => {
       const l = line(), u = unit(), ref = $('#mRef').value.trim();
       // A kg line with no kg per piece in the master can only be entered in kg.
-      const kgOnly = !!u && isKg(u.uom) && !u.kg;
-      $('#mKg').hidden = !kgOnly; $('#mBd').closest('.fields').hidden = kgOnly;
+      // No Kg/PC: a KG line can only take kg, a PC line can only take bundles and pieces.
+      const noConv = !!u && !u.kg;
+      $('#mBd').disabled = $('#mPc').disabled = noConv && isKg(u.uom);
+      $('#mKgIn').disabled = noConv && !isKg(u.uom);
       const q = u ? moveQty(u) : { qty: '', text: '' };
       $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
       $('#mInfo').textContent = l ? `${l.desc} · ${T('សមតុល្យ', 'Balance')} ${fmtQty(l.book)} ${l.uom}` : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងកុងតឺន័រនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
@@ -690,7 +695,7 @@
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយកុងតឺន័រទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('កុងតឺន័រទៅត្រូវខុសពីកុងតឺន័រដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
       const empty = q.qty === '';
-      ['#mBd', '#mPc', '#mKgIn'].forEach(id => $(id).classList.toggle('need', empty));
+      ['#mBd', '#mPc', '#mKgIn'].forEach(id => $(id).classList.toggle('need', empty && !$(id).disabled));
       if (isIn) { $('#mMat').classList.toggle('need', !m.pick); $('#mBatch').classList.toggle('need', !$('#mBatch').value.trim()); }
       if ($('#mTo')) $('#mTo').classList.toggle('need', !$('#mTo').value.trim());
       if (!isTr) $('#mRef').classList.toggle('need', !ref);
@@ -824,12 +829,11 @@
       ? `<div class="cline">
         <div class="cdesc">${esc(l.desc)}</div>
         <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></div>
-        <div class="cgrid chead"><span>${T('បាច់', 'Bundle')}</span><span>Kg</span><span>${T('រាយ', 'Pcs')}</span><span>${T('កំណត់សម្គាល់', 'Remark')}</span></div>
+        <div class="cgrid chead"><span>${T('បាច់', 'Bundle')}</span><span>Kg</span><span>${T('រាយ', 'Pcs')}</span></div>
         <div class="cgrid">
           <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles">
           <input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg">
           <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces">
-          <input type="text" maxlength="200" data-i="${i}" data-f="remark">
         </div>
         <div class="muted chand">${T('ក្នុងស្តុក', 'On hand')} ${l.book} ${esc(l.uom)}</div>
       </div>`
@@ -894,7 +898,7 @@
   function readLines(isCount) {
     return (S.bin.lines || []).map((l, i) => {
       const base = { material: l.material, batch: l.batch, sloc: l.sloc };
-      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value, remark: document.querySelector(`[data-i="${i}"][data-f="remark"]`).value.trim() });
+      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value, remark: '' });
       return Object.assign(base, { outQty: Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || { value: 0 }).value) || 0 });
     });
   }
