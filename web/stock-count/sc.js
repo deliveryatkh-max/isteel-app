@@ -901,15 +901,14 @@
     const b = S.bin;
     const isCount = mode === 'count';
     const rows = (b.lines || []).map((l, i) => isCount
-      ? `<div class="cline">
-        <div class="cdesc">${esc(l.desc)}</div>
-        <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></div>
-        <div class="cgrid chead"><span>${T('បាច់', 'Bundle')}</span><span>Kg</span><span>${T('រាយ', 'Pcs')}</span></div>
-        <div class="cgrid">
-          <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="bundles">
-          <input type="number" inputmode="decimal" min="0" step="any" data-i="${i}" data-f="kg">
-          <input type="number" inputmode="numeric" min="0" data-i="${i}" data-f="pieces">
-        </div>
+      ? `<div class="cline" data-line="${i}">
+        <div class="icard"><span class="icard-ic">🏗️</span><div class="icard-t"><b>${esc(l.material)}</b><span>${esc(l.desc)}</span>
+          <div class="chips">${l.batch ? `<i>Batch ${esc(l.batch)}</i>` : ''}${Number(l.pcsPerBundle) > 1 ? `<i>${fmtQty(l.pcsPerBundle)} ${T('រាយ/បាច់', 'pcs/bundle')}</i>` : ''}<i>${esc(l.uom)}</i></div></div></div>
+        <div class="seg">
+          <button type="button" data-i="${i}" data-box="bundles"><span>${T('បាច់', 'Bundle')}</span> <b></b></button>
+          <button type="button" data-i="${i}" data-box="kg"><span>Kg</span> <b></b></button>
+          <button type="button" data-i="${i}" data-box="pieces"><span>${T('រាយ', 'Pcs')}</span> <b></b></button></div>
+        <input type="hidden" data-i="${i}" data-f="bundles"><input type="hidden" data-i="${i}" data-f="kg"><input type="hidden" data-i="${i}" data-f="pieces">
       </div>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
@@ -918,7 +917,9 @@
       </tr>`).join('');
     view(`
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងកុងតឺន័រ', 'Count every SKU in this bin') : T('ចេញស្តុកពីកុងតឺន័រ', 'Stock out from this bin')}</div></section>
-      ${isCount ? `<section class="card">${rows}</section>`
+      ${isCount ? `<section class="card">${rows}
+        <div id="cPad"><div class="kdisp" id="cDisp"><button type="button" class="calcb" id="cCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
+        <div class="kpad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div></div></section>`
         : `<section class="card" style="overflow-x:auto"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>${rows}</table></section>`}
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
@@ -935,7 +936,12 @@
         if (isCount) {
           const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
           const empty = c.bundles === '' && c.kg === '' && c.pieces === '';   // all three red until one has a value
-          ['bundles', 'kg', 'pieces'].forEach(f => document.querySelector(`[data-i="${i}"][data-f="${f}"]`).classList.toggle('need', empty));
+          ['bundles', 'kg', 'pieces'].forEach(f => {
+            const bn = document.querySelector(`.seg [data-i="${i}"][data-box="${f}"]`);
+            bn.querySelector('b').textContent = c[f];
+            bn.classList.toggle('need', empty);
+            bn.classList.toggle('on', !!cAct && cAct.i === i && cAct.f === f);
+          });
           if (!lineOk(c)) { ok = false; return; }
           if (comparable(c, l.uom)) statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // status only for the photo rule
         } else {
@@ -945,6 +951,12 @@
           cell.textContent = l.book - Number(v);
         }
       });
+      if (isCount && cAct) {
+        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), v = el ? el.value : '';
+        $('#cDisp span').textContent = v || '0';
+        $('#cDisp').classList.toggle('empty', !v);
+        $('#cPad [data-k="."]').disabled = cAct.f !== 'kg';
+      }
       if (isCount) {
         needPhoto = false;   // no photo rule for now (Kim, 13 Nov: no Diff / Status / Photo columns in Counts)
         $('#photoBox').hidden = !needPhoto;
@@ -953,6 +965,25 @@
       }
       $('#submit').disabled = !ok || (needPhoto && !S.photo) || (!isCount && !anyOut());
     };
+    // Form 5 on the count screen (Kim, 19 Nov): tap Bundle / Kg / Pcs of a line, the keypad moves under that line.
+    let cAct = isCount && (b.lines || []).length ? { i: 0, f: isKg((b.lines[0] || {}).uom) ? 'kg' : 'pieces' } : null;
+    const cMove = () => { const ln = document.querySelector(`.cline[data-line="${cAct.i}"]`); if (ln && $('#cPad').parentNode !== ln) ln.appendChild($('#cPad')); };
+    if (isCount && cAct) {
+      document.querySelectorAll('.cline .seg [data-box]').forEach(bn => { bn.onclick = () => { cAct = { i: Number(bn.dataset.i), f: bn.dataset.box }; cMove(); refresh(); }; });
+      $('#cPad .kpad').onclick = e => {
+        const k = e.target.closest('[data-k]'); if (!k || k.disabled) return;
+        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), key = k.dataset.k; let v = el.value;
+        if (key === '⌫') v = v.slice(0, -1);
+        else if (key === '.') { if (v.indexOf('.') >= 0) return; v = v ? v + '.' : '0.'; }
+        else { if (v.replace('.', '').length >= 9) return; v = v === '0' ? key : v + key; }
+        el.value = v; refresh();
+      };
+      $('#cCalc').onclick = () => {
+        const bn = document.querySelector(`.seg [data-i="${cAct.i}"][data-box="${cAct.f}"] span`);
+        openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`).value = cAct.f === 'kg' ? String(v) : String(Math.round(v)); refresh(); });
+      };
+      cMove();
+    } else if ($('#cPad')) $('#cPad').hidden = true;
     const anyOut = () => (b.lines || []).some((l, i) => Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || {}).value) > 0);
     document.querySelectorAll('.lines input, .cgrid input').forEach(el => { el.oninput = refresh; });
     if ($('#photoIn')) $('#photoIn').onchange = async e => {
