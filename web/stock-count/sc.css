@@ -328,3 +328,7 @@ label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
 .kpad { gap: 6px; }
 .kpad button { font-size: 20px; padding: 7px 0; border-radius: 10px; }
 .kdisp { min-height: 52px; font-size: 32px; }
+/* Bin codes and dates stay on one line in history tables (Kim, 19 Nov) */
+table.hist td { white-space: nowrap; padding-left: 3px; padding-right: 3px; }
+table.hist td:first-child small { display: block; }
+table.hist td { vertical-align: middle; }
