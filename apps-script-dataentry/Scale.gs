@@ -56,6 +56,7 @@ function scaleRoute_(action, p, user) {
     case 'scBoot': return scBoot_(user);
     case 'scSave': return withLock_(() => scSave_(p.ops, user));
     case 'scList': return scList_(p);
+    case 'scTatMonths': return scTatMonths_(p);
     case 'scMaster': return withLock_(() => scMaster_(p, user));
     case 'scSettings': return scSettings_(p, user);
     case 'scTicketPdf': return scTicketPdf_(p, user);
@@ -364,6 +365,31 @@ function scList_(p) {
   if (out.length > 5000 && p.all) return { tickets: out.slice(-5000).reverse(), more: true };
   if (out.length > 5000) fail_('BAD', 'Too many tickets. Pick fewer days.', 'ប័ណ្ណច្រើនពេក។ សូមរើសថ្ងៃតិចជាងនេះ។');
   return { tickets: out.reverse() };
+}
+
+/**
+ * Turnaround trend (Kim, 19 Nov 2026): finished tickets summed per month × job × company, so 12 months stay small.
+ * Row = [yyyy-MM, In|Out|Scrap, company, plate (only when there is no company), trips, minutes]. The app sorts each
+ * company into ISI / 3PL / customer truck.
+ */
+function scTatMonths_(p) {
+  const from = date_(p.from), to = date_(p.to);
+  if (!from || !to) fail_('BAD', 'Pick the dates.');
+  to.setHours(23, 59, 59);
+  const dt = v => { if (v instanceof Date) return v; const d = v ? new Date(String(v).replace(/^(\d{4}-\d\d-\d\d) /, '$1T')) : null; return d && !isNaN(d) ? d : null; };
+  const agg = {};
+  scRows_().rows.forEach(r => {
+    if (!r[0] || r[1] !== 'Done') return;
+    const a = dt(r[13]), b = dt(r[16]);
+    if (!a || !b || a < from || a > to) return;
+    const m = Math.round((b - a) / 60000);
+    if (!(m >= 0)) return;
+    const ty = ['In', 'Out', 'Scrap'].indexOf(r[6]) >= 0 ? r[6] : (Number(r[15]) > Number(r[12]) ? 'Out' : 'In');
+    const co = String(r[3] || '').trim();
+    const k = [fmt_(a, 'yyyy-MM'), ty, co, co ? '' : String(r[2] || '')].join('|');
+    const o = agg[k] || (agg[k] = [0, 0]); o[0]++; o[1] += m;
+  });
+  return { rows: Object.keys(agg).map(k => k.split('|').concat(agg[k])) };
 }
 
 function scLog_(user, key, action, field, before, after, reason) {
