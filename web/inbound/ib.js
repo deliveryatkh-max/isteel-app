@@ -782,7 +782,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     if (F.start) F.items.forEach(i => { i.grQty = i.arrQty; });   // received = arrival (Kim, 19 Nov 2026)
   }
   function pickPOs(list) {
-    const keep = { id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company, owner: F.owner, carrier: F.carrier, newCarrier: F.newCarrier };
+    const keep = { manualPo: F.manualPo, id: F.id, dn3pl: F.dn3pl, truck: F.truck, newTruck: F.newTruck, by: F.by, ph: F.ph, date: F.date, manpower: F.manpower, scaleNo: F.scaleNo, vessel: F.vessel, company: F.company, owner: F.owner, carrier: F.carrier, newCarrier: F.newCarrier };
     const old = F.items || [], was = F;
     const b = blank(); const l = PLAN.find(x => x.po === list[0]);
     F = Object.assign(b, list.length ? headerOf(list) : {}, keep);
@@ -889,7 +889,8 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const pob = $('#po');
     if (pob && !pob.classList.contains('off')) pob.onclick = () => { collect(); openMulti({ title: t('លេខ PO (ជ្រើសបានច្រើន)', 'PO Number (one or more)'), value: posOf(F),
       items: (vesPOs(F.vessel).length ? pendingPOs(F.id).filter(x => vesPOs(F.vessel).some(y => y.po === x)) : pendingPOs(F.id)).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
-      onDone: v => { pickPOs(v); re(); } }); };
+      // then the items list opens at once (Kim, 19 Nov 2026)
+      onDone: v => { pickPOs(v); re(); if (v.length && !F.items.length) setTimeout(() => { const b = $('#items'); if (b) b.click(); }, 80); } }); };
     const it = $('#items');
     if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material + '|' + (i.batch || ''); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
       items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: lineKey(x), label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
