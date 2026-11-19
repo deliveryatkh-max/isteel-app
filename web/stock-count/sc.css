@@ -284,3 +284,7 @@ body.wide table.hist td small { white-space: normal; }
 .fields3 input { min-width: 0; }
 .fields3 input:disabled { background: var(--line); opacity: .6; }
 .qwrap:has(> input:disabled) .calcb { display: none; }
+
+/* Field names bigger and darker, easy to read on a phone (Kim, 19 Nov 2026). */
+label, .chead { font-size: 15px; font-weight: 700; color: var(--ink); }
+.form label { margin-top: 14px; margin-bottom: 6px; }
