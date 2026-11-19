@@ -262,3 +262,19 @@ body.wide table.hist td small { white-space: normal; }
 .lmenu .red, .red-text { color: var(--bad) !important; }
 .btn.bad { background: var(--bad); color: #fff; }
 .form .note { background: var(--warn-bg); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+
+/* 🧮 calculator on every qty box, same as the Inbound app (Kim, 19 Nov 2026). */
+.qwrap { position: relative; display: block; }
+.qwrap > input { padding-left: 34px; width: 100%; }
+.calcb { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: 0; background: transparent; font-size: 17px; line-height: 1; padding: 0; cursor: pointer; z-index: 1; }
+.calc-sheet .calc-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 8px; margin: 4px 0; }
+.calc-n { background: rgba(37, 99, 235, .12); color: var(--blue); border-radius: 8px; padding: 3px 4px 3px 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.calc-n button { border: 0; background: transparent; color: inherit; font-size: 12px; margin-left: 2px; cursor: pointer; }
+.calc-op { font-weight: 700; color: var(--muted); }
+.calc-disp { text-align: right; font-size: 28px; font-weight: 700; padding: 8px 10px; border: 1.5px solid var(--blue); border-radius: 10px; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.calc-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.calc-keys button { font: inherit; font-size: 22px; font-weight: 700; padding: 12px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+.calc-keys .calc-plus { background: var(--navy); color: #fff; grid-column: span 2; }
+.calc-keys .calc-c { color: var(--bad); }
+.calc-tot { display: flex; justify-content: space-between; font-size: 18px; margin: 12px 2px 8px; }
+.calc-tot b { font-size: 22px; color: var(--ok); }
