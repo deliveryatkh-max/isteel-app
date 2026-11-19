@@ -338,9 +338,9 @@
     const live = VD().filter(isLive), done = td.filter(r => r.end);
     const tn = done.reduce((s, r) => s + tons(r), 0);
     const avg = done.length ? done.reduce((s, r) => s + spentMin(r), 0) / done.length : null;
-    view(siteBar() + tomorrowBar() + `
+    view(siteBar() + `
+      <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>` + tomorrowBar() + `
       ${waitBox()}
-      <button class="btn ok big new-btn" id="newBtn">＋ ${t('ទទួលទំនិញថ្មី', 'New goods receipt')}</button>
       <div class="stats">
         <a class="stat go" href="#/log" data-go="today"><small>${t('ឡានថ្ងៃនេះ', 'Trucks today')}</small><b>${td.length}</b></a>
         <a class="stat go" href="#/log" data-go="live"><small>${t('កំពុងទម្លាក់', 'Unloading now')}</small><b>${live.length}</b></a>
