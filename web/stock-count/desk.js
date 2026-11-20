@@ -199,6 +199,7 @@
         <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th>${'<th></th>'.repeat(7)}<th class="num mono">${sumU('book')}</th>${'<th></th>'.repeat(3)}<th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table></section>
       ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
     pvWire('stock', stock);
+    setTimeout(fitRep, 0);
     keep('#fq', v => { F.q = v; stock(); });
     FILTERS.forEach(f => { $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
@@ -207,6 +208,10 @@
   }
   // Table | Pivot switch on Stock list and Movements (Kim, 20 Nov: drag and drop like an Excel pivot table).
   const pvMode = id => { try { return localStorage.getItem('sc_view_' + id) === 'pivot'; } catch (e) { return false; } };
+  // Table box ends at the window bottom on a computer, so the frozen filter + table header stay in view (Kim, 20 Nov).
+  const fitRep = () => { const el = document.querySelector('#view .screp'); if (!el) return;
+    el.style.maxHeight = innerWidth >= 900 ? Math.max(260, innerHeight - (el.getBoundingClientRect().top + window.scrollY) - 40) + 'px' : ''; };
+  window.addEventListener('resize', fitRep);
   // Report header in the Truck Scale "Trip report" style (Kim, 20 Nov): title, Clear all, Table|Pivot, actions, Columns, Filter.
   const repHead = (id, title, acts, onClear, noCols) => FB.head(id, title, `<span class="fb-seg pvsw"><button type="button" data-pv="${id}" data-m="table" class="${pvMode(id) ? '' : 'on'}">▤ ${T('តារាង', 'Table')}</button><button type="button" data-pv="${id}" data-m="pivot" class="${pvMode(id) ? 'on' : ''}">⊞ Pivot</button></span>`
     + (acts || '') + (noCols ? '' : `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`), onClear);
@@ -280,6 +285,7 @@
       ${oldNote()}
       <p class="muted">${T('ជួរនីមួយៗមិនអាចកែ ឬលុបបានទេ។ កំហុសត្រូវកែដោយប្រតិបត្តិការថ្មី។', 'Rows are never edited or deleted. A mistake is corrected with a new transaction.')}</p>`);
     pvWire('moves', moves);
+    setTimeout(fitRep, 0);
     keep('#mq', v => { F.mq = v; moves(); });
     MF.forEach(f => { $('#' + f[0]).onchange = e => { F[f[0]] = e.target.value; moves(); }; });
     $$('[data-mqd]').forEach(bn => { bn.onclick = () => { const q = QD.find(x => x[0] === bn.dataset.mqd); F.mfrom = q[2]; F.mto = q[3]; moves(); }; });

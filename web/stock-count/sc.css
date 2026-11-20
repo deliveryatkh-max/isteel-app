@@ -429,3 +429,7 @@ table.rep tfoot th.num { text-align: right; }
 .kdisp.expr span { font-size: 22px; white-space: nowrap; overflow-x: auto; }
 .tbadge.cnt { background: #7c3aed; }
 .mh-sum small.out { color: #dc2626; font-weight: 700; } .mh-sum small.in { color: #16a34a; font-weight: 700; }
+/* Report screens on a computer (Kim, 20 Nov): the filter header stays frozen under the app bar while the page scrolls. */
+@media (min-width: 900px) {
+  #view > .fb-wrap { position: sticky; top: var(--barh, 56px); z-index: 6; background: var(--bg); margin: 0 -4px 10px; padding: 6px 4px 8px; box-shadow: 0 8px 12px -12px rgba(1, 30, 65, .35); }
+}
