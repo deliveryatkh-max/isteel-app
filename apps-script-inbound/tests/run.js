@@ -341,4 +341,6 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   e2 = must(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: ed } }));
   eq([e2.items.map(i => i.material), e2.po], [['1300000003'], '5100088888'], 'admin deletes a row');
   ok(/^BAD/.test(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: [] } }).error), 'keeps one row'); }
+{ const g = must(call('kim@x.com', 'gsList', { from: '2000-01-01', to: '2999-12-31' })); ok(g.receipts.length > 0 && !g.receipts[0].ph && g.receipts[0].items[0].arrQty !== undefined, 'gsList slim receipts');
+  ok(/Pick the dates/.test(call('kim@x.com', 'gsList', {}).error), 'gsList needs dates'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

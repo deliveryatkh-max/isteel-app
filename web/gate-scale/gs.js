@@ -62,16 +62,19 @@
     if (!signedIn()) { render(); return; }
     busy = true;
     const lo = C.addDays(F.from, -1), hi = C.addDays(F.to, 1);
-    const [a, b] = await Promise.allSettled([api(IB_API, 'boot'), api(SC_API, 'scList', { from: lo, to: hi, all: true })]);
+    // gsList = only the days asked (fast); the old Inbound script has no gsList, then the full boot is read
+    const ibGet = () => api(IB_API, 'gsList', { from: lo, to: hi }).then(d => Object.assign(d, { from: lo, to: hi })).catch(e => /Unknown action/i.test(e.message) ? api(IB_API, 'boot') : Promise.reject(e));
+    const [a, b] = await Promise.allSettled([ibGet(), api(SC_API, 'scList', { from: lo, to: hi, all: true })]);
     busy = false;
-    if (a.status === 'fulfilled') { IB = { at: Date.now(), receipts: (a.value.receipts || []).map(slimR) }; ERR.ib = ''; set('gs_ib', JSON.stringify(IB)); }
+    if (a.status === 'fulfilled') { IB = { at: Date.now(), from: a.value.from || '', to: a.value.to || '', receipts: (a.value.receipts || []).map(slimR) }; ERR.ib = ''; set('gs_ib', JSON.stringify(IB)); }
     else ERR.ib = a.reason.message;
     if (b.status === 'fulfilled') { SC = { at: Date.now(), from: lo, to: hi, tickets: (b.value.tickets || []).map(slimT) }; ERR.sc = ''; set('gs_sc', JSON.stringify(SC)); }
     else ERR.sc = b.reason.message;
     if (window.LIVE) LIVE.keep(render); else render();
   }
   // The Scale list in memory covers the days asked for (with one day each side)?
-  const scCovers = () => SC && SC.from <= C.addDays(F.from, -1) && SC.to >= C.addDays(F.to, 1);
+  const scCovers = () => SC && SC.from <= C.addDays(F.from, -1) && SC.to >= C.addDays(F.to, 1)
+    && (!IB || !IB.from || (IB.from <= C.addDays(F.from, -1) && IB.to >= C.addDays(F.to, 1)));   // Inbound days too when read by gsList
 
   // ---------------------------------------------------------------- screen
   const ST = {
@@ -152,7 +155,7 @@
     const errs = [ERR.ib && `Inbound: ${esc(ERR.ib)}`, ERR.sc && `${t('ជញ្ជីង', 'Scale')}: ${esc(ERR.sc)}`].filter(Boolean);
     const total = all.length, okPct = total ? Math.round(cnt.ok / total * 100) : 0;
     const ibDays = IB && IB.receipts.length ? IB.receipts.reduce((m, r) => (r.date && r.date < m ? r.date : m), '9999') : '';
-    const old = ibDays && F.from < ibDays;
+    const old = ibDays && !IB.from && F.from < ibDays;
 
     $('#view').innerHTML = `
       <div class="fb-wrap">${FB.head('gs', `⚖️ ${t('ផ្ទៀងផ្ទាត់ ឡានចូល Inbound ទល់ ជញ្ជីង', 'Inbound trucks vs Truck Scale')}`,
