@@ -475,7 +475,7 @@
   }
 
   // ------------------------------------------------------------------ digital stock card: In / Out / Transfer / history
-  const HIDE_REF = true;   // Kim, 20 Nov 2026: hide Reference document (GR / PO, DN) on Stock IN / OUT for now
+  const HIDE_REF = false;   // Kim, 20 Nov 2026: shown again (set true to hide) Reference document (GR / PO, DN) on Stock IN / OUT for now
   const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
   const typeLabel = t => ({ IN: T('ចូលស្តុក', 'Stock IN'), OUT: T('ចេញស្តុក', 'Stock OUT'), TRANSFER: T('ផ្ទេរ', 'Transfer'),
