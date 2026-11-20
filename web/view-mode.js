@@ -86,7 +86,7 @@
         if (ru.cssRules && !ru.selectorText) { walk(ru.cssRules); continue; }
         if (!ru.selectorText || !ru.style) continue;
         const parts = ru.selectorText.split(/,(?![^(]*\))/).map(x => x.trim()).filter(Boolean);
-        if (ru.style.position === 'sticky') parts.forEach(x => { if (!keep(x)) sticky.push(x); });
+        if (ru.style.position === 'sticky') parts.forEach(x => { if (!keep(x) && !/\.vm-keep\b/.test(x)) sticky.push(x); });   // .vm-keep = Kim asked for this one frozen on phones too
         // Boxes that scroll inside the page (a table capped at 420px high) become full height on a phone.
         const mh = ru.style.maxHeight;
         if (mh && mh !== 'none' && /auto|scroll/.test(ru.style.overflow + ru.style.overflowY) && !/fixed|absolute/.test(ru.style.position)) {

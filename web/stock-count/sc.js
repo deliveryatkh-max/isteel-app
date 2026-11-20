@@ -482,6 +482,42 @@
     'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in'), ADJUST: T('កែតម្រូវ', 'Adjustment') }[t] || t);
   const sameLine = (a, b) => [a.material, a.batch, a.sloc].join('|').toUpperCase() === [b.material, b.batch, b.sloc].join('|').toUpperCase();
   const round3 = n => Math.round(n * 1000) / 1000;
+  // Keypad with × (Kim, 20 Nov): works like a calculator. The box keeps the result; the display shows "10 × 100 = 1,000".
+  const XK = '×';
+  const PAD_KEYS = ['7', '8', '9', '⌫', '4', '5', '6', XK, '1', '2', '3', 'C', '.', '0', '='];
+  const padHtml = () => PAD_KEYS.map(k => `<button type="button" data-k="${k}"${k === '=' ? ' class="eq"' : k === XK ? ' class="op"' : ''}>${k}</button>`).join('');
+  const padEval = e => { const p = String(e || '').split(XK).filter(x => x !== '' && x !== '.'); if (!p.length) return ''; const r = p.reduce((a, x) => a * Number(x), 1); return isFinite(r) ? String(round3(r)) : ''; };
+  const padPress = (e, key, dot) => {
+    e = String(e || ''); const last = e.split(XK).pop();
+    if (key === '⌫') return e.slice(0, -1);
+    if (key === 'C') return '';
+    if (key === '=') return padEval(e);
+    if (key === XK) return !last || last === '.' ? e : e + XK;
+    if (key === '.') return !dot || last.indexOf('.') >= 0 ? e : e + (last ? '.' : '0.');
+    if (last.replace('.', '').length >= 9) return e;
+    return last === '0' ? e.slice(0, -1) + key : e + key;
+  };
+  const padShow = (e, v) => (String(e || '').indexOf(XK) >= 0 ? `${String(e).split(XK).join(' × ')} = ${fmtQty(v)}` : (v || '0'));
+  // Typing history like SAP (Kim, 20 Nov): tap the box (or type a space) to see the values used before on this phone.
+  const histGet = k => { try { return JSON.parse(localStorage.getItem('sc_hist_' + k) || '[]'); } catch (e) { return []; } };
+  const histAdd = (k, v) => { v = String(v || '').trim(); if (!v) return; const a = [v].concat(histGet(k).filter(x => x !== v)).slice(0, 20); try { localStorage.setItem('sc_hist_' + k, JSON.stringify(a)); } catch (e) { /* private mode */ } };
+  function histBox(input, k, onPick) {
+    if (!input) return;
+    const box = document.createElement('div'); box.className = 'sug hist'; box.hidden = true;
+    (input.closest('.row') || input).insertAdjacentElement('afterend', box);
+    const show = () => {
+      const q = input.value.trim().toUpperCase();
+      const list = histGet(k).filter(v => !q || (v.toUpperCase().indexOf(q) >= 0 && v.toUpperCase() !== q)).slice(0, 10);
+      box.innerHTML = list.map(v => `<button type="button" data-v="${esc(v)}"><span>🕘</span><b>${esc(v)}</b></button>`).join('');
+      box.hidden = !list.length;
+      box.querySelectorAll('[data-v]').forEach(bn => { bn.onpointerdown = e => e.preventDefault(); bn.onclick = () => { input.value = bn.dataset.v; box.hidden = true; onPick(); }; });
+    };
+    input.addEventListener('focus', show); input.addEventListener('input', show);
+    input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  }
+  // Header stays frozen under the app bar (Kim, 20 Nov).
+  const setBarH = () => { const h = document.querySelector('header.bar'); if (h) document.documentElement.style.setProperty('--barh', h.offsetHeight + 'px'); };
+  window.addEventListener('resize', setBarH); setTimeout(setBarH, 0);
   // Same rules as rules.gs moveOk / transferOk; the server checks again before posting.
   const moveBad = (type, qty, balance, uom) => {
     const q = Number(qty);
@@ -664,6 +700,14 @@
   // Total in the SAP unit (Kim, 19 Nov): Bundle | Kg | Pcs like the count screen. Pieces = bundles x pcs per bundle + pcs;
   // a KG line adds the pieces as kg (x Kg/PC), a PC line adds the kg as pieces (÷ Kg/PC). A box that cannot be
   // converted (no Kg/PC in the Product Master) is greyed.
+  // "100 bd + 20 pcs" from a quantity in the line's unit (KG lines go through Kg per pc).
+  function bdTxt(qty, u) {
+    if (!u || !(Number(u.ppb) > 1) || qty === '' || qty == null) return '';
+    const pcs = isKg(u.uom) ? (u.kg ? Number(qty) / u.kg : null) : Number(qty);
+    if (pcs == null || !isFinite(pcs)) return '';
+    const bd = Math.floor(pcs / u.ppb), rem = Math.round(pcs - bd * u.ppb);
+    return `${fmtQty(bd)} ${T('បាច់', 'bd')}${rem ? ` + ${fmtQty(rem)} ${T('រាយ', 'pcs')}` : ''}`;
+  }
   function moveQty(u) {
     const bd = $('#mBd').value, kg = $('#mKgIn').value, pc = $('#mPc').value;
     const useBd = !$('#mBd').disabled && bd !== '', useKg = !$('#mKgIn').disabled && kg !== '', usePc = !$('#mPc').disabled && pc !== '';
@@ -683,8 +727,8 @@
     if (isIn && m.pick === undefined) m.pick = pre ? (products().find(p => String(p.material).toUpperCase() === String(pre.material).toUpperCase()) || null) : null;
     const pickText = p => (p ? `${p.material} · ${p.desc || ''}` : '');
     view(`
-      <section class="card hero mhero"><div class="mh-l"><div class="bin">${esc(b.bin)}</div><div class="mh-item" id="mHeroItem"></div></div>
-        <span class="tbadge ${isIn ? 'in' : isTr ? 'tr' : 'out'}">${typeLabel(m.type)}</span></section>
+      <section class="card hero mhero vm-keep"><div class="mh-l"><div class="bin">${esc(b.bin)}</div><div class="mh-item" id="mHeroItem"></div></div>
+        <div class="mh-r"><span class="tbadge ${isIn ? 'in' : isTr ? 'tr' : 'out'}">${typeLabel(m.type)}</span><div class="mh-sum" id="mSum"></div></div></section>
       <section class="card form">
         <div class="icard" id="mCard" hidden></div>
         <div id="mPick">
@@ -705,7 +749,7 @@
           <button type="button" data-box="mPc"><span>${T('រាយ', 'Pcs')}</span> <b></b></button></div>
         <input type="hidden" id="mBd"><input type="hidden" id="mKgIn"><input type="hidden" id="mPc">
         <div class="kdisp" id="mDisp"><button type="button" class="calcb" id="mCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
-        <div class="kpad" id="mPad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div>
+        <div class="kpad" id="mPad">${padHtml()}</div>
         <div class="tot" id="mTot"></div>
         ${isTr ? `<label for="mTo">${T('ប្តូរទៅទីតាំង៖', 'Move to location:')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
@@ -762,7 +806,7 @@
         bn.classList.toggle('need', q.qty === '' && !el.disabled);
       });
       const av = act ? $('#' + act).value : '';
-      $('#mDisp span').textContent = av || '0';
+      $('#mDisp span').textContent = padShow(ex[act], av);
       $('#mDisp').classList.toggle('empty', !av);
       $('#mDisp').classList.toggle('need', q.qty === '');
       $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
@@ -778,28 +822,36 @@
       const after = u && !empty && isFinite(Number(q.qty)) ? round3(isIn ? u.book + Number(q.qty) : u.book - Number(q.qty)) : null;
       $('#mAfter').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : `${T('សមតុល្យក្រោយ', 'Balance after')}: <b>${fmtQty(after)} ${esc(u.uom)}</b>`;
       $('#mSave').disabled = !!bad;
+      // Bundle summary from Pcs per bundle in the material master (Kim, 20 Nov).
+      $('#mSum').innerHTML = u ? `<span>${T('ស្តុក', 'On hand')}</span><b>${bdTxt(u.book, u) || fmtQty(u.book) + ' ' + esc(u.uom)}</b>${bdTxt(u.book, u) ? `<small>${fmtQty(u.book)} ${esc(u.uom)}</small>` : ''}`
+        + (after != null && !bad && bdTxt(after, u) ? `<small class="mh-after">${T('ក្រោយ', 'After')}: ${bdTxt(after, u)}</small>` : '') : '';
       m.qty = q.qty; m.unit = u;
     };
     let act = null;
+    const ex = {};
     document.querySelectorAll('.form input, .form select').forEach(el => { if (el.id !== 'mMat') { el.oninput = refresh; el.onchange = refresh; } });
     document.querySelectorAll('#mSeg [data-box]').forEach(bn => { bn.onclick = () => { act = bn.dataset.box; refresh(); }; });
     $('#mPad').onclick = e => {
       const k = e.target.closest('[data-k]'); if (!k || k.disabled || !act) return;
-      const el = $('#' + act), key = k.dataset.k; let v = el.value;
+      const el = $('#' + act);
       if (el.disabled) return;
-      if (key === '⌫') v = v.slice(0, -1);
-      else if (key === '.') { if (v.indexOf('.') >= 0) return; v = v ? v + '.' : '0.'; }
-      else { if (v.replace('.', '').length >= 9) return; v = v === '0' ? key : v + key; }
-      el.value = v; refresh();
+      ex[act] = padPress(ex[act] != null ? ex[act] : el.value, k.dataset.k, act === 'mKgIn');
+      el.value = padEval(ex[act]); refresh();
     };
     $('#mCalc').onclick = () => {
       if (!act || $('#' + act).disabled) return;
       const bn = document.querySelector(`#mSeg [data-box="${act}"] span`);
-      openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { $('#' + act).value = act === 'mKgIn' ? String(v) : String(Math.round(v)); refresh(); });
+      openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { $('#' + act).value = act === 'mKgIn' ? String(v) : String(Math.round(v)); ex[act] = null; refresh(); });
     };
 
     // Material picker: type part of the code or description (any order of words), tap an item.
-    const choose = p => { m.pick = p; $('#mMat').value = pickText(p); $('#mSug').hidden = true; refresh(); };
+    const choose = p => {
+      m.pick = p; $('#mMat').value = pickText(p); $('#mSug').hidden = true;
+      // Batch = first 10 digits of the material code (Kim, 20 Nov), unless a batch was typed or scanned.
+      const auto = String(p.material || '').replace(/\D/g, '').slice(0, 10), bt = $('#mBatch').value.trim();
+      if (auto && (!m.batchUser || !bt || bt === m.autoBatch)) { $('#mBatch').value = auto; m.autoBatch = auto; m.batchUser = false; }
+      refresh();
+    };
     if (isIn) {
       const sug = $('#mSug');
       const show = () => {
@@ -816,7 +868,8 @@
       $('#mMat').oninput = () => { m.pick = null; show(); refresh(); };
       $('#mMat').onfocus = show;
       document.addEventListener('click', function off(e) { if (!document.body.contains(sug)) return document.removeEventListener('click', off); if (!e.target.closest('#mSug, #mMat')) sug.hidden = true; });
-      $('#mBatchScan').onclick = () => scanSheet(T('ស្កេន QR លេខបាច់', 'Scan the batch QR code'), text => { $('#mBatch').value = text.trim(); refresh(); }, 'D261119007');
+      $('#mBatchScan').onclick = () => scanSheet(T('ស្កេន QR លេខបាច់', 'Scan the batch QR code'), text => { $('#mBatch').value = text.trim(); m.batchUser = true; refresh(); }, 'D261119007');
+      $('#mBatch').addEventListener('input', () => { m.batchUser = true; });
     }
     // Product barcode: matched to a line of this bin (batch or material code), or for IN to a Product Master material.
     $('#mScan').onclick = () => scanSheet(T('ស្កេនបាកូដទំនិញ', 'Scan the product barcode'), text => {
@@ -824,7 +877,7 @@
       const i = lines.findIndex(l => (l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) || (l.material && up.indexOf(String(l.material).toUpperCase()) >= 0));
       if (isIn) {
         const l = lines[i], p = products().find(x => up.indexOf(String(x.material).toUpperCase()) >= 0 || (l && String(x.material).toUpperCase() === String(l.material).toUpperCase()));
-        if (p) { if (l && l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) $('#mBatch').value = l.batch; choose(p); }
+        if (p) { if (l && l.batch && up.indexOf(String(l.batch).toUpperCase()) >= 0) { $('#mBatch').value = l.batch; m.batchUser = true; } choose(p); }
         else { $('#mMat').value = text; m.pick = null; $('#mMat').focus(); toast(T('រកមិនឃើញក្នុង Product Master', 'Not found in the Product Master')); refresh(); }
         return;
       }
@@ -835,8 +888,11 @@
     // Reference barcode (Kim, 14 Nov): scan the GR / PO / DN barcode instead of typing it.
     if ($('#mRefScan')) $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
     if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនទីតាំងទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
+    histBox($('#mRef'), isIn ? 'ref_in' : 'ref_out', refresh); histBox($('#mBatch'), 'batch', () => { m.batchUser = true; refresh(); }); histBox($('#mTo'), 'bin', refresh);
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
-    $('#mSave').onclick = () => { const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
+    $('#mSave').onclick = () => {
+      if ($('#mRef')) histAdd(isIn ? 'ref_in' : 'ref_out', $('#mRef').value); if ($('#mBatch')) histAdd('batch', $('#mBatch').value); if ($('#mTo')) histAdd('bin', $('#mTo').value);
+      const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
     refresh();
   }
 
@@ -936,7 +992,7 @@
       <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងទីតាំង', 'Count every SKU in this bin') : T('ចេញស្តុកពីទីតាំង', 'Stock out from this bin')}</div></section>
       ${isCount ? `<section class="card">${rows}
         <div id="cPad"><div class="kdisp" id="cDisp"><button type="button" class="calcb" id="cCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
-        <div class="kpad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" data-k="${k}">${k}</button>`).join('')}</div></div></section>`
+        <div class="kpad">${padHtml()}</div></div></section>`
         : `<section class="card" style="overflow-x:auto"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>${rows}</table></section>`}
       <section class="card" id="photoBox" hidden>
         <div class="photo" id="photoRow"><label class="btn ghost shrink" for="photoIn" style="margin:0;cursor:pointer">📷 ${T('ថតរូប', 'Take photo')}<input id="photoIn" type="file" accept="image/*" capture="environment" hidden></label>
@@ -970,7 +1026,7 @@
       });
       if (isCount && cAct) {
         const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), v = el ? el.value : '';
-        $('#cDisp span').textContent = v || '0';
+        $('#cDisp span').textContent = padShow(cEx[cAct.i + ':' + cAct.f], v);
         $('#cDisp').classList.toggle('empty', !v);
         $('#cPad [data-k="."]').disabled = cAct.f !== 'kg';
       }
@@ -983,21 +1039,20 @@
       $('#submit').disabled = !ok || (needPhoto && !S.photo) || (!isCount && !anyOut());
     };
     // Form 5 on the count screen (Kim, 19 Nov): tap Bundle / Kg / Pcs of a line, the keypad moves under that line.
+    const cEx = {};
     let cAct = isCount && (b.lines || []).length ? { i: 0, f: isKg((b.lines[0] || {}).uom) ? 'kg' : 'pieces' } : null;
     const cMove = () => { const ln = document.querySelector(`.cline[data-line="${cAct.i}"]`); if (ln && $('#cPad').parentNode !== ln) ln.appendChild($('#cPad')); };
     if (isCount && cAct) {
       document.querySelectorAll('.cline .seg [data-box]').forEach(bn => { bn.onclick = () => { cAct = { i: Number(bn.dataset.i), f: bn.dataset.box }; cMove(); refresh(); }; });
       $('#cPad .kpad').onclick = e => {
         const k = e.target.closest('[data-k]'); if (!k || k.disabled) return;
-        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), key = k.dataset.k; let v = el.value;
-        if (key === '⌫') v = v.slice(0, -1);
-        else if (key === '.') { if (v.indexOf('.') >= 0) return; v = v ? v + '.' : '0.'; }
-        else { if (v.replace('.', '').length >= 9) return; v = v === '0' ? key : v + key; }
-        el.value = v; refresh();
+        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), kk = cAct.i + ':' + cAct.f;
+        cEx[kk] = padPress(cEx[kk] != null ? cEx[kk] : el.value, k.dataset.k, cAct.f === 'kg');
+        el.value = padEval(cEx[kk]); refresh();
       };
       $('#cCalc').onclick = () => {
         const bn = document.querySelector(`.seg [data-i="${cAct.i}"][data-box="${cAct.f}"] span`);
-        openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`).value = cAct.f === 'kg' ? String(v) : String(Math.round(v)); refresh(); });
+        openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`).value = cAct.f === 'kg' ? String(v) : String(Math.round(v)); cEx[cAct.i + ':' + cAct.f] = null; refresh(); });
       };
       cMove();
     } else if ($('#cPad')) $('#cPad').hidden = true;
