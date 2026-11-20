@@ -390,6 +390,10 @@
   const toCsv = rows => rows.map(r => r.map(v => (/[",]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v)).join(',')).join('\n');
   const SL = { match: ['ត្រូវគ្នា', 'Match'], var: ['ខុសគ្នា', 'Variance'], sap: ['មានតែក្នុង SAP', 'Only in SAP'], digital: ['មានតែក្នុងកាតស្តុក', 'Only in digital'] };
 
+  // SheetJS (already in the repo for Scale and Data Entry), loaded only when an Excel file is chosen.
+  let xlsxP = null;
+  const xlsxLib = () => (window.XLSX ? Promise.resolve(window.XLSX) : (xlsxP = xlsxP || new Promise((ok, no) => {
+    const sc = document.createElement('script'); sc.src = '../vendor/xlsx.mini.min.js'; sc.onload = () => (window.XLSX ? ok(window.XLSX) : no()); sc.onerror = () => { xlsxP = null; no(); }; document.head.appendChild(sc); })));
   function sap() {
     wide();
     const ok = R.rows.length && R.map.material >= 0 && R.map.qty >= 0;
@@ -401,7 +405,7 @@
     view(`
       <h2 class="ptitle">${T('នាំចូល SAP និងផ្ទៀងផ្ទាត់', 'SAP import and reconciliation')}</h2>
       <section class="card">
-        <div class="fbar"><label class="btn sm file">⬆ ${T('ជ្រើសឯកសារ CSV ពី SAP', 'Choose SAP CSV file')}<input type="file" id="sapFile" accept=".csv,.txt,text/csv" hidden></label>
+        <div class="fbar"><label class="btn sm file">⬆ ${T('ជ្រើសឯកសារ Excel ឬ CSV ពី SAP', 'Choose SAP Excel or CSV file')}<input type="file" id="sapFile" accept=".csv,.txt,.xlsx,.xlsm,.xls,text/csv" hidden></label>
           ${DEMO ? `<button type="button" class="btn ghost sm" data-sample="mb52">${T('គំរូ MB52', 'Sample MB52')}</button>
           <button type="button" class="btn ghost sm" data-sample="ewm">${T('គំរូ EWM (មានទីតាំង)', 'Sample EWM (with bins)')}</button>` : ''}</div>
         <details class="paste"><summary>${T('ឬបិទភ្ជាប់ពី Excel', 'or paste from Excel')}</summary><textarea id="sapPaste" rows="4" placeholder="Material&#9;Batch&#9;Storage Location&#9;Unrestricted"></textarea>
@@ -409,7 +413,7 @@
         ${R.error ? `<p class="bad">⚠️ ${esc(R.error)}</p>` : ''}
         ${R.rows.length ? `<p class="muted">📄 <b>${esc(R.name)}</b> · ${R.rows.length} ${T('ជួរ', 'rows')} · ${T('នាំចូលនៅ', 'snapshot')} ${esc(R.at)}${res && res.bad ? ` · <span class="bad">${res.bad} ${T('ជួរមិនអាចអាន', 'rows skipped (no material or quantity)')}</span>` : ''}</p>
           <div class="mapgrid">${FIELDS.map(f => `<label>${f[1]}${f[3] ? ' *' : ''}<select data-map="${f[0]}"${f[3] && R.map[f[0]] < 0 ? ' class="need"' : ''}><option value="-1">—</option>${R.headers.map((h, i) => `<option value="${i}"${R.map[f[0]] === i ? ' selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}</div>`
-        : `<p class="muted">${T('នាំចេញ MB52 ឬ EWM ពី SAP ជា CSV រួចជ្រើសឯកសារនៅទីនេះ។ ', 'Export MB52 or EWM stock from SAP as CSV (Excel: Save as CSV), then choose the file here or paste the rows.')}</p>`}
+        : `<p class="muted">${T('នាំចេញ MB52 ឬ EWM ពី SAP ជា Excel ឬ CSV រួចជ្រើសឯកសារនៅទីនេះ (Excel អានសន្លឹកទីមួយ)។ ', 'Export MB52 or EWM stock from SAP to Excel or CSV, then choose the file here (Excel: the first sheet is read) or paste the rows.')}</p>`}
       </section>
       ${res ? `
       <div class="dash-kpis">
@@ -426,7 +430,13 @@
           <td class="num ${x.variance < 0 ? 'out' : x.variance > 0 ? 'in' : ''}"><b>${x.variance > 0 ? '+' : ''}${fmtQty(x.variance)}</b></td><td>${esc(x.uom)}</td><td><span class="st st-${x.status}">${T(SL[x.status][0], SL[x.status][1])}</span></td></tr>`).join('')
           || `<tr><td class="muted">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</table></section>
       <p class="muted">${T('ខុសគ្នា = កាតស្តុក − SAP។ ទិន្នន័យ SAP មិនដែលសរសេរជាន់លើស្តុកក្នុងកាតស្តុកទេ។ ជួរខុសគ្នាត្រូវពិនិត្យដោយការរាប់។', 'Variance = Digital − SAP. SAP figures never overwrite the digital balance. A variance is checked with a count.')}</p>` : ''}`);
-    $('#sapFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => loadSap(f.name, String(rd.result)); rd.readAsText(f); };
+    // Excel files too (Kim, 20 Nov): .xlsx / .xls read from the FIRST sheet, turned into CSV for the same import.
+    $('#sapFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader();
+      if (/\.(xlsx|xlsm|xls)$/i.test(f.name)) {
+        rd.onload = () => xlsxLib().then(X => { const wb = X.read(new Uint8Array(rd.result), { type: 'array' }); const sh = wb.Sheets[wb.SheetNames[0]];
+          loadSap(f.name + ' · ' + wb.SheetNames[0], X.utils.sheet_to_csv(sh, { blankrows: false })); }, () => toast(T('មិនអាចអាន Excel បានទេ', 'Could not read the Excel file')));
+        rd.readAsArrayBuffer(f);
+      } else { rd.onload = () => loadSap(f.name, String(rd.result)); rd.readAsText(f); } };
     $$('[data-sample]').forEach(b => { b.onclick = () => loadSap(b.dataset.sample === 'mb52' ? 'MB52_sample.csv' : 'EWM_stock_sample.csv', toCsv(SAMPLE[b.dataset.sample]())); });
     $('#usePaste').onclick = () => { const t = $('#sapPaste').value; if (t.trim()) loadSap(T('ទិន្នន័យបិទភ្ជាប់', 'Pasted data'), t); };
     $$('[data-map]').forEach(s => { s.onchange = () => { R.map[s.dataset.map] = Number(s.value); sap(); }; });
