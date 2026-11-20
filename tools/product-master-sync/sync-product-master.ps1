@@ -35,9 +35,9 @@ try {
   $nr = $v.GetLength(0); $nc = $v.GetLength(1); $hr = 0
   for ($r = 1; $r -le [Math]::Min(15, $nr) -and -not $hr; $r++) { for ($c = 1; $c -le $nc; $c++) { if ("$($v[$r, $c])".Trim() -eq 'Material Code') { $hr = $r } } }
   if (-not $hr) { throw 'Header "Material Code" not found in sheet Product Master' }
-  $want = 'Material Group L4', 'Material Code', 'Material Description', 'Class', 'Size', 'Pcs/Bundle', 'Kg/PC', 'UoM'
-  $cols = @{}
-  for ($c = 1; $c -le $nc; $c++) { $h = "$($v[$hr, $c])".Trim(); if ($want -contains $h) { $cols[$h] = $c } }
+  # Every column with a header is sent (Kim, 20 Nov: the Product menu shows them all); $head keeps the Excel order.
+  $cols = @{}; $head = New-Object System.Collections.ArrayList
+  for ($c = 1; $c -le $nc; $c++) { $h = "$($v[$hr, $c])".Trim(); if ($h -and -not $cols.ContainsKey($h)) { $cols[$h] = $c; [void]$head.Add($h) } }
   $inv = [Globalization.CultureInfo]::InvariantCulture
   $rows = New-Object System.Collections.ArrayList
   for ($r = $hr + 1; $r -le $nr; $r++) {
@@ -48,7 +48,7 @@ try {
     foreach ($h in $cols.Keys) { $x = $v[$r, $cols[$h]]; if ($x -is [double]) { $o[$h] = ([decimal]$x).ToString($inv) } else { $o[$h] = "$x".Trim() } }
     [void]$rows.Add($o)
   }
-  $body = @{ action = 'pmSync'; key = $key; file = $file.Name; rows = $rows } | ConvertTo-Json -Depth 4 -Compress
+  $body = @{ action = 'pmSync'; key = $key; file = $file.Name; head = $head; rows = $rows } | ConvertTo-Json -Depth 4 -Compress
   $res = Invoke-RestMethod -Uri $url -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($body)) -ContentType 'text/plain; charset=utf-8'
   if (-not $res.ok) { throw "App said: $($res.error)" }
   Set-Content $stamp $sig -Encoding UTF8

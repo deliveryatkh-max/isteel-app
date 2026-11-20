@@ -133,11 +133,17 @@ eq([r.deleted, soh.length, led[led.length - 1][lh.indexOf('Out')]], [true, befor
 
 // Product Master synced from Kim's Excel (20 Nov): rows replace the tab, Kg/PC + UoM typed in the tab are kept.
 const post = b => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(b) } }).getContent());
-const xrows = [{ 'Material Group L4': 'Deformed Bar', 'Material Code': '1500000000', 'Material Description': 'Debar SD390 12mm ISI', Class: 'A', Size: '12mm', 'Pcs/Bundle': 240 }];
+const xrows = [{ 'Material Group L4': 'Deformed Bar', 'Material Code': '1500000000', 'Material Description': 'Debar SD390 12mm ISI', Class: 'A', Size: '12mm', 'Pcs/Bundle': 240, 'Material Group L1': 'FG Trading', Brand: 'ISI', 'CBM/Bundle (m³)': '0.5' }];
 for (let i = 1; i < 12; i++) xrows.push({ 'Material Group L4': 'Pipe', 'Material Code': 'P' + i, 'Material Description': 'Pipe ' + i, 'Pcs/Bundle': 100 });
 eq(post({ action: 'pmSync', key: 'bad', rows: xrows }).ok, false, 'sync refused with a wrong key');
 eq(post({ action: 'pmSync', key: 'x', rows: xrows.slice(0, 3) }).ok, false, 'sync refused when the Excel looks empty');
 r = post({ action: 'pmSync', key: 'x', rows: xrows, file: 'Product - 2026-11.xlsx' });
 const pmg = sheets['Product Master'].grid;
-eq([r.ok, r.data.rows, pmg.length, pmg[1][1], pmg[1][5], pmg[1][6], pmg[1][7]], [true, 12, 13, '1500000000', '240', '10.66', 'PC'], 'Excel rows replace the tab; old Kg/PC and UoM kept');
+const ph = pmg[0], pc = n => pmg[1][ph.indexOf(n)];
+eq([r.ok, r.data.rows, pmg.length, pc('Material'), pc('PC/Bundle'), pc('Kg/PC'), pc('UoM'), pc('Material Group L1'), pc('Brand'), pc('CBM/Bundle (m³)')],
+  [true, 12, 13, '1500000000', '240', '10.66', 'PC', 'FG Trading', 'ISI', '0.5'], 'Excel rows replace the tab; old Kg/PC and UoM kept; every Excel column kept');
+const pt = call('products', {}, admin);
+eq([pt.head[0], pt.rows.length, pt.head.indexOf('CBM/Bundle (m³)') > 0], ['Material', 12, true], 'Product menu gets the whole tab');
+let refused = false; try { call('products', {}, op); } catch (e) { refused = /NOACCESS/.test(e.message); }
+eq(refused, true, 'Product menu refused for a plain user');
 console.log('Stock Count flow tests: ' + pass + ' passed');
