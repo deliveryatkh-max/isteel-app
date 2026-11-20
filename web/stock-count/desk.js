@@ -127,7 +127,7 @@
   }
 
   // ------------------------------------------------------------------ stock list
-  const F = { q: '', wh: '', mq: '', mt: '', onlyVar: true, zone: '', grp: '', sloc: '', uom: '', qty: '', sd: '', cd: '' };
+  const F = { q: '', wh: '', mq: '', mt: '', mfrom: dAgo(0).slice(0, 8) + '01', mto: dAgo(0), mwh: '', mzone: '', mgrp: '', msloc: '', mdir: '', onlyVar: true, zone: '', grp: '', sloc: '', uom: '', qty: '', sd: '', cd: '' };
   const hit = (q, vals) => !q || vals.join(' ').toLowerCase().indexOf(q.toLowerCase()) >= 0;
   // Stock list filters (Kim picked list mockup 1, 20 Nov): Warehouse, Bin Zone, Material Group, SLoc, UoM, Stock,
   // Stock Date (last IN of the line, from the ledger) and Count Date (last count, Stock On Hand). Chips show what is on.
@@ -242,23 +242,51 @@
         ['qin', 'ចូល', 'In', 1], ['qout', 'ចេញ', 'Out', 1], ['net', 'សុទ្ធ', 'Net', 1]],
         { rows: ['date'], cols: ['type'], vals: [{ k: 'net', agg: 'sum' }], filters: {} }, moves);
     }
-    const rows = newest().filter(r => (!F.mt || r.type === F.mt) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user]));
+    // Movements filters + all columns (Kim, 20 Nov: "put all the columns, I will hide it later"; no User filter).
+    const mon = dAgo(0).slice(0, 8) + '01';
+    const QD = [['today', T('ថ្ងៃនេះ', 'Today'), dAgo(0), dAgo(0)], ['7', T('៧ ថ្ងៃ', '7 days'), dAgo(6), dAgo(0)], ['month', T('ខែនេះ', 'This month'), mon, dAgo(0)], ['all', T('ទាំងអស់', 'All'), '', '']];
+    const ppbOf = r => { const p = (S.products || []).find(x => String(x.material).toUpperCase() === String(r.material).toUpperCase()); const l = (D.stock || []).find(x => String(x.material).toUpperCase() === String(r.material).toUpperCase());
+      return { ppb: Number((p && p.ppb) || (l && l.pcsPerBundle)) || 1, kg: Number((p && p.kg) || (l && l.kgPerPc)) || 0 }; };
+    const bdOf = (q, r) => { const u = ppbOf(r); if (!(u.ppb > 1)) return ''; const pcs = SC.isKg(r.uom) ? (u.kg ? q / u.kg : null) : q; if (pcs == null) return '';
+      const bd = Math.floor(pcs / u.ppb), rem = Math.round(pcs - bd * u.ppb); return `${fmtQty(bd)} ${T('បាច់', 'bd')}${rem ? ' + ' + fmtQty(rem) : ''}`; };
+    const all = newest().map(r => Object.assign({}, r, { wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r) }));
+    const uq = f => Array.from(new Set(all.map(r => r[f]).filter(Boolean))).sort();
+    const MF = [['mt', T('ប្រភេទ', 'Type'), types.map(t => [t, tLabel(t)])], ['mwh', T('ឃ្លាំង', 'Warehouse'), uq('wh').map(v => [v, v])], ['mzone', T('តំបន់', 'Bin Zone'), uq('zone').map(v => [v, v])],
+      ['mgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), uq('grp').map(v => [v, v])], ['msloc', 'SLoc', uq('sloc').map(v => [v, v])], ['mdir', T('ចូល / ចេញ', 'Direction (In / Out)'), [['in', T('ចូល', 'In')], ['out', T('ចេញ', 'Out')]]]];
+    const rows = all.filter(r => (!F.mt || r.type === F.mt) && (!F.mwh || r.wh === F.mwh) && (!F.mzone || r.zone === F.mzone) && (!F.mgrp || r.grp === F.mgrp) && (!F.msloc || String(r.sloc) === F.msloc)
+      && (!F.mdir || (F.mdir === 'in' ? Number(r.qtyIn) > 0 : Number(r.qtyOut) > 0)) && (!F.mfrom || String(r.date) >= F.mfrom) && (!F.mto || String(r.date) <= F.mto)
+      && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user, r.otherBin, r.remark]));
+    const sumUom = f => { const pc = rows.filter(r => !SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0), kg = rows.filter(r => SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0);
+      return [pc ? fmtQty(round3(pc)) + ' PC' : '', kg ? fmtQty(round3(kg)) + ' KG' : ''].filter(Boolean).join('<br>'); };
+    const nIn = rows.filter(r => Number(r.qtyIn) > 0).length, nOut = rows.filter(r => Number(r.qtyOut) > 0).length;
+    const H = [T('ថ្ងៃ', 'Date'), T('ម៉ោង', 'Time'), T('លេខ', 'Txn ID'), T('ប្រភេទ', 'Type'), T('ឃ្លាំង', 'Warehouse'), T('ទីតាំង', 'Bin'), T('តំបន់', 'Bin Zone'), T('ពី / ទៅទីតាំង', 'From / To bin'),
+      T('សម្ភារៈ', 'Material'), T('បរិយាយ', 'Description'), T('ក្រុមសម្ភារៈ', 'Material Group'), 'Batch', 'SLoc', T('ចូល', 'In'), T('ចេញ', 'Out'), 'UoM', T('សមតុល្យ', 'Balance'), T('សមតុល្យ (បាច់)', 'Balance (bundles)'),
+      T('ឯកសារយោង', 'Reference'), T('កំណត់សម្គាល់', 'Remark'), T('អ្នកប្រើ', 'User')];
+    const qOn = (QD.find(q => q[2] === F.mfrom && q[3] === F.mto) || [''])[0];
     view(`
       <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
-        () => { F.mt = ''; F.mq = ''; moves(); })}
-      ${FB.panel('moves', FB.field(T('ប្រភេទ', 'Type'), `<select id="mt"><option value="">${T('ទាំងអស់', 'All')}</option>${types.map(t => `<option value="${t}"${t === F.mt ? ' selected' : ''}>${esc(tLabel(t))}</option>`).join('')}</select>`)
-        + FB.search('mq', T('ស្វែងរក ទីតាំង សម្ភារៈ ឯកសារយោង', 'Search bin, material, reference'), F.mq))}</div>
-      <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'rows')} · ${T('ចូល', 'In')} <b>${rows.filter(r => isIn(r.type)).length}</b> · ${T('ចេញ', 'Out')} <b>${rows.filter(r => !isIn(r.type)).length}</b></div>
-      <section class="screp"><table class="rep"><thead><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('សមតុល្យ', 'Balance')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr></thead><tbody>
-        ${rows.map(r => `<tr><td>${esc(r.date)} <small class="muted">${esc(r.time)}</small></td><td class="mono">${esc(r.id)}</td><td><span class="pill ${isIn(r.type) ? 'in' : 'out'}">${esc(tLabel(r.type))}</span></td><td>${esc(r.bin)}${r.otherBin ? ` <small class="muted">${isIn(r.type) ? '←' : '→'} ${esc(r.otherBin)}</small>` : ''}</td><td>${esc(r.material)}</td><td>${esc(r.batch)}</td>${qtyCell(r)}<td class="num">${fmtQty(r.balance)} ${esc(r.uom)}</td><td>${esc(r.reference)}</td><td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')
-          || `<tr><td class="muted" colspan="10">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody></table></section>
+        () => { MF.forEach(f => { F[f[0]] = ''; }); F.mq = ''; F.mfrom = F.mto = ''; moves(); })}
+      ${FB.panel('moves', FB.seg(QD.map(q => [q[0], q[1]]), qOn, 'mqd') + FB.range('mFrom', 'mTo', F.mfrom, F.mto) + FB.show('mGo')
+        + MF.map(f => FB.field(f[1], `<select id="${f[0]}"><option value="">${T('ទាំងអស់', 'All')}</option>${f[2].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[0]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`)).join('')
+        + FB.search('mq', T('ស្វែងរក ទីតាំង សម្ភារៈ Batch ឯកសារយោង', 'Search bin, material, batch, reference, Txn ID'), F.mq))}</div>
+      <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'rows')} · ${T('ចូល', 'In')} <b>${nIn}</b> · ${T('ចេញ', 'Out')} <b>${nOut}</b> · <b>${new Set(rows.map(r => r.user).filter(Boolean)).size}</b> ${T('អ្នកប្រើ', 'users')}</div>
+      <section class="screp"><table class="rep"><thead><tr>${H.map((h, i) => `<th${i === 13 || i === 14 || i === 16 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
+        ${rows.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td class="mono">${esc(r.id)}</td><td><span class="pill ${isIn(r.type) ? 'in' : 'out'}">${esc(tLabel(r.type))}</span></td><td>${esc(r.wh)}</td>
+          <td class="mono">${esc(r.bin)}</td><td>${esc(r.zone)}</td><td class="mono muted">${r.otherBin ? (isIn(r.type) ? '← ' : '→ ') + esc(r.otherBin) : ''}</td><td class="mono">${esc(r.material)}</td><td>${esc(r.desc)}</td><td>${esc(r.grp)}</td>
+          <td class="mono">${esc(r.batch)}</td><td>${esc(r.sloc)}</td><td class="num in">${Number(r.qtyIn) ? '+' + fmtQty(r.qtyIn) : ''}</td><td class="num out">${Number(r.qtyOut) ? '-' + fmtQty(r.qtyOut) : ''}</td><td>${esc(r.uom)}</td>
+          <td class="num mono">${fmtQty(r.balance)}</td><td>${bdOf(Number(r.balance) || 0, r)}</td><td>${esc(r.reference)}</td><td>${esc(r.remark || '')}</td><td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="21">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th>${'<th></th>'.repeat(12)}<th class="num mono">${sumUom('qtyIn')}</th><th class="num mono">${sumUom('qtyOut')}</th>${'<th></th>'.repeat(6)}</tr></tfoot></table></section>
       ${oldNote()}
       <p class="muted">${T('ជួរនីមួយៗមិនអាចកែ ឬលុបបានទេ។ កំហុសត្រូវកែដោយប្រតិបត្តិការថ្មី។', 'Rows are never edited or deleted. A mistake is corrected with a new transaction.')}</p>`);
     pvWire('moves', moves);
     keep('#mq', v => { F.mq = v; moves(); });
-    $('#mt').onchange = e => { F.mt = e.target.value; moves(); };
-    if ($('#exp')) $('#exp').onclick = () => download('stock-ledger.csv', [['Txn ID', 'Date', 'Time', 'Type', 'Bin', 'Material', 'Description', 'Batch', 'SLoc', 'UoM', 'In', 'Out', 'Balance', 'Reference', 'Other Bin', 'User']]
-      .concat(rows.map(r => [r.id, r.date, r.time, r.type, r.bin, r.material, r.desc, r.batch, r.sloc, r.uom, r.qtyIn, r.qtyOut, r.balance, r.reference, r.otherBin, r.user])));
+    MF.forEach(f => { $('#' + f[0]).onchange = e => { F[f[0]] = e.target.value; moves(); }; });
+    $$('[data-mqd]').forEach(bn => { bn.onclick = () => { const q = QD.find(x => x[0] === bn.dataset.mqd); F.mfrom = q[2]; F.mto = q[3]; moves(); }; });
+    $('#mGo').onclick = () => { F.mfrom = $('#mFrom').value; F.mto = $('#mTo').value; moves(); };
+    $('#mFrom').onchange = $('#mTo').onchange = () => { F.mfrom = $('#mFrom').value; F.mto = $('#mTo').value; moves(); };
+    if ($('#exp')) $('#exp').onclick = () => download('stock-ledger.csv', [['Date', 'Time', 'Txn ID', 'Type', 'Warehouse', 'Bin', 'Bin Zone', 'From / To bin', 'Material', 'Description', 'Material Group', 'Batch', 'SLoc', 'In', 'Out', 'UoM', 'Balance', 'Balance (bundles)', 'Reference', 'Remark', 'User']]
+      .concat(rows.map(r => [r.date, r.time, r.id, r.type, r.wh, r.bin, r.zone, r.otherBin, r.material, r.desc, r.grp, r.batch, r.sloc, r.qtyIn, r.qtyOut, r.uom, r.balance, bdOf(Number(r.balance) || 0, r), r.reference, r.remark, r.user])));
   }
 
   // ------------------------------------------------------------------ count review (supervisor approves, controller posts the adjustment)
