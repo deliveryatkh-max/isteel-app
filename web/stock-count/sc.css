@@ -410,3 +410,19 @@ table.rep tfoot th.num { text-align: right; }
   :root:not([data-theme="light"]) .pill.in { background: #123d24; color: #9fe0b5; }
 }
 @media (max-width: 640px) { .fb-panel > .fb-field { flex: 1 1 calc(50% - 6px); min-width: 0; } .fb-panel > .fb-field select { width: 100%; min-width: 0; } }
+
+/* Move screen (Kim, 20 Nov): frozen header, bundle summary, keypad with × like a calculator, typing history */
+.mhero.vm-keep { position: sticky; top: var(--barh, 56px); z-index: 4; box-shadow: 0 6px 12px -8px rgba(1, 30, 65, .3); }
+.mh-r { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
+.mh-sum { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.mh-sum span { font-size: 12px; color: var(--muted); }
+.mh-sum b { font-size: 17px; color: var(--ink); }
+.mh-sum small { font-size: 12.5px; color: var(--muted); }
+.mh-sum .mh-after { color: var(--blue, #2563eb); font-weight: 700; }
+.kpad { grid-template-columns: repeat(4, 1fr); }
+.kpad button.op { background: #e8f1fb; color: #011e41; }
+.kpad button.eq { grid-column: span 2; background: var(--navy); color: #fff; border-color: var(--navy); }
+.sug.hist button { grid-template-columns: auto 1fr; }
+.sug.hist b { font-size: 15px; }
+:root[data-theme="dark"] .kpad button.op { background: #1c3150; color: #e8eef8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kpad button.op { background: #1c3150; color: #e8eef8; } }
