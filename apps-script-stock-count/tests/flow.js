@@ -69,7 +69,6 @@ eq([r.duplicate, book('BIN-A', '1100000231'), ledger().length], [true, 4720.5, 1
 r = call('move', Object.assign({ requestId: 'r2', type: 'OUT', qty: 50, reference: 'DN-9' }, pipe));
 eq([r.balance, book('BIN-A', 'PIPE-25')], [150, 150], 'OUT subtracts');
 fails(() => call('move', Object.assign({ requestId: 'r3', type: 'OUT', qty: 151, reference: 'DN-9' }, pipe)), 'BAD', 'OUT more than balance rejected');
-fails(() => call('move', Object.assign({ requestId: 'r4', type: 'OUT', qty: 10, reference: '' }, pipe)), 'BAD', 'reference required');
 fails(() => call('move', Object.assign({ requestId: 'r5', type: 'OUT', qty: 1.5, reference: 'DN' }, pipe)), 'BAD', 'pieces must be whole');
 fails(() => call('move', Object.assign({ requestId: 'r6', type: 'OUT', qty: 0, reference: 'DN' }, pipe)), 'BAD', 'zero rejected');
 eq([book('BIN-A', 'PIPE-25'), ledger().length], [150, 2], 'rejected movements change nothing');

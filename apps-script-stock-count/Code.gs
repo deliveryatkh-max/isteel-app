@@ -471,7 +471,7 @@ function newLine_(who, bin, p) {
   return s;
 }
 
-// Stock IN or Stock OUT on one line of a bin. A reference document is required.
+// Stock IN or Stock OUT on one line of a bin. Reference document is optional (field hidden, Kim 20 Nov 2026).
 function move_(user, p) {
   const who = counter_(user);
   const dup = posted_(p.requestId);
@@ -479,7 +479,6 @@ function move_(user, p) {
   const type = String(p.type || '').toUpperCase();
   if (type !== 'IN' && type !== 'OUT') fail_('BAD', 'Unknown movement type.');
   const reference = clip_(p.reference, 60);
-  if (!reference) fail_('BAD', 'Enter the reference document.', 'សូមបញ្ចូលលេខឯកសារយោង។');
   const b = activeBin_(p.bin);
   let s = findLine_(stock_(b.bin), b.bin, p);
   if (!s && type === 'OUT') fail_('NOLINE', 'This material and batch is not in this bin.', 'សម្ភារៈ និងបាច់នេះមិនមានក្នុងទីតាំងនេះទេ។');
