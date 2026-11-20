@@ -1004,7 +1004,9 @@
         <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
       </tr>`).join('');
     view(`
-      <section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${isCount ? T('រាប់ស្តុកគ្រប់ប្រភេទក្នុងទីតាំង', 'Count every SKU in this bin') : T('ចេញស្តុកពីទីតាំង', 'Stock out from this bin')}</div></section>
+      ${isCount ? `<section class="card hero mhero vm-keep"><div class="mh-l"><div class="bin">${esc(b.bin)}</div><div class="mh-item" id="cHeroItem"></div></div>
+        <div class="mh-r"><span class="tbadge cnt">${T('រាប់ស្តុក', 'Count')}</span><div class="mh-sum" id="cSum"></div></div></section>`
+        : `<section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${T('ចេញស្តុកពីទីតាំង', 'Stock out from this bin')}</div></section>`}
       ${isCount ? `<section class="card">${rows}
         <div id="cPad"><div class="kdisp" id="cDisp"><button type="button" class="calcb" id="cCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
         <div class="kpad">${padHtml()}</div></div></section>`
@@ -1041,6 +1043,13 @@
       });
       if (isCount && cAct) {
         const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), v = el ? el.value : '';
+        // Header like Stock IN / OUT (Kim, 20 Nov): the line being counted, on hand and counted in bundles.
+        const hl = b.lines[cAct.i], hu = { uom: hl.uom, ppb: Number(hl.pcsPerBundle) || 1, kg: Number(hl.kgPerPc) || 0 };
+        const hc = { bundles: document.querySelector(`[data-i="${cAct.i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${cAct.i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${cAct.i}"][data-f="pieces"]`).value };
+        const hq = lineOk(hc) && comparable(hc, hl.uom) ? countedQty(hc, hl.uom, hl.pcsPerBundle) : null, hd = hq == null ? null : round3(hq - hl.book);
+        $('#cHeroItem').innerHTML = `<b>${esc(hl.material)}</b><span>${esc(hl.desc || '')}</span>${hl.batch ? `<span>Batch: ${esc(hl.batch)}</span>` : ''}`;
+        $('#cSum').innerHTML = `<span>${T('ស្តុក', 'On hand')}</span><b>${bdTxt(hl.book, hu) || fmtQty(hl.book) + ' ' + esc(hl.uom)}</b>${bdTxt(hl.book, hu) ? `<small>${fmtQty(hl.book)} ${esc(hl.uom)}</small>` : ''}`
+          + (hq != null ? `<small class="mh-after">${T('រាប់បាន', 'Counted')}: ${bdTxt(hq, hu) || fmtQty(hq) + ' ' + esc(hl.uom)}</small><small class="${hd < 0 ? 'out' : hd > 0 ? 'in' : ''}">${T('ខុសគ្នា', 'Diff')}: ${hd > 0 ? '+' : ''}${fmtQty(hd)} ${esc(hl.uom)}</small>` : '');
         $('#cDisp span').textContent = padShow(cEx[cAct.i + ':' + cAct.f], v);
         $('#cDisp').classList.toggle('expr', /[+−×÷]/.test(cEx[cAct.i + ':' + cAct.f] || ''));
         $('#cDisp').classList.toggle('empty', !v);
