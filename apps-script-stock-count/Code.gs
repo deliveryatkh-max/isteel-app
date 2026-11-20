@@ -50,6 +50,7 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
+    if (body.action === 'pmSync') return json_({ ok: true, data: pmSync_(body) });   // Kim's PC pushes the Excel Product Master (key, no sign-in)
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, body.payload || {}, user) };
     if (user.session) out.session = user.session;
@@ -280,6 +281,41 @@ function pmList_() {
     uom: String(get(r, ['uom', 'sapuom', 'baseuom', 'unit'])).toUpperCase() }));
   try { cache.put('pml', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
   return out;
+}
+// Product Master from Kim's Excel (Kim, 20 Nov 2026): OneDrive ...\Product Master (in use), sheet "Product Master".
+// A task on Kim's PC (tools/product-master-sync) posts the rows here with the PM_SYNC_KEY script property.
+// The tab is replaced by the Excel rows. Kg/PC and UoM are not in the Excel yet, so the values already typed in the
+// tab are kept for the same material (an Excel column named Kg/PC or UoM wins when it is there).
+function pmSync_(body) {
+  const key = prop_('PM_SYNC_KEY');
+  if (!key || String(body.key || '') !== key) fail_('AUTH', 'Wrong sync key.');
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (rows.length < 10) fail_('BAD', 'Too few Product Master rows (' + rows.length + '); nothing changed.');
+  const norm = h => String(h).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const pick = (r, names) => { for (const k in r) if (names.indexOf(norm(k)) >= 0 && r[k] !== '' && r[k] != null) return String(r[k]).trim(); return ''; };
+  const old = {};
+  objs_(SH.PM, PM_COLS).forEach(r => {
+    const m = pick(r, ['material', 'materialcode', 'sku']).toUpperCase();
+    if (m) old[m] = { kg: pick(r, ['kgpc', 'kgperpc', 'kgpcs', 'kgperpcs']), uom: pick(r, ['uom', 'sapuom', 'baseuom', 'unit']) };
+  });
+  const head = ['Material Group L4', 'Material', 'Description', 'ABC Class', 'Size', 'PC/Bundle', 'Kg/PC', 'UoM', 'Source'];
+  const seen = {};
+  const out = [];
+  rows.forEach(r => {
+    const m = pick(r, ['materialcode', 'material', 'sku']);
+    if (!m || seen[m.toUpperCase()]) return;
+    seen[m.toUpperCase()] = 1;
+    const o = old[m.toUpperCase()] || {};
+    out.push([pick(r, ['materialgroupl4', 'group']), m, pick(r, ['materialdescription', 'description']), pick(r, ['class', 'abcclass']), pick(r, ['size', 'pipesize']),
+      pick(r, ['pcsbundle', 'pcbundle', 'pcsperbundle']), pick(r, ['kgpc', 'kgperpc', 'weightpc']) || o.kg || '', (pick(r, ['uom', 'baseuom']) || o.uom || '').toUpperCase(), 'Excel ' + String(body.file || '').slice(0, 80)]);
+  });
+  const sh = sheet_(SH.PM, PM_COLS);
+  const lastRow = sh.getLastRow(), lastCol = Math.max(sh.getLastColumn(), head.length);
+  if (lastRow > 0) sh.getRange(1, 1, lastRow, lastCol).clearContent();
+  sh.getRange(1, 1, out.length + 1, head.length).setNumberFormat('@').setValues([head].concat(out));
+  try { CacheService.getScriptCache().remove('pml'); } catch (e) { /* cache gone already */ }
+  const now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+  return { rows: out.length, at: now };
 }
 // Product Master as { MATERIAL: { ppb, kg, desc, uom } }.
 function pm_() {
