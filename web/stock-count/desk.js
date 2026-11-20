@@ -398,9 +398,17 @@
     wide();
     const ok = R.rows.length && R.map.material >= 0 && R.map.qty >= 0;
     const res = ok ? reconcile() : null;
-    const vars = res ? res.list.filter(x => x.status !== 'match') : [];
-    if (res) lastSap = { at: R.at, variances: vars.length, name: R.name };
-    const shown = res ? (F.onlyVar ? vars : res.list) : [];
+    // Product filters like the Product menu (Kim, 20 Nov): L1–L4, Size, Grade, Brand, Class + search; the numbers follow the filters.
+    if (res) loadProducts();
+    const PI = {}, H = PT.head || [];
+    if (res && PT.head) { const mi = H.indexOf('Material'); PT.rows.forEach(r => { PI[String(r[mi]).toUpperCase()] = r; }); }
+    const pAt = (x, name) => { const r = PI[String(x.o.material || '').trim().toUpperCase()], i = H.indexOf(name); return r && i >= 0 ? r[i] : ''; };
+    const pfOk = (x, skip) => PF.every(f => f === skip || !SFV[f[0]] || pAt(x, f[0]) === SFV[f[0]]);
+    const list = res ? res.list.filter(x => pfOk(x) && (!sq || [x.o.bin, x.o.material, x.o.batch, x.o.sloc, x.desc].join(' ').toLowerCase().indexOf(sq.toLowerCase()) >= 0)) : [];
+    const sopts = f => Array.from(new Set(res.list.filter(x => pfOk(x, f)).map(x => pAt(x, f[0])).filter(Boolean))).sort();
+    const vars = list.filter(x => x.status !== 'match');
+    if (res) lastSap = { at: R.at, variances: res.list.filter(x => x.status !== 'match').length, name: R.name };
+    const shown = res ? (F.onlyVar ? vars : list) : [];
     const lv = res ? res.level.map(k => FIELDS.find(f => f[0] === k)[1]).join(' + ') : '';
     view(`
       <h2 class="ptitle">${T('នាំចូល SAP និងផ្ទៀងផ្ទាត់', 'SAP import and reconciliation')}</h2>
@@ -417,18 +425,22 @@
       </section>
       ${res ? `
       <div class="dash-kpis">
-        <div class="stat"><b>${res.list.length}</b><span>${T('ជួរប្រៀបធៀប', 'Lines compared')}</span></div>
-        <div class="stat in"><b>${res.list.length - vars.length}</b><span>${T('ត្រូវគ្នា', 'Match')}</span></div>
+        <div class="stat"><b>${list.length}</b><span>${T('ជួរប្រៀបធៀប', 'Lines compared')}</span></div>
+        <div class="stat in"><b>${list.length - vars.length}</b><span>${T('ត្រូវគ្នា', 'Match')}</span></div>
         <div class="stat ${vars.length ? 'out' : ''}"><b>${vars.length}</b><span>${T('ខុសគ្នា', 'Variances')}</span></div>
-        <div class="stat"><b>${res.list.length ? Math.round((res.list.length - vars.length) / res.list.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
+        <div class="stat"><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
       </div>
-      <div class="fbar"><span class="muted">${T('ប្រៀបធៀបតាម', 'Compared by')} <b>${esc(lv)}</b></span>
-        <label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>
-        ${can('export') ? `<button type="button" class="btn ghost sm" id="exp">⬇ CSV</button>` : ''}</div>
-      <section class="card scroll tall"><table class="lines hist"><tr>${res.level.map(k => `<th>${FIELDS.find(f => f[0] === k)[1]}</th>`).join('')}<th>${T('បរិយាយ', 'Description')}</th><th>${T('កាតស្តុក', 'Digital')}</th><th>SAP</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th></tr>
+      <div class="fb-wrap sapf">${FB.head('sapf', `<span class="muted">${T('ប្រៀបធៀបតាម', 'Compared by')} <b>${esc(lv)}</b></span>`,
+        `<label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
+        + (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '') + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`,
+        () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; sap(); })}
+      ${FB.panel('sapf', (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
+        : `<p class="muted">${PT.err ? T('តម្រងផលិតផល សម្រាប់អ្នកគ្រប់គ្រង និងប្រធានក្រុម', 'Product filters are for admins and supervisors') : T('កំពុងផ្ទុក…', 'Loading…')}</p>`)
+        + FB.search('sq', T('ស្វែងរក ទីតាំង សម្ភារៈ Batch', 'Search bin, material, batch'), sq))}</div>
+      <section class="screp"><table class="rep"><thead><tr>${res.level.map(k => `<th>${FIELDS.find(f => f[0] === k)[1]}</th>`).join('')}<th>${T('បរិយាយ', 'Description')}</th><th>${T('កាតស្តុក', 'Digital')}</th><th>SAP</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th></tr></thead><tbody>
         ${shown.map(x => `<tr>${res.level.map(k => `<td>${esc(String(x.o[k] == null ? '' : x.o[k]))}</td>`).join('')}<td>${esc(x.desc)}</td><td class="num">${x.digital == null ? '—' : fmtQty(x.digital)}</td><td class="num">${x.sap == null ? '—' : fmtQty(x.sap)}</td>
           <td class="num ${x.variance < 0 ? 'out' : x.variance > 0 ? 'in' : ''}"><b>${x.variance > 0 ? '+' : ''}${fmtQty(x.variance)}</b></td><td>${esc(x.uom)}</td><td><span class="st st-${x.status}">${T(SL[x.status][0], SL[x.status][1])}</span></td></tr>`).join('')
-          || `<tr><td class="muted">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</table></section>
+          || `<tr><td class="muted" colspan="${res.level.length + 6}">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</tbody></table></section>
       <p class="muted">${T('ខុសគ្នា = កាតស្តុក − SAP។ ទិន្នន័យ SAP មិនដែលសរសេរជាន់លើស្តុកក្នុងកាតស្តុកទេ។ ជួរខុសគ្នាត្រូវពិនិត្យដោយការរាប់។', 'Variance = Digital − SAP. SAP figures never overwrite the digital balance. A variance is checked with a count.')}</p>` : ''}`);
     // Excel files too (Kim, 20 Nov): .xlsx / .xls read from the FIRST sheet, turned into CSV for the same import.
     $('#sapFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader();
@@ -441,6 +453,9 @@
     $('#usePaste').onclick = () => { const t = $('#sapPaste').value; if (t.trim()) loadSap(T('ទិន្នន័យបិទភ្ជាប់', 'Pasted data'), t); };
     $$('[data-map]').forEach(s => { s.onchange = () => { R.map[s.dataset.map] = Number(s.value); sap(); }; });
     if ($('#onlyVar')) $('#onlyVar').onchange = e => { F.onlyVar = e.target.checked; sap(); };
+    PF.forEach((f, k) => { if ($('#sf' + k)) $('#sf' + k).onchange = e => { SFV[f[0]] = e.target.value; sap(); }; });
+    if ($('#sq')) keep('#sq', v => { sq = v; sap(); });
+    if (res) setTimeout(fitRep, 0);
     if ($('#exp')) $('#exp').onclick = () => download('sap-reconciliation.csv', [res.level.map(k => FIELDS.find(f => f[0] === k)[1]).concat(['Description', 'Digital', 'SAP', 'Variance', 'UoM', 'Result', 'SAP file', 'Snapshot'])]
       .concat(shown.map(x => res.level.map(k => x.o[k]).concat([x.desc, x.digital, x.sap, x.variance, x.uom, SL[x.status][1], R.name, R.at]))));
   }
@@ -460,7 +475,7 @@
   const PT = { head: null, rows: [], at: 0, busy: false, err: '' };
   const PF = [['Material Group L1', 'ក្រុម L1', 'Material Group L1'], ['Material Group L2', 'ក្រុម L2', 'Material Group L2'], ['Material Group L3', 'ក្រុម L3', 'Material Group L3'],
     ['Material Group L4', 'ក្រុម L4', 'Material Group L4'], ['Size', 'ទំហំ', 'Size'], ['Grade', 'Grade', 'Grade'], ['Brand', 'ម៉ាក', 'Brand'], ['ABC Class', 'ថ្នាក់', 'Class']];
-  const PFV = {}; let pq = '';
+  const PFV = {}, SFV = {}; let pq = '', sq = '';
   function loadProducts() {
     if (PT.busy || (PT.head && Date.now() - PT.at < 600000)) return;
     if (DEMO) {
@@ -471,7 +486,7 @@
     }
     PT.busy = true; PT.err = '';
     SC.api('products', {}).then(r => { PT.head = r.head || []; PT.rows = r.rows || []; PT.at = Date.now(); }, e => { PT.err = String(e && e.message || e); })
-      .then(() => { PT.busy = false; if (S.view === 'product') product(); });
+      .then(() => { PT.busy = false; if (S.view === 'product') product(); else if (S.view === 'sap') sap(); });
   }
   function product() {
     wide(); loadProducts();
