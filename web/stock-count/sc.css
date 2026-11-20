@@ -427,3 +427,5 @@ table.rep tfoot th.num { text-align: right; }
 :root[data-theme="dark"] .kpad button.op { background: #1c3150; color: #e8eef8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kpad button.op { background: #1c3150; color: #e8eef8; } }
 .kdisp.expr span { font-size: 22px; white-space: nowrap; overflow-x: auto; }
+.tbadge.cnt { background: #7c3aed; }
+.mh-sum small.out { color: #dc2626; font-weight: 700; } .mh-sum small.in { color: #16a34a; font-weight: 700; }
