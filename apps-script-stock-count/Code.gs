@@ -73,6 +73,7 @@ function route_(action, p, user) {
     case 'transfer': return withLock_(() => transfer_(user, p));
     case 'card': return card_(user, p);
     case 'editLine': return withLock_(() => editLine_(user, p));
+    case 'products': return productTable_(user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -218,7 +219,8 @@ function counterLookup_(user) {
   const ok = !!row && (a < 0 || yes_(row[a])) && (admin || (tick >= 0 && yes_(row[tick])));
   if (!ok) fail_('NOACCESS', 'Your account is not allowed to count yet. Ask Kim to tick ' + APP_COL + ' in Users.',
     'គណនីរបស់អ្នកមិនទាន់មានសិទ្ធិរាប់ស្តុកទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
-  return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin };
+  const role = r >= 0 ? String(row[r]).trim() : '';
+  return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin, role: role, supervisor: /supervisor/i.test(role) };
 }
 
 // ---------------------------------------------------------------- data
@@ -298,16 +300,27 @@ function pmSync_(body) {
     const m = pick(r, ['material', 'materialcode', 'sku']).toUpperCase();
     if (m) old[m] = { kg: pick(r, ['kgpc', 'kgperpc', 'kgpcs', 'kgperpcs']), uom: pick(r, ['uom', 'sapuom', 'baseuom', 'unit']) };
   });
-  const head = ['Material Group L4', 'Material', 'Description', 'ABC Class', 'Size', 'PC/Bundle', 'Kg/PC', 'UoM', 'Source'];
+  // Main columns first (names the app reads), then every other Excel column in Excel order (Kim, 20 Nov: Product menu shows them all).
+  const MAIN = [['Material', ['materialcode', 'material', 'sku']], ['Description', ['materialdescription', 'description']],
+    ['Material Group L1', ['materialgroupl1']], ['Material Group L2', ['materialgroupl2']], ['Material Group L3', ['materialgroupl3']],
+    ['Material Group L4', ['materialgroupl4', 'group']], ['ABC Class', ['class', 'abcclass']], ['Size', ['size', 'pipesize']], ['Grade', ['grade']],
+    ['Brand', ['brand']], ['UoM', ['uom', 'baseuom']], ['PC/Bundle', ['pcsbundle', 'pcbundle', 'pcsperbundle']], ['Kg/PC', ['kgpc', 'kgperpc', 'weightpc']]];
+  const used = {};
+  MAIN.forEach(c => c[1].forEach(n => { used[n] = 1; }));
+  const xhead = (Array.isArray(body.head) && body.head.length ? body.head : Object.keys(rows[0] || {})).map(h => String(h || '').trim())
+    .filter((h, i, a) => h && !used[norm(h)] && norm(h) !== 'source' && a.indexOf(h) === i);
+  const head = MAIN.map(c => c[0]).concat(xhead, ['Source']);
   const seen = {};
   const out = [];
   rows.forEach(r => {
-    const m = pick(r, ['materialcode', 'material', 'sku']);
+    const m = pick(r, MAIN[0][1]);
     if (!m || seen[m.toUpperCase()]) return;
     seen[m.toUpperCase()] = 1;
     const o = old[m.toUpperCase()] || {};
-    out.push([pick(r, ['materialgroupl4', 'group']), m, pick(r, ['materialdescription', 'description']), pick(r, ['class', 'abcclass']), pick(r, ['size', 'pipesize']),
-      pick(r, ['pcsbundle', 'pcbundle', 'pcsperbundle']), pick(r, ['kgpc', 'kgperpc', 'weightpc']) || o.kg || '', (pick(r, ['uom', 'baseuom']) || o.uom || '').toUpperCase(), 'Excel ' + String(body.file || '').slice(0, 80)]);
+    const main = MAIN.map(c => pick(r, c[1]));
+    main[10] = (main[10] || o.uom || '').toUpperCase();
+    main[12] = main[12] || o.kg || '';
+    out.push(main.concat(xhead.map(h => (r[h] == null ? '' : String(r[h]).trim())), ['Excel ' + String(body.file || '').slice(0, 80)]));
   });
   const sh = sheet_(SH.PM, PM_COLS);
   const lastRow = sh.getLastRow(), lastCol = Math.max(sh.getLastColumn(), head.length);
@@ -316,6 +329,17 @@ function pmSync_(body) {
   try { CacheService.getScriptCache().remove('pml'); } catch (e) { /* cache gone already */ }
   const now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
   return { rows: out.length, at: now };
+}
+// Product menu (Kim, 20 Nov 2026): the whole Product Master tab, for admins and supervisors (Users Role contains "Supervisor").
+function productTable_(user) {
+  const who = counter_(user);
+  if (!who.admin && !/supervisor/i.test(String(who.role || ''))) fail_('NOACCESS', 'Only admins and supervisors can see the Product list.', 'មានតែអ្នកគ្រប់គ្រង និងប្រធានក្រុមទេ ដែលអាចមើលបញ្ជីផលិតផល។');
+  const sh = sheet_(SH.PM, PM_COLS);
+  if (sh.getLastRow() < 1) return { head: [], rows: [] };
+  const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  const head = v[0].map(h => String(h).trim());
+  const keep = head.map((h, i) => i).filter(i => head[i]);
+  return { head: keep.map(i => head[i]), rows: v.slice(1).filter(r => r.some(x => x !== '')).map(r => keep.map(i => r[i])) };
 }
 // Product Master as { MATERIAL: { ppb, kg, desc, uom } }.
 function pm_() {
@@ -341,7 +365,7 @@ function boot_(user) {
   const stock = stock_(''), per = {};
   stock.forEach(l => { per[l.bin.toUpperCase()] = (per[l.bin.toUpperCase()] || 0) + 1; });
   const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: per[b.bin.toUpperCase()] || 0 }));
-  return { user: { email: user.email, name: who.Name || user.email, admin: !!who.admin }, settings: { tolerance: st.tol },
+  return { user: { email: user.email, name: who.Name || user.email, admin: !!who.admin, supervisor: /supervisor/i.test(String(who.role || '')) }, settings: { tolerance: st.tol },
     today: todayList(list, st.listSize), bins: list, stock: stock, products: pmList_(), binCount: list.length, dash: dash_(stock.length, list.length) };
 }
 
