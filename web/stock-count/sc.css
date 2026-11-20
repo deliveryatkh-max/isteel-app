@@ -421,8 +421,9 @@ table.rep tfoot th.num { text-align: right; }
 .mh-sum .mh-after { color: var(--blue, #2563eb); font-weight: 700; }
 .kpad { grid-template-columns: repeat(4, 1fr); }
 .kpad button.op { background: #e8f1fb; color: #011e41; }
-.kpad button.eq { grid-column: span 2; background: var(--navy); color: #fff; border-color: var(--navy); }
+.kpad button.eq { grid-column: span 3; background: var(--navy); color: #fff; border-color: var(--navy); }
 .sug.hist button { grid-template-columns: auto 1fr; }
 .sug.hist b { font-size: 15px; }
 :root[data-theme="dark"] .kpad button.op { background: #1c3150; color: #e8eef8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .kpad button.op { background: #1c3150; color: #e8eef8; } }
+.kdisp.expr span { font-size: 22px; white-space: nowrap; overflow-x: auto; }

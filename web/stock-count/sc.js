@@ -482,22 +482,36 @@
     'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in'), ADJUST: T('កែតម្រូវ', 'Adjustment') }[t] || t);
   const sameLine = (a, b) => [a.material, a.batch, a.sloc].join('|').toUpperCase() === [b.material, b.batch, b.sloc].join('|').toUpperCase();
   const round3 = n => Math.round(n * 1000) / 1000;
-  // Keypad with × (Kim, 20 Nov): works like a calculator. The box keeps the result; the display shows "10 × 100 = 1,000".
-  const XK = '×';
-  const PAD_KEYS = ['7', '8', '9', '⌫', '4', '5', '6', XK, '1', '2', '3', 'C', '.', '0', '='];
-  const padHtml = () => PAD_KEYS.map(k => `<button type="button" data-k="${k}"${k === '=' ? ' class="eq"' : k === XK ? ' class="op"' : ''}>${k}</button>`).join('');
-  const padEval = e => { const p = String(e || '').split(XK).filter(x => x !== '' && x !== '.'); if (!p.length) return ''; const r = p.reduce((a, x) => a * Number(x), 1); return isFinite(r) ? String(round3(r)) : ''; };
+  // Keypad like a calculator (Kim, 20 Nov): + − × ÷ with normal order (× ÷ before + −).
+  // The box keeps the result; the display shows "170 × 25 = 4,250".
+  const OPS = '+−×÷', isOp = c => OPS.indexOf(c) >= 0;
+  const PAD_KEYS = ['7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−', '.', '0', '⌫', '+', 'C', '='];
+  const padHtml = () => PAD_KEYS.map(k => `<button type="button" data-k="${k}"${k === '=' ? ' class="eq"' : isOp(k) ? ' class="op"' : ''}>${k}</button>`).join('');
+  const padEval = e => {
+    const tk = String(e || '').split(/([+−×÷])/).filter(x => x !== '');
+    while (tk.length && (isOp(tk[tk.length - 1]) || tk[tk.length - 1] === '.')) tk.pop();
+    if (!tk.length) return '';
+    const terms = [], sg = [1]; let cur = Number(tk[0]);
+    for (let i = 1; i < tk.length; i += 2) {
+      const op = tk[i], n = Number(tk[i + 1]);
+      if (op === '×') cur *= n; else if (op === '÷') cur = n ? cur / n : NaN;
+      else { terms.push(cur); sg.push(op === '−' ? -1 : 1); cur = n; }
+    }
+    terms.push(cur);
+    const r = terms.reduce((a, t, i) => a + sg[i] * t, 0);
+    return isFinite(r) ? String(round3(r)) : '';
+  };
   const padPress = (e, key, dot) => {
-    e = String(e || ''); const last = e.split(XK).pop();
+    e = String(e || ''); const last = e.split(/[+−×÷]/).pop(), end = e.slice(-1);
     if (key === '⌫') return e.slice(0, -1);
     if (key === 'C') return '';
     if (key === '=') return padEval(e);
-    if (key === XK) return !last || last === '.' ? e : e + XK;
+    if (isOp(key)) return !e || end === '.' ? e : isOp(end) ? e.slice(0, -1) + key : e + key;
     if (key === '.') return !dot || last.indexOf('.') >= 0 ? e : e + (last ? '.' : '0.');
     if (last.replace('.', '').length >= 9) return e;
     return last === '0' ? e.slice(0, -1) + key : e + key;
   };
-  const padShow = (e, v) => (String(e || '').indexOf(XK) >= 0 ? `${String(e).split(XK).join(' × ')} = ${fmtQty(v)}` : (v || '0'));
+  const padShow = (e, v) => (/[+−×÷]/.test(String(e || '')) ? `${String(e).replace(/([+−×÷])/g, ' $1 ')} = ${fmtQty(v)}` : (v || '0'));
   // Typing history like SAP (Kim, 20 Nov): tap the box (or type a space) to see the values used before on this phone.
   const histGet = k => { try { return JSON.parse(localStorage.getItem('sc_hist_' + k) || '[]'); } catch (e) { return []; } };
   const histAdd = (k, v) => { v = String(v || '').trim(); if (!v) return; const a = [v].concat(histGet(k).filter(x => x !== v)).slice(0, 20); try { localStorage.setItem('sc_hist_' + k, JSON.stringify(a)); } catch (e) { /* private mode */ } };
@@ -807,6 +821,7 @@
       });
       const av = act ? $('#' + act).value : '';
       $('#mDisp span').textContent = padShow(ex[act], av);
+      $('#mDisp').classList.toggle('expr', /[+−×÷]/.test(ex[act] || ''));
       $('#mDisp').classList.toggle('empty', !av);
       $('#mDisp').classList.toggle('need', q.qty === '');
       $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
@@ -1027,6 +1042,7 @@
       if (isCount && cAct) {
         const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), v = el ? el.value : '';
         $('#cDisp span').textContent = padShow(cEx[cAct.i + ':' + cAct.f], v);
+        $('#cDisp').classList.toggle('expr', /[+−×÷]/.test(cEx[cAct.i + ':' + cAct.f] || ''));
         $('#cDisp').classList.toggle('empty', !v);
         $('#cPad [data-k="."]').disabled = cAct.f !== 'kg';
       }
