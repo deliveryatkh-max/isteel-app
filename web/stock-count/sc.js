@@ -339,7 +339,7 @@
       ${q.length ? `<div class="card"><span class="pill">${q.length} ${T('រង់ចាំផ្ញើ', 'waiting to send')}</span> <button type="button" class="btn ghost" id="sendQ">${T('ផ្ញើឥឡូវ', 'Send now')}</button></div>` : ''}
       ${SHOW_TODAY_LIST ? `<h2>${T('បញ្ជីរាប់ថ្ងៃនេះ', "Today's count list")} (${S.list.length})</h2>
       ${list || `<p class="muted">${T('មិនទាន់មានទីតាំង។', 'No bins yet.')}</p>`}` : ''}
-      ${S.dash && S.dash.recent && S.dash.recent.length ? `<h2>${T('សកម្មភាពថ្មីៗ', 'Recent activity')}</h2><section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ចំនួន', 'Qty')}</th></tr>${
+      ${SHOW_RECENT && S.dash && S.dash.recent && S.dash.recent.length ? `<h2>${T('សកម្មភាពថ្មីៗ', 'Recent activity')}</h2><section class="card scroll"><table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ចំនួន', 'Qty')}</th></tr>${
         S.dash.recent.map(r => `<tr><td>${esc((r.date || '').slice(5))} <small class="muted">${esc(r.time || '')}</small></td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td><td>${esc(typeLabel(r.type))}</td><td class="num ${r.qtyIn ? 'in' : 'out'}">${r.qtyIn ? '+' + fmtQty(r.qtyIn) : '-' + fmtQty(r.qtyOut)}</td></tr>`).join('')}</table></section>` : ''}
     `);
     const go = () => { const code = $('#binIn').value.trim(); if (code) openBin(code); };
@@ -475,6 +475,7 @@
   }
 
   // ------------------------------------------------------------------ digital stock card: In / Out / Transfer / history
+  const SHOW_RECENT = false;   // Kim, 20 Nov 2026: hide "Recent activity" on the Scan screen (Movements has it all)
   const SHOW_TODAY_LIST = false;   // Kim, 20 Nov 2026: hide "Today's count list" on the Scan screen
   const HIDE_REF = false;   // Kim, 20 Nov 2026: shown again (set true to hide) Reference document (GR / PO, DN) on Stock IN / OUT for now
   const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
