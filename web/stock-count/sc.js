@@ -475,7 +475,6 @@
   }
 
   // ------------------------------------------------------------------ digital stock card: In / Out / Transfer / history
-  const HIDE_REF = true;   // Kim, 20 Nov 2026: hide Reference document (GR / PO, DN) on Stock IN / OUT for now
   const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
   const typeLabel = t => ({ IN: T('ចូលស្តុក', 'Stock IN'), OUT: T('ចេញស្តុក', 'Stock OUT'), TRANSFER: T('ផ្ទេរ', 'Transfer'),
@@ -709,7 +708,7 @@
         <div class="tot" id="mTot"></div>
         ${isTr ? `<label for="mTo">${T('ប្តូរទៅទីតាំង៖', 'Move to location:')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
-        ${isTr || HIDE_REF ? '' : `<label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
+        ${isTr ? '' : `<label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
         <div class="row"><input id="mRef" type="text" maxlength="60" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mRefScan" title="Scan">📷</button></div>`}
         <div class="live" id="mAfter"></div>
       </section>
@@ -770,11 +769,11 @@
       $('#mInfo').textContent = l ? '' : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងទីតាំងនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
       let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយទីតាំងទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('ទីតាំងទៅត្រូវខុសពីទីតាំងដើម', 'Destination must be a different bin') : ''; }
-      if (!bad && !isTr && !HIDE_REF && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
+      if (!bad && !isTr && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
       const empty = q.qty === '';
       if (isIn) { $('#mMat').classList.toggle('need', !m.pick); $('#mBatch').classList.toggle('need', !$('#mBatch').value.trim()); }
       if ($('#mTo')) $('#mTo').classList.toggle('need', !$('#mTo').value.trim());
-      if (!isTr && $('#mRef')) $('#mRef').classList.toggle('need', !ref);
+      if (!isTr) $('#mRef').classList.toggle('need', !ref);
       const after = u && !empty && isFinite(Number(q.qty)) ? round3(isIn ? u.book + Number(q.qty) : u.book - Number(q.qty)) : null;
       $('#mAfter').innerHTML = bad ? `<span class="need-text">${esc(bad)}</span>` : `${T('សមតុល្យក្រោយ', 'Balance after')}: <b>${fmtQty(after)} ${esc(u.uom)}</b>`;
       $('#mSave').disabled = !!bad;
