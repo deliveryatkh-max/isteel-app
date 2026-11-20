@@ -24,6 +24,7 @@ function fakeSheet(name, grid) {
         setValue: v => { while (sh.grid.length < r) sh.grid.push([]); sh.grid[r - 1][c - 1] = v; return rg; },
         setValues: vals => { vals.forEach((row, i) => { while (sh.grid.length < r + i) sh.grid.push([]); row.forEach((v, j) => { sh.grid[r - 1 + i][c - 1 + j] = v; }); }); return rg; },
         setFontWeight: () => rg, setBackground: () => rg, setFontColor: () => rg, setNumberFormat: () => rg,
+        clearContent: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) if (sh.grid[r - 1 + i]) sh.grid[r - 1 + i][c - 1 + j] = ''; while (sh.grid.length && sh.grid[sh.grid.length - 1].every(x => x === '' || x == null)) sh.grid.pop(); return rg; },
       };
       return rg;
     },
@@ -46,12 +47,12 @@ const ctx = {
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'x', setProperty: () => {} }) },
   Utilities: { formatDate: (d, tz, f) => (f === 'yyyy-MM-dd' ? '2026-11-13' : f === 'HH:mm' ? '21:00' : '261113210000'), getUuid: () => ('0000' + (++uuid)).slice(-4) + '-x' },
-  ContentService: {}, DriveApp: {}, UrlFetchApp: {},
+  ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType: () => ({ getContent: () => t }) }) }, DriveApp: {}, UrlFetchApp: {},
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'ProductMaster.gs'), 'utf8'), ctx);
-vm.runInContext(fs.readFileSync(path.join(DIR, 'Code.gs'), 'utf8') + '\nthis.route_ = route_;', ctx);
+vm.runInContext(fs.readFileSync(path.join(DIR, 'Code.gs'), 'utf8') + '\nthis.route_ = route_; this.doPost = doPost;', ctx);
 const op = { email: 'op@isi' }, admin = { email: 'admin@isi' };
 const call = (action, p, user) => JSON.parse(JSON.stringify(ctx.route_(action, p, user || op)));
 const book = (bin, material) => { const r = sheets['Stock On Hand'].grid.find(x => x[0] === bin && x[1] === material); return r ? Number(String(r[7]).replace(/,/g, '')) : null; };
@@ -130,4 +131,13 @@ const before = soh.length;
 r = call('editLine', { requestId: 'e3', bin: 'BIN-B', material: '1500000000', batch: 'DB-8', sloc: '2010', delete: true, reason: 'wrong bin' }, admin);
 eq([r.deleted, soh.length, led[led.length - 1][lh.indexOf('Out')]], [true, before - 1, 200], 'delete adjusts to 0 and removes the line');
 
+// Product Master synced from Kim's Excel (20 Nov): rows replace the tab, Kg/PC + UoM typed in the tab are kept.
+const post = b => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(b) } }).getContent());
+const xrows = [{ 'Material Group L4': 'Deformed Bar', 'Material Code': '1500000000', 'Material Description': 'Debar SD390 12mm ISI', Class: 'A', Size: '12mm', 'Pcs/Bundle': 240 }];
+for (let i = 1; i < 12; i++) xrows.push({ 'Material Group L4': 'Pipe', 'Material Code': 'P' + i, 'Material Description': 'Pipe ' + i, 'Pcs/Bundle': 100 });
+eq(post({ action: 'pmSync', key: 'bad', rows: xrows }).ok, false, 'sync refused with a wrong key');
+eq(post({ action: 'pmSync', key: 'x', rows: xrows.slice(0, 3) }).ok, false, 'sync refused when the Excel looks empty');
+r = post({ action: 'pmSync', key: 'x', rows: xrows, file: 'Product - 2026-11.xlsx' });
+const pmg = sheets['Product Master'].grid;
+eq([r.ok, r.data.rows, pmg.length, pmg[1][1], pmg[1][5], pmg[1][6], pmg[1][7]], [true, 12, 13, '1500000000', '240', '10.66', 'PC'], 'Excel rows replace the tab; old Kg/PC and UoM kept');
 console.log('Stock Count flow tests: ' + pass + ' passed');
