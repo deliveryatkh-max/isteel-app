@@ -105,6 +105,7 @@ function route_(action, p, user) {
       return { cols: cols };
     }
     case 'vessels': return vessels_();
+    case 'gsList': return gsList_(p, user);   // Gate vs Scale page: only the days asked, only the fields it uses (Kim, 20 Nov 2026)
     case 'scaleArrive': return withLock_(() => scaleArrive_(p, user));
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
     case 'planDel': return withLock_(() => planDel_(p.po, user));
@@ -422,6 +423,14 @@ function siteFix_(rec, ents) {
 function receipts_() {
   const ents = warehouses_();
   return recRows_().map(r => { try { return siteFix_(JSON.parse(r[5]), ents); } catch (e) { return null; } }).filter(Boolean);
+}
+/** Receipts dated from..to (yyyy-MM-dd), slim, for the Gate vs Scale page; boot reads the plan, plates and scale too and is slow. */
+function gsList_(p, user) {
+  const from = String(p.from || ''), to = String(p.to || '');
+  if (!/^\d{4}-\d\d-\d\d$/.test(from) || !/^\d{4}-\d\d-\d\d$/.test(to)) fail_('BAD', 'Pick the dates.', 'សូមរើសថ្ងៃ។');
+  return { receipts: receipts_().filter(r => r.date >= from && r.date <= to && siteOk_(user, r.site)).map(r => ({ id: r.id, status: r.status, truck: r.truck, date: r.date,
+    start: r.start, end: r.end, site: r.site, warehouse: r.warehouse, carrier: r.carrier, owner: r.owner, po: r.po, uom: r.uom, by: r.by,
+    items: (r.items || []).map(i => ({ grQty: i.grQty, arrQty: i.arrQty })) })) };
 }
 function boot_(user) {
   const us = userSites_(user);
