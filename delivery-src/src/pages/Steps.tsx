@@ -230,6 +230,8 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const [dns, setDns] = useState<string[]>([]);
   const [dnIn, setDnIn] = useState('');
   const [dnErr, setDnErr] = useState('');
+  // Kim (23 Nov 2026): a DN not in the Delivery Plan gets its customer here (for the live map and the customer's Telegram).
+  const [custs, setCusts] = useState<Record<string, { custId: string; custName: string }>>({});
   const [kgIn, setKgIn] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [websling, setWebsling] = useState<'' | 'yes' | 'no'>('');
@@ -237,7 +239,12 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const [tried, setTried] = useState(false);
   const st = useStep();
   const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
-  useEffect(() => { setTried(false); setWh(''); setDns([]); setKgIn(''); setPhotos([]); setWebsling(''); }, [ll]);
+  const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
+  const [planHit, setPlanHit] = useState<Record<string, boolean>>({});   // older plan rows found by the DN lookup
+  const planSet = useMemo(() => new Set(boot.plan.map(x => x.dn)), [boot.plan]);
+  const inPlan = { has: (d: string) => planSet.has(d) || !!planHit[d] };
+  const splitCust = (c: string) => { const m = /^\s*(\d{6,})\s*-\s*(.*)$/.exec(c || ''); return m ? { custId: m[1], custName: m[2] } : { custId: '', custName: (c || '').trim() }; };
+  useEffect(() => { setTried(false); setCusts({}); setWh(''); setDns([]); setKgIn(''); setPhotos([]); setWebsling(''); }, [ll]);
 
   if (trip.gateOut) return <Alert tone="ok">⚖️ {t('ឡានបានចេញពីជញ្ជីងហើយ', 'The truck has gone out at the scale')}</Alert>;
   const n = ll === 0 ? 2 : ll === 4 ? 3 : ll === 5 ? 4 : again ? 3 : 0;
@@ -259,12 +266,17 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     }
     const local = openTrips(ops).filter(x => x.id !== trip.id && x.dns.some(z => z.dn === d && z.leg !== 'canceled')).map(x => x.id);
     let used = local;
+    let knownCust = '';
+    openTrips(ops).forEach(x => x.dns.forEach(z => { if (z.dn === d && z.cust && !knownCust) knownCust = z.cust; }));
     if (!used.length) {
       try {
-        const info = await api<{ legs: { tripId: string; leg: string }[] }>('dn', { dn: d });
+        const info = await api<{ plan?: unknown; legs: { tripId: string; leg: string; cust?: string }[] }>('dn', { dn: d });
+        if (info.plan) setPlanHit(cur => ({ ...cur, [d]: true }));
         used = Array.from(new Set((info.legs || []).filter(l => l.tripId !== trip.id && l.leg !== 'canceled').map(l => l.tripId)));
+        if (!knownCust) knownCust = ((info.legs || []).find(l => l.cust) || {}).cust || '';
       } catch { /* offline: the server checks again at Record */ }
     }
+    if (!inPlan.has(d) && knownCust) setCusts(cur => (cur[d] ? cur : { ...cur, [d]: splitCust(knownCust) }));
     if (used.length) {
       beep();
       setDnErr(usedMsg(d, used));
@@ -290,6 +302,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   if ((n === 2 || (n === 3 && again)) && !wh) miss.wh = t('សូមជ្រើសឃ្លាំង', 'Choose the warehouse');
   if (n === 3) {
     if (!dns.length) miss.dns = t('សូមបន្ថែម DN យ៉ាងហោចណាស់មួយ', 'Add at least one DN');
+    dns.forEach(d => { if (!inPlan.has(d) && !(custs[d] && (custs[d].custName || custs[d].custId))) miss['cust_' + d] = t('សូមជ្រើសអតិថិជន', 'Choose the customer'); });
   }
   // Kim (22 Nov 2026): the total kg and goods photos are typed when each warehouse finishes loading (step 4).
   if (n === 4) {
@@ -303,7 +316,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     if (Object.keys(miss).length) { scrollToMissing(); return; }
     if (n === 2) await st.save({ ...base, code: 4, wh }, label(2));
     else if (n === 3) {
-      const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn })) }, label(3));
+      const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn, ...(inPlan.has(dn) ? {} : custs[dn] || {}) })) }, label(3));
       if (ok) setAgain(false);
     } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4));
   }
@@ -329,6 +342,16 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
               {dns.map(d => <button key={d} type="button" className="chip chip-on" onClick={() => setDns(dns.filter(x => x !== d))}>{d} ✕</button>)}
             </div>
           </Field>
+          {dns.filter(d => !inPlan.has(d)).map(d => {
+            const c = custs[d];
+            return (
+              <Field key={d} icon="🏢" label={t('អតិថិជនរបស់ DN ', 'Customer of DN ') + d} required need={!!miss['cust_' + d]} error={m['cust_' + d]} id={'cust_' + d}>
+                <div className="text-[12.5px] text-warn font-semibold mb-1">{t('មិនមានក្នុង Delivery Plan', 'Not in the Delivery Plan')}</div>
+                <Picker value={c ? (c.custId ? c.custId + '-' : '') + c.custName : ''} options={custOpts} allowFree bad={!!m['cust_' + d]} placeholder={t('ជ្រើសអតិថិជន', 'Choose the customer')}
+                  onChange={(v, o) => setCusts(cur => ({ ...cur, [d]: o ? { custId: o.sub || '', custName: o.label } : { custId: '', custName: v } }))} />
+              </Field>
+            );
+          })}
           {scan ? <Scanner onCode={c => { addDn(c); setScan(false); }} onClose={() => setScan(false)} /> : null}
         </>
       ) : null}
