@@ -7,6 +7,7 @@ import { Alert, Badge, Modal, Opt, PhotoInput, Picker, Segmented, Spinner, toast
 import { Field, Section, scrollToMissing } from '../components/Form';
 import { MultiPhoto, RateLinks, SignaturePad, SiteRateForm, siteRateSigned } from '../components/Proof';
 import { TripSections } from './Trip';
+import { GpsShare } from '../components/Track';
 import { beep, ScanView, Scanner } from '../components/Scanner';
 import { useSubmit, warmLocation } from '../components/submit';
 
@@ -351,7 +352,7 @@ export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: stri
   const list = trip.dns.slice().sort((a, b) => Number(b.dn === p.dn) - Number(a.dn === p.dn));
   // The scanned DN opens; with no scan, the first DN that still has a step opens.
   const first = p.dn && list.some(d => d.dn === p.dn && drvStepOf(d.leg)) ? p.dn : (list.find(d => drvStepOf(d.leg)) || { dn: '' }).dn;
-  return <>{list.map(d => <DnStep key={d.dn + d.leg} trip={trip} truckType={p.truckType} dn={d.dn} leg={d.leg} cust={d.cust} kg={d.kg || d.loadKg || 0} open={d.dn === first} link={p.link} />)}</>;
+  return <>{!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}{list.map(d => <DnStep key={d.dn + d.leg} trip={trip} truckType={p.truckType} dn={d.dn} leg={d.leg} cust={d.cust} kg={d.kg || d.loadKg || 0} open={d.dn === first} link={p.link} />)}</>;
 }
 
 function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: string; cust: string; kg: number; open: boolean; link?: DrvLink }) {

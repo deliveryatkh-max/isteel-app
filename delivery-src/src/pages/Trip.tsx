@@ -6,6 +6,7 @@ import type { LogRow, TripDetail } from '../types';
 import { Alert, Badge, Kv, Modal, Spinner, toast } from '../components/ui';
 import { nextCode } from './Record';
 import { RateLinks } from '../components/Proof';
+import { TrackLinks } from '../components/Track';
 
 const custIdOf = (text: string) => { const m = String(text || '').match(/^\s*(\d{6,})/); return m ? m[1] : ''; };
 
@@ -112,6 +113,7 @@ export function TripSections(p: { d: TripDetail; reload: () => void; hideTimelin
         </section>
       ) : null}
 
+      {d.track && Object.keys(d.track).length && !d.closed ? <TrackLinks tripId={d.id} links={d.track} join={d.tgJoin} done={Object.fromEntries(d.dns.filter(x => ['delivered', 'failed', 'canceled', 'moved'].indexOf(x.leg) >= 0).map(x => [x.dn, true]))} /> : null}
       {d.rate && Object.keys(d.rate).length ? <RateLinks tripId={d.id} links={d.rate} /> : null}
 
       {p.hideTimeline ? null : <section className="card">

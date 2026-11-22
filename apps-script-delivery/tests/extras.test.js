@@ -308,3 +308,45 @@ test('fast save: the step is saved first, photos and signature follow with attac
   assert.strictEqual(tab(e, 'Delivery Proof').length, 2);
   assert.ok(!e.call('drvAttach', { t: id, k: 'bad', ref: ref(), code: 9, keys: r2.keys, photos: [IMG] }, null).ok);
 });
+
+test('customer live tracking: driver GPS after Gate Out, customer link shows it, stops when delivered', () => {
+  const e = env();
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  const det = ok(e.call('trip', { tripId: id }, LOGI));
+  const tk = det.track['9000000001'];
+  assert.ok(tk, 'tracking link after Gate Out');
+  const bad = e.call('trackInfo', { d: '9000000001', t: id, k: 'nope' }, null);
+  assert.ok(!bad.ok && /^LINK/.test(bad.error));
+  ok(e.call('drvGps', { t: id, k: det.driverLink, ll: '11.55,104.92', acc: 12 }, null));
+  assert.ok(!e.call('drvGps', { t: id, k: det.driverLink, ll: '0,0' }, null).ok, 'fake position refused');
+  const info = ok(e.call('trackInfo', { d: '9000000001', t: id, k: tk }, null));
+  assert.strictEqual(info.gps.ll, '11.550000,104.920000');
+  assert.strictEqual(info.leg, 'picked');
+  assert.ok(info.times.out);
+  assert.ok(!('driver' in info), 'no driver name');
+  assert.strictEqual(tab(e, 'Live GPS').length, 1);
+  step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
+  const after = ok(e.call('trackInfo', { d: '9000000001', t: id, k: tk }, null));
+  assert.strictEqual(after.leg, 'delivered');
+  assert.ok(!after.gps, 'map stops after delivery');
+  assert.ok(after.rateKey);
+});
+
+test('customer Telegram bot: join link saves the chat, Gate Out sends the live map link once', () => {
+  const e = makeEnv(fixture(), { props: { TRACK_BOT_TOKEN: 'tok' } }); e.run('setup()');
+  const sig = e.run("joinSig_('6100000001')");
+  e.tgUpdates.push({ update_id: 5, message: { chat: { id: 777 }, from: { first_name: 'Sok' }, text: '/start c6100000001_' + sig } });
+  e.tgUpdates.push({ update_id: 6, message: { chat: { id: 888 }, text: '/start c6100000001_wrongsig00' } });
+  e.run('trackBotPoll()');
+  assert.strictEqual(tab(e, 'Customer Telegram').length, 1, 'only the signed link joins');
+  assert.strictEqual(e.props.TRACK_BOT_OFFSET, '7');
+  assert.ok(e.telegram.some(m => m.chat_id === '777' && /Connected/.test(m.text)));
+  e.telegram.length = 0;
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  const sent = e.telegram.filter(m => m.chat_id === '777');
+  assert.strictEqual(sent.length, 1, JSON.stringify(e.telegram));
+  assert.ok(/track\.html\?d=9000000001/.test(sent[0].reply_markup.inline_keyboard[0][0].url));
+  assert.ok(e.run("trackNotify_('" + id + "')") === 0, 'not sent twice');
+  const det = ok(e.call('trip', { tripId: id }, LOGI));
+  assert.ok(/t\.me\/isisteellive_bot\?start=c6100000001_/.test(det.tgJoin['9000000001']));
+});

@@ -68,7 +68,7 @@ function makeEnv(sheets, opts) {
   const props = Object.assign({ GOOGLE_CLIENT_ID: 'cid', SESSION_SECRET: 'sess-secret', LINK_SECRET: 'link-secret', PHOTO_FOLDER_ID: 'folder1' }, opts.props || {});
   const cache = {};
   const files = [];
-  const triggers = [], telegram = [];
+  const triggers = [], telegram = [], tgUpdates = [];
   let clock = opts.now || Date.parse('2026-10-12T08:00:00+07:00');
   const RealDate = Date;
   class FakeDate extends RealDate {
@@ -87,7 +87,7 @@ function makeEnv(sheets, opts) {
     ContentService: { createTextOutput: s => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { triggers.push({ getHandlerFunction: () => fn }); } }) }) }) },
     UrlFetchApp: { fetch: (url, o) => {
-      if (/api\.telegram\.org/.test(url)) { telegram.push(JSON.parse(o.payload)); return { getResponseCode: () => 200, getContentText: () => '{"ok":true}' }; }
+      if (/api\.telegram\.org/.test(url)) { const m = url.split('/').pop(); if (m === 'getUpdates') return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ ok: true, result: tgUpdates.splice(0) }) }; const body = JSON.parse(o.payload); if (m !== 'sendMessage') return { getResponseCode: () => 200, getContentText: () => '{"ok":true,"result":{}}' }; body._bot = url.split('/')[3]; telegram.push(body); return { getResponseCode: () => 200, getContentText: () => '{"ok":true}' }; }
       const tok = decodeURIComponent(url.split('id_token=')[1]);
       const m = tok.match(/^google:(.+)$/);
       return m ? { getResponseCode: () => 200, getContentText: () => JSON.stringify({ aud: 'cid', email: m[1], email_verified: 'true', exp: Math.floor(clock / 1000) + 3600 }) }
@@ -114,7 +114,7 @@ function makeEnv(sheets, opts) {
   const dir = path.join(__dirname, '..');
   ['Logic.gs', 'Delivery.gs', 'Extras.gs'].forEach(f => vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
   const env = {
-    ss, props, cache, files, ctx, triggers, telegram,
+    ss, props, cache, files, ctx, triggers, telegram, tgUpdates,
     setNow: t => { clock = typeof t === 'number' ? t : Date.parse(t); },
     advance: ms => { clock += ms; },
     now: () => clock,
