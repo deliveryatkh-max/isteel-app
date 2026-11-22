@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="../icons/favicon.png">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
-  <!-- Customer live tracking (Kim, 22 Nov 2026): no sign-in. Shows only this DN: steps, truck on a free OpenStreetMap map, ETA. No driver name or phone. -->
+  <!-- Customer live tracking (Kim, 22 Nov 2026): no sign-in. Shows only this DN: steps, truck on a free OpenStreetMap map, ETA, driver name and phone (no kg). -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <style>
     :root { --bg: #f3f6fa; --card: #fff; --text: #011e41; --muted: #546274; --line: #d6dee8; --brand: #084f6a; --accent: #0b76a0; --soft: #d4e1f5; --star: #f2a900; --bad: #b3261e; --ok: #1e7b46; color-scheme: light; }
@@ -52,6 +52,8 @@
     ol li b.d { width: 12px; height: 12px; border-radius: 50%; background: var(--line); flex: none; }
     ol li.on b.d { background: var(--accent); } ol li.off { color: var(--muted); }
     .gbtn { display: block; text-align: center; margin-top: 10px; padding: 11px; border-radius: 12px; border: 1.5px solid var(--line); color: var(--text); text-decoration: none; font-weight: 600; }
+    .drv { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .call { padding: 10px 14px; border-radius: 12px; background: var(--ok); color: #fff; text-decoration: none; font-weight: 700; white-space: nowrap; }
     .stamp { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
   </style>
 </head>
@@ -67,6 +69,10 @@
       <div class="card">
         <h1 id="title"></h1>
         <div class="muted" id="info"></div>
+      </div>
+      <div id="drv" class="card drv" hidden>
+        <div><div class="muted" data-t="តៃកុង|Driver"></div><b id="drvname"></b></div>
+        <a id="drvtel" class="call" hidden></a>
       </div>
       <div id="mapcard" class="card" hidden>
         <div id="map"></div>
@@ -115,7 +121,12 @@
       var finished = leg === 'delivered' || leg === 'failed' || leg === 'canceled' || leg === 'moved';
       $('title').textContent = finished ? (leg === 'delivered' ? T('✅ បានប្រគល់រួចរាល់|✅ Delivered') : leg === 'failed' ? T('⚠️ ប្រគល់មិនបាន|⚠️ Not delivered') : T('ការដឹកនេះត្រូវបានបញ្ចប់|This delivery was closed'))
         : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងធ្វើដំណើរ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
-      $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : '', r.plate, r.kg ? Math.round(r.kg).toLocaleString('en-US') + ' kg' : ''].filter(Boolean).join(' · ');
+      $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : '', r.plate].filter(Boolean).join(' · ');   // no kg (Kim, 22 Nov 2026)
+      var dv = r.driver || {};
+      $('drv').hidden = finished || !dv.name;
+      $('drvname').textContent = dv.name || '';
+      $('drvtel').hidden = !dv.phone;
+      if (dv.phone) { $('drvtel').href = 'tel:' + String(dv.phone).replace(/[^0-9+]/g, ''); $('drvtel').textContent = '📞 ' + dv.phone; }
       var steps = [
         [T('ចេញពីរោងចក្រ|Left the plant'), x.out],
         [T('មកដល់ទីតាំងរបស់អ្នក|Arrived at your site'), x.arrived],
