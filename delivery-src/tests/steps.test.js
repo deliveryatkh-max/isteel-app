@@ -141,6 +141,14 @@ const errors = [];
   await w.goto(BASE + '/delivery/#/trip/' + encodeURIComponent(trip));
   await w.getByText(/Live tracking link|តំណតាមដាន/).waitFor({ timeout: 10000 });
   console.log('PASS copy tracking link on trip page');
+  // Kim (23 Nov 2026): DNs in the header, no DN box, driver QR shown without a button
+  const ad = await as('admin@test.kh');
+  await ad.goto(BASE + '/delivery/#/steps/' + encodeURIComponent(trip));
+  await ad.locator('[data-qr="driver"] svg').waitFor({ timeout: 10000 });
+  assert.ok(await ad.locator('[data-dns="head"]').first().textContent().then(x => /9000000101/.test(x)), 'DNs in header');
+  assert.strictEqual(await ad.getByText('DNs on this trip').count(), 0, 'no DN box');
+  await ad.screenshot({ path: SHOTS + 'steps-08-header-qr.png', fullPage: true });
+  console.log('PASS header DNs and driver QR');
 
   // A DN already on another trip is flagged when typed (Kim, 22 Nov 2026)
   const g2 = await api('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: 'Y', ticket: 'UI2', kg: 7000 }, 'google:guard@test.kh');

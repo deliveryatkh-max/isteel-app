@@ -55,7 +55,7 @@ export function TripPage(p: { id: string }) {
 }
 
 /** Trip details below the header: DNs, driver link + QR, proof, rating links and the timeline (with photos, location, delete). */
-export function TripSections(p: { d: TripDetail; reload: () => void; hideTimeline?: boolean }) {
+export function TripSections(p: { d: TripDetail; reload: () => void; hideTimeline?: boolean; hideDns?: boolean }) {
   useLang();
   const { boot, setBusy, refreshOps } = useApp();
   const d = p.d;
@@ -70,7 +70,7 @@ export function TripSections(p: { d: TripDetail; reload: () => void; hideTimelin
   };
   return (
     <>
-      {Object.keys(d.dnInfo).length ? (
+      {!p.hideDns && Object.keys(d.dnInfo).length ? (
         <section className="card">
           <h2 className="text-[15px] font-bold mt-0 mb-2">{t('DN នៅលើជើងនេះ', 'DNs on this trip')}</h2>
           {d.dns.map(x => {
@@ -155,12 +155,12 @@ export function eventLabel(boot: { events: { code: number; kh: string; en: strin
 function DriverLink(p: { tripId: string; token: string }) {
   useLang();
   const url = location.origin + location.pathname + '?t=' + encodeURIComponent(p.tripId) + '&k=' + p.token;
-  const [open, setOpen] = useState(false);
+  // Kim (23 Nov 2026): the QR shows on the card at once, on the right (no QR button).
   const svg = useMemo(() => {
-    if (!open || !window.qrcode) return '';
+    if (!window.qrcode) return '';
     const q = window.qrcode(0, 'M'); q.addData(url); q.make();
-    return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
-  }, [open, url]);
+    return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true });
+  }, [url]);
   const share = async () => {
     const text = t('តំណកត់ត្រាដឹកជញ្ជូន ', 'Delivery link ') + p.tripId;
     try {
@@ -170,13 +170,14 @@ function DriverLink(p: { tripId: string; token: string }) {
   };
   return (
     <section className="card">
-      <h2 className="text-[15px] font-bold mt-0 mb-1">{t('តំណសម្រាប់តៃកុង', 'Driver link')}</h2>
-      <p className="muted text-[13px] mt-0">{t('តៃកុងស្កេន QR ឬបើកតំណ ដើម្បីកត់ត្រា មកដល់ / ប្រគល់ / បរាជ័យ សម្រាប់ជើងនេះតែប៉ុណ្ណោះ (មិនចាំបាច់ចូលគណនី)។', 'The driver scans the QR or opens the link to record Arrived / Delivered / Failed for this trip only (no sign-in).')}</p>
-      <div className="flex gap-2 flex-wrap">
-        <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)}>▦ QR</button>
-        <button type="button" className="btn btn-sm" onClick={share}>🔗 {t('ចែករំលែកតំណ', 'Share link')}</button>
+      <div className="flex gap-3 items-start">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-[15px] font-bold mt-0 mb-1">{t('តំណសម្រាប់តៃកុង', 'Driver link')}</h2>
+          <p className="muted text-[13px] mt-0">{t('តៃកុងស្កេន QR ឬបើកតំណ ដើម្បីកត់ត្រា មកដល់ / ប្រគល់ / បរាជ័យ សម្រាប់ជើងនេះតែប៉ុណ្ណោះ (មិនចាំបាច់ចូលគណនី)។', 'The driver scans the QR or opens the link to record Arrived / Delivered / Failed for this trip only (no sign-in).')}</p>
+          <button type="button" className="btn btn-sm" onClick={share}>🔗 {t('ចែករំលែកតំណ', 'Share link')}</button>
+        </div>
+        {svg ? <div className="bg-white rounded-xl p-1.5 w-[132px] shrink-0" data-qr="driver" dangerouslySetInnerHTML={{ __html: svg }} /> : null}
       </div>
-      {open ? (svg ? <div className="bg-white rounded-xl p-2 mt-3 mx-auto max-w-[260px]" dangerouslySetInnerHTML={{ __html: svg }} /> : <p className="muted text-sm">{url}</p>) : null}
     </section>
   );
 }
