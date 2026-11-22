@@ -30,7 +30,7 @@ const SIG = 'data:image/png;base64,' + Buffer.from('png').toString('base64');
 function env() { const e = makeEnv(fixture()); e.run('setup()'); return e; }
 function trip(e, plate, dns, extra) {
   const id = ok(rec(e, GUARD, Object.assign({ code: 1, plate, driver: '01.Driver A' }, extra))).tripId;
-  step(e); ok(rec(e, LOGI, { code: 2, tripId: id, dns: dns.map(dn => ({ dn })), confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, LOGI, { code: 2, tripId: id, dns: dns.map(dn => ({ dn })), confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK', 'PLAN_OTHER_TRUCK'] }));
   step(e); ok(rec(e, LOGI, { code: 3, tripId: id }));
   step(e); ok(rec(e, WH, { code: 4, tripId: id }));
   step(e, 20); ok(rec(e, WH, { code: 5, tripId: id }));

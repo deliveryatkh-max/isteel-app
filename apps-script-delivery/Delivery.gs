@@ -680,7 +680,7 @@ function record_(p, user) {
   const allowed = allowed_();
   if (!canRecord(user.role, allowed[code], code)) fail_('DENIED', 'Your role (' + (user.role || 'none') + ') cannot record ' + ev.en + '.', 'តួនាទីរបស់អ្នក (' + (user.role || 'គ្មាន') + ') មិនអាចកត់ត្រា ' + ev.kh + ' បានទេ។');
   const recorder = recorderLabel_(user, [allowed[code], DEFAULT_ALLOWED[code]].filter(Boolean).join('|'), p.truckType);
-  return saveEvent_(p, { email: user.email, recorder: recorder });
+  return saveEvent_(p, { email: user.email, recorder: recorder, approver: user.roleKey === 'admin' || user.roleKey === 'supervisor' });
 }
 
 /**
@@ -787,7 +787,7 @@ function saveEvent_(p, who) {
     const dnRows = tripDns.length ? rowsWhere_('dn', tripDns) : [];
     const info = dnsInfo_(tripDns, dnRows, plan);
     if (code !== 1) st = tripState(tripRows, doneSet_(info));
-    const check = checkEvent({ code: code, trip: code === 1 ? null : st, tripId: tripId, dns: dnList, dnInfo: info, plate: plate });
+    const check = checkEvent({ code: code, trip: code === 1 ? null : st, tripId: tripId, dns: dnList, dnInfo: info, plate: plate, approver: !!who.approver });
     if (check.errors.length) fail_(check.errors[0].code, check.errors.map(e => e.en).join(' '), check.errors.map(e => e.kh).join(' '));
     if (!who.scale) requiredFields_(code, p, dns, plate, plan);
     // Repeated taps / retries without a ref: the same step for the same DN a moment ago.

@@ -36,7 +36,7 @@ function gateIn(e, plate, extra) {
 }
 /** Pickup DNs, loading and Gate Out for a trip. */
 function loadAndOut(e, tripId, dns) {
-  step(e); ok(rec(e, LOGI, { code: 2, tripId, dns: dns.map(dn => ({ dn })), confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, LOGI, { code: 2, tripId, dns: dns.map(dn => ({ dn })), confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
   step(e); ok(rec(e, LOGI, { code: 3, tripId }));
   step(e); ok(rec(e, WH, { code: 4, tripId }));
   step(e); ok(rec(e, WH, { code: 5, tripId }));
@@ -140,7 +140,10 @@ test('6, 7, 8, 9: split DN over two trips (Kim example), customer stops, statuse
   step(e, 60);
   const t2 = gateIn(e, 'TEST-0001').tripId;
   assert.notStrictEqual(t2, t1);
-  step(e); ok(rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] }));
+  // Kim (22 Nov 2026): a DN already on another trip is refused, unless a Supervisor or Admin confirms it.
+  const refused = rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] });
+  assert.ok(!refused.ok && /^DN_DUPLICATE/.test(refused.error), refused.error);
+  step(e); ok(rec(e, SUP, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE'] }));
   loadRest(e, t2);
   step(e, 20); ok(rec(e, ADMIN, { code: 8, tripId: t2, dns: [{ dn: '9000000002' }] }));
   step(e); ok(rec(e, ADMIN, { code: 9, tripId: t2, dns: [{ dn: '9000000002', kg: 1200 }] }));
@@ -175,9 +178,9 @@ test('Kim example: DN-002 still pending on trip 1, delivered on trip 2 by the sa
   assert.strictEqual(warn.needConfirm[0].tripId, t1);
   const t2 = ok(rec(e, GUARD, { code: 1, plate: 'TEST-0001', confirm: ['OPEN_PREV_TRIP'] })).tripId;
   step(e);
-  const w2 = ok(rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] }));
-  assert.strictEqual(w2.needConfirm[0].code, 'DN_OPEN_ELSEWHERE', 'warns that DN-002 is open on trip 1');
-  ok(rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }], confirm: ['DN_OPEN_ELSEWHERE'] }));
+  const w2 = ok(rec(e, SUP, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] }));
+  assert.strictEqual(w2.needConfirm[0].code, 'DN_DUPLICATE', 'warns the supervisor that DN-002 is on trip 1');
+  ok(rec(e, SUP, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE'] }));
   let one = ok(e.call('trip', { tripId: t1 }, ADMIN));
   assert.strictEqual(one.dns.find(x => x.dn === '9000000002').leg, 'picked', 'not delivered on trip 1');
   assert.strictEqual(one.stage, 'on_delivery');
@@ -311,7 +314,7 @@ test('failed delivery stays open for a later trip; canceled trip', () => {
   assert.strictEqual(ok(e.call('trip', { tripId: t1 }, ADMIN)).stage, 'completed');
   assert.strictEqual(ok(e.call('dn', { dn: '9000000001' }, ADMIN)).status, 'failed');
   const t2 = gateIn(e, 'TEST-0001').tripId;
-  step(e); ok(rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000001' }] }));
+  step(e); ok(rec(e, ADMIN, { code: 2, tripId: t2, dns: [{ dn: '9000000001' }], confirm: ['DN_DUPLICATE'] }));
   assert.strictEqual(ok(e.call('dn', { dn: '9000000001' }, ADMIN)).status, 'in_progress');
   ok(rec(e, ADMIN, { code: 10, tripId: t2, remark: 'truck broke' }));
   assert.strictEqual(ok(e.call('trip', { tripId: t2 }, ADMIN)).stage, 'canceled');
@@ -510,7 +513,7 @@ test('one truck list: ISI trucks and drivers come from the Fuel sheet Driver & T
 const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64');
 function v2Load(e, tripId, wh, dns, kg) {
   step(e); ok(rec(e, WH, { v2: true, code: 4, tripId, wh }));
-  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId, wh, kg, dns: dns.map(dn => ({ dn })), photo: PHOTO, confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId, wh, kg, dns: dns.map(dn => ({ dn })), photo: PHOTO, confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
   step(e); ok(rec(e, WH, { v2: true, code: 6, tripId, wh }));
 }
 
@@ -528,7 +531,7 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   // End Loading twice is refused; start again at the second warehouse
   r = rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP1' });
   assert.ok(!r.ok && /^START_LOADING_FIRST/.test(r.error), r.error);
-  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 800, dns: [{ dn: '9000000002' }], photo: PHOTO, confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 800, dns: [{ dn: '9000000002' }], photo: PHOTO, confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
   r = rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 1, dns: [{ dn: '9000000002' }] });
   assert.ok(!r.ok && /^END_LOADING_FIRST/.test(r.error), r.error);
   step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2' }));
