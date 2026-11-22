@@ -105,7 +105,7 @@ test('3, 4, 5, 11: every event is its own row on the right trip; Gate Out fills 
   assert.deepStrictEqual(pick.map(r => r[col('លេខដឹកជញ្ជូន (DN#)')]), ['9000000001', '9000000002']);
   assert.strictEqual(pick[0][col('អតិថិជន')], '6100000001-TEST Customer A');
   assert.strictEqual(pick[0][col('លេខបញ្ជាទិញ (SO)')], '1060000001');
-  const end = rows.find(r => r[col('ស្ថានភាពដឹកជញ្ជូន')] === '៦.ឡើងទំនិញ រួចរាល់');
+  const end = rows.find(r => r[col('ស្ថានភាពដឹកជញ្ជូន')] === '៤.ឡើងទំនិញ រួចរាល់');
   assert.strictEqual(end[col('ឃ្លាំង')], 'PNP1');
   assert.strictEqual(end[col('ប្រើ Websling?')], 'មិនប្រើ');
   const trip = tripsRows(e).find(r => r[0] === a.tripId);
@@ -545,7 +545,7 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   assert.deepStrictEqual((s.dns || []).sort((a, b) => a.dn < b.dn ? -1 : 1).map(d => d.loadKg), [1200, 800], 'End Loading kg counts for the warehouse DN');
   // Warehouse rows carry the warehouse code and kg on the first DN row only
   const rows = logRows(e).filter(x => x[col('Master Trip ID')] === t);
-  const starts = rows.filter(x => x[col('ស្ថានភាពដឹកជញ្ជូន')] === '៥.ចាប់ផ្តើម ឡើងទំនិញ');
+  const starts = rows.filter(x => x[col('ស្ថានភាពដឹកជញ្ជូន')] === '៣.ចាប់ផ្តើម ឡើងទំនិញ');
   assert.strictEqual(starts.length, 2);
 
   const st2 = ok(e.call('scaleTrip', { plate: 'TEST-0001' }, GUARD));
@@ -602,4 +602,26 @@ test('v2 Start Loading: a DN not in the Delivery Plan needs its customer', () =>
   ok(e.call('record', { v2: true, code: 5, tripId: a.tripId, wh: 'PNP1', dns: [{ dn: '9000000001' }, { dn: '9100000001', custId: '6100000002', custName: 'TEST Customer B' }], ref: ref(), confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }, WH));
   const r = logRows(e).find(x => String(x[col('លេខដឹកជញ្ជូន (DN#)')]) === '9100000001');
   assert.strictEqual(r[col('អតិថិជន')], '6100000002-TEST Customer B');
+});
+
+test('step names numbered like the 9-step flow; old names still read', () => {
+  const e = env(); e.run('setup()');
+  const a = gateIn(e, 'TEST-0001');
+  step(e); ok(e.call('record', { v2: true, code: 4, tripId: a.tripId, wh: 'PNP1', ref: ref() }, WH));
+  const r = logRows(e).filter(x => x[col('Master Trip ID')] === a.tripId).map(x => x[col('ស្ថានភាពដឹកជញ្ជូន')]);
+  assert.deepStrictEqual(r, ['១.ចូលថ្លឹង', '២.ដល់ឃ្លាំង']);
+  ['៥.ចាប់ផ្តើម ឡើងទំនិញ', '៣.ចាប់ផ្តើម ឡើងទំនិញ'].forEach(x => assert.strictEqual(e.run('eventCode(' + JSON.stringify(x) + ')'), 5));
+  assert.strictEqual(e.run('eventCode("១០.ចាប់ផ្តើមទំលាក់ទំនិញ")'), 12);
+  assert.strictEqual(e.run('eventCode("៧.ចាប់ផ្តើមទំលាក់ទំនិញ")'), 12);
+  assert.strictEqual(e.run('eventCode("៧.ចេញពីកន្លែងថ្លឹង")'), 7);
+  assert.strictEqual(e.run('eventCode("២.ដល់កន្លែងចែកបុង")'), 2);
+});
+
+test('recorder: an Admin recording a truck step gets the truck group from the plate (rented = ៥)', () => {
+  const e = env(); e.run('setup()');
+  const a = gateIn(e, '3A-9999');
+  loadAndOut(e, a.tripId, ['9000000001']);
+  step(e); ok(rec(e, ADMIN, { code: 8, tripId: a.tripId, dns: [{ dn: '9000000001' }], truckType: 'isi', confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  const r = logRows(e).filter(x => x[col('Master Trip ID')] === a.tripId).pop();
+  assert.strictEqual(r[col('អ្នកកត់ត្រា')], '៥.ឡានជួល');
 });

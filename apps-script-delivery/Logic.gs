@@ -8,23 +8,25 @@
  *   row    = one Time Log record = one event (Key No. is unique on every row this app writes)
  */
 
+// Kim (23 Nov 2026): new rows are numbered like the 9-step flow (៣.ចាប់ផ្តើម ឡើងទំនិញ …); old = the text older rows and
+// the Type Record tab still carry, read the same way.
 // The journey events exactly as the Type Record sheet and Time Log spell them (the ៤ event has a double ់ in
 // the real data, kept on purpose). scope: trip = one row per event; dn = one row per DN it is about.
 const EVENTS = [
   { code: 1, key: 'gate_in', kh: '១.ចូលថ្លឹង', en: 'Gate In', scope: 'trip' },
   { code: 2, key: 'pickup_arrive', kh: '២.ដល់កន្លែងចែកបុង', en: 'Arrival-Pickup DN', scope: 'dn' },
   { code: 3, key: 'pickup_depart', kh: '៣.ចេញពីកន្លែងចែកបុង', en: 'Departure-Pickup DN', scope: 'trip' },
-  { code: 4, key: 'wh_arrive', kh: '៤.ដល់់ឃ្លាំង', en: 'Arrival-Loading Area', scope: 'trip' },
-  { code: 5, key: 'load_start', kh: '៥.ចាប់ផ្តើម ឡើងទំនិញ', en: 'Start Loading', scope: 'trip' },
-  { code: 6, key: 'load_end', kh: '៦.ឡើងទំនិញ រួចរាល់', en: 'End Loading', scope: 'trip' },
-  { code: 7, key: 'gate_out', kh: '៧.ចេញពីកន្លែងថ្លឹង', en: 'Gate Out', scope: 'trip' },
-  { code: 8, key: 'arrive_dest', kh: '៨.មកដល់ទីតាំងទំលាក់', en: 'Arrival Destination', scope: 'dn' },
+  { code: 4, key: 'wh_arrive', kh: '២.ដល់ឃ្លាំង', old: '៤.ដល់់ឃ្លាំង', en: 'Arrival-Loading Area', scope: 'trip' },
+  { code: 5, key: 'load_start', kh: '៣.ចាប់ផ្តើម ឡើងទំនិញ', old: '៥.ចាប់ផ្តើម ឡើងទំនិញ', en: 'Start Loading', scope: 'trip' },
+  { code: 6, key: 'load_end', kh: '៤.ឡើងទំនិញ រួចរាល់', old: '៦.ឡើងទំនិញ រួចរាល់', en: 'End Loading', scope: 'trip' },
+  { code: 7, key: 'gate_out', kh: '៥.ចេញពីកន្លែងថ្លឹង', old: '៧.ចេញពីកន្លែងថ្លឹង', en: 'Gate Out', scope: 'trip' },
+  { code: 8, key: 'arrive_dest', kh: '៦.មកដល់ទីតាំងទំលាក់', old: '៨.មកដល់ទីតាំងទំលាក់', en: 'Arrival Destination', scope: 'dn' },
   { code: 9, key: 'delivered', kh: '៩.បានប្រគល់ទំនិញ', en: 'Delivered', scope: 'dn' },
   { code: 10, key: 'canceled', kh: 'x.លុបចោលការដឹកជញ្ជូន', en: 'Canceled', scope: 'any' },
   { code: 11, key: 'failed', kh: 'x.ការដឹកជញ្ជូនបរាជ័យ', en: 'Delivery Failed', scope: 'dn' },
   // Kim's 9-step flow (20 Nov 2026): unloading at the customer, recorded per DN by the driver.
-  { code: 12, key: 'unload_start', kh: '១០.ចាប់ផ្តើមទំលាក់ទំនិញ', en: 'Start Unloading', scope: 'dn' },
-  { code: 13, key: 'unload_end', kh: '១១.ទំលាក់ទំនិញរួចរាល់', en: 'Finish Unloading', scope: 'dn' },
+  { code: 12, key: 'unload_start', kh: '៧.ចាប់ផ្តើមទំលាក់ទំនិញ', old: '១០.ចាប់ផ្តើមទំលាក់ទំនិញ', en: 'Start Unloading', scope: 'dn' },
+  { code: 13, key: 'unload_end', kh: '៨.ទំលាក់ទំនិញរួចរាល់', old: '១១.ទំលាក់ទំនិញរួចរាល់', en: 'Finish Unloading', scope: 'dn' },
 ];
 
 /**
@@ -45,9 +47,10 @@ EVENTS.forEach(e => { EV[e.key] = e; EV[e.code] = e; });
 function eventCode(text) {
   const s = String(text == null ? '' : text).trim();
   if (!s) return 0;
-  for (const e of EVENTS) if (e.kh === s) return e.code;
+  for (const e of EVENTS) if (e.kh === s || e.old === s) return e.code;
   const loose = s.replace(/់+/g, '់').replace(/\s+/g, '');
-  for (const e of EVENTS) if (e.kh.replace(/់+/g, '់').replace(/\s+/g, '') === loose) return e.code;
+  const norm = x => String(x || '').replace(/់+/g, '់').replace(/\s+/g, '');
+  for (const e of EVENTS) if (norm(e.kh) === loose || (e.old && norm(e.old) === loose)) return e.code;
   return 0;
 }
 
