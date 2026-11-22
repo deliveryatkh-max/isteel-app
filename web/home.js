@@ -93,7 +93,7 @@
           ${wait ? `<span class="count" aria-hidden="true">${wait > 99 ? '99+' : wait}</span>` : ''}
           <span class="t">${esc(t(a.kh, a.en))}</span>
           ${a.url ? '' : `<span class="badge">${t('មកដល់ឆាប់ៗ', 'Coming soon')}</span>`}
-          ${wait ? `<span class="wait">${t('រង់ចាំពិនិត្យ', 'Waiting for review')} ${wait}</span>` : ''}`;
+          ${wait ? `<span class="wait">${a.key === 'transport' ? t('ឡានរង់ចាំ', 'Trucks waiting') : t('រង់ចាំពិនិត្យ', 'Waiting for review')} ${wait}</span>` : ''}`;
         return a.url ? `<a class="tile" href="${esc(a.url)}">${inner}</a>`
           : `<button type="button" class="tile soon" data-soon="${esc(t(a.kh, a.en))}">${inner}</button>`;
       }).join('')}</div>` : `
@@ -193,6 +193,26 @@
   }
 
   // Opens at once from the saved menu, then checks with the server in the background.
+  // Transport tile (Kim, 22 Nov 2026): trucks waiting at the warehouse (Gate In, no Gate Out yet), from the Delivery server.
+  async function transportCount(d, key) {
+    const url = (window.DELIVERY_CONFIG || {}).API_URL;
+    if (!url || (d.apps || []).indexOf('transport') < 0) return;
+    let n;
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'homeCount', token: get(TOKEN_KEY), payload: {} }) });
+      const data = await res.json();
+      if (data && data.session) set(TOKEN_KEY, data.session);
+      if (!data || !data.ok || !data.data) return;   // no Delivery access or old Delivery.gs: no badge change
+      n = Number(data.data.waiting) || 0;
+    } catch (e) { return; }
+    const was = Number((d.badges || {}).transport) || 0;
+    if (n === was) return;
+    d.badges = Object.assign({}, d.badges);
+    if (n) d.badges.transport = n; else delete d.badges.transport;
+    set(key, JSON.stringify(d));
+    renderMenu(d);
+  }
+
   // quiet = background refresh (new apps ticked, waiting counts): no spinner, redraws only on a change
   async function load(quiet) {
     quiet = quiet === true;
@@ -207,9 +227,13 @@
     }
     try {
       const d = await api('home');
+      // Keep the last Transport count until the Delivery server answers (no flicker).
+      const tw = cached && cached.badges && cached.badges.transport;
+      if (tw) d.badges = Object.assign({}, d.badges, { transport: tw });
       set(key, JSON.stringify(d));
       if (window.MENUS && Array.isArray(d.menusOff)) MENUS.set(d.menusOff);   // who sees which menu (👥 Users › Menus)
       if (JSON.stringify(d) !== JSON.stringify(cached)) renderMenu(d);
+      transportCount(d, key);
     } catch (e) {
       if (e.code === 'AUTH') { set(TOKEN_KEY, null); renderLogin(); }
       else if (quiet) throw e;
