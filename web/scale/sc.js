@@ -114,6 +114,26 @@
       }
     } catch (e) { /* no internet: tried again at the next weigh or refresh */ } finally { gateBusy = false; }
   }
+  // Kim (22 Nov 2026): the 2nd weigh of a loading truck is filled with the DNs and actual kg the warehouse typed in
+  // Delivery. Until the last warehouse has recorded End Loading, nothing is filled and the weigher types them.
+  async function loadFromDelivery(x) {
+    if (DEMO || !DLV_API || !x || typeOf(x) !== 'Out' || (x.dns || []).length) return;
+    try {
+      const res = await fetch(DLV_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'scaleTrip', token: get(TOKEN_KEY), payload: { plate: x.plate } }) });
+      const data = await res.json();
+      if (data && data.session) set(TOKEN_KEY, data.session);
+      if (!data || !data.ok || !data.data || !data.data.found || F.cid !== x.cid || F.dns.length) return;
+      const d = data.data;
+      if (!d.ready) { toast('⏳ ' + t('ឃ្លាំងមិនទាន់ឡើងទំនិញរួច។ សូមវាយ DN និង kg ដោយដៃ។', 'Loading is not finished yet. Type the DN and kg.')); return; }
+      const list = (d.dns || []).filter(z => z && z.dn && !dnUsedBy(z.dn));
+      if (!list.length) return;
+      F.dns = list.map(z => z.dn);
+      F.dnkg = {};
+      list.forEach(z => { if (Number(z.kg) > 0) F.dnkg[z.dn] = Number(z.kg); });
+      keepForm(); paintForm();
+      toast('📦 ' + t('DN និង kg ពីឃ្លាំង (ដឹកជញ្ជូន)', 'DN and kg from the warehouse (Delivery)'));
+    } catch (e) { /* no internet: the weigher types them */ }
+  }
   function claims() {
     try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); }
     catch (e) { return null; }
@@ -1266,7 +1286,7 @@
       // Admin: edit or delete a waiting truck from the list (Kim, 9 Nov 2026)
       $$('#site [data-tedit]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tedit) + '?edit'; }; });
       $$('#site [data-tdel]').forEach(b => { b.onclick = e => { e.stopPropagation(); location.hash = '#/t/' + encodeURIComponent(b.dataset.tdel) + '?void'; }; });
-      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), dnkg: Object.assign({}, x.dnkg || {}), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '', empty1: x.empty1 || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); }; });
+      $$('[data-open]').forEach(r => { r.onclick = () => { const x = ticketBy(r.dataset.open); if (!x) return; F = { cid: x.cid, plate: x.plate, company: x.company || '', customer: x.customer || '', item: x.item || '', type: x.type || '', dns: (x.dns || []).slice(), dnkg: Object.assign({}, x.dnkg || {}), driver: x.driver || '', dest: x.dest || '', note: x.note || '', load: x.load || '', tarp: x.tarp || '', empty1: x.empty1 || '' }; keepForm(); PENDING = null; LASTDONE = ''; paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); loadFromDelivery(x); }; });
     }
     if ($('#todayList')) {
       const td = today();

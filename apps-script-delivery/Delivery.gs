@@ -57,6 +57,7 @@ function doPost(e) {
     if (body.action === 'trackInfo') return json_({ ok: true, data: trackInfo_(p) });
     // Truck Scale (20 Nov 2026): the 1st weigh opens the trip (Gate In), the 2nd weigh closes it (Gate Out).
     // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
+    if (body.action === 'scaleTrip') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleTrip_(p) }; if (su.session) o.session = su.session; return json_(o); }
     if (body.action === 'scaleGate') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleGate_(p, su) }; if (su.session) o.session = su.session; return json_(o); }
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, p, user) };
@@ -716,6 +717,45 @@ function scaleGate_(p, user) {
   const r = saveEvent_({ code: 7, tripId: onSite[0], remark: '⚖️ ' + [ticket, p.net ? 'Net ' + kgTxt(p.net) : '', dns.length ? 'DN ' + dns.join(', ') : ''].filter(Boolean).join(' · '),
     confirm: ['NO_DN', 'NO_GATE_IN'], ref: ticket ? 'scale_out_' + ticket : '' }, who(7));
   return r.needConfirm ? { skipped: 'CONFIRM', warnings: r.needConfirm } : { tripId: r.tripId };
+}
+
+/**
+ * Truck Scale 2nd weigh (Kim, 22 Nov 2026): the DNs and actual kg the warehouse typed while loading, for the truck on site.
+ * Ready only when the last warehouse has recorded End Loading; otherwise the weigher types them. A warehouse that loaded
+ * one DN gives that DN its kg; several DNs at one warehouse share one total, so their kg is left for the weigher.
+ */
+function scaleTrip_(p) {
+  const plate = normPlate(p.plate);
+  if (!plate) fail_('BAD', 'Truck is needed.');
+  const idx = tripsSheetIndex_();
+  const done = { [STAGES.completed.kh]: 1, [STAGES.canceled.kh]: 1 };
+  const onSite = Object.keys(idx).filter(id => idx[id].plate === plate && idx[id].gateIn && !idx[id].gateOut && !done[idx[id].status]
+    && Date.now() - idx[id].gateIn < 3 * 86400000).sort((a, b) => idx[b].gateIn - idx[a].gateIn);
+  if (!onSite.length) return { found: false };
+  const tripId = onSite[0];
+  const rows = rowsWhere_('trip', [tripId]).sort((a, b) => a.time - b.time || a.seq - b.seq);
+  const st = tripState(rows);
+  if (st.lastLoad !== 6) return { found: true, tripId: tripId, ready: false };
+  const out = [], seen = {};
+  let batch = [], closed = false;
+  rows.forEach(r => {
+    if (r.code === 5 && r.dn) {
+      if (closed) { batch = []; closed = false; }
+      batch.push(r);
+    }
+    if (r.code === 6) {
+      const dnsHere = Array.from(new Set(batch.map(x => x.dn)));
+      const kg = Number(r.kg) || batch.reduce((a, x) => a + (Number(x.kg) || 0), 0);
+      dnsHere.forEach(dn => {
+        const d = st.dns[dn];
+        if (seen[dn] || (d && (d.leg === 'canceled' || d.leg === 'moved'))) return;
+        seen[dn] = 1;
+        out.push({ dn: dn, kg: dnsHere.length === 1 && kg > 0 ? kg : null, wh: r.wh || (batch[0] && batch[0].wh) || '' });
+      });
+      closed = true;
+    }
+  });
+  return { found: true, tripId: tripId, ready: true, dns: out };
 }
 
 /** The Time Log "អ្នកកត់ត្រា" value: the user's group from Type Record (Security → ១.សន្តិសុខ …). */

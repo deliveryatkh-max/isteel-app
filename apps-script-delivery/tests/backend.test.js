@@ -534,6 +534,7 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   r = rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP1', kg: 5 });
   assert.ok(!r.ok && /^START_LOADING_FIRST/.test(r.error), r.error);
   step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  assert.strictEqual(ok(e.call('scaleTrip', { plate: 'TEST-0001' }, GUARD)).ready, false, 'still loading: the weigher types');
   r = rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 1, dns: [{ dn: '9000000002' }] });
   assert.ok(!r.ok && /^END_LOADING_FIRST/.test(r.error), r.error);
   step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2', kg: 800, photo: PHOTO }));
@@ -547,6 +548,10 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   const starts = rows.filter(x => x[col('ស្ថានភាពដឹកជញ្ជូន')] === '៥.ចាប់ផ្តើម ឡើងទំនិញ');
   assert.strictEqual(starts.length, 2);
 
+  const st2 = ok(e.call('scaleTrip', { plate: 'TEST-0001' }, GUARD));
+  assert.ok(st2.ready);
+  assert.deepStrictEqual(st2.dns.map(d => [d.dn, d.kg, d.wh]), [['9000000001', 1200, 'PNP1'], ['9000000002', 800, 'PNP2']]);
+  assert.strictEqual(ok(e.call('scaleTrip', { plate: 'NONE-1' }, GUARD)).found, false);
   step(e, 20);
   const out = ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0001', ticket: 'T1', net: 2000, dns: ['9000000001', '9000000002'] }, GUARD));
   assert.strictEqual(out.tripId, t);
