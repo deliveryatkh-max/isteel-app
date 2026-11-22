@@ -25,7 +25,7 @@ const errors = [];
     const yes = page.getByRole('button', { name: 'Yes, record' });
     try { await yes.waitFor({ timeout: 2500 }); await yes.click(); } catch (e) { /* no warning */ }
   }
-  const gin = await api('scaleGate', { kind: 'in', plate: PLATE, driver: 'X', ticket: 'UI1', kg: 8000 }, 'google:guard@test.kh');
+  const gin = await api('scaleGate', { kind: 'in', plate: PLATE, driver: '07.Driver A', ticket: 'UI1', kg: 8000 }, 'google:guard@test.kh');
   assert.ok(gin.ok && gin.data.tripId, JSON.stringify(gin));
   const trip = gin.data.tripId;
 
@@ -132,7 +132,8 @@ const errors = [];
   await cp.goto(BASE + '/delivery/track.html?d=9000000101&t=' + encodeURIComponent(trip) + '&k=' + tk);
   await cp.getByText(/Your steel is on the way|កំពុងធ្វើដំណើរ/).waitFor({ timeout: 10000 });
   await cp.locator('#gmap[href*="11.56,104.91"]').waitFor({ state: 'attached', timeout: 10000 });
-  assert.strictEqual(await cp.getByText(/Driver A/).count(), 0, 'no driver name');
+  await cp.getByText('Driver A').first().waitFor({ timeout: 10000 });
+  assert.strictEqual(await cp.getByText(/ kg/).count(), 0, 'no kg');
   if (process.env.LEAFLET_DIR) await cp.locator('.leaflet-marker-icon').first().waitFor({ timeout: 10000 });
   await cp.waitForTimeout(1500);
   await cp.screenshot({ path: SHOTS + 'steps-07-track.png', fullPage: true });

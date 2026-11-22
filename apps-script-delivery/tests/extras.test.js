@@ -323,7 +323,7 @@ test('customer live tracking: driver GPS after Gate Out, customer link shows it,
   assert.strictEqual(info.gps.ll, '11.550000,104.920000');
   assert.strictEqual(info.leg, 'picked');
   assert.ok(info.times.out);
-  assert.ok(!('driver' in info), 'no driver name');
+  assert.strictEqual(info.driver.name, 'Driver A', 'driver name for the customer (Kim, 22 Nov 2026)');
   assert.strictEqual(tab(e, 'Live GPS').length, 1);
   step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
   const after = ok(e.call('trackInfo', { d: '9000000001', t: id, k: tk }, null));

@@ -603,7 +603,15 @@ function trackLinks_(tripId, rows) {
   rows.forEach(r => { if (r.dn && !out[r.dn]) out[r.dn] = trackToken_(r.dn, tripId); });
   return out;
 }
-/** What the customer sees: only this DN, the steps, the truck plate and position, the site pin. No driver name or phone. */
+/** Driver of the trip with a phone from the "Driver & Truck" list (Kim, 22 Nov 2026: shown to the customer). */
+function driverContact_(name) {
+  const n = String(name || '').trim();
+  if (!n) return { name: '', phone: '' };
+  const bare = x => String(x || '').replace(/^\s*\d+\s*[.\-]\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const d = (master_().drivers || []).find(x => x.name === n || bare(x.name) === bare(n));
+  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: d && d.phone ? d.phone : '' };
+}
+/** What the customer sees: only this DN, the steps, the truck plate and position, the site pin, the driver's name and phone. */
 function trackInfo_(p) {
   const dn = normDn(p.d), tripId = String(p.t || '').trim();
   if (!dn || !tripId || String(p.k || '') !== trackToken_(dn, tripId)) fail_('LINK', 'This link is not valid.', 'តំណនេះមិនត្រឹមត្រូវ។');
@@ -623,6 +631,8 @@ function trackInfo_(p) {
     times: { out: at(7), arrived: at(8), unloading: at(12), unloaded: at(13), delivered: at(9), failed: at(11), canceled: at(10) },
     site: site ? site.latlong : '', factory: '11.525575,104.868668', serverNow: Date.now(),
   };
+  const drvName = (rows.filter(r => r.driver).pop() || {}).driver;
+  if (!done) out.driver = driverContact_(drvName);
   if (!done && st.gateOut) out.gps = gpsLast_(tripId);
   if (d.leg === 'delivered') {
     const pr = proofFor_(tripId).filter(x => normDn(x.dn) === dn).pop();
