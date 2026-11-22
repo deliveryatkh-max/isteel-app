@@ -351,7 +351,7 @@ const EMP_ID_MIN = 100000, EMP_ID_MAX = 190000;   // Kim, 10 Oct 2026
 const MASTER_ACCESS = ['Email', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
   ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse', 'Hidden Menus']);
 const COPY_HEAD = ['Email', 'Name', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse', 'Hidden Menus']);
+  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse', 'Hidden Menus', 'Phone']);   // Phone: driver's number on the customer tracking page (22 Nov 2026)
 // Inbound app warehouses (Kim, 2 Nov 2026). A person's ticks are kept in "Inbound Warehouse", comma-separated; "All" = every warehouse.
 const IB_WAREHOUSES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
 const ibWhList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -439,6 +439,7 @@ function mRow_(m, r, i) {
     apps: apps, team: String(g('TEAM') || '').trim(), offNote: String(g('Off Note') || '').trim(), offAt: at('Off At'),
     appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
     claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')), menusOff: menuList_(g('Hidden Menus')),
+    phone: String(g('Phone') == null ? '' : g('Phone')).replace(/\.0+$/, '').trim(),
   };
 }
 const displayName_ = e => e.appName || e.kh || e.full;
@@ -495,7 +496,7 @@ function syncUsers_(force) {
     seen[email] = 1;
     if (e.active && /admin/i.test(e.role)) admins++;
     rows.push([email, displayName_(e), e.role || 'user', e.active ? 'Yes' : 'No'].concat(HOME_APPS.map(a => !!e.apps[a.key]),
-      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', '), e.menusOff.join(', ')]));
+      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', '), e.menusOff.join(', '), e.phone]));
   }));
   if (!admins) return 'Skipped: no active admin in Employee & Approver.';
   const props = PropertiesService.getScriptProperties();
