@@ -7,7 +7,7 @@ import { Alert, Badge, Modal, Opt, PhotoInput, Picker, Segmented, Spinner, toast
 import { Field, Section, scrollToMissing } from '../components/Form';
 import { MultiPhoto, RateLinks, SignaturePad, SiteRateForm, siteRateSigned } from '../components/Proof';
 import { TripSections } from './Trip';
-import { ScanView, Scanner } from '../components/Scanner';
+import { beep, ScanView, Scanner } from '../components/Scanner';
 import { useSubmit, warmLocation } from '../components/submit';
 
 /**
@@ -218,7 +218,7 @@ function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
 }
 
 function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
-  const { boot } = useApp();
+  const { boot, ops } = useApp();
   const trip = p.trip;
   const ll = lastLoadOf(trip);
   const [again, setAgain] = useState(false);
@@ -226,6 +226,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const [wh, setWh] = useState('');
   const [dns, setDns] = useState<string[]>([]);
   const [dnIn, setDnIn] = useState('');
+  const [dnErr, setDnErr] = useState('');
   const [kgIn, setKgIn] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [websling, setWebsling] = useState<'' | 'yes' | 'no'>('');
@@ -239,10 +240,34 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const n = ll === 0 ? 2 : ll === 4 ? 3 : ll === 5 ? 4 : again ? 3 : 0;
   const base = { tripId: trip.id, truckType: p.truckType };
   const label = (k: number) => stepName(k) + ' · ' + trip.plate;
-  const addDn = (raw: string) => {
+  // Kim (22 Nov 2026): a DN already on another trip is flagged as soon as it is typed or scanned, not at Record.
+  // Others cannot add it; a Supervisor / Admin may (the server asks them to confirm).
+  const approver = boot.user.roleKey === 'admin' || boot.user.roleKey === 'supervisor';
+  const usedMsg = (d: string, ids: string[]) => t('DN ' + d + ' មាននៅលើជើងដឹក ' + ids.join(', ') + ' រួចហើយ។', 'DN ' + d + ' is already on trip ' + ids.join(', ') + '.') + (approver ? '' : ' ' + t('សូមឲ្យ Supervisor ឬ Admin កត់ត្រា។', 'Ask a Supervisor or Admin to record it.'));
+  const addDn = async (raw: string) => {
     const d = cleanDn(raw);
-    if (/^[0-9A-Z-]{4,20}$/.test(d) && dns.indexOf(d) < 0) setDns(dns.concat(d));
     setDnIn('');
+    if (!/^[0-9A-Z-]{4,20}$/.test(d) || dns.indexOf(d) >= 0) return;
+    setDnErr('');
+    if ((trip.dns || []).some(z => z.dn === d && z.leg !== 'canceled')) {
+      beep();
+      setDnErr(t('DN ' + d + ' មាននៅលើជើងដឹកនេះរួចហើយ។', 'DN ' + d + ' is already on this trip.'));
+      return;
+    }
+    const local = openTrips(ops).filter(x => x.id !== trip.id && x.dns.some(z => z.dn === d && z.leg !== 'canceled')).map(x => x.id);
+    let used = local;
+    if (!used.length) {
+      try {
+        const info = await api<{ legs: { tripId: string; leg: string }[] }>('dn', { dn: d });
+        used = Array.from(new Set((info.legs || []).filter(l => l.tripId !== trip.id && l.leg !== 'canceled').map(l => l.tripId)));
+      } catch { /* offline: the server checks again at Record */ }
+    }
+    if (used.length) {
+      beep();
+      setDnErr(usedMsg(d, used));
+      if (!approver) return;
+    }
+    setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
   };
 
   if (n === 0) {
@@ -293,6 +318,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
               <button type="button" className="btn" onClick={() => addDn(dnIn)}>➕</button>
               <button type="button" className="btn" onClick={() => setScan(true)}>📷</button>
             </div>
+            {dnErr ? <div className="mt-2"><Alert tone={approver ? 'warn' : 'bad'}>⚠️ {dnErr}</Alert></div> : null}
             <div className="flex flex-wrap gap-2 mt-2">
               {dns.map(d => <button key={d} type="button" className="chip chip-on" onClick={() => setDns(dns.filter(x => x !== d))}>{d} ✕</button>)}
             </div>

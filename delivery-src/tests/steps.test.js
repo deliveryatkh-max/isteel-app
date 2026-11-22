@@ -45,6 +45,7 @@ const errors = [];
   await save(w, w.getByRole('button', { name: /Record · Start loading/ }));
   await w.getByText('Add at least one DN').waitFor();
   await w.getByPlaceholder('Type the DN').fill('9000000101'); await w.getByPlaceholder('Type the DN').press('Enter');
+  await w.getByRole('button', { name: '9000000101 ✕' }).waitFor({ timeout: 10000 });
   await w.locator('#kg input').fill('1500');
   await w.locator('#photos input[type=file]').first().setInputFiles([IMG]);
   await save(w, w.getByRole('button', { name: /Record · Start loading/ }));
@@ -57,6 +58,7 @@ const errors = [];
   await w.getByText('Choose the warehouse').click();
   await w.locator('[role=dialog] button', { hasText: 'PNP2' }).first().click();
   await w.getByPlaceholder('Type the DN').fill('9000000102'); await w.getByPlaceholder('Type the DN').press('Enter');
+  await w.getByRole('button', { name: '9000000102 ✕' }).waitFor({ timeout: 10000 });
   await w.locator('#kg input').fill('700');
   await w.locator('#photos input[type=file]').first().setInputFiles([IMG]);
   await save(w, w.getByRole('button', { name: /Record · Start loading/ }));
@@ -116,6 +118,18 @@ const errors = [];
   await lp.locator('.card', { hasText: 'DN 9000000101' }).getByRole('button', { name: /Record · Start unloading/ }).waitFor({ timeout: 10000 });
   await lp.screenshot({ path: SHOTS + 'steps-05-driver-link.png', fullPage: true });
   console.log('PASS driver link uses the new steps');
+
+  // A DN already on another trip is flagged when typed (Kim, 22 Nov 2026)
+  const g2 = await api('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: 'Y', ticket: 'UI2', kg: 7000 }, 'google:guard@test.kh');
+  assert.ok(g2.ok && g2.data.tripId, JSON.stringify(g2));
+  await api('record', { v2: true, code: 4, tripId: g2.data.tripId, wh: 'PNP1', ref: 'x1' }, 'google:wh@test.kh');
+  await w.goto(BASE + '/delivery/#/steps/' + encodeURIComponent(g2.data.tripId));
+  await w.getByText('3. Start loading').waitFor({ timeout: 10000 });
+  await w.getByPlaceholder('Type the DN').fill('9000000101'); await w.getByPlaceholder('Type the DN').press('Enter');
+  await w.getByText(/is already on trip .* Ask a Supervisor/).waitFor({ timeout: 10000 });
+  assert.strictEqual(await w.getByRole('button', { name: '9000000101 ✕' }).count(), 0, 'used DN not added');
+  await w.screenshot({ path: SHOTS + 'steps-06-dn-used.png' });
+  console.log('PASS used DN flagged when typed');
 
   const s = await (await fetch(BASE + '/__sheet')).json();
   const rows = s.log.filter(r => r.includes(trip));
