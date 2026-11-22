@@ -581,3 +581,13 @@ test('Scale Gate In needs a signed-in active user; old trips are untouched', () 
   assert.ok(!r.ok);
   assert.ok(!ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0002' }, GUARD)).tripId);
 });
+
+test('home menu: Transport tile counts trucks inside (Gate In, no Gate Out); drivers see none', () => {
+  const e = env(); e.run('setup()');
+  assert.strictEqual(ok(e.call('homeCount', {}, ADMIN)).waiting, 0);
+  const a = gateIn(e, 'TEST-0001');
+  step(e, 2); gateIn(e, 'TEST-0002');
+  assert.strictEqual(ok(e.call('homeCount', {}, WH)).waiting, 2);
+  loadAndOut(e, a.tripId, ['9000000001']);
+  assert.strictEqual(ok(e.call('homeCount', {}, ADMIN)).waiting, 1);
+});

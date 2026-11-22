@@ -59,6 +59,8 @@ function doPost(e) {
     // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
     if (body.action === 'scaleTrip') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleTrip_(p) }; if (su.session) o.session = su.session; return json_(o); }
     if (body.action === 'scaleGate') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleGate_(p, su) }; if (su.session) o.session = su.session; return json_(o); }
+    // Home menu badge (Kim, 22 Nov 2026): trucks waiting at the warehouse (Gate In, no Gate Out yet), like the Fuel tile.
+    if (body.action === 'homeCount') { const hu = authenticate_(body.token); const o = { ok: true, data: { waiting: hu.roleKey === 'driver' ? 0 : waitingTrucks_() } }; if (hu.session) o.session = hu.session; return json_(o); }
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, p, user) };
     if (user.session) out.session = user.session;
@@ -453,6 +455,18 @@ function groupTrips_(rows) {
   const g = {};
   rows.forEach(r => { if (r.trip) (g[r.trip] || (g[r.trip] = [])).push(r); });
   return g;
+}
+
+/** Trucks inside (Gate In, no Gate Out, not completed/canceled, within OPEN_DAYS); kept a minute for the home menu. */
+function waitingTrucks_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('home_waiting');
+  if (hit !== null) return Number(hit) || 0;
+  const idx = tripsSheetIndex_();
+  const done = { [STAGES.completed.kh]: 1, [STAGES.canceled.kh]: 1 };
+  const n = Object.keys(idx).filter(id => { const x = idx[id]; return x.gateIn && !x.gateOut && !done[x.status] && Date.now() - x.gateIn < OPEN_DAYS * 86400000; }).length;
+  cache.put('home_waiting', String(n), 60);
+  return n;
 }
 
 function tripsSheetIndex_() {
@@ -940,6 +954,7 @@ function saveEvent_(p, who) {
     if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email, p.driver);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
     if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
+    if (code === 1 || code === 7) CacheService.getScriptCache().remove('home_waiting');   // home menu truck count
     if (code === 7) { try { res.notified = trackNotify_(tripId); } catch (e) { console.error('trackNotify: ' + e); } }   // live map link to the customer
     if (ref) cache.put('ref_' + ref, JSON.stringify(res), 21600);
     return res;
