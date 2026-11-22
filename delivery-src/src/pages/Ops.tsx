@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { t, useLang } from '../i18n';
-import { go, matches, tripHref, useApp } from '../state';
-import { insideOf, TripCard } from '../components/TripCard';
-import { Badge, Segmented, Spinner } from '../components/ui';
+import { go, matches, useApp } from '../state';
+import { TripCard } from '../components/TripCard';
+import { Segmented, Spinner } from '../components/ui';
 
 /** Home / Operations: today's numbers and the trips still running. */
 export function OpsPage() {
@@ -34,14 +34,6 @@ export function OpsPage() {
     if (q.trim()) l = l.filter(x => matches([x.id, x.plate, x.driver, x.dns.map(d => d.dn + ' ' + d.cust).join(' ')].join(' '), q));
     return l;
   }, [ops, q, filter]);
-  const dn = ops ? ops.dnToday : null;
-  // Trucks inside the plant the longest: orange after INSIDE_WARN_MIN, red after INSIDE_LATE_MIN (Delivery Settings).
-  const waitList = useMemo(() => {
-    const s = boot.settings;
-    return (ops ? ops.trips : []).map(x => ({ x, i: insideOf(x, s && s.warnMin, s && s.lateMin) })).filter(w => w.i)
-      .sort((a, b) => b.i!.min - a.i!.min).slice(0, 5);
-  }, [ops, boot.settings]);
-  const lateN = waitList.filter(w => w.i!.tone !== 'ok').length;
   const Card = (c: { n: number | string; km: string; en: string; tone?: string; f?: typeof filter }) => (
     <button type="button" onClick={() => c.f && setFilter(c.f)}
       className={'card !mb-0 !p-3 text-left ' + (c.f && filter === c.f ? '!border-accent' : '')} aria-pressed={c.f ? filter === c.f : undefined}>
@@ -60,27 +52,7 @@ export function OpsPage() {
         <Card n={k.completed} km="បានបញ្ចប់ថ្ងៃនេះ" en="Completed today" tone="text-ok" />
         <Card n={k.canceled} km="លុបចោលថ្ងៃនេះ" en="Canceled today" tone="text-bad" />
       </div>
-      {waitList.length ? (
-        <section className="card !p-3">
-          <h2 className="text-[15px] font-bold m-0 mb-1.5">⏱ {t('រង់ចាំយូរជាងគេក្នុងរោងចក្រ', 'Waiting longest inside the plant')}
-            {lateN ? <span className="text-bad"> · {lateN} {t('យឺត', 'late')}</span> : null}</h2>
-          {waitList.map(({ x, i }) => (
-            <a key={x.id} href={tripHref(x.id)} className="flex items-center gap-2 py-1.5 border-b border-line last:border-0 no-underline text-ink">
-              <span className={'w-2.5 h-2.5 rounded-full flex-none ' + (i!.tone === 'bad' ? 'bg-bad' : i!.tone === 'warn' ? 'bg-warn' : 'bg-ok')} />
-              <b className="tracking-wide">{x.plate}</b>
-              <span className="flex-1 min-w-0 truncate"><Badge k={x.stage} label={boot.stages[x.stage]} /></span>
-              <b className={i!.tone === 'bad' ? 'text-bad' : i!.tone === 'warn' ? 'text-warn' : 'text-brand'}>{i!.text}</b>
-            </a>
-          ))}
-          <p className="muted text-[12px] m-0 mt-1">{t('ពណ៌ទឹកក្រូច ', 'Orange after ')}{(boot.settings || { warnMin: 90 }).warnMin}{t(' នាទី · ក្រហម ', ' min · red after ')}{(boot.settings || { lateMin: 120 }).lateMin}{t(' នាទី', ' min')}</p>
-        </section>
-      ) : null}
-      <h2 className="text-[15px] font-bold mt-1 mb-2">{t('DN ថ្ងៃនេះ', 'DNs today')}</h2>
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <Card n={dn ? dn.in_progress : '–'} km="កំពុងដឹក" en="In progress" />
-        <Card n={dn ? dn.partial : '–'} km="ប្រគល់មួយផ្នែក" en="Partly delivered" tone="text-warn" />
-        <Card n={dn ? dn.delivered : '–'} km="ប្រគល់រួច" en="Delivered" tone="text-ok" />
-      </div>
+      {/* Kim (22 Nov 2026): the "waiting longest" box and the DNs today cards are removed. */}
       <div className="flex items-center gap-2 mb-2">
         <h2 className="text-[15px] font-bold m-0 flex-1">
           {{ active: t('ជើងដឹកកំពុងដំណើរការ', 'Active trips'), inside: t('នៅក្នុងរោងចក្រ', 'Inside the site'), out: t('ចេញដឹកហើយ', 'Out on delivery'), today: t('ជើងដឹកថ្ងៃនេះ', 'Trips today') }[filter]}
