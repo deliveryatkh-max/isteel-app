@@ -603,13 +603,15 @@ function trackLinks_(tripId, rows) {
   rows.forEach(r => { if (r.dn && !out[r.dn]) out[r.dn] = trackToken_(r.dn, tripId); });
   return out;
 }
-/** Driver of the trip with a phone from the "Driver & Truck" list (Kim, 22 Nov 2026: shown to the customer). */
+/** Driver of the trip with a phone from the Users sheet "Phone" column (Kim, 22 Nov 2026: shown to the customer). */
 function driverContact_(name) {
   const n = String(name || '').trim();
   if (!n) return { name: '', phone: '' };
   const bare = x => String(x || '').replace(/^\s*\d+\s*[.\-]\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-  const d = (master_().drivers || []).find(x => x.name === n || bare(x.name) === bare(n));
-  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: d && d.phone ? d.phone : '' };
+  const d = usersCached_().filter(u => u.phone).find(u => u.name === n || bare(u.name) === bare(n));
+  let phone = d && d.phone ? String(d.phone).trim() : '';
+  if (/^[1-9]\d{7,8}$/.test(phone)) phone = '0' + phone;   // a number cell drops the leading 0
+  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: phone };
 }
 /** What the customer sees: only this DN, the steps, the truck plate and position, the site pin, the driver's name and phone. */
 function trackInfo_(p) {

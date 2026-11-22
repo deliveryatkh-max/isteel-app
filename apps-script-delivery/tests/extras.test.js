@@ -324,6 +324,8 @@ test('customer live tracking: driver GPS after Gate Out, customer link shows it,
   assert.strictEqual(info.leg, 'picked');
   assert.ok(info.times.out);
   assert.strictEqual(info.driver.name, 'Driver A', 'driver name for the customer (Kim, 22 Nov 2026)');
+  e.run("usersCached_ = () => [{ name: '01.Driver A', phone: '12345678' }]");
+  assert.strictEqual(ok(e.call('trackInfo', { d: '9000000001', t: id, k: tk }, null)).driver.phone, '012345678', 'phone from Users, leading 0 kept');
   assert.strictEqual(tab(e, 'Live GPS').length, 1);
   step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
   const after = ok(e.call('trackInfo', { d: '9000000001', t: id, k: tk }, null));

@@ -249,11 +249,11 @@ function users_() {
   }
   const t = tableOf_(fuel);
   const c = name => t.head.indexOf(name);
-  const e = c('Email'), n = c('Name'), fr = c('Role'), a = c('Active'), tr = c(TRANSPORT_COL), dr = c(DELIVERY_ROLE_COL);
+  const e = c('Email'), n = c('Name'), fr = c('Role'), a = c('Active'), tr = c(TRANSPORT_COL), dr = c(DELIVERY_ROLE_COL), ph = c('Phone');
   return t.rows.filter(x => x[e]).map(x => {
     const fuelAdmin = /admin/i.test(text_(x[fr]));
     const role = jobOf_(x[fr]) || (dr >= 0 ? text_(x[dr]) : '');
-    return { email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: role,
+    return { email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: role, phone: ph < 0 ? '' : text_(x[ph]).replace(/\.0+$/, ''),
       ok: (a < 0 || yes_(x[a])) && (tr < 0 || yes_(x[tr]) || fuelAdmin) && !!role, active: a < 0 || yes_(x[a]) };
   });
 }
