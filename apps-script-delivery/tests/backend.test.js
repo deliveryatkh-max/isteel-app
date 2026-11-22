@@ -513,8 +513,10 @@ test('one truck list: ISI trucks and drivers come from the Fuel sheet Driver & T
 const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64');
 function v2Load(e, tripId, wh, dns, kg) {
   step(e); ok(rec(e, WH, { v2: true, code: 4, tripId, wh }));
-  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId, wh, kg, dns: dns.map(dn => ({ dn })), photo: PHOTO, confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
-  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId, wh }));
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId, wh, dns: dns.map(dn => ({ dn })), confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  // Kim (22 Nov 2026): kg and photos at End Loading
+  assert.ok(/^REQUIRED/.test(e.call('record', { v2: true, code: 6, tripId, wh, websling: false, ref: 'nokg' + tripId + wh }, WH).error || ''), 'End Loading needs the kg');
+  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId, wh, kg, photo: PHOTO }));
 }
 
 test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloading and delivery', () => {
@@ -524,21 +526,22 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   const again = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', ticket: 'T1b' }, GUARD));
   assert.strictEqual(again.tripId, g.tripId); assert.ok(again.existed);
   const t = g.tripId;
-  // Start Loading needs a warehouse, DN and kg
-  let r = rec(e, WH, { v2: true, code: 5, tripId: t, dns: [{ dn: '9000000001' }], kg: 1000 });
+  // Start Loading needs a warehouse and a DN
+  let r = rec(e, WH, { v2: true, code: 5, tripId: t, dns: [{ dn: '9000000001' }] });
   assert.ok(!r.ok);
   v2Load(e, t, 'PNP1', ['9000000001'], 1200);
   // End Loading twice is refused; start again at the second warehouse
-  r = rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP1' });
+  r = rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP1', kg: 5 });
   assert.ok(!r.ok && /^START_LOADING_FIRST/.test(r.error), r.error);
-  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 800, dns: [{ dn: '9000000002' }], photo: PHOTO, confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
   r = rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 1, dns: [{ dn: '9000000002' }] });
   assert.ok(!r.ok && /^END_LOADING_FIRST/.test(r.error), r.error);
-  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2' }));
+  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2', kg: 800, photo: PHOTO }));
   const trip = ok(e.call('trip', { tripId: t }, ADMIN));
   const s = trip.trip || trip;
   assert.strictEqual(s.lastLoad, 6);
   assert.deepStrictEqual((s.dns || []).map(d => d.dn).sort(), ['9000000001', '9000000002']);
+  assert.deepStrictEqual((s.dns || []).sort((a, b) => a.dn < b.dn ? -1 : 1).map(d => d.loadKg), [1200, 800], 'End Loading kg counts for the warehouse DN');
   // Warehouse rows carry the warehouse code and kg on the first DN row only
   const rows = logRows(e).filter(x => x[col('Master Trip ID')] === t);
   const starts = rows.filter(x => x[col('ស្ថានភាពដឹកជញ្ជូន')] === '៥.ចាប់ផ្តើម ឡើងទំនិញ');

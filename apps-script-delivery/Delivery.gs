@@ -834,8 +834,10 @@ function saveEvent_(p, who) {
       put(row, 'trip', tripId);
       put(row, 'remark', String(p.remark || '').slice(0, 500));
       if ((code === 4 || code === 5 || code === 6) && p.v2) put(row, 'wh', String(p.wh || st.wh || '').slice(0, 40));
-      // Start Loading: the total actual kg goes on the first DN row only, so it is never counted twice.
-      if (code === 5 && p.v2 && rowsOut.length === 0) put(row, 'kg', Number(p.kg) || '');
+      // Kim (22 Nov 2026): the total actual kg and goods photos are typed at End Loading of each warehouse.
+      // Old Start Loading records kept the kg on their first DN row; both are read the same way.
+      if (code === 5 && p.v2 && p.kg && rowsOut.length === 0) put(row, 'kg', Number(p.kg) || '');
+      if (code === 6 && p.v2) put(row, 'kg', Number(p.kg) || '');
       if (code === 5 && photoUrl) put(row, 'goodsPhoto', photoUrl);
       if (code === 6 && !p.v2) put(row, 'wh', String(p.wh || ''));
       if (code === 6) put(row, 'websling', p.websling === true ? 'ប្រើ' : p.websling === false ? 'មិនប្រើ' : '');
@@ -918,7 +920,7 @@ function requiredFields_(code, p, dns, plate, plan) {
   if (p.v2) {   // Kim's 9-step flow (20 Nov 2026); photos are checked on the phone like every step
     if ((code === 4 || code === 5) && !String(p.wh || '').trim()) miss('Choose the warehouse code.', 'សូមជ្រើសលេខកូដឃ្លាំង។');
     if (code === 5 && !dns.length) miss('Type the Delivery Note number.', 'សូមវាយលេខ DN។');
-    if (code === 5 && !(Number(p.kg) > 0)) miss('Type the total actual kg.', 'សូមវាយទំងន់ពិតសរុប (kg)។');
+    if (code === 6 && !(Number(p.kg) > 0)) miss('Type the total actual kg.', 'សូមវាយទំងន់ពិតសរុប (kg)។');
     if ((code === 10 || code === 11) && String(p.remark || '').trim().length < 3) miss('Write the reason.', 'សូមសរសេរមូលហេតុ។');
     return;
   }
