@@ -975,6 +975,8 @@ function requiredFields_(code, p, dns, plate, plan) {
   if (p.v2) {   // Kim's 9-step flow (20 Nov 2026); photos are checked on the phone like every step
     if ((code === 4 || code === 5) && !String(p.wh || '').trim()) miss('Choose the warehouse code.', 'សូមជ្រើសលេខកូដឃ្លាំង។');
     if (code === 5 && !dns.length) miss('Type the Delivery Note number.', 'សូមវាយលេខ DN។');
+    // Kim (23 Nov 2026): a DN not in the Delivery Plan needs its customer (for the map and the customer's Telegram).
+    if (code === 5) dns.forEach(d => { if (!plan[d.dn] && !String(d.custName || d.custId || '').trim()) miss('Choose the customer of DN ' + d.dn + ' (not in the Delivery Plan).', 'សូមជ្រើសអតិថិជនរបស់ DN ' + d.dn + ' (មិនមានក្នុង Delivery Plan)។'); });
     if (code === 6 && !(Number(p.kg) > 0)) miss('Type the total actual kg.', 'សូមវាយទំងន់ពិតសរុប (kg)។');
     if ((code === 10 || code === 11) && String(p.remark || '').trim().length < 3) miss('Write the reason.', 'សូមសរសេរមូលហេតុ។');
     return;

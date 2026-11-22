@@ -591,3 +591,15 @@ test('home menu: Transport tile counts trucks inside (Gate In, no Gate Out); dri
   loadAndOut(e, a.tripId, ['9000000001']);
   assert.strictEqual(ok(e.call('homeCount', {}, ADMIN)).waiting, 1);
 });
+
+test('v2 Start Loading: a DN not in the Delivery Plan needs its customer', () => {
+  const e = env(); e.run('setup()');
+  const a = gateIn(e, 'TEST-0001');
+  step(e); ok(e.call('record', { v2: true, code: 4, tripId: a.tripId, wh: 'PNP1', ref: ref() }, WH));
+  step(e);
+  const bad = e.call('record', { v2: true, code: 5, tripId: a.tripId, wh: 'PNP1', dns: [{ dn: '9100000001' }], ref: ref() }, WH);
+  assert.ok(!bad.ok && /REQUIRED/.test(bad.error), JSON.stringify(bad));
+  ok(e.call('record', { v2: true, code: 5, tripId: a.tripId, wh: 'PNP1', dns: [{ dn: '9000000001' }, { dn: '9100000001', custId: '6100000002', custName: 'TEST Customer B' }], ref: ref(), confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }, WH));
+  const r = logRows(e).find(x => String(x[col('លេខដឹកជញ្ជូន (DN#)')]) === '9100000001');
+  assert.strictEqual(r[col('អតិថិជន')], '6100000002-TEST Customer B');
+});
