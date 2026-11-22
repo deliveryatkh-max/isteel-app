@@ -75,7 +75,7 @@
       { vessel: 'MV ORIENT 12', kg: 96000, pos: [{ po: '5100012790', supplier: 'Nippon', kg: 96000 }] }]; return; }
     if (!IB_API || (!force && Date.now() - vesAt < 10 * 60000)) return;
     vesAt = Date.now();
-    flushArrive();
+    flushArrive(); flushGate();
     ibApi('vessels').then(v => { if (Array.isArray(v)) { VESSELS = v; set('sc_vessels', JSON.stringify(v)); if (F && F.type === 'In' && !ticketBy(F.cid)) paintForm(); } }).catch(() => { /* old Inbound script or offline: the box stays as it was */ });
   }
   const NO_VES = '—';
@@ -91,6 +91,28 @@
     arrBusy = true;
     try { for (const a of getJ('sc_arrq', [])) { await ibApi('scaleArrive', a); set('sc_arrq', JSON.stringify(getJ('sc_arrq', []).filter(x => x.no !== a.no))); } }
     catch (e) { /* tried again at the next weigh or refresh */ } finally { arrBusy = false; }
+  }
+  // Delivery Journey (Kim, 20 Nov 2026): a loading truck's 1st weigh is its Gate In and its 2nd weigh its Gate Out,
+  // so nobody types them again. Kept on this PC and sent in order; dropped only when the Delivery script refuses it.
+  const DLV_API = (window.DELIVERY_CONFIG || {}).API_URL;
+  function sendGate(g) {
+    if (DEMO || !DLV_API) return;
+    const q = getJ('sc_gateq', []).filter(x => x.id !== g.id).concat([g]).slice(-40);
+    set('sc_gateq', JSON.stringify(q)); flushGate();
+  }
+  let gateBusy = false;
+  async function flushGate() {
+    if (gateBusy || DEMO || !DLV_API) return;
+    gateBusy = true;
+    try {
+      for (const g of getJ('sc_gateq', [])) {
+        const res = await fetch(DLV_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'scaleGate', token: get(TOKEN_KEY), payload: g }) });
+        const data = await res.json();
+        if (data && data.session) set(TOKEN_KEY, data.session);
+        if (data && !data.ok && /^(AUTH|BUSY)/.test(String(data.error))) break;   // signed out or sheet busy: tried again later
+        set('sc_gateq', JSON.stringify(getJ('sc_gateq', []).filter(x => x.id !== g.id)));
+      }
+    } catch (e) { /* no internet: tried again at the next weigh or refresh */ } finally { gateBusy = false; }
   }
   function claims() {
     try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); }
@@ -979,6 +1001,7 @@
     putTicket(tk);
     if (tk.type === 'In') { const v = (VESSELS || []).find(x => x.vessel === F.vessel);
       sendArrive({ no: tk.no, plate: tk.plate, company: tk.company, vessel: F.vessel === NO_VES ? '' : F.vessel, pos: v ? v.pos.map(o => o.po) : [], kg: tk.w1, time: new Date().toTimeString().slice(0, 5) }); }
+    if (tk.type === 'Out') sendGate({ id: tk.no + '_in', kind: 'in', plate: tk.plate, driver: tk.driver || '', company: tk.company || '', ticket: tk.no, kg: tk.w1 });
     MANUAL = null; LASTDONE = '';
     F = EMPTY_F(); keepForm();
     toast('✅ ' + tk.no + ' · ' + t('លើកទី១', '1st') + ' ' + kg(tk.w1) + ' kg');
@@ -1085,6 +1108,7 @@
     PENDING = null; MANUAL = null;
     keepPhoto(tk.cid, 2, tk.plate + ' · 2nd ' + kg(tk.w2) + ' kg · Net ' + kg(tk.net) + ' kg');
     putTicket(tk);
+    if (tk.type === 'Out') sendGate({ id: tk.no + '_out', kind: 'out', plate: tk.plate, ticket: tk.no, kg: tk.w2, net: tk.net, dns: (tk.dns || []).slice() });
     LASTDONE = tk.cid;
     F = EMPTY_F(); keepForm();
     paintForm(); paintLists(); paintLcd();

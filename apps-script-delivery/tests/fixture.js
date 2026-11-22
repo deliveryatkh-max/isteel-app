@@ -23,7 +23,7 @@ function fixture() {
   return {
     'User Manager': [['UID', 'NAME', 'EMAIL', 'ROLE'],
       [1, 'Admin', 'admin@test.kh', 'Admin'], [2, 'Guard', 'guard@test.kh', 'Security'], [3, 'Logi', 'logi@test.kh', 'LT'],
-      [4, 'Store', 'wh@test.kh', 'Warehouse'], [5, 'Sup', 'sup@test.kh', 'Supervisor'], [6, 'NoRole', 'norole@test.kh', '']],
+      [4, 'Store', 'wh@test.kh', 'Warehouse'], [5, 'Sup', 'sup@test.kh', 'Supervisor'], [6, 'NoRole', 'norole@test.kh', ''], [7, 'Drv', 'drv@test.kh', 'Driver']],
     'Customer': [['No', 'Customer ID', 'Customer Name'], [1, '6100000001', 'TEST Customer A'], [2, '6100000002', 'TEST Customer B']],
     'Plate Number': [['លរ', 'ឈ្មោះក្រុមហ៊ុន', 'ផ្លាកលេខឡាន (ឧ: 3AB-1234)', 'ប្រភេទឡាន'], [1, '', 'TEST-0001', 'មានដងស្ទូច'], [2, '', 'TEST-0002', 'គ្មានដងស្ទូច']],
     'Driver List': [['ID_DL', 'ឈ្មោះ', 'ឈ្មោះតៃកុង', 'រូបថត', 'ក្រុមហ៊ុន', 'ប័ណ្ណបើកបរ', 'CODE'], [1, 'Driver A', '01.Driver A', '', 'ISI Steel', '', 'TEST-0001']],

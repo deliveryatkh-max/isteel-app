@@ -22,7 +22,22 @@ const EVENTS = [
   { code: 9, key: 'delivered', kh: '៩.បានប្រគល់ទំនិញ', en: 'Delivered', scope: 'dn' },
   { code: 10, key: 'canceled', kh: 'x.លុបចោលការដឹកជញ្ជូន', en: 'Canceled', scope: 'any' },
   { code: 11, key: 'failed', kh: 'x.ការដឹកជញ្ជូនបរាជ័យ', en: 'Delivery Failed', scope: 'dn' },
+  // Kim's 9-step flow (20 Nov 2026): unloading at the customer, recorded per DN by the driver.
+  { code: 12, key: 'unload_start', kh: '១០.ចាប់ផ្តើមទំលាក់ទំនិញ', en: 'Start Unloading', scope: 'dn' },
+  { code: 13, key: 'unload_end', kh: '១១.ទំលាក់ទំនិញរួចរាល់', en: 'Finish Unloading', scope: 'dn' },
 ];
+
+/**
+ * Kim's 9-step flow (20 Nov 2026), as shown on the phone. The pickup-DN steps (2, 3) are dropped; Gate In and Gate Out
+ * come from the Truck Scale; steps 3–4 repeat for each warehouse; steps 6–9 are per DN. The Time Log keeps the codes above.
+ */
+const FLOW = [
+  { n: 1, code: 1, by: 'scale' }, { n: 2, code: 4, by: 'warehouse' }, { n: 3, code: 5, by: 'warehouse' }, { n: 4, code: 6, by: 'warehouse' },
+  { n: 5, code: 7, by: 'scale' }, { n: 6, code: 8, by: 'driver' }, { n: 7, code: 12, by: 'driver' }, { n: 8, code: 13, by: 'driver' },
+  { n: 9, code: 9, by: 'driver' },
+];
+/** Recorder groups for events the Type Record tab may not list yet (warehouse ៣, trucks ៤ ៥ ៦). */
+const DEFAULT_ALLOWED = { 4: '៣', 5: '៣', 6: '៣', 8: '៤|៥|៦', 9: '៤|៥|៦', 11: '៤|៥|៦', 12: '៤|៥|៦', 13: '៤|៥|៦' };
 const EV = {};
 EVENTS.forEach(e => { EV[e.key] = e; EV[e.code] = e; });
 
@@ -65,12 +80,15 @@ const DN_STATUS = {
 const LEG = {
   picked: { kh: 'បានយកបុង', en: 'Picked up' },
   at_customer: { kh: 'នៅទីតាំងអតិថិជន', en: 'At customer' },
+  unloading: { kh: 'កំពុងទំលាក់ទំនិញ', en: 'Unloading' },
+  unloaded: { kh: 'ទំលាក់ទំនិញរួចរាល់', en: 'Unloaded' },
   delivered: { kh: 'បានប្រគល់', en: 'Delivered' },
   failed: { kh: 'ប្រគល់មិនបាន', en: 'Failed' },
   canceled: { kh: 'បានលុបចោល', en: 'Canceled' },
   moved: { kh: 'ប្រគល់តាមជើងផ្សេង', en: 'Delivered on another trip' },
 };
 const LEG_DONE = { delivered: 1, failed: 1, canceled: 1, moved: 1 };
+const AT_CUSTOMER = { at_customer: 1, unloading: 1, unloaded: 1 };
 
 const ROUND_WORD = 'ជើងទី​ ';   // as in Delivery Plan and Time Log: "ជើងទី​ 1"
 const roundText = n => ROUND_WORD + n;
@@ -88,17 +106,21 @@ const normPlate = v => String(v == null ? '' : v).trim().toUpperCase().replace(/
  */
 function tripState(rows, doneElsewhere) {
   rows = rows.slice().sort((a, b) => a.time - b.time || a.seq - b.seq);
-  const out = { gateIn: null, gateOut: null, canceled: false, dns: {}, last: null, lastProgress: 0, events: rows.length };
+  const out = { gateIn: null, gateOut: null, canceled: false, dns: {}, last: null, lastProgress: 0, lastLoad: 0, wh: '', events: rows.length };
   rows.forEach(r => {
     if (r.code === 1 && out.gateIn == null) out.gateIn = r.time;
     if (r.code === 7 && out.gateOut == null) out.gateOut = r.time;
     if (r.code === 10 && !r.dn) out.canceled = true;
     if (r.code >= 1 && r.code <= 7 && r.code !== 2) out.lastProgress = Math.max(out.lastProgress, r.code);
     if (r.code === 2) out.lastProgress = Math.max(out.lastProgress, 2);
+    if (r.code >= 4 && r.code <= 6) { out.lastLoad = r.code; if (r.wh) out.wh = r.wh; }
     if (r.dn) {
       const d = out.dns[r.dn] || (out.dns[r.dn] = { dn: r.dn, cust: '', leg: 'picked', kg: 0, final: false, time: r.time });
       if (r.cust) d.cust = r.cust;
-      if (r.code === 8 && !LEG_DONE[d.leg]) d.leg = 'at_customer';
+      if (r.code === 8 && !LEG_DONE[d.leg] && !AT_CUSTOMER[d.leg]) d.leg = 'at_customer';
+      if (r.code === 12 && !LEG_DONE[d.leg]) d.leg = 'unloading';
+      if (r.code === 13 && !LEG_DONE[d.leg]) d.leg = 'unloaded';
+      if (r.code === 5 && r.kg) d.loadKg = (d.loadKg || 0) + Number(r.kg);
       if (r.code === 9) { d.leg = 'delivered'; d.kg += Number(r.kg) || 0; if (r.mode === 'Final') d.final = true; d.time = r.time; }
       if (r.code === 11) { d.leg = 'failed'; d.time = r.time; }
       if (r.code === 10) { d.leg = 'canceled'; d.time = r.time; }
@@ -111,7 +133,7 @@ function tripState(rows, doneElsewhere) {
   let stage;
   if (out.canceled) stage = 'canceled';
   else if (out.gateOut != null && dnList.length && !open.length) stage = 'completed';
-  else if (open.some(d => d.leg === 'at_customer')) stage = 'at_customer';
+  else if (open.some(d => AT_CUSTOMER[d.leg])) stage = 'at_customer';
   else if (out.gateOut != null) stage = 'on_delivery';
   else stage = STAGE_BY_EVENT[out.lastProgress] || 'waiting';
   out.stage = stage;
@@ -188,11 +210,11 @@ function roleKey(role) {
   if (/driver|តៃកុង|ឡាន/.test(r)) return 'driver';
   return '';
 }
-function canRecord(role, allowedText) {
+function canRecord(role, allowedText, code) {
   const k = roleKey(role);
   if (k === 'admin' || k === 'supervisor') return true;
   const groups = ROLE_GROUPS[k] || [];
-  const allowed = String(allowedText || '').split('|').map(s => s.trim().charAt(0)).filter(Boolean);
+  const allowed = (String(allowedText || '') + '|' + (DEFAULT_ALLOWED[code] || '')).split('|').map(s => s.trim().charAt(0)).filter(Boolean);
   return groups.some(g => allowed.indexOf(g) >= 0);
 }
 
@@ -221,16 +243,21 @@ function checkEvent(ctx) {
     if (ev.code === 7 && !t.dnList.length) warn('NO_DN', 'No DN has been picked up on this trip yet.', 'មិនទាន់មាន DN ណាមួយនៅលើជើងដឹកនេះទេ។');
     if (ev.code >= 2 && ev.code <= 7 && t.gateOut != null) err('AFTER_GATE_OUT', 'The truck already left (Gate Out). This step belongs before Gate Out.', 'ឡានបានចេញពីកន្លែងថ្លឹងរួចហើយ។');
     // Kim (12 Oct 2026): once a trip has done a step, that step and the ones before it are closed for it.
-    if (ev.code >= 3 && ev.code <= 7 && t.gateOut == null && t.lastProgress >= ev.code) err('STEP_PASSED', 'This trip is already at ' + EV[t.lastProgress].en + '. Earlier steps can no longer be recorded.', 'ជើងដឹកនេះនៅជំហាន ' + EV[t.lastProgress].kh + ' រួចហើយ។ មិនអាចកត់ត្រាជំហានមុនបានទៀតទេ។');
-    if ((ev.code === 8 || ev.code === 9 || ev.code === 11) && t.gateOut == null) warn('NOT_OUT', 'This truck has no Gate Out yet.', 'ឡាននេះមិនទាន់ចេញពីកន្លែងថ្លឹងទេ។');
-    if ([8, 9, 11].indexOf(ev.code) >= 0 || (ev.code === 10 && dns.length)) {
+    // Steps 3–4 of the 9-step flow (Start / End Loading) repeat for each warehouse (Kim, 20 Nov 2026).
+    if (ev.code === 5 && t.gateOut == null && t.lastLoad === 5) err('END_LOADING_FIRST', 'Loading has started and has not ended. Record End Loading first.', 'កំពុងឡើងទំនិញ មិនទាន់រួចរាល់។ សូមកត់ត្រា ឡើងទំនិញរួចរាល់ ជាមុន។');
+    if (ev.code === 6 && t.gateOut == null && t.lastLoad !== 5) err('START_LOADING_FIRST', 'Record Start Loading first.', 'សូមកត់ត្រា ចាប់ផ្តើមឡើងទំនិញ ជាមុន។');
+    if ([3, 4, 7].indexOf(ev.code) >= 0 && t.gateOut == null && t.lastProgress >= ev.code) err('STEP_PASSED', 'This trip is already at ' + EV[t.lastProgress].en + '. Earlier steps can no longer be recorded.', 'ជើងដឹកនេះនៅជំហាន ' + EV[t.lastProgress].kh + ' រួចហើយ។ មិនអាចកត់ត្រាជំហានមុនបានទៀតទេ។');
+    if ([8, 9, 11, 12, 13].indexOf(ev.code) >= 0 && t.gateOut == null) warn('NOT_OUT', 'This truck has no Gate Out yet.', 'ឡាននេះមិនទាន់ចេញពីកន្លែងថ្លឹងទេ។');
+    if ([8, 9, 11, 12, 13].indexOf(ev.code) >= 0 || (ev.code === 10 && dns.length)) {
       dns.forEach(dn => {
-        if (!onTrip(dn)) err('DN_NOT_ON_TRIP', 'DN ' + dn + ' is not on this trip. Record Arrival-Pickup DN for it first.', 'DN ' + dn + ' មិននៅលើជើងដឹកនេះទេ។ សូមកត់ត្រា ដល់កន្លែងចែកបុង ជាមុន។');
-        else if (ev.code === 8 && t.dns[dn].leg === 'at_customer') err('DN_ARRIVED', 'DN ' + dn + ' has already arrived at the customer.', 'DN ' + dn + ' បានមកដល់ទីតាំងទំលាក់រួចហើយ។');
+        if (!onTrip(dn)) err('DN_NOT_ON_TRIP', 'DN ' + dn + ' is not on this trip.', 'DN ' + dn + ' មិននៅលើជើងដឹកនេះទេ។');
+        else if (ev.code === 8 && AT_CUSTOMER[t.dns[dn].leg]) err('DN_ARRIVED', 'DN ' + dn + ' has already arrived at the customer.', 'DN ' + dn + ' បានមកដល់ទីតាំងទំលាក់រួចហើយ។');
+        else if (ev.code === 12 && t.dns[dn].leg !== 'at_customer' && !LEG_DONE[t.dns[dn].leg]) err(t.dns[dn].leg === 'picked' ? 'ARRIVE_FIRST' : 'DN_UNLOADING', t.dns[dn].leg === 'picked' ? 'Record Arrival Destination for DN ' + dn + ' first.' : 'DN ' + dn + ' is already ' + LEG[t.dns[dn].leg].en + '.', t.dns[dn].leg === 'picked' ? 'សូមកត់ត្រា មកដល់ទីតាំងទំលាក់ សម្រាប់ DN ' + dn + ' ជាមុន។' : 'DN ' + dn + ' ' + LEG[t.dns[dn].leg].kh + ' រួចហើយ។');
+        else if (ev.code === 13 && t.dns[dn].leg !== 'unloading' && !LEG_DONE[t.dns[dn].leg]) err('START_UNLOAD_FIRST', 'Record Start Unloading for DN ' + dn + ' first.', 'សូមកត់ត្រា ចាប់ផ្តើមទំលាក់ទំនិញ សម្រាប់ DN ' + dn + ' ជាមុន។');
         else if (LEG_DONE[t.dns[dn].leg]) err('DN_DONE_ON_TRIP', 'DN ' + dn + ' is already ' + LEG[t.dns[dn].leg].en + ' on this trip.', 'DN ' + dn + ' ' + LEG[t.dns[dn].leg].kh + ' នៅលើជើងដឹកនេះរួចហើយ។');
       });
     }
-    if (ev.code === 2) {
+    if (ev.code === 2 || ev.code === 5) {
       dns.forEach(dn => {
         const info = (ctx.dnInfo || {})[dn] || {};
         if (onTrip(dn)) err('DN_ALREADY_ON_TRIP', 'DN ' + dn + ' is already on this trip.', 'DN ' + dn + ' មាននៅលើជើងដឹកនេះរួចហើយ។');
@@ -305,5 +332,5 @@ function matchText(hay, q) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { EVENTS, EV, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf, matchText };
+  module.exports = { EVENTS, EV, FLOW, DEFAULT_ALLOWED, AT_CUSTOMER, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf, matchText };
 }

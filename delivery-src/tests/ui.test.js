@@ -51,7 +51,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   await g.page.goto(BASE + '/delivery/');
   await g.page.getByText('ជើងដឹកថ្ងៃនេះ').first().waitFor();
   await g.page.screenshot({ path: SHOTS + '01-ops-phone-km.png' });
-  await g.page.goto(BASE + '/delivery/#/record');
+  await g.page.goto(BASE + '/delivery/#/record?old=1');
   const evs = await stepNames(g.page);
   assert.deepStrictEqual(evs, ['១.ចូលថ្លឹង', '៧.ចេញពីកន្លែងថ្លឹង']);
   // the list really opens and an option can be tapped (Kim, 17 Oct 2026: nothing appeared)
@@ -187,7 +187,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
 
   // ---- truck comes back: trip 2 (open previous trip warning)
   await skew(10 * 60000);
-  await g.page.goto(BASE + '/delivery/#/record');
+  await g.page.goto(BASE + '/delivery/#/record?old=1');
   await g.page.reload();
   await gateIn(g.page, '0001', 'TEST-0001', 'Driver A');
   await recordBtn(g.page).click();
@@ -346,7 +346,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
 
   // ---- offline: saved on the phone, sent when back online
   await skew(5 * 60000);
-  await g.page.goto(BASE + '/delivery/#/record');
+  await g.page.goto(BASE + '/delivery/#/record?old=1');
   await g.page.reload();
   await gateIn(g.page, '0002', 'TEST-0002', 'Driver B');
   await g.ctx.setOffline(true);

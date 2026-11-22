@@ -7,6 +7,7 @@ import { Alert, BottomNav, Header, Spinner, Tab, Toaster, toast } from './compon
 import { OpsPage } from './pages/Ops';
 import { ScanPage } from './pages/Scan';
 import { RecordPage } from './pages/Record';
+import { StepsPage } from './pages/Steps';
 import { TripPage } from './pages/Trip';
 import { TripsPage } from './pages/Trips';
 import { DnPage, DnSearchPage } from './pages/Dn';
@@ -29,7 +30,11 @@ const TABS: Tab[] = [
   { id: 'record', icon: '➕', km: 'កត់ត្រា', en: 'Record' },
   { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' },
 ];
-const TAB_OF: Record<string, string> = { '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
+// Kim's 9-step flow (20 Nov 2026): Record opens the new Steps screen. Drivers see only their own truck (opened by scanning a DN),
+// so they get no Trips, Scan or old Record tab; warehouse staff open on the trucks inside.
+const DRIVER_TABS: Tab[] = [HOME, { id: 'record', icon: '📷', km: 'ស្កេន DN', en: 'Scan DN', big: true }, { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' }];
+const DRIVER_PAGES = ['', 'record', 'steps', 'more', 'complaints'];
+const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -125,11 +130,18 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   }
   if (!boot) return <Shell busy={busy}>{err ? <><Alert tone="bad">{err}</Alert><button type="button" className="btn" onClick={load}>{t('ព្យាយាមម្តងទៀត', 'Try again')}</button></> : <Spinner />}</Shell>;
 
-  const page = route.path[0] || '';
+  const roleKey = boot.user.roleKey;
+  const isDriver = roleKey === 'driver';
+  let page = route.path[0] || '';
+  if (isDriver && DRIVER_PAGES.indexOf(page) < 0) page = 'steps';
+  if (page === '' && (isDriver || roleKey === 'warehouse')) page = 'steps';
   const tab = TAB_OF[page] || 'ops';
+  const tabs = isDriver ? DRIVER_TABS : TABS;
   let body;
   if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
-  else if (page === 'record') body = <RecordPage key={route.q.toString()} />;
+  // Old step form: opened with a query (Trip page "next step" links, "Other step") or while the Apps Script is still the old one.
+  else if (page === 'record' && !isDriver && (route.q.toString() || !boot.flow)) body = <RecordPage key={route.q.toString()} />;
+  else if (page === 'record' || page === 'steps') body = <StepsPage key={route.path.join('/') + route.q.toString()} tripId={page === 'steps' ? route.path[1] : undefined} dn={route.q.get('dn') || undefined} />;
   else if (page === 'trip' && route.path[1]) body = <TripPage id={route.path[1]} />;
   else if (page === 'trips' && route.path[1] === 'history') body = <TripsPage />;
   else if (page === 'dn' && route.path[1]) body = <DnPage dn={route.path[1]} />;
@@ -152,8 +164,8 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
         {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}
         {body}
       </div>
-      {side ? <SideNav items={ordered(TABS, lay.prefs.order)} active={tab} side={side} onTab={onTab} onSide={() => lay.save({ side: side === 'left' ? 'right' : 'left' })} onOrder={ids => lay.save({ order: ids })} />
-        : <BottomNav tabs={ordered(TABS, lay.prefs.order)} active={tab} onTab={onTab} />}
+      {side ? <SideNav items={ordered(tabs, lay.prefs.order)} active={tab} side={side} onTab={onTab} onSide={() => lay.save({ side: side === 'left' ? 'right' : 'left' })} onOrder={ids => lay.save({ order: ids })} />
+        : <BottomNav tabs={ordered(tabs, lay.prefs.order)} active={tab} onTab={onTab} />}
       <Toaster />
     </AppCtx.Provider>
   );

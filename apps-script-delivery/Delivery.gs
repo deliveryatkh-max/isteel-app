@@ -52,6 +52,9 @@ function doPost(e) {
     // Customer rating link (no sign-in): signed per DN + trip.
     if (body.action === 'rateInfo') return json_({ ok: true, data: rateInfo_(p) });
     if (body.action === 'rateSave') return json_({ ok: true, data: rateSave_(p) });
+    // Truck Scale (20 Nov 2026): the 1st weigh opens the trip (Gate In), the 2nd weigh closes it (Gate Out).
+    // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
+    if (body.action === 'scaleGate') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleGate_(p, su) }; if (su.session) o.session = su.session; return json_(o); }
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, p, user) };
     if (user.session) out.session = user.session;
@@ -177,7 +180,7 @@ function verifyGoogle_(token) {
   return email;
 }
 
-function authenticate_(token) {
+function authenticate_(token, open) {
   if (!token) fail_('AUTH', 'Please sign in.', 'សូមចូលគណនី។');
   let email, session = null;
   const own = readSession_(token);
@@ -188,7 +191,7 @@ function authenticate_(token) {
     email = verifyGoogle_(token);
     session = makeSession_(email);
   }
-  const u = usersCached_().find(x => x.email === email && x.ok);
+  const u = usersCached_().find(x => x.email === email && (open ? x.active : x.ok));
   if (!u) fail_('NOACCESS', email + ' has no Delivery access. Ask the admin to tick ដឹកជញ្ជូន and set your Role (e.g. Logistics, Warehouse, Security, Driver) in Users.', email + ' មិនទាន់មានសិទ្ធិ ដឹកជញ្ជូន ទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ដឹកជញ្ជូន និងដាក់ Role (ឧ. Logistics, Warehouse, Security, Driver) ក្នុង Users។');
   return { email: email, name: u.name, role: u.role, roleKey: roleKey(u.role), session: session };
 }
@@ -237,7 +240,7 @@ function users_() {
   if (!fuel) {
     const t = table_(SH.USERS);
     const e = col_(t.head, 'EMAIL'), n = col_(t.head, 'NAME'), r = col_(t.head, 'ROLE');
-    return t.rows.filter(x => x[e]).map(x => ({ email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: text_(x[r]), ok: true }));
+    return t.rows.filter(x => x[e]).map(x => ({ email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: text_(x[r]), ok: true, active: true }));
   }
   const t = tableOf_(fuel);
   const c = name => t.head.indexOf(name);
@@ -246,17 +249,17 @@ function users_() {
     const fuelAdmin = /admin/i.test(text_(x[fr]));
     const role = jobOf_(x[fr]) || (dr >= 0 ? text_(x[dr]) : '');
     return { email: String(x[e]).trim().toLowerCase(), name: text_(x[n]), role: role,
-      ok: (a < 0 || yes_(x[a])) && (tr < 0 || yes_(x[tr]) || fuelAdmin) && !!role };
+      ok: (a < 0 || yes_(x[a])) && (tr < 0 || yes_(x[tr]) || fuelAdmin) && !!role, active: a < 0 || yes_(x[a]) };
   });
 }
 
 /** Sign-in check on every call: the user list kept 60 s in the cache (saving is faster; a role change shows within a minute). */
 function usersCached_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('users_v2');
+  const hit = cache.get('users_v3');
   if (hit) return JSON.parse(hit);
   const u = users_();
-  try { cache.put('users_v2', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
+  try { cache.put('users_v3', JSON.stringify(u), 60); } catch (e) { /* too big: read each time */ }
   return u;
 }
 
@@ -367,7 +370,8 @@ function boot_(user) {
   Object.keys(co).forEach(k => { if (co[k] !== 'ISI') plateCo[k] = co[k]; });
   return {
     user: { email: user.email, name: user.name, role: user.role, roleKey: user.roleKey },
-    events: EVENTS.map(e => ({ code: e.code, key: e.key, kh: e.kh, en: e.en, scope: e.scope, allowed: allowed[e.code] || '', can: canRecord(user.role, allowed[e.code]) })),
+    events: EVENTS.map(e => ({ code: e.code, key: e.key, kh: e.kh, en: e.en, scope: e.scope, allowed: allowed[e.code] || '', can: canRecord(user.role, allowed[e.code], e.code) })),
+    flow: FLOW,
     canCorrect: user.roleKey === 'admin' || user.roleKey === 'supervisor',
     isAdmin: user.roleKey === 'admin',
     plates: m.plates, drivers: m.drivers, customers: m.customers, warehouses: m.warehouses, plan: planList,
@@ -507,8 +511,8 @@ function tripSummary_(id, rows, tripsIdx, done) {
     id: id, date: meta.date || (st.gateIn ? ymd_(new Date(st.gateIn)) : first.time ? ymd_(new Date(first.time)) : ''),
     plate: meta.plate || pick('plate'), driver: meta.driver || pick('driver'), round: meta.round || pick('round'),
     gateIn: st.gateIn, gateOut: st.gateOut, stage: st.stage, closed: st.closed, lastTime: st.last ? st.last.time : 0,
-    lastCode: st.last ? st.last.code : 0, progress: st.lastProgress,
-    dns: st.dnList.map(d => ({ dn: d.dn, cust: d.cust, leg: d.leg, kg: d.kg })),
+    lastCode: st.last ? st.last.code : 0, progress: st.lastProgress, lastLoad: st.lastLoad || 0, wh: st.wh || '',
+    dns: st.dnList.map(d => ({ dn: d.dn, cust: d.cust, leg: d.leg, kg: d.kg, loadKg: d.loadKg || 0 })),
     legacy: !tripsIdx[id],
   };
 }
@@ -674,9 +678,38 @@ function record_(p, user) {
   const ev = EV[code];
   if (!ev) fail_('BAD', 'Unknown event.');
   const allowed = allowed_();
-  if (!canRecord(user.role, allowed[code])) fail_('DENIED', 'Your role (' + (user.role || 'none') + ') cannot record ' + ev.en + '.', 'តួនាទីរបស់អ្នក (' + (user.role || 'គ្មាន') + ') មិនអាចកត់ត្រា ' + ev.kh + ' បានទេ។');
-  const recorder = recorderLabel_(user, allowed[code], p.truckType);
+  if (!canRecord(user.role, allowed[code], code)) fail_('DENIED', 'Your role (' + (user.role || 'none') + ') cannot record ' + ev.en + '.', 'តួនាទីរបស់អ្នក (' + (user.role || 'គ្មាន') + ') មិនអាចកត់ត្រា ' + ev.kh + ' បានទេ។');
+  const recorder = recorderLabel_(user, [allowed[code], DEFAULT_ALLOWED[code]].filter(Boolean).join('|'), p.truckType);
   return saveEvent_(p, { email: user.email, recorder: recorder });
+}
+
+/**
+ * Gate In / Gate Out from the Truck Scale (Kim, 20 Nov 2026). p = { kind: 'in'|'out', plate, driver, company, ticket, kg, net, dns }.
+ * in:  the 1st weigh of a Load ticket opens a trip, unless this truck already has a trip on site (sent twice = same trip).
+ * out: the 2nd weigh closes Gate Out on this truck's trip that is still on site; nothing is written when there is none.
+ */
+function scaleGate_(p, user) {
+  const kind = String(p.kind || ''), plate = normPlate(p.plate), ticket = String(p.ticket || '').slice(0, 30);
+  if (!plate || (kind !== 'in' && kind !== 'out')) fail_('BAD', 'Truck and in/out are needed.');
+  const idx = tripsSheetIndex_();
+  const done = { [STAGES.completed.kh]: 1, [STAGES.canceled.kh]: 1 };
+  const onSite = Object.keys(idx).filter(id => idx[id].plate === plate && idx[id].gateIn && !idx[id].gateOut && !done[idx[id].status]
+    && Date.now() - idx[id].gateIn < 3 * 86400000).sort((a, b) => idx[b].gateIn - idx[a].gateIn);
+  const allowed = allowed_();
+  const who = c => ({ email: user.email, recorder: String(allowed[c] || '').split('|')[0].trim(), scale: true });
+  const kgTxt = n => (Number(n) ? Number(n).toLocaleString('en-US') + ' kg' : '');
+  if (kind === 'in') {
+    if (onSite.length) return { tripId: onSite[0], existed: true };
+    const isi = master_().plates.some(x => x.plate === plate);
+    const r = saveEvent_({ code: 1, plate: plate, driver: String(p.driver || '').slice(0, 80), company: String(p.company || '').slice(0, 80),
+      truckType: isi ? 'isi' : 'rented', remark: '⚖️ ' + [ticket, kgTxt(p.kg)].filter(Boolean).join(' · '), confirm: ['OPEN_PREV_TRIP'], ref: ticket ? 'scale_in_' + ticket : '' }, who(1));
+    return r.needConfirm ? { skipped: 'CONFIRM', warnings: r.needConfirm } : { tripId: r.tripId, round: r.round };
+  }
+  if (!onSite.length) return { skipped: 'NO_TRIP' };
+  const dns = (p.dns || []).map(normDn).filter(Boolean).slice(0, 30);
+  const r = saveEvent_({ code: 7, tripId: onSite[0], remark: '⚖️ ' + [ticket, p.net ? 'Net ' + kgTxt(p.net) : '', dns.length ? 'DN ' + dns.join(', ') : ''].filter(Boolean).join(' · '),
+    confirm: ['NO_DN', 'NO_GATE_IN'], ref: ticket ? 'scale_out_' + ticket : '' }, who(7));
+  return r.needConfirm ? { skipped: 'CONFIRM', warnings: r.needConfirm } : { tripId: r.tripId };
 }
 
 /** The Time Log "អ្នកកត់ត្រា" value: the user's group from Type Record (Security → ១.សន្តិសុខ …). */
@@ -756,10 +789,11 @@ function saveEvent_(p, who) {
     if (code !== 1) st = tripState(tripRows, doneSet_(info));
     const check = checkEvent({ code: code, trip: code === 1 ? null : st, tripId: tripId, dns: dnList, dnInfo: info, plate: plate });
     if (check.errors.length) fail_(check.errors[0].code, check.errors.map(e => e.en).join(' '), check.errors.map(e => e.kh).join(' '));
-    requiredFields_(code, p, dns, plate, plan);
+    if (!who.scale) requiredFields_(code, p, dns, plate, plan);
     // Repeated taps / retries without a ref: the same step for the same DN a moment ago.
     (dnList.length ? dnList : ['']).forEach(dn => {
-      if (code !== 1 && isDuplicate(code, dn, at.getTime(), tripRows)) fail_('DUPLICATE', ev.en + (dn ? ' for DN ' + dn : '') + ' was already recorded a moment ago.', ev.kh + (dn ? ' សម្រាប់ DN ' + dn : '') + ' ទើបតែកត់ត្រារួចហើយ។');
+      // Start/End Loading repeat per warehouse (9-step flow): their order rule already stops a double tap.
+      if (code !== 1 && code !== 5 && code !== 6 && isDuplicate(code, dn, at.getTime(), tripRows)) fail_('DUPLICATE', ev.en + (dn ? ' for DN ' + dn : '') + ' was already recorded a moment ago.', ev.kh + (dn ? ' សម្រាប់ DN ' + dn : '') + ' ទើបតែកត់ត្រារួចហើយ។');
     });
     const pending = check.warnings.filter(w => !confirm[w.code]);
     if (pending.length) return { needConfirm: pending };
@@ -775,7 +809,7 @@ function saveEvent_(p, who) {
     const rowsOut = [];
     const base = () => new Array(C.width).fill('');
     const put = (row, f, v) => { if (C[f] != null) row[C[f]] = v; };
-    const targets = ev.scope === 'trip' || (code === 10 && !dns.length) ? [null] : dns;
+    const targets = (ev.scope === 'trip' && !(code === 5 && dns.length)) || (code === 10 && !dns.length) ? [null] : dns;
     targets.forEach(d => {
       const row = base();
       const key = nextKey(tripId, keys);
@@ -793,11 +827,15 @@ function saveEvent_(p, who) {
       put(row, 'tripText', tripId);
       put(row, 'trip', tripId);
       put(row, 'remark', String(p.remark || '').slice(0, 500));
-      if (code === 6) {
+      if ((code === 4 || code === 5 || code === 6) && p.v2) put(row, 'wh', String(p.wh || st.wh || '').slice(0, 40));
+      // Start Loading: the total actual kg goes on the first DN row only, so it is never counted twice.
+      if (code === 5 && p.v2 && rowsOut.length === 0) put(row, 'kg', Number(p.kg) || '');
+      if (code === 5 && photoUrl) put(row, 'goodsPhoto', photoUrl);
+      if (code === 6 && !p.v2) {
         put(row, 'wh', String(p.wh || ''));
         put(row, 'websling', p.websling === true ? 'ប្រើ' : p.websling === false ? 'មិនប្រើ' : '');
       }
-      if (code === 6 && p.kg) put(row, 'kg', Number(p.kg) || '');
+      if (code === 6 && p.kg && !p.v2) put(row, 'kg', Number(p.kg) || '');
       if (code === 1 && photoUrl) put(row, 'truckPhoto', photoUrl);
       if (code === 6 && photoUrl) put(row, 'goodsPhoto', photoUrl);
       if ((code === 9 || code === 11 || code === 8) && photoUrl) put(row, 'billPhoto', photoUrl);
@@ -872,6 +910,13 @@ function requiredFields_(code, p, dns, plate, plan) {
     if (!master_().plates.some(x => x.plate === plate) && !String(p.company || '').trim()) miss('Choose or type the transport company of this truck.', 'សូមជ្រើស ឬវាយក្រុមហ៊ុនដឹកជញ្ជូនរបស់ឡាននេះ។');
   }
   if (code === 2) dns.forEach(d => { if (!plan[d.dn] && !String(d.so || '').trim()) miss('Type the SO number of DN ' + d.dn + '.', 'សូមវាយលេខ SO របស់ DN ' + d.dn + '។'); });
+  if (p.v2) {   // Kim's 9-step flow (20 Nov 2026); photos are checked on the phone like every step
+    if ((code === 4 || code === 5) && !String(p.wh || '').trim()) miss('Choose the warehouse code.', 'សូមជ្រើសលេខកូដឃ្លាំង។');
+    if (code === 5 && !dns.length) miss('Type the Delivery Note number.', 'សូមវាយលេខ DN។');
+    if (code === 5 && !(Number(p.kg) > 0)) miss('Type the total actual kg.', 'សូមវាយទំងន់ពិតសរុប (kg)។');
+    if ((code === 10 || code === 11) && String(p.remark || '').trim().length < 3) miss('Write the reason.', 'សូមសរសេរមូលហេតុ។');
+    return;
+  }
   if (code === 6) {
     if (!String(p.wh || '').trim()) miss('Choose the warehouse.', 'សូមជ្រើសរើសឃ្លាំង។');
     if (!(Number(p.kg) > 0)) miss('Type the loaded weight (kg).', 'សូមវាយទំងន់ទំនិញ (kg)។');
@@ -914,7 +959,7 @@ function eventTime_(takenAt, now) {
 function attach_(p, user) {
   const code = Number(p.code);
   if (!EV[code]) fail_('BAD', 'Unknown event.');
-  if (!canRecord(user.role, allowed_()[code])) fail_('DENIED', 'Your role cannot record this step.', 'តួនាទីរបស់អ្នកមិនអាចកត់ត្រាជំហាននេះទេ។');
+  if (!canRecord(user.role, allowed_()[code], code)) fail_('DENIED', 'Your role cannot record this step.', 'តួនាទីរបស់អ្នកមិនអាចកត់ត្រាជំហាននេះទេ។');
   return attachPhotos_(p, user.email);
 }
 function attachPhotos_(p, email) {
@@ -933,7 +978,7 @@ function attachPhotos_(p, email) {
   const sigUrl = code === 9 && p.signature ? savePhoto_(p.signature, tripId + '_signature') : '';
   return withLock_(() => {
     const sh = sheet_(SH.LOG), C = logCols_();
-    const f = code === 1 ? 'truckPhoto' : code === 6 ? 'goodsPhoto' : (code === 8 || code === 9 || code === 11) ? 'billPhoto' : '';
+    const f = code === 1 ? 'truckPhoto' : (code === 5 || code === 6) ? 'goodsPhoto' : (code === 8 || code === 9 || code === 11) ? 'billPhoto' : '';
     if (photoUrls[0] && f && C[f] != null) {
       rows.forEach(r => { const cell = sh.getRange(r.row, C[f] + 1); if (!text_(cell.getValue())) cell.setValue(photoUrls[0]); });
     }
