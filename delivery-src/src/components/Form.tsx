@@ -74,8 +74,9 @@ export function Section(p: { icon: string; title: string; color?: string; childr
   );
 }
 
-/** One field: emoji + bold label, red * when required, red outline and message when missing. */
-export function Field(p: { icon: string; label: string; required?: boolean; optional?: boolean; error?: string; htmlFor?: string; children: React.ReactNode; id?: string }) {
+/** One field: emoji + bold label, red * when required, red outline and message when missing.
+ *  need = required and still empty: the box is red until filled, like the other iSteel apps (Kim, 22 Nov 2026). */
+export function Field(p: { icon: string; label: string; required?: boolean; optional?: boolean; error?: string; need?: boolean; htmlFor?: string; children: React.ReactNode; id?: string }) {
   useLang();
   return (
     <div id={p.id} className={'rounded-xl transition-shadow ' + (p.error ? 'ring-2 ring-bad ring-offset-4 ring-offset-[var(--card)]' : '')} data-missing={p.error ? '1' : undefined}>
@@ -84,7 +85,7 @@ export function Field(p: { icon: string; label: string; required?: boolean; opti
         {p.required ? <span className="text-bad text-[16px] leading-none">*</span> : null}
         {p.optional ? <span className="muted font-normal text-[12.5px]">({t('មិនចាំបាច់', 'optional')})</span> : null}
       </label>
-      {p.children}
+      <div className={p.need ? 'need' : undefined}>{p.children}</div>
       {p.error ? <div className="text-bad text-[13px] font-semibold mt-1">⚠️ {p.error}</div> : null}
     </div>
   );
