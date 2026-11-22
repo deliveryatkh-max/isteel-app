@@ -831,10 +831,8 @@ function saveEvent_(p, who) {
       // Start Loading: the total actual kg goes on the first DN row only, so it is never counted twice.
       if (code === 5 && p.v2 && rowsOut.length === 0) put(row, 'kg', Number(p.kg) || '');
       if (code === 5 && photoUrl) put(row, 'goodsPhoto', photoUrl);
-      if (code === 6 && !p.v2) {
-        put(row, 'wh', String(p.wh || ''));
-        put(row, 'websling', p.websling === true ? 'ប្រើ' : p.websling === false ? 'មិនប្រើ' : '');
-      }
+      if (code === 6 && !p.v2) put(row, 'wh', String(p.wh || ''));
+      if (code === 6) put(row, 'websling', p.websling === true ? 'ប្រើ' : p.websling === false ? 'មិនប្រើ' : '');
       if (code === 6 && p.kg && !p.v2) put(row, 'kg', Number(p.kg) || '');
       if (code === 1 && photoUrl) put(row, 'truckPhoto', photoUrl);
       if (code === 6 && photoUrl) put(row, 'goodsPhoto', photoUrl);
@@ -1196,7 +1194,8 @@ function driverTrip_(p) {
 function driverRecord_(p) {
   const c = checkDriverLink_(p);
   const code = Number(p.code);
-  if ([8, 9, 11].indexOf(code) < 0) fail_('DENIED', 'This link can record only Arrival, Delivered or Delivery Failed.', 'តំណនេះកត់ត្រាបានតែ មកដល់ ប្រគល់ ឬ ប្រគល់មិនបាន។');
+  // 9-step flow (22 Nov 2026): the driver link also records Start / Finish unloading and Canceled for a DN.
+  if ([8, 9, 11, 12, 13].indexOf(code) < 0 && !(code === 10 && (p.dns || []).length)) fail_('DENIED', 'This link can record only the delivery steps of its DNs.', 'តំណនេះកត់ត្រាបានតែជំហានដឹកជញ្ជូនរបស់ DN ប៉ុណ្ណោះ។');
   const isi = master_().plates.some(x => x.plate === normPlate(c.rows[0].plate));
   const plan = plan_();
   const fleet = (p.dns || []).map(d => (plan[normDn(d.dn)] || {}).fleet).filter(Boolean)[0] || '';
