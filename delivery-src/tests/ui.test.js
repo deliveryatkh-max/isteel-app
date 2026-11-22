@@ -39,6 +39,7 @@ const skew = ms => fetch(BASE + '/__skew?ms=' + ms);
   }
   async function proof(page, name) {
     await page.locator('#rcv').fill(name);
+    await page.getByRole('button', { name: /Unlock/ }).click();
     await page.locator('canvas').scrollIntoViewIfNeeded();
     const box = await page.locator('canvas').boundingBox();
     await page.mouse.move(box.x + 20, box.y + 30); await page.mouse.down();

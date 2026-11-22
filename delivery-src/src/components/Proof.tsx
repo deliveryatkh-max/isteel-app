@@ -50,12 +50,16 @@ export function SignaturePad(p: { value: string; onChange: (v: string) => void; 
   const ref = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const inked = useRef(false);
+  // Kim (22 Nov 2026): locked until "Unlock" is tapped, so scrolling the page never draws on it.
+  const [locked, setLocked] = useState(true);
+  const lockedRef = useRef(true);
+  lockedRef.current = locked;
   useEffect(() => {
     const c = ref.current!;
     const ctx = c.getContext('2d')!;
     ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#011e41';
     const pos = (e: PointerEvent) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * (c.width / r.width), (e.clientY - r.top) * (c.height / r.height)]; };
-    const down = (e: PointerEvent) => { e.preventDefault(); try { c.setPointerCapture(e.pointerId); } catch { /* not supported */ } drawing.current = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); };
+    const down = (e: PointerEvent) => { if (lockedRef.current) return; e.preventDefault(); try { c.setPointerCapture(e.pointerId); } catch { /* not supported */ } drawing.current = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); };
     const move = (e: PointerEvent) => { if (!drawing.current) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); inked.current = true; };
     const up = () => { if (!drawing.current) return; drawing.current = false; if (inked.current) p.onChange(c.toDataURL('image/png')); };
     c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
@@ -65,10 +69,16 @@ export function SignaturePad(p: { value: string; onChange: (v: string) => void; 
   return (
     <div>
       {p.label !== false ? <span className="lbl">{t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')}</span> : null}
-      <canvas ref={ref} width={600} height={200} className="w-full h-[150px] rounded-xl border-[1.5px] border-dashed border-line bg-white touch-none" aria-label={t('ចុះហត្ថលេខានៅទីនេះ', 'Sign here')} />
-      <div className="flex justify-between items-center mt-1">
-        <span className="muted text-[12.5px]">{p.value ? '✔ ' + t('បានចុះហត្ថលេខា', 'Signed') : t('ចុះហត្ថលេខាដោយម្រាមដៃ', 'Sign with a finger')}</span>
-        <button type="button" className="btn btn-sm" onClick={clear}>↺ {t('លុប', 'Clear')}</button>
+      <div className="relative">
+        <canvas ref={ref} width={600} height={200} className={'w-full h-[150px] rounded-xl border-[1.5px] bg-white ' + (locked ? 'border-dashed border-line touch-auto' : 'border-solid border-brand touch-none')} aria-label={t('ចុះហត្ថលេខានៅទីនេះ', 'Sign here')} />
+        {locked && !p.value ? <div className="absolute inset-0 flex items-center justify-center pointer-events-none muted text-[13px]">🔒 {t('ចុច "ដោះសោ" ដើម្បីចុះហត្ថលេខា', 'Tap "Unlock" to sign')}</div> : null}
+      </div>
+      <div className="flex justify-between items-center gap-2 mt-1">
+        <span className="muted text-[12.5px]">{p.value ? '✔ ' + t('បានចុះហត្ថលេខា', 'Signed') : locked ? '🔒 ' + t('ចាក់សោ', 'Locked') : t('ចុះហត្ថលេខាដោយម្រាមដៃ', 'Sign with a finger')}</span>
+        <div className="flex gap-2">
+          <button type="button" className={locked ? 'btn-primary btn-sm' : 'btn btn-sm'} onClick={() => setLocked(!locked)}>{locked ? '🔓 ' + t('ដោះសោ', 'Unlock') : '🔒 ' + t('ចាក់សោ', 'Lock')}</button>
+          <button type="button" className="btn btn-sm" onClick={clear}>↺ {t('លុប', 'Clear')}</button>
+        </div>
       </div>
     </div>
   );
