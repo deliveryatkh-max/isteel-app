@@ -402,7 +402,7 @@ test('a step already passed is closed for the trip; an arrived DN cannot arrive 
   step(e); let r = rec(e, WH, { code: 4, tripId: t1 });
   assert.ok(!r.ok && /^STEP_PASSED/.test(r.error), r.error);
   r = rec(e, WH, { code: 5, tripId: t1 });
-  assert.ok(!r.ok && /^(STEP_PASSED|DUPLICATE)/.test(r.error), r.error);
+  assert.ok(!r.ok && /^(STEP_PASSED|DUPLICATE|END_LOADING_FIRST)/.test(r.error), r.error);
   step(e); ok(rec(e, WH, { code: 6, tripId: t1, wh: 'PNP1', kg: 1000, confirm: ['ORDER'] }));
   const t2 = gateIn(e, 'TEST-0002').tripId;
   loadAndOut(e, t2, ['9000000001']);
@@ -504,4 +504,69 @@ test('one truck list: ISI trucks and drivers come from the Fuel sheet Driver & T
   assert.deepStrictEqual(b.drivers.map(d => d.name), ['01.Sok', '02.Dara', '03.Vibol', '04.Rent']);
   assert.ok(!b.plates.some(p => p.plate === 'TEST-0001'), 'the old Plate Number tab is no longer used');
   assert.strictEqual(b.plateCo['2B-9999'], 'Fast Trans');
+});
+
+// ---------------------------------------------------------------- 9-step flow (Kim, 20 Nov 2026)
+const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('jpg').toString('base64');
+function v2Load(e, tripId, wh, dns, kg) {
+  step(e); ok(rec(e, WH, { v2: true, code: 4, tripId, wh }));
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId, wh, kg, dns: dns.map(dn => ({ dn })), photo: PHOTO, confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId, wh }));
+}
+
+test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloading and delivery', () => {
+  const e = env(); e.run('setup()');
+  const g = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: '01.Driver A', ticket: 'T1', kg: 9000 }, GUARD));
+  assert.ok(g.tripId);
+  const again = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', ticket: 'T1b' }, GUARD));
+  assert.strictEqual(again.tripId, g.tripId); assert.ok(again.existed);
+  const t = g.tripId;
+  // Start Loading needs a warehouse, DN and kg
+  let r = rec(e, WH, { v2: true, code: 5, tripId: t, dns: [{ dn: '9000000001' }], kg: 1000 });
+  assert.ok(!r.ok);
+  v2Load(e, t, 'PNP1', ['9000000001'], 1200);
+  // End Loading twice is refused; start again at the second warehouse
+  r = rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP1' });
+  assert.ok(!r.ok && /^START_LOADING_FIRST/.test(r.error), r.error);
+  step(e); ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 800, dns: [{ dn: '9000000002' }], photo: PHOTO, confirm: ['DN_OPEN_ELSEWHERE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  r = rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', kg: 1, dns: [{ dn: '9000000002' }] });
+  assert.ok(!r.ok && /^END_LOADING_FIRST/.test(r.error), r.error);
+  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2' }));
+  const trip = ok(e.call('trip', { tripId: t }, ADMIN));
+  const s = trip.trip || trip;
+  assert.strictEqual(s.lastLoad, 6);
+  assert.deepStrictEqual((s.dns || []).map(d => d.dn).sort(), ['9000000001', '9000000002']);
+  // Warehouse rows carry the warehouse code and kg on the first DN row only
+  const rows = logRows(e).filter(x => x[col('Master Trip ID')] === t);
+  const starts = rows.filter(x => x[col('ស្ថានភាពដឹកជញ្ជូន')] === '៥.ចាប់ផ្តើម ឡើងទំនិញ');
+  assert.strictEqual(starts.length, 2);
+
+  step(e, 20);
+  const out = ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0001', ticket: 'T1', net: 2000, dns: ['9000000001', '9000000002'] }, GUARD));
+  assert.strictEqual(out.tripId, t);
+  assert.strictEqual(ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0001' }, GUARD)).skipped, 'NO_TRIP');
+
+  // Driver steps per DN: unloading before arrival is refused
+  r = rec(e, ADMIN, { v2: true, code: 12, tripId: t, dns: [{ dn: '9000000001' }] });
+  assert.ok(!r.ok && /^ARRIVE_FIRST/.test(r.error), r.error);
+  step(e, 30); ok(rec(e, ADMIN, { v2: true, code: 8, tripId: t, dns: [{ dn: '9000000001' }], photo: PHOTO }));
+  r = rec(e, ADMIN, { v2: true, code: 13, tripId: t, dns: [{ dn: '9000000001' }] });
+  assert.ok(!r.ok && /^START_UNLOAD_FIRST/.test(r.error), r.error);
+  step(e); ok(rec(e, ADMIN, { v2: true, code: 12, tripId: t, dns: [{ dn: '9000000001' }] }));
+  step(e); ok(rec(e, ADMIN, { v2: true, code: 13, tripId: t, dns: [{ dn: '9000000001' }] }));
+  step(e); ok(rec(e, ADMIN, { v2: true, code: 9, tripId: t, dns: [{ dn: '9000000001', kg: 1200 }], photo: PHOTO }));
+  // Second DN fails with a reason
+  step(e, 30); ok(rec(e, ADMIN, { v2: true, code: 8, tripId: t, dns: [{ dn: '9000000002' }], photo: PHOTO }));
+  r = rec(e, ADMIN, { v2: true, code: 11, tripId: t, dns: [{ dn: '9000000002' }], remark: '' });
+  assert.ok(!r.ok);
+  step(e); ok(rec(e, ADMIN, { v2: true, code: 11, tripId: t, dns: [{ dn: '9000000002' }], remark: 'customer closed', photo: PHOTO }));
+  const end = ok(e.call('trip', { tripId: t }, ADMIN));
+  assert.strictEqual((end.trip || end).stage, 'completed');
+});
+
+test('Scale Gate In needs a signed-in active user; old trips are untouched', () => {
+  const e = env(); e.run('setup()');
+  const r = e.call('scaleGate', { kind: 'in', plate: 'TEST-0002' }, 'google:nobody@test.kh');
+  assert.ok(!r.ok);
+  assert.ok(!ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0002' }, GUARD)).tripId);
 });

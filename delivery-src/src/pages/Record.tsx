@@ -221,7 +221,7 @@ export function RecordPage() {
     setDone(null); setTried(false); setFormErr(''); setPlate(''); setDriver(''); setPhoto(''); setPhotos([]); setSignature(''); setReceiver(''); setCompany(''); setRemark(''); setWh(''); setLoadKg(''); setWebsling(''); setLines([]); setPicked({}); setDelivered({});
     if (nextTrip !== undefined) setTripId(nextTrip);
     if (next) setCode(next);
-    go('/record' + (nextTrip ? '?trip=' + encodeURIComponent(nextTrip) + (next ? '&code=' + next : '') : ''));
+    go('/record' + (nextTrip ? '?trip=' + encodeURIComponent(nextTrip) + (next ? '&code=' + next : '') : '?old=1'));
   }
 
   if (!mine.length) {

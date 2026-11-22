@@ -9,11 +9,14 @@ export type Boot = {
   stages: Record<string, Label>; dnStatuses: Record<string, Label>; legs: Record<string, Label>; today: string; serverNow: number;
   settings?: { warnMin: number; lateMin: number; farKm: number }; companies?: string[]; plateCo?: Record<string, string>; trucks?: { plate: string; co: string; type: 'rented' | 'customer'; driver?: string }[];
   complaintTypes?: string[]; canKpi?: boolean;
+  /** Kim's 9-step flow (20 Nov 2026); missing when the Apps Script is older. */
+  flow?: { n: number; code: number; by: string }[];
 };
-export type TripDn = { dn: string; cust: string; leg: string; kg: number };
+export type TripDn = { dn: string; cust: string; leg: string; kg: number; loadKg?: number };
 export type TripSummary = {
   id: string; date: string; plate: string; driver: string; round: string; gateIn: number | null; gateOut: number | null;
   stage: string; closed: boolean; lastTime: number; lastCode: number; progress?: number; dns: TripDn[]; legacy: boolean;
+  lastLoad?: number; wh?: string;
 };
 export type LogRow = {
   row: number; key: string; code: number; eventText: string; recorder: string; trip: string; plate: string; driver: string; round: string;
