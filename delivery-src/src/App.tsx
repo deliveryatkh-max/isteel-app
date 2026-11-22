@@ -33,6 +33,7 @@ const TABS: Tab[] = [
 // Kim's 9-step flow (20 Nov 2026): Record opens the new Steps screen. Drivers see only their own truck (opened by scanning a DN),
 // so they get no Trips, Scan or old Record tab; warehouse staff open on the trucks inside.
 const DRIVER_TABS: Tab[] = [HOME, { id: 'record', icon: '📷', km: 'ស្កេន DN', en: 'Scan DN', big: true }, { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' }];
+const OLD_FORM = false;
 const DRIVER_PAGES = ['', 'record', 'steps', 'more', 'complaints'];
 const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
 
@@ -140,8 +141,10 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   let body;
   if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
   // Old step form: opened with a query (Trip page "next step" links, "Other step") or while the Apps Script is still the old one.
-  else if (page === 'record' && !isDriver && (route.q.toString() || !boot.flow)) body = <RecordPage key={route.q.toString()} />;
-  else if (page === 'record' || page === 'steps') body = <StepsPage key={route.path.join('/') + route.q.toString()} tripId={page === 'steps' ? route.path[1] : undefined} dn={route.q.get('dn') || undefined} />;
+  // Old step form hidden (Kim, 22 Nov 2026: keep only the new steps). It shows only while the Apps Script is still the old one,
+  // or again when OLD_FORM is set to true. Links to it (Trip page, Scan) open the new steps of that trip instead.
+  else if (page === 'record' && !isDriver && (!boot.flow || (OLD_FORM && route.q.toString()))) body = <RecordPage key={route.q.toString()} />;
+  else if (page === 'record' || page === 'steps') body = <StepsPage key={route.path.join('/') + route.q.toString()} tripId={page === 'steps' ? route.path[1] : route.q.get('trip') || undefined} dn={route.q.get('dn') || undefined} />;
   else if (page === 'trip' && route.path[1]) body = <TripPage id={route.path[1]} />;
   else if (page === 'trips' && route.path[1] === 'history') body = <TripsPage />;
   else if (page === 'dn' && route.path[1]) body = <DnPage dn={route.path[1]} />;
