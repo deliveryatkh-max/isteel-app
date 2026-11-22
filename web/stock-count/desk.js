@@ -24,13 +24,13 @@
   // ------------------------------------------------------------------ roles
   const PAGES = [
     ['home', '📷', 'ស្កេន', 'Scan'], ['dash', '📊', 'ផ្ទាំងគ្រប់គ្រង', 'Dashboard'], ['stock', '📦', 'បញ្ជីស្តុក', 'Stock list'],
-    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['product', '🏷️', 'ផលិតផល', 'Product'], ['roles', '👥', 'តួនាទី', 'Roles'],
+    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['roles', '👥', 'តួនាទី', 'Roles'],
   ];
   const ROLES = [
     { id: 'operator', km: 'បុគ្គលិកឃ្លាំង', en: 'Warehouse Operator', pages: ['home', 'stock'], can: [] },
-    { id: 'supervisor', km: 'ប្រធានក្រុមឃ្លាំង', en: 'Warehouse Supervisor', pages: ['home', 'dash', 'stock', 'moves', 'review', 'product'], can: ['approve', 'export'] },
+    { id: 'supervisor', km: 'ប្រធានក្រុមឃ្លាំង', en: 'Warehouse Supervisor', pages: ['home', 'dash', 'stock', 'moves', 'review'], can: ['approve', 'export'] },
     { id: 'controller', km: 'អ្នកត្រួតពិនិត្យស្តុក', en: 'Inventory Controller', pages: ['home', 'dash', 'stock', 'moves', 'review', 'sap'], can: ['approve', 'export', 'adjust', 'sap'] },
-    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'review', 'sap', 'product', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
+    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'review', 'sap', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
   ];
   const RIGHTS = [
     ['scan', 'ស្កេន៖ ចូល / ចេញ / ផ្ទេរ / រាប់', 'Scan: IN / OUT / Transfer / Count'], ['stockv', 'មើលបញ្ជីស្តុក', 'See the stock list'],
@@ -41,9 +41,7 @@
   let roleId = 'admin';
   try { roleId = localStorage.getItem('sc_demo_role') || 'admin'; } catch (e) { /* private mode */ }
   const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'sap'], can: ['export', 'sap'] };
-  // Product menu: admins and supervisors only (Kim, 20 Nov; Users Role contains "Admin" or "Supervisor"). The server checks too.
-  const liveRole = () => (S.user && (S.user.admin || S.user.supervisor) ? Object.assign({}, LIVE_ROLE, { pages: LIVE_ROLE.pages.concat('product') }) : LIVE_ROLE);
-  const role = () => (!DEMO ? liveRole() : ROLES.find(r => r.id === roleId) || ROLES[3]);
+  const role = () => (!DEMO ? LIVE_ROLE : ROLES.find(r => r.id === roleId) || ROLES[3]);
   const can = what => role().can.indexOf(what) >= 0;
   const has = (r, right) => (right === 'scan' || right === 'stockv' ? true : right === 'dashv' ? r.pages.indexOf('dash') >= 0 : r.can.indexOf(right) >= 0);
 
@@ -475,7 +473,7 @@
   const PT = { head: null, rows: [], at: 0, busy: false, err: '' };
   const PF = [['Material Group L1', 'ក្រុម L1', 'Material Group L1'], ['Material Group L2', 'ក្រុម L2', 'Material Group L2'], ['Material Group L3', 'ក្រុម L3', 'Material Group L3'],
     ['Material Group L4', 'ក្រុម L4', 'Material Group L4'], ['Size', 'ទំហំ', 'Size'], ['Grade', 'Grade', 'Grade'], ['Brand', 'ម៉ាក', 'Brand'], ['ABC Class', 'ថ្នាក់', 'Class']];
-  const PFV = {}, SFV = {}; let pq = '', sq = '';
+  const SFV = {}; let sq = '';
   function loadProducts() {
     if (PT.busy || (PT.head && Date.now() - PT.at < 600000)) return;
     if (DEMO) {
@@ -486,38 +484,9 @@
     }
     PT.busy = true; PT.err = '';
     SC.api('products', {}).then(r => { PT.head = r.head || []; PT.rows = r.rows || []; PT.at = Date.now(); }, e => { PT.err = String(e && e.message || e); })
-      .then(() => { PT.busy = false; if (S.view === 'product') product(); else if (S.view === 'sap') sap(); });
-  }
-  function product() {
-    wide(); loadProducts();
-    if (!PT.head) {
-      view(`<div class="fb-wrap">${repHead('product', '🏷️ ' + T('ផលិតផល', 'Product'), '', null, true)}</div>
-        <p class="muted">${PT.err ? '⚠️ ' + esc(PT.err) : T('កំពុងផ្ទុក…', 'Loading…')}</p>`);
-      return;
-    }
-    const H = PT.head, ix = n => H.indexOf(n);
-    const num = H.map(h => /bundle|kg|cbm|dim|mm\)|ytd|qty/i.test(h) && !/arrangement/i.test(h));
-    const rows = PT.rows.filter(r => PF.every(f => !PFV[f[0]] || (ix(f[0]) >= 0 && r[ix(f[0])] === PFV[f[0]]))
-      && (!pq || r.join(' ').toLowerCase().indexOf(pq.toLowerCase()) >= 0));
-    // Each filter lists the values left after the other filters (so L2 shows only the groups under the picked L1).
-    const opts = f => { const i = ix(f[0]); if (i < 0) return [];
-      return Array.from(new Set(PT.rows.filter(r => PF.every(g => g === f || !PFV[g[0]] || (ix(g[0]) >= 0 && r[ix(g[0])] === PFV[g[0]]))).map(r => r[i]).filter(Boolean))).sort(); };
-    view(`
-      <div class="fb-wrap">${FB.head('product', '🏷️ ' + T('ផលិតផល', 'Product'), (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '')
-        + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`, () => { PF.forEach(f => { PFV[f[0]] = ''; }); pq = ''; product(); })}
-      ${FB.panel('product', PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="pf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${opts(f).map(v => `<option value="${esc(v)}"${v === PFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
-        + FB.search('pq', T('ស្វែងរក លេខ ឬឈ្មោះសម្ភារៈ', 'Search material code or description'), pq))}</div>
-      <div class="sumline"><b>${rows.length}</b> / ${PT.rows.length} ${T('សម្ភារៈ', 'materials')}</div>
-      <section class="screp"><table class="rep prodtbl"><thead><tr>${H.map((h, i) => `<th${num[i] ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>
-        ${rows.map(r => `<tr>${r.map((v, i) => `<td${num[i] ? ' class="num mono"' : i === 0 ? ' class="mono"' : ''}>${esc(v)}</td>`).join('')}</tr>`).join('')
-          || `<tr><td class="muted" colspan="${H.length}">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody></table></section>
-      <p class="muted">${T('ប្រភព៖ Excel Product Master ក្នុង OneDrive (ធ្វើបច្ចុប្បន្នភាពរៀងរាល់ម៉ោង)។', 'Source: the Product Master Excel in OneDrive (updated every hour).')}</p>`);
-    setTimeout(fitRep, 0);
-    keep('#pq', v => { pq = v; product(); });
-    PF.forEach((f, k) => { $('#pf' + k).onchange = e => { PFV[f[0]] = e.target.value; product(); }; });
-    if ($('#exp')) $('#exp').onclick = () => download('product-master.csv', [H].concat(rows));
+      .then(() => { PT.busy = false; if (S.view === 'sap') sap(); });
   }
 
-  window.SC_PAGES = { dash: dash, stock: stock, moves: moves, review: review, sap: sap, product: product, roles: roles };
+  window.SC_PAGES = { dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
   route();
 })();
