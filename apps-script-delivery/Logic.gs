@@ -107,6 +107,7 @@ const normPlate = v => String(v == null ? '' : v).trim().toUpperCase().replace(/
 function tripState(rows, doneElsewhere) {
   rows = rows.slice().sort((a, b) => a.time - b.time || a.seq - b.seq);
   const out = { gateIn: null, gateOut: null, canceled: false, dns: {}, last: null, lastProgress: 0, lastLoad: 0, wh: '', events: rows.length };
+  const startDns = { list: [], closed: false };
   rows.forEach(r => {
     if (r.code === 1 && out.gateIn == null) out.gateIn = r.time;
     if (r.code === 7 && out.gateOut == null) out.gateOut = r.time;
@@ -114,6 +115,9 @@ function tripState(rows, doneElsewhere) {
     if (r.code >= 1 && r.code <= 7 && r.code !== 2) out.lastProgress = Math.max(out.lastProgress, r.code);
     if (r.code === 2) out.lastProgress = Math.max(out.lastProgress, 2);
     if (r.code >= 4 && r.code <= 6) { out.lastLoad = r.code; if (r.wh) out.wh = r.wh; }
+    // End Loading carries the warehouse's total kg (22 Nov 2026): it counts for the first DN started at that warehouse.
+    if (r.code === 5 && r.dn) { if (startDns.closed) { startDns.list = []; startDns.closed = false; } startDns.list.push(r.dn); }
+    if (r.code === 6) { if (!r.dn && r.kg && startDns.list.length && out.dns[startDns.list[0]]) out.dns[startDns.list[0]].loadKg = (out.dns[startDns.list[0]].loadKg || 0) + Number(r.kg); startDns.closed = true; }
     if (r.dn) {
       const d = out.dns[r.dn] || (out.dns[r.dn] = { dn: r.dn, cust: '', leg: 'picked', kg: 0, final: false, time: r.time });
       if (r.cust) d.cust = r.cust;

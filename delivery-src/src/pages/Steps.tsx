@@ -13,7 +13,7 @@ import { useSubmit, warmLocation } from '../components/submit';
 
 /**
  * Kim's 9-step flow (20 Nov 2026). Gate In and Gate Out come from the Truck Scale.
- * Warehouse: 2 Arrival at loading area (warehouse), 3 Start Loading (DNs, total kg, photos), 4 End Loading; 3–4 repeat per warehouse.
+ * Warehouse: 2 Arrival at loading area (warehouse), 3 Start Loading (DNs), 4 End Loading (total kg, photos, websling); 3–4 repeat per warehouse.
  * Driver: scans a DN to open only their own truck; 6 Arrival, 7 Start unloading, 8 Finish unloading, 9 Delivered / Failed / Canceled, per DN.
  */
 const cleanDn = (s: string) => String(s || '').toUpperCase().replace(/\s+/g, '').replace(/[^0-9A-Z-]/g, '');
@@ -288,19 +288,22 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   if ((n === 2 || (n === 3 && again)) && !wh) miss.wh = t('សូមជ្រើសឃ្លាំង', 'Choose the warehouse');
   if (n === 3) {
     if (!dns.length) miss.dns = t('សូមបន្ថែម DN យ៉ាងហោចណាស់មួយ', 'Add at least one DN');
+  }
+  // Kim (22 Nov 2026): the total kg and goods photos are typed when each warehouse finishes loading (step 4).
+  if (n === 4) {
     if (!(Number(kgIn) > 0)) miss.kg = t('សូមវាយទំងន់សរុប (kg)', 'Type the total weight (kg)');
     if (!photos.length) miss.photos = t('សូមថតរូបទំនិញ', 'Take the goods photos');
+    if (!websling) miss.websling = t('សូមជ្រើស ប្រើ ឬមិនប្រើ', 'Choose Yes or No');
   }
-  if (n === 4 && !websling) miss.websling = t('សូមជ្រើស ប្រើ ឬមិនប្រើ', 'Choose Yes or No');
   const m = tried ? miss : {};
   async function submit() {
     setTried(true);
     if (Object.keys(miss).length) { scrollToMissing(); return; }
     if (n === 2) await st.save({ ...base, code: 4, wh }, label(2));
     else if (n === 3) {
-      const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn })), kg: Number(kgIn), photos }, label(3));
+      const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn })) }, label(3));
       if (ok) setAgain(false);
-    } else await st.save({ ...base, code: 6, wh: trip.wh, websling: websling === 'yes' }, label(4));
+    } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4));
   }
   return (
     <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={stepName(n)}>
@@ -324,20 +327,20 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
               {dns.map(d => <button key={d} type="button" className="chip chip-on" onClick={() => setDns(dns.filter(x => x !== d))}>{d} ✕</button>)}
             </div>
           </Field>
+          {scan ? <Scanner onCode={c => { addDn(c); setScan(false); }} onClose={() => setScan(false)} /> : null}
+        </>
+      ) : null}
+      {n === 4 ? (<>
           <Field icon="⚖️" label={t('ទំងន់សរុបជាក់ស្តែង (kg)', 'Total actual weight (kg)')} required error={m.kg} id="kg">
             <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
           </Field>
           <Field icon="📷" label={t('រូបថតទំនិញ', 'Goods photos')} required error={m.photos} id="photos">
             <MultiPhoto value={photos} onChange={setPhotos} />
           </Field>
-          {scan ? <Scanner onCode={c => { addDn(c); setScan(false); }} onClose={() => setScan(false)} /> : null}
-        </>
-      ) : null}
-      {n === 4 ? (
         <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required error={m.websling} id="websling">
           <Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: 'ប្រើ', en: 'Yes' }, { v: 'no', km: 'មិនប្រើ', en: 'No' }]} />
         </Field>
-      ) : null}
+      </>) : null}
       {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
       <button type="button" className="btn-primary w-full mt-2" disabled={st.saving} onClick={submit}>{st.saving ? '…' : '💾 ' + t('កត់ត្រា', 'Record') + ' · ' + t(...STEP_NAMES[n])}</button>
     </Section>
