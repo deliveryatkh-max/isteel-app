@@ -52,6 +52,9 @@ function doPost(e) {
     // Customer rating link (no sign-in): signed per DN + trip.
     if (body.action === 'rateInfo') return json_({ ok: true, data: rateInfo_(p) });
     if (body.action === 'rateSave') return json_({ ok: true, data: rateSave_(p) });
+    // Customer live tracking (22 Nov 2026): the driver's phone sends GPS; the customer page reads it (both signed links).
+    if (body.action === 'drvGps') return json_({ ok: true, data: driverGps_(p) });
+    if (body.action === 'trackInfo') return json_({ ok: true, data: trackInfo_(p) });
     // Truck Scale (20 Nov 2026): the 1st weigh opens the trip (Gate In), the 2nd weigh closes it (Gate Out).
     // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
     if (body.action === 'scaleGate') { const su = authenticate_(body.token, true); const o = { ok: true, data: scaleGate_(p, su) }; if (su.session) o.session = su.session; return json_(o); }
@@ -88,6 +91,7 @@ function route_(action, p, user) {
     case 'complaintResolve': return complaintResolve_(p, user);
     case 'setSite': return setSite_(p, user);
     case 'kpi': return kpi_(p, user);
+    case 'gps': return userGps_(p, user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -569,6 +573,8 @@ function tripDetail_(tripId, user) {
   out.far = farRows_(all);
   out.proof = proofFor_(tripId);
   out.rate = rateLinks_(tripId, all);
+  out.track = trackLinks_(tripId, all);
+  if (prop_('TRACK_BOT_TOKEN')) { out.tgJoin = {}; Object.keys(out.track).forEach(dn => { const id = (plan[dn] || {}).custId || custIdOf((all.find(r => r.dn === dn) || {}).cust); if (id) out.tgJoin[dn] = joinLink_(id); }); }
   out.company = companyOf_(s.plate);
   out.complaints = complaintList_(xrows_(XT.COMPLAINTS).filter(r => text_(r['Trip ID']) === tripId)).length;
   return out;
@@ -892,6 +898,7 @@ function saveEvent_(p, who) {
     if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email, p.driver);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
     if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
+    if (code === 7) { try { res.notified = trackNotify_(tripId); } catch (e) { console.error('trackNotify: ' + e); } }   // live map link to the customer
     if (ref) cache.put('ref_' + ref, JSON.stringify(res), 21600);
     return res;
   });

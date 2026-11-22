@@ -120,6 +120,27 @@ const errors = [];
   await lp.screenshot({ path: SHOTS + 'steps-05-driver-link.png', fullPage: true });
   console.log('PASS driver link uses the new steps');
 
+  // Customer live tracking (Kim, 22 Nov 2026): driver GPS -> customer map page
+  const g1 = await api('drvGps', { t: trip, k: td.data.driverLink, ll: '11.56,104.91', acc: 10 });
+  assert.ok(g1.ok, JSON.stringify(g1));
+  const td2 = await api('trip', { tripId: trip }, 'google:admin@test.kh');
+  const tk = td2.data.track['9000000101'];
+  assert.ok(tk, 'track link');
+  const cp = await as('nobody@test.kh');
+  // The sandbox cannot reach cdnjs / OpenStreetMap: serve Leaflet from a local copy when LEAFLET_DIR is set.
+  if (process.env.LEAFLET_DIR) await cp.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/leaflet\/1\.9\.4\/leaflet\.min\.(js|css)/, r => r.fulfill({ path: process.env.LEAFLET_DIR + '/leaflet.' + (r.request().url().endsWith('js') ? 'js' : 'css') }));
+  await cp.goto(BASE + '/delivery/track.html?d=9000000101&t=' + encodeURIComponent(trip) + '&k=' + tk);
+  await cp.getByText(/Your steel is on the way|កំពុងធ្វើដំណើរ/).waitFor({ timeout: 10000 });
+  await cp.locator('#gmap[href*="11.56,104.91"]').waitFor({ state: 'attached', timeout: 10000 });
+  assert.strictEqual(await cp.getByText(/Driver A/).count(), 0, 'no driver name');
+  if (process.env.LEAFLET_DIR) await cp.locator('.leaflet-marker-icon').first().waitFor({ timeout: 10000 });
+  await cp.waitForTimeout(1500);
+  await cp.screenshot({ path: SHOTS + 'steps-07-track.png', fullPage: true });
+  console.log('PASS customer live map');
+  await w.goto(BASE + '/delivery/#/trip/' + encodeURIComponent(trip));
+  await w.getByText(/Live tracking link|តំណតាមដាន/).waitFor({ timeout: 10000 });
+  console.log('PASS copy tracking link on trip page');
+
   // A DN already on another trip is flagged when typed (Kim, 22 Nov 2026)
   const g2 = await api('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: 'Y', ticket: 'UI2', kg: 7000 }, 'google:guard@test.kh');
   assert.ok(g2.ok && g2.data.tripId, JSON.stringify(g2));

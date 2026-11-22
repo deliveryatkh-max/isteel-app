@@ -123,3 +123,11 @@ node delivery-src/tests/ui.test.js                                    # 22 scree
 | Customer rating link says "not valid" | the link was changed or copied in part | share it again from the trip screen |
 
 All errors are also in Apps Script → *Executions* with the action name.
+
+## Customer live tracking and Telegram bot (22 Nov 2026)
+1. Re-paste Delivery.gs and Extras.gs, then Deploy › Manage deployments › New version.
+2. Script properties: add `TRACK_BOT_TOKEN` = the token from @BotFather for @isisteellive_bot (never put it in code or chat).
+3. Run `setupTrackBot()` once (allow the permissions). It starts a 1-minute timer that answers /start.
+4. Run `setup()` once more: it adds the "Live GPS" and "Customer Telegram" tabs (nothing existing changes).
+- Optional properties: `TRACK_BOT_NAME` (default isisteellive_bot), `TRACK_PAGE_URL` (default https://isteel-app.pages.dev/delivery/track.html).
+- Sales copies the bot join link on the trip page; the customer taps Start once. Each Gate Out then sends the live map link.

@@ -31,7 +31,7 @@ export type DnInfo = {
 export type Proof = { key: string; dn: string; receiver: string; signature: string; photos: string[] };
 export type TripDetail = TripSummary & {
   rows: LogRow[]; dnInfo: Record<string, DnInfo>; driverLink?: string;
-  far?: Record<string, number>; proof?: Proof[]; rate?: Record<string, string>; company?: string; complaints?: number;
+  far?: Record<string, number>; proof?: Proof[]; rate?: Record<string, string>; track?: Record<string, string>; tgJoin?: Record<string, string>; company?: string; complaints?: number;
 };
 export type Complaint = {
   row: number; id: string; time: number; dn: string; trip: string; plate: string; co: string; cust: string; type: string; detail: string;

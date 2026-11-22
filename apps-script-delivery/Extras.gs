@@ -534,3 +534,205 @@ function customerRatingsOf_(dn) {
 function needAny_(user, keys) {
   if (keys.indexOf(user.roleKey) < 0) fail_('DENIED', 'Your role cannot do this.', 'តួនាទីរបស់អ្នកមិនអាចធ្វើបានទេ។');
 }
+
+// ---------------------------------------------------------------- customer live tracking (Kim, 22 Nov 2026)
+// After Gate Out the driver's phone (driver link or the driver's own sign-in) sends its GPS. The customer opens
+// track.html?d=DN&t=TRIP&k=KEY (signed per DN + trip, no sign-in) and sees the truck on a map until the DN is done.
+// The latest point is kept in the cache (fast); a row goes to the "Live GPS" tab at most every GPS_LOG_MIN minutes.
+// Truck GPS (provider API) can be added later as another Source.
+const GPS_TAB = 'Live GPS';
+const GPS_COLS = ['Time', 'Trip ID', 'Truck No.', 'LatLong', 'Accuracy (m)', 'Source', 'User'];
+XT_COLS[GPS_TAB] = GPS_COLS;
+const GPS_LOG_MIN = 2;
+const trackToken_ = (dn, tripId) => b64url_(Utilities.computeHmacSha256Signature('trk|' + dn + '|' + tripId, linkSecret_())).slice(0, 16);
+
+function gpsTabReady_() {
+  const ss = ss_();
+  if (ss.getSheetByName(GPS_TAB)) return;
+  const sh = ss.insertSheet(GPS_TAB);
+  sh.getRange(1, 1, 1, GPS_COLS.length).setValues([GPS_COLS]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+}
+/** Checks a phone position: "lat,lng" inside Cambodia and around (no fake 0,0). */
+function cleanLatLong_(ll) {
+  const m = String(ll || '').match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return '';
+  const lat = Number(m[1]), lng = Number(m[2]);
+  if (!(lat > 8 && lat < 16 && lng > 100 && lng < 109)) return '';
+  return lat.toFixed(6) + ',' + lng.toFixed(6);
+}
+/** Saves one position for an open trip after Gate Out. */
+function gpsSave_(tripId, st, plate, p, source, email) {
+  if (!st.gateOut || st.closed) return { ok: true, skipped: true };
+  const ll = cleanLatLong_(p.ll);
+  if (!ll) fail_('BAD', 'The location is not valid.', 'ទីតាំងមិនត្រឹមត្រូវ។');
+  const acc = Math.max(0, Math.round(Number(p.acc) || 0));
+  const cache = CacheService.getScriptCache();
+  const point = { ll: ll, acc: acc, t: Date.now(), src: source };
+  cache.put('gps_' + tripId, JSON.stringify(point), 21600);
+  if (!cache.get('gpslog_' + tripId)) {
+    cache.put('gpslog_' + tripId, '1', GPS_LOG_MIN * 60);
+    gpsTabReady_();
+    xappend_(GPS_TAB, { Time: now_(), 'Trip ID': tripId, 'Truck No.': plate, LatLong: ll, 'Accuracy (m)': acc, Source: source, User: email });
+  }
+  return { ok: true };
+}
+/** Latest position of a trip: the cache, else the last row of the Live GPS tab. */
+function gpsLast_(tripId) {
+  const hit = CacheService.getScriptCache().get('gps_' + tripId);
+  if (hit) return JSON.parse(hit);
+  const rows = xrows_(GPS_TAB).filter(r => text_(r['Trip ID']) === tripId);
+  const r = rows.pop();
+  return r ? { ll: text_(r.LatLong), acc: Number(r['Accuracy (m)']) || 0, t: timeOf_(r.Time), src: text_(r.Source) } : null;
+}
+function driverGps_(p) {
+  const c = checkDriverLink_(p, true);
+  return gpsSave_(c.tripId, c.st, c.rows[0].plate, p, 'phone', 'driver-link');
+}
+function userGps_(p, user) {
+  needAny_(user, ['driver', 'admin', 'supervisor', 'logistics']);
+  const tripId = String(p.tripId || '').trim();
+  const rows = rowsWhere_('trip', [tripId]);
+  if (!rows.length) fail_('NOTFOUND', 'Trip ' + tripId + ' was not found.', 'រកមិនឃើញជើងដឹក ' + tripId + '។');
+  return gpsSave_(tripId, tripState(rows), rows[0].plate, p, 'phone', user.email);
+}
+/** Customer tracking links (DN → key) for every DN on the trip once it has gone out. */
+function trackLinks_(tripId, rows) {
+  const out = {};
+  if (!rows.some(r => r.code === 7)) return out;
+  rows.forEach(r => { if (r.dn && !out[r.dn]) out[r.dn] = trackToken_(r.dn, tripId); });
+  return out;
+}
+/** What the customer sees: only this DN, the steps, the truck plate and position, the site pin. No driver name or phone. */
+function trackInfo_(p) {
+  const dn = normDn(p.d), tripId = String(p.t || '').trim();
+  if (!dn || !tripId || String(p.k || '') !== trackToken_(dn, tripId)) fail_('LINK', 'This link is not valid.', 'តំណនេះមិនត្រឹមត្រូវ។');
+  const rows = rowsWhere_('trip', [tripId]);
+  const mine = rows.filter(r => r.dn === dn);
+  if (!mine.length) fail_('LINK', 'This delivery was not found.', 'រកមិនឃើញការដឹកជញ្ជូននេះ។');
+  const st = tripState(rows);
+  const d = st.dns[dn] || { leg: 'picked' };
+  const at = code => { const r = mine.filter(x => x.code === code).pop() || (code === 7 ? rows.filter(x => x.code === 7)[0] : null); return r ? r.time : null; };
+  const pl = plan_()[dn] || {};
+  const custId = pl.custId || custIdOf(d.cust);
+  const site = sites_()[custId];
+  const done = LEG_DONE[d.leg] || st.canceled;
+  const out = {
+    dn: dn, tripId: tripId, plate: rows[0].plate, so: pl.so || '', kg: d.kg || d.loadKg || pl.kg || 0,
+    cust: String(d.cust || pl.custName || '').replace(/^\s*\d+\s*-\s*/, ''), leg: st.canceled ? 'canceled' : d.leg,
+    times: { out: at(7), arrived: at(8), unloading: at(12), unloaded: at(13), delivered: at(9), failed: at(11), canceled: at(10) },
+    site: site ? site.latlong : '', factory: '11.525575,104.868668', serverNow: Date.now(),
+  };
+  if (!done && st.gateOut) out.gps = gpsLast_(tripId);
+  if (d.leg === 'delivered') {
+    const pr = proofFor_(tripId).filter(x => normDn(x.dn) === dn).pop();
+    if (pr) out.proof = { receiver: pr.receiver || '', photos: (pr.photos || []).length, signed: !!pr.signature };
+    out.rateKey = rateToken_(dn, tripId);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- customer Telegram bot (Kim, 22 Nov 2026)
+// Bot @isisteellive_bot (token in Script property TRACK_BOT_TOKEN, never in code). A customer joins once by
+// opening the join link Sales sends (t.me/<bot>?start=c<CustomerID>_<sig>); the chat is kept in "Customer Telegram".
+// At every Gate Out the bot sends that customer's chats the live map link of each DN. The bot is read by a 1-minute
+// timer (getUpdates), not a webhook, because Apps Script answers webhooks with a redirect that Telegram retries.
+const TG_CUST = 'Customer Telegram';
+XT_COLS[TG_CUST] = ['Customer ID', 'Customer Name', 'Chat ID', 'Telegram Name', 'Joined Time', 'Active'];
+const TRACK_PAGE_DEFAULT = 'https://isteel-app.pages.dev/delivery/track.html';
+const joinSig_ = id => b64url_(Utilities.computeHmacSha256Signature('tg|' + id, linkSecret_())).slice(0, 10);
+const trackBotName_ = () => prop_('TRACK_BOT_NAME') || 'isisteellive_bot';
+const trackPage_ = () => prop_('TRACK_PAGE_URL') || TRACK_PAGE_DEFAULT;
+const trackLinkUrl_ = (dn, tripId) => trackPage_() + '?d=' + encodeURIComponent(dn) + '&t=' + encodeURIComponent(tripId) + '&k=' + trackToken_(dn, tripId);
+function joinLink_(custId) { return /^\d{6,}$/.test(custId) ? 'https://t.me/' + trackBotName_() + '?start=c' + custId + '_' + joinSig_(custId) : ''; }
+
+function trackBot_(method, payload) {
+  const token = prop_('TRACK_BOT_TOKEN');
+  if (!token) return null;
+  try {
+    const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/' + method, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(payload || {}) });
+    return JSON.parse(r.getContentText() || '{}');
+  } catch (e) { console.error('Track bot ' + method + ': ' + e); return null; }
+}
+function tgChats_() {
+  const out = {};
+  xrows_(TG_CUST).forEach(r => {
+    const id = text_(r['Customer ID']).replace(/\.0+$/, ''), chat = text_(r['Chat ID']).replace(/\.0+$/, '');
+    if (id && chat && String(r.Active || 'Yes') !== 'No') (out[id] || (out[id] = [])).push(chat);
+  });
+  return out;
+}
+function trackMessage_(dn, tripId, info) {
+  return {
+    text: '🚚 ទំនិញរបស់អ្នកបានចេញពីរោងចក្រហើយ\nYour steel has left ISI Steel.\n\nDN ' + dn + (info.so ? ' · SO ' + info.so : '') + '\nឡាន / Truck ' + info.plate + (info.kg ? ' · ' + Math.round(info.kg).toLocaleString('en-US') + ' kg' : ''),
+    reply_markup: { inline_keyboard: [[{ text: '📍 មើលទីតាំងឡានផ្ទាល់ · Live map', url: trackLinkUrl_(dn, tripId) }]] },
+  };
+}
+/** Gate Out: send each DN's live map link to the customer's joined chats (once per DN and trip). */
+function trackNotify_(tripId) {
+  if (!prop_('TRACK_BOT_TOKEN')) return 0;
+  const rows = rowsWhere_('trip', [tripId]);
+  if (!rows.some(r => r.code === 7)) return 0;
+  const plan = plan_(), chats = tgChats_(), st = tripState(rows), cache = CacheService.getScriptCache();
+  let sent = 0;
+  Object.keys(st.dns).forEach(dn => {
+    const d = st.dns[dn];
+    if (LEG_DONE[d.leg] || cache.get('tgsent_' + tripId + '_' + dn)) return;
+    const pl = plan[dn] || {};
+    const to = chats[pl.custId || custIdOf(d.cust)] || [];
+    to.forEach(chat => {
+      const m = trackMessage_(dn, tripId, { so: pl.so, plate: rows[0].plate, kg: d.loadKg || pl.kg });
+      const r = trackBot_('sendMessage', Object.assign({ chat_id: chat }, m));
+      if (r && r.ok) sent++;
+    });
+    if (to.length) cache.put('tgsent_' + tripId + '_' + dn, '1', 21600);
+  });
+  return sent;
+}
+/** 1-minute timer: answers /start. A valid join link saves the chat for that customer and sends their deliveries on the way. */
+function trackBotPoll() {
+  if (!prop_('TRACK_BOT_TOKEN')) return;
+  const props = PropertiesService.getScriptProperties();
+  const offset = Number(props.getProperty('TRACK_BOT_OFFSET') || 0);
+  const res = trackBot_('getUpdates', { offset: offset, timeout: 0, allowed_updates: ['message'] });
+  if (!res || !res.ok || !res.result.length) return;
+  res.result.forEach(u => {
+    props.setProperty('TRACK_BOT_OFFSET', String(u.update_id + 1));
+    const m = u.message;
+    if (!m || !m.chat || !/^\/start\b/.test(String(m.text || ''))) return;
+    const arg = String(m.text).split(/\s+/)[1] || '';
+    const g = arg.match(/^c(\d{6,})_([A-Za-z0-9_-]{10})$/);
+    if (!g || g[2] !== joinSig_(g[1])) {
+      trackBot_('sendMessage', { chat_id: m.chat.id, text: 'សួស្តី! សូមបើកតំណដែល ISI Steel Sales ផ្ញើឲ្យ ដើម្បីទទួលដំណឹងពេលទំនិញចេញដឹក។\nHello! Please open the link ISI Steel Sales sent you to get delivery updates.' });
+      return;
+    }
+    const custId = g[1], chat = String(m.chat.id);
+    const plan = plan_();
+    const name = (Object.keys(plan).map(k => plan[k]).find(x => x.custId === custId) || {}).custName || (sites_()[custId] || {}).name || '';
+    withLock_(() => {
+      if (!xrows_(TG_CUST).some(r => text_(r['Customer ID']).replace(/\.0+$/, '') === custId && text_(r['Chat ID']).replace(/\.0+$/, '') === chat)) {
+        if (!ss_().getSheetByName(TG_CUST)) { const sh = ss_().insertSheet(TG_CUST); sh.getRange(1, 1, 1, XT_COLS[TG_CUST].length).setValues([XT_COLS[TG_CUST]]).setFontWeight('bold'); sh.setFrozenRows(1); }
+        xappend_(TG_CUST, { 'Customer ID': custId, 'Customer Name': name, 'Chat ID': chat, 'Telegram Name': [m.from && m.from.first_name, m.from && m.from.last_name].filter(Boolean).join(' '), 'Joined Time': now_(), Active: 'Yes' });
+      }
+    });
+    trackBot_('sendMessage', { chat_id: chat, text: '✅ ' + (name ? name + ': ' : '') + 'បានភ្ជាប់រួចរាល់។ អ្នកនឹងទទួលតំណផែនទីផ្ទាល់ រាល់ពេលឡានចេញពីរោងចក្រ។\nConnected. You will get a live map link every time a truck leaves ISI Steel.' });
+    // Deliveries already on the way for this customer (last 3 days)
+    const from = ymd_(new Date(Date.now() - 3 * 86400000));
+    const dns = Object.keys(plan).filter(k => plan[k].custId === custId && (!plan[k].date || plan[k].date >= from));
+    if (!dns.length) return;
+    const byTrip = {};
+    rowsWhere_('dn', dns).forEach(r => { if (r.trip) byTrip[r.trip] = 1; });
+    Object.keys(byTrip).forEach(tripId => {
+      const rows = rowsWhere_('trip', [tripId]), st = tripState(rows);
+      if (!st.gateOut || st.closed) return;
+      dns.filter(dn => st.dns[dn] && !LEG_DONE[st.dns[dn].leg]).forEach(dn => trackBot_('sendMessage', Object.assign({ chat_id: chat }, trackMessage_(dn, tripId, { so: plan[dn].so, plate: rows[0].plate, kg: st.dns[dn].loadKg || plan[dn].kg }))));
+    });
+  });
+}
+/** Run once after TRACK_BOT_TOKEN is set: turns off any webhook and starts the 1-minute bot timer. */
+function setupTrackBot() {
+  const r = trackBot_('deleteWebhook', {});
+  if (!r) throw new Error('Add the Script property TRACK_BOT_TOKEN first.');
+  if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'trackBotPoll')) ScriptApp.newTrigger('trackBotPoll').timeBased().everyMinutes(1).create();
+  return 'Bot ready: ' + JSON.stringify(trackBot_('getMe', {}).result || {});
+}
