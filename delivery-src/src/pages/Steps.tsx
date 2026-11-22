@@ -153,6 +153,8 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
           <div className="flex-1 min-w-0">
             <b className="block text-[19px]">{trip.plate}</b>
             <small className="muted">{[trip.driver, detail && detail.company, trip.round, trip.id].filter(Boolean).join(' · ')}</small>
+            {/* Kim (23 Nov 2026): the DN numbers in the header (the separate DN box is gone). */}
+            {trip.dns.filter(d => d.leg !== 'canceled').length ? <div className="text-[14px] font-bold mt-0.5" data-dns="head">📄 DN {Array.from(new Set(trip.dns.filter(d => d.leg !== 'canceled').map(d => d.dn))).join(', ')}</div> : null}
           </div>
           <Badge k={trip.stage} label={boot.stages[trip.stage]} />
         </div>
@@ -168,7 +170,7 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
       {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
         : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
         : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} />}
-      {detail ? <TripSections d={detail} reload={() => setN(n + 1)} hideTimeline={!hist} /> : null}
+      {detail ? <TripSections d={detail} reload={() => setN(n + 1)} hideTimeline={!hist} hideDns /> : null}
       {cancel ? <CancelTrip trip={trip} truckType={truckType} onClose={() => setCancel(false)} onDone={() => { setCancel(false); setN(n + 1); }} /> : null}
     </>
   );

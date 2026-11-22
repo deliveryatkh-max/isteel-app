@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 // Shared iSteel files (outside this build) that every app page loads: live stamp + update check, ads, side menu style,
 // and the ⚙ menu (view-mode.js). Added after the build so a rebuild never drops them. Bump V when the app changes.
-const V = '20261122k';
+const V = '20261123a';
 const shared = () => ({
   name: 'isteel-shared',
   enforce: 'post' as const,
