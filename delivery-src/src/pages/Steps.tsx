@@ -61,7 +61,6 @@ export function StepsPage(p: { tripId?: string; dn?: string }) {
       ) : null}
       {p.tripId ? <TruckSteps key={p.tripId + mode} id={p.tripId} mode={mode} dn={p.dn} />
         : mode === 'wh' ? <WarehouseList /> : <DriverScan />}
-      {setMode ? <a className="muted text-sm block text-center" href="#/record?old=1">➕ {t('ជំហានផ្សេង (ទម្រង់ចាស់)', 'Other step (old form)')}</a> : null}
     </main>
   );
 }
