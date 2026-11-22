@@ -190,7 +190,7 @@ function CancelTrip(p: { trip: TripSummary; truckType: string; onClose: () => vo
     <Modal title={'🚫 ' + t('លុបចោលជើងដឹក', 'Cancel trip')} onClose={p.onClose}>
       {st.dialog}
       <p className="mt-0">{p.trip.plate} · {p.trip.id}</p>
-      <Field icon="📝" label={t('មូលហេតុ', 'Reason')} required error={tried && bad ? t('សូមសរសេរមូលហេតុ', 'Write the reason') : ''} id="creason">
+      <Field icon="📝" label={t('មូលហេតុ', 'Reason')} required need={bad} error={tried && bad ? t('សូមសរសេរមូលហេតុ', 'Write the reason') : ''} id="creason">
         <textarea className={'in min-h-[64px] ' + (tried && bad ? '!border-bad' : '')} value={reason} onChange={e => setReason(e.target.value)} />
       </Field>
       {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
@@ -309,13 +309,13 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={stepName(n)}>
       {st.dialog}
       {n === 2 || (n === 3 && again) ? (
-        <Field icon="🏭" label={t('លេខកូដឃ្លាំង', 'Warehouse code')} required error={m.wh} id="wh">
+        <Field icon="🏭" label={t('លេខកូដឃ្លាំង', 'Warehouse code')} required need={!!miss.wh} error={m.wh} id="wh">
           <Picker value={wh} options={whOpts} onChange={v => setWh(v)} bad={!!m.wh} placeholder={t('ជ្រើសឃ្លាំង', 'Choose the warehouse')} />
         </Field>
       ) : <p className="muted mt-0">🏭 {trip.wh}</p>}
       {n === 3 ? (
         <>
-          <Field icon="📄" label={t('លេខ DN', 'DN number(s)')} required error={m.dns} id="dns">
+          <Field icon="📄" label={t('លេខ DN', 'DN number(s)')} required need={!!miss.dns} error={m.dns} id="dns">
             <div className="flex gap-2">
               <input className="in flex-1" inputMode="numeric" value={dnIn} onChange={e => setDnIn(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDn(dnIn); } }} placeholder={t('វាយលេខ DN', 'Type the DN')} />
@@ -331,13 +331,13 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
         </>
       ) : null}
       {n === 4 ? (<>
-          <Field icon="⚖️" label={t('ទំងន់សរុបជាក់ស្តែង (kg)', 'Total actual weight (kg)')} required error={m.kg} id="kg">
+          <Field icon="⚖️" label={t('ទំងន់សរុបជាក់ស្តែង (kg)', 'Total actual weight (kg)')} required need={!!miss.kg} error={m.kg} id="kg">
             <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
           </Field>
-          <Field icon="📷" label={t('រូបថតទំនិញ', 'Goods photos')} required error={m.photos} id="photos">
+          <Field icon="📷" label={t('រូបថតទំនិញ', 'Goods photos')} required need={!!miss.photos} error={m.photos} id="photos">
             <MultiPhoto value={photos} onChange={setPhotos} />
           </Field>
-        <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required error={m.websling} id="websling">
+        <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required need={!!miss.websling} error={m.websling} id="websling">
           <Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: 'ប្រើ', en: 'Yes' }, { v: 'no', km: 'មិនប្រើ', en: 'No' }]} />
         </Field>
       </>) : null}
@@ -431,30 +431,30 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
       {st.dialog}
       {head}
       {n === 6 ? (
-        <Field icon="📷" label={t('រូបថតភស្តុតាងមកដល់', 'Arrival photo')} required error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+        <Field icon="📷" label={t('រូបថតភស្តុតាងមកដល់', 'Arrival photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
       ) : null}
       {n === 9 ? (
         <>
           <Segmented value={result} onChange={setResult} options={[{ v: 'ok', km: '✅ បានប្រគល់', en: '✅ Delivered' }, { v: 'fail', km: '⚠️ បរាជ័យ', en: '⚠️ Failed' }, { v: 'cancel', km: '🚫 លុបចោល', en: '🚫 Canceled' }]} />
           {result === 'ok' ? (
             <>
-              <Field icon="✍️" label={t('រូបថត DN ដែលអតិថិជនចុះហត្ថលេខា', 'DN signed by customer')} required error={m.signed} id="signed"><PhotoInput value={signed} onChange={setSigned} /></Field>
-              <Field icon="📦" label={t('រូបថតទំនិញដែលបានប្រគល់', 'Goods delivered photo')} required error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
-              <Field icon="⚖️" label={t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} required error={m.kg} id="kg">
+              <Field icon="✍️" label={t('រូបថត DN ដែលអតិថិជនចុះហត្ថលេខា', 'DN signed by customer')} required need={!!miss.signed} error={m.signed} id="signed"><PhotoInput value={signed} onChange={setSigned} /></Field>
+              <Field icon="📦" label={t('រូបថតទំនិញដែលបានប្រគល់', 'Goods delivered photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+              <Field icon="⚖️" label={t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} required need={!!miss.kg} error={m.kg} id="kg">
                 <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
               </Field>
               <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5" checked={part} onChange={e => setPart(e.target.checked)} />{t('ប្រគល់តែមួយផ្នែក (នៅសល់ដឹកជើងក្រោយ)', 'Only part delivered (rest comes on another trip)')}</label>
-              <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required error={m.receiver} id="rcv">
+              <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required need={!!miss.receiver} error={m.receiver} id="rcv">
                 <input className={'in ' + (m.receiver ? '!border-bad' : '')} value={receiver} onChange={e => setReceiver(e.target.value)} />
               </Field>
-              <Field icon="✍️" label={t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')} required error={m.signature} id="sig"><SignaturePad value={signature} onChange={setSignature} label={false} /></Field>
+              <Field icon="✍️" label={t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')} required need={!!miss.signature} error={m.signature} id="sig"><SignaturePad value={signature} onChange={setSignature} label={false} /></Field>
             </>
           ) : (
             <>
-              <Field icon="📝" label={t('មូលហេតុ', 'Reason')} required error={m.reason} id="reason">
+              <Field icon="📝" label={t('មូលហេតុ', 'Reason')} required need={!!miss.reason} error={m.reason} id="reason">
                 <textarea className={'in ' + (m.reason ? '!border-bad' : '')} rows={2} value={reason} onChange={e => setReason(e.target.value)} />
               </Field>
-              <Field icon="📷" label={t('រូបថតភស្តុតាង', 'Proof photo')} required error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+              <Field icon="📷" label={t('រូបថតភស្តុតាង', 'Proof photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
             </>
           )}
         </>
