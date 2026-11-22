@@ -98,6 +98,7 @@ const errors = [];
   await files.nth(0).setInputFiles([IMG]);
   await c9.locator('input[type=file]').nth(2).setInputFiles([IMG]).catch(async () => { await files.nth(1).setInputFiles([IMG]); });
   await c9.locator('#rcv input').fill('Mr Test');
+  await c9.getByRole('button', { name: /Unlock/ }).click();
   const cv = c9.locator('canvas'); await cv.scrollIntoViewIfNeeded(); const bx = await cv.boundingBox();
   await d.mouse.move(bx.x + 20, bx.y + 30); await d.mouse.down(); await d.mouse.move(bx.x + 150, bx.y + 80, { steps: 8 }); await d.mouse.up();
   await d.screenshot({ path: SHOTS + 'steps-04-delivered.png', fullPage: true });
