@@ -700,7 +700,9 @@ function record_(p, user) {
   if (!ev) fail_('BAD', 'Unknown event.');
   const allowed = allowed_();
   if (!canRecord(user.role, allowed[code], code)) fail_('DENIED', 'Your role (' + (user.role || 'none') + ') cannot record ' + ev.en + '.', 'តួនាទីរបស់អ្នក (' + (user.role || 'គ្មាន') + ') មិនអាចកត់ត្រា ' + ev.kh + ' បានទេ។');
-  const recorder = recorderLabel_(user, [allowed[code], DEFAULT_ALLOWED[code]].filter(Boolean).join('|'), p.truckType);
+  // Kim (23 Nov 2026): the truck type comes from the trip's plate on the server, so every step of one truck shows the same recorder.
+  const tripPlate = p.tripId ? ((tripsSheetIndex_()[String(p.tripId).trim()] || {}).plate || '') : normPlate(p.plate);
+  const recorder = recorderLabel_(user, [allowed[code], DEFAULT_ALLOWED[code]].filter(Boolean).join('|'), tripTruckType_(tripPlate, p.dns, p.truckType));
   return saveEvent_(p, { email: user.email, recorder: recorder, approver: user.roleKey === 'admin' || user.roleKey === 'supervisor' });
 }
 
@@ -778,8 +780,18 @@ function recorderLabel_(user, allowedText, truckType) {
   const k = user.roleKey;
   const want = { security: '១', logistics: '២', warehouse: '៣' }[k];
   if (want) return groups.find(g => g.charAt(0) === want) || '';
-  if (k === 'driver') return truckLabel_(truckType, groups);
+  // Truck steps (៤ ISI / ៥ rented / ៦ customer truck): the truck's own group, also when an Admin / Supervisor records.
+  if (k === 'driver' || groups.some(g => /^[៤៥៦]/.test(g))) return truckLabel_(truckType, groups);
   return groups[0] || '';   // Supervisor / Admin: the event's usual recorder
+}
+/** isi = plate in the Truck master; customer = Delivery Plan fleet says អតិថិជន; else rented. */
+function tripTruckType_(plate, dns, fallback) {
+  plate = normPlate(plate);
+  if (plate && master_().plates.some(x => x.plate === plate)) return 'isi';
+  const plan = plan_();
+  const fleet = (dns || []).map(d => (plan[normDn(d && d.dn)] || {}).fleet).filter(Boolean)[0] || '';
+  if (/អតិថិជន/.test(fleet)) return 'customer';
+  return plate ? 'rented' : (fallback || 'isi');
 }
 function truckLabel_(truckType, groups) {
   const want = { isi: '៤', rented: '៥', customer: '៦' }[truckType] || '៤';
@@ -1262,10 +1274,7 @@ function driverRecord_(p) {
   const code = Number(p.code);
   // 9-step flow (22 Nov 2026): the driver link also records Start / Finish unloading and Canceled for a DN.
   if ([8, 9, 11, 12, 13].indexOf(code) < 0 && !(code === 10 && (p.dns || []).length)) fail_('DENIED', 'This link can record only the delivery steps of its DNs.', 'តំណនេះកត់ត្រាបានតែជំហានដឹកជញ្ជូនរបស់ DN ប៉ុណ្ណោះ។');
-  const isi = master_().plates.some(x => x.plate === normPlate(c.rows[0].plate));
-  const plan = plan_();
-  const fleet = (p.dns || []).map(d => (plan[normDn(d.dn)] || {}).fleet).filter(Boolean)[0] || '';
-  const type = isi ? 'isi' : /អតិថិជន/.test(fleet) ? 'customer' : 'rented';
+  const type = tripTruckType_(c.rows[0].plate, p.dns);
   const allowed = allowed_();
   return saveEvent_(Object.assign({}, p, { tripId: c.tripId, plate: '' }), { email: 'driver-link', recorder: truckLabel_(type, String(allowed[code] || '').split('|').map(s => s.trim())) });
 }

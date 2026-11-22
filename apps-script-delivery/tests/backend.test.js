@@ -616,3 +616,12 @@ test('step names numbered like the 9-step flow; old names still read', () => {
   assert.strictEqual(e.run('eventCode("៧.ចេញពីកន្លែងថ្លឹង")'), 7);
   assert.strictEqual(e.run('eventCode("២.ដល់កន្លែងចែកបុង")'), 2);
 });
+
+test('recorder: an Admin recording a truck step gets the truck group from the plate (rented = ៥)', () => {
+  const e = env(); e.run('setup()');
+  const a = gateIn(e, '3A-9999');
+  loadAndOut(e, a.tripId, ['9000000001']);
+  step(e); ok(rec(e, ADMIN, { code: 8, tripId: a.tripId, dns: [{ dn: '9000000001' }], truckType: 'isi', confirm: ['DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  const r = logRows(e).filter(x => x[col('Master Trip ID')] === a.tripId).pop();
+  assert.strictEqual(r[col('អ្នកកត់ត្រា')], '៥.ឡានជួល');
+});
