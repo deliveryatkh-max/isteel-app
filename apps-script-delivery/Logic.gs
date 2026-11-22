@@ -263,7 +263,14 @@ function checkEvent(ctx) {
         if (onTrip(dn)) err('DN_ALREADY_ON_TRIP', 'DN ' + dn + ' is already on this trip.', 'DN ' + dn + ' មាននៅលើជើងដឹកនេះរួចហើយ។');
         if (!info.plan) warn('DN_NOT_IN_PLAN', 'DN ' + dn + ' is not in Delivery Plan.', 'DN ' + dn + ' មិនមាននៅក្នុង Delivery Plan ទេ។');
         if (info.status === 'delivered') err('DN_DELIVERED', 'DN ' + dn + ' is already fully delivered.', 'DN ' + dn + ' បានប្រគល់គ្រប់ហើយ។');
-        (info.openTrips || []).filter(id => id !== ctx.tripId).forEach(id => warn('DN_OPEN_ELSEWHERE', 'DN ' + dn + ' is still open on trip ' + id + '. Continue only if this DN is split over trucks or rounds.', 'DN ' + dn + ' នៅបើកលើជើងដឹក ' + id + '។ បន្តតែពេល DN នេះបែងចែកដឹកច្រើនជើង។'));
+        // Kim (22 Nov 2026): a DN already on another trip, any day, needs a Supervisor or Admin. They see a warning to
+        // confirm (a split or re-delivered DN); everyone else is stopped. A canceled leg does not count.
+        const others = Array.from(new Set((info.legs || []).filter(l => l.tripId !== ctx.tripId && l.leg !== 'canceled').map(l => l.tripId)));
+        if (others.length) {
+          const en = 'DN ' + dn + ' is already on trip ' + others.join(', ') + '.', kh = 'DN ' + dn + ' មាននៅលើជើងដឹក ' + others.join(', ') + ' រួចហើយ។';
+          if (ctx.approver) warn('DN_DUPLICATE', en + ' Record it again only if it is split or re-delivered.', kh + ' កត់ត្រាម្តងទៀតតែពេលបែងចែក ឬដឹកម្តងទៀត។');
+          else err('DN_DUPLICATE', en + ' Ask a Supervisor or Admin to record it.', kh + ' សូមឲ្យ Supervisor ឬ Admin កត់ត្រា។');
+        }
         if (info.plan && info.plan.plate && ctx.plate && normPlate(info.plan.plate) !== normPlate(ctx.plate)) warn('PLAN_OTHER_TRUCK', 'Delivery Plan puts DN ' + dn + ' on truck ' + info.plan.plate + '.', 'Delivery Plan ដាក់ DN ' + dn + ' លើឡាន ' + info.plan.plate + '។');
       });
     }
