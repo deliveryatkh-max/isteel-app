@@ -320,9 +320,8 @@ function fuelTrucks_() {
   if (!sh) { console.warn('The Fuel Refill sheet has no "' + FUEL_TRUCKS_TAB + '" tab: using Plate Number / Driver List.'); return null; }
   const t = tableOf_(sh);
   const iName = t.head.indexOf('ឈ្មោះតៃកុង'), iPlate = t.head.indexOf('CODE'), iCo = t.head.indexOf('ក្រុមហ៊ុន');
-  const iPhone = t.head.findIndex(h => /phone|ទូរស័ព្ទ/i.test(String(h)));   // optional column (customer tracking page, 22 Nov 2026)
   if (iName < 0 || iPlate < 0) throw new Error('"' + FUEL_TRUCKS_TAB + '" needs the headers ឈ្មោះតៃកុង and CODE.');
-  const drivers = t.rows.filter(r => text_(r[iName])).map(r => ({ name: text_(r[iName]), plate: normPlate(r[iPlate]), co: iCo < 0 ? '' : text_(r[iCo]), phone: iPhone < 0 ? '' : text_(r[iPhone]).replace(/\.0+$/, '') }));
+  const drivers = t.rows.filter(r => text_(r[iName])).map(r => ({ name: text_(r[iName]), plate: normPlate(r[iPlate]), co: iCo < 0 ? '' : text_(r[iCo]) }));
   const by = {}, order = [];
   t.rows.forEach(r => {
     const plate = normPlate(r[iPlate]), co = iCo < 0 ? '' : text_(r[iCo]);
