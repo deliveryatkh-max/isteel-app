@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { api, store } from '../api';
 import { errText, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang } from '../i18n';
-import { go, openTrips, useApp } from '../state';
-import type { LogRow, TripDetail, TripSummary } from '../types';
-import { Alert, Opt, PhotoInput, Picker, Segmented, Spinner, toast } from '../components/ui';
+import { AppCtx, go, openTrips, useApp } from '../state';
+import type { Label, TripDetail, TripSummary } from '../types';
+import { Alert, Badge, Modal, Opt, PhotoInput, Picker, Segmented, Spinner, toast } from '../components/ui';
 import { Field, Section, scrollToMissing } from '../components/Form';
-import { MultiPhoto } from '../components/Proof';
+import { MultiPhoto, RateLinks, SignaturePad, SiteRateForm, siteRateSigned } from '../components/Proof';
+import { TripSections } from './Trip';
 import { ScanView, Scanner } from '../components/Scanner';
 import { useSubmit, warmLocation } from '../components/submit';
 
@@ -131,15 +132,18 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   const [detail, setDetail] = useState<TripDetail | null>(null);
   const [err, setErr] = useState('');
   const [hist, setHist] = useState(false);
+  const [n, setN] = useState(0);
+  const [cancel, setCancel] = useState(false);
   useEffect(() => {
     let on = true;
     api<TripDetail>('trip', { tripId: p.id }).then(x => { if (on) setDetail(x); }).catch(e => { if (on && !fromOps) setErr(errText(e.message)); });
     return () => { on = false; };
-  }, [p.id, live, tick, fromOps && fromOps.lastTime, fromOps && fromOps.dns.map(d => d.leg).join()]);
+  }, [p.id, live, tick, n, fromOps && fromOps.lastTime, fromOps && fromOps.dns.map(d => d.leg).join()]);
   const trip: TripSummary | null = fromOps || detail;
   if (err) return <Alert tone="bad">{err}</Alert>;
   if (!trip) return <Spinner />;
   const truckType = boot.plates.some(x => x.plate === trip.plate) ? 'isi' : 'rented';
+  const canCancel = !trip.closed && boot.user.roleKey !== 'driver' && boot.events.some(e => e.code === 10 && e.can);   // drivers see only their DNs
   return (
     <>
       <div className="card">
@@ -147,48 +151,67 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
           <span className="text-[30px]">🚛</span>
           <div className="flex-1 min-w-0">
             <b className="block text-[19px]">{trip.plate}</b>
-            <small className="muted">{[trip.driver, trip.round, trip.id].filter(Boolean).join(' · ')}</small>
+            <small className="muted">{[trip.driver, detail && detail.company, trip.round, trip.id].filter(Boolean).join(' · ')}</small>
           </div>
-          <button type="button" className="btn btn-sm" onClick={() => setHist(!hist)}>🕒 {t('ប្រវត្តិ', 'History')}</button>
+          <Badge k={trip.stage} label={boot.stages[trip.stage]} />
         </div>
         <div className="grid grid-cols-2 gap-2 mt-2 text-[13.5px]">
           <div>⚖️ {t('ចូល', 'In')}: <b>{fmtDateTime(trip.gateIn)}</b></div>
           <div>⚖️ {t('ចេញ', 'Out')}: <b>{trip.gateOut ? fmtDateTime(trip.gateOut) : '–'}</b></div>
         </div>
-        {hist ? <History rows={detail ? detail.rows : null} /> : null}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button type="button" className="btn btn-sm" onClick={() => setHist(!hist)}>🕒 {t('ប្រវត្តិ', 'History')}</button>
+          {canCancel ? <button type="button" className="btn btn-sm !text-bad" onClick={() => setCancel(true)}>🚫 {t('លុបចោលជើងដឹក', 'Cancel trip')}</button> : null}
+        </div>
       </div>
       {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
         : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
-        : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} detail={detail} />}
+        : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} />}
+      {detail ? <TripSections d={detail} reload={() => setN(n + 1)} hideTimeline={!hist} /> : null}
+      {cancel ? <CancelTrip trip={trip} truckType={truckType} onClose={() => setCancel(false)} onDone={() => { setCancel(false); setN(n + 1); }} /> : null}
     </>
   );
 }
 
-function History(p: { rows: LogRow[] | null }) {
-  const { boot } = useApp();
-  if (!p.rows) return <Spinner />;
-  const rows = p.rows.slice().sort((a, b) => a.time - b.time);
+/** Cancel the whole trip with the reason (old form's Cancel, Kim 22 Nov 2026). */
+function CancelTrip(p: { trip: TripSummary; truckType: string; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState('');
+  const [tried, setTried] = useState(false);
+  const st = useStep();
+  const bad = reason.trim().length < 3;
+  async function go() {
+    setTried(true);
+    if (bad) return;
+    const ok = await st.save({ tripId: p.trip.id, truckType: p.truckType, code: 10, remark: reason.trim() }, t('លុបចោលជើងដឹក', 'Cancel trip') + ' · ' + p.trip.plate);
+    if (ok) p.onDone();
+  }
   return (
-    <ol className="mt-3 mb-0 pl-5 text-[13.5px] space-y-1">
-      {rows.map(r => {
-        const ev = boot.events.find(e => e.code === r.code);
-        return <li key={r.key}><b>{ev ? L(ev) : r.eventText}</b> · {fmtTime(r.time)}{r.dn ? ' · DN ' + r.dn : ''}{r.wh ? ' · ' + r.wh : ''}{r.kg ? ' · ' + fmtKg(r.kg) : ''}</li>;
-      })}
-    </ol>
+    <Modal title={'🚫 ' + t('លុបចោលជើងដឹក', 'Cancel trip')} onClose={p.onClose}>
+      {st.dialog}
+      <p className="mt-0">{p.trip.plate} · {p.trip.id}</p>
+      <Field icon="📝" label={t('មូលហេតុ', 'Reason')} required error={tried && bad ? t('សូមសរសេរមូលហេតុ', 'Write the reason') : ''} id="creason">
+        <textarea className={'in min-h-[64px] ' + (tried && bad ? '!border-bad' : '')} value={reason} onChange={e => setReason(e.target.value)} />
+      </Field>
+      {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="btn" onClick={p.onClose}>{t('ត្រលប់', 'Back')}</button>
+        <button type="button" className="btn !bg-bad !border-bad !text-white" disabled={st.saving} onClick={go}>{st.saving ? '…' : '🚫 ' + t('លុបចោល', 'Cancel trip')}</button>
+      </div>
+    </Modal>
   );
 }
 
-/** Saves one step; returns true when it is saved (or kept on the phone to send later). */
-function useStep() {
-  const { refreshOps } = useApp();
-  const sub = useSubmit('record');
+/** Saves one step; returns the server answer ({} when kept on the phone to send later), or null when it was not saved. */
+function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
+  const app = useContext(AppCtx);   // missing on the driver link page (no sign-in)
+  const sub = useSubmit(link ? 'drvRecord' : 'record');
   const [saving, setSaving] = useState(false);
-  async function save(payload: any, label: string) {
+  async function save(payload: any, label: string): Promise<any> {
     setSaving(true);
     try {
-      const r = await sub.send(Object.assign({ v2: true }, payload), label);
-      if (r.ok || ('queued' in r && r.queued)) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); refreshOps(); return true; }
-      return false;
+      const r = await sub.send(Object.assign({ v2: true }, payload, link || {}), label);
+      if (r.ok || ('queued' in r && r.queued)) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); if (app) app.refreshOps(); else if (onSaved) onSaved(); return r.ok ? r.data || {} : {}; }
+      return null;
     } finally { setSaving(false); }
   }
   return { save, saving, error: sub.error, dialog: sub.dialog };
@@ -205,11 +228,12 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const [dnIn, setDnIn] = useState('');
   const [kgIn, setKgIn] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [websling, setWebsling] = useState<'' | 'yes' | 'no'>('');
   const [scan, setScan] = useState(false);
   const [tried, setTried] = useState(false);
   const st = useStep();
   const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
-  useEffect(() => { setTried(false); setWh(''); setDns([]); setKgIn(''); setPhotos([]); }, [ll]);
+  useEffect(() => { setTried(false); setWh(''); setDns([]); setKgIn(''); setPhotos([]); setWebsling(''); }, [ll]);
 
   if (trip.gateOut) return <Alert tone="ok">⚖️ {t('ឡានបានចេញពីជញ្ជីងហើយ', 'The truck has gone out at the scale')}</Alert>;
   const n = ll === 0 ? 2 : ll === 4 ? 3 : ll === 5 ? 4 : again ? 3 : 0;
@@ -241,6 +265,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     if (!(Number(kgIn) > 0)) miss.kg = t('សូមវាយទំងន់សរុប (kg)', 'Type the total weight (kg)');
     if (!photos.length) miss.photos = t('សូមថតរូបទំនិញ', 'Take the goods photos');
   }
+  if (n === 4 && !websling) miss.websling = t('សូមជ្រើស ប្រើ ឬមិនប្រើ', 'Choose Yes or No');
   const m = tried ? miss : {};
   async function submit() {
     setTried(true);
@@ -249,7 +274,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     else if (n === 3) {
       const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn })), kg: Number(kgIn), photos }, label(3));
       if (ok) setAgain(false);
-    } else await st.save({ ...base, code: 6, wh: trip.wh }, label(4));
+    } else await st.save({ ...base, code: 6, wh: trip.wh, websling: websling === 'yes' }, label(4));
   }
   return (
     <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={stepName(n)}>
@@ -258,7 +283,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
         <Field icon="🏭" label={t('លេខកូដឃ្លាំង', 'Warehouse code')} required error={m.wh} id="wh">
           <Picker value={wh} options={whOpts} onChange={v => setWh(v)} bad={!!m.wh} placeholder={t('ជ្រើសឃ្លាំង', 'Choose the warehouse')} />
         </Field>
-      ) : n === 3 || n === 4 ? <p className="muted mt-0">🏭 {trip.wh}</p> : null}
+      ) : <p className="muted mt-0">🏭 {trip.wh}</p>}
       {n === 3 ? (
         <>
           <Field icon="📄" label={t('លេខ DN', 'DN number(s)')} required error={m.dns} id="dns">
@@ -281,43 +306,66 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
           {scan ? <Scanner onCode={c => { addDn(c); setScan(false); }} onClose={() => setScan(false)} /> : null}
         </>
       ) : null}
+      {n === 4 ? (
+        <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required error={m.websling} id="websling">
+          <Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: 'ប្រើ', en: 'Yes' }, { v: 'no', km: 'មិនប្រើ', en: 'No' }]} />
+        </Field>
+      ) : null}
       {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
       <button type="button" className="btn-primary w-full mt-2" disabled={st.saving} onClick={submit}>{st.saving ? '…' : '💾 ' + t('កត់ត្រា', 'Record') + ' · ' + t(...STEP_NAMES[n])}</button>
     </Section>
   );
 }
 
-function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; detail: TripDetail | null }) {
+/** Driver link page (no sign-in): the signed trip link, the DN legs' names and a refresh after each save. */
+export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reload: () => void };
+export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink }) {
   const trip = p.trip;
   if (!trip.gateOut) return <Alert tone="info">⏳ {t('រង់ចាំឡានថ្លឹងចេញនៅជញ្ជីង មុនពេលចេញដឹក។', 'Waiting for Gate Out at the scale before delivery.')}</Alert>;
   const list = trip.dns.slice().sort((a, b) => Number(b.dn === p.dn) - Number(a.dn === p.dn));
-  return <>{list.map(d => <DnStep key={d.dn + d.leg} trip={trip} truckType={p.truckType} dn={d.dn} leg={d.leg} cust={d.cust} kg={d.kg || d.loadKg || 0} open={d.dn === p.dn || list.length === 1} />)}</>;
+  // The scanned DN opens; with no scan, the first DN that still has a step opens.
+  const first = p.dn && list.some(d => d.dn === p.dn && drvStepOf(d.leg)) ? p.dn : (list.find(d => drvStepOf(d.leg)) || { dn: '' }).dn;
+  return <>{list.map(d => <DnStep key={d.dn + d.leg} trip={trip} truckType={p.truckType} dn={d.dn} leg={d.leg} cust={d.cust} kg={d.kg || d.loadKg || 0} open={d.dn === first} link={p.link} />)}</>;
 }
 
-function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: string; cust: string; kg: number; open: boolean }) {
-  const { boot } = useApp();
+function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: string; cust: string; kg: number; open: boolean; link?: DrvLink }) {
+  const app = useContext(AppCtx);
+  const legs = app ? app.boot.legs : p.link ? p.link.legs : {};
+  const plan = app ? app.boot.plan : [];
   const n = drvStepOf(p.leg);
   const [open, setOpen] = useState(p.open);
   const [photo, setPhoto] = useState('');
   const [signed, setSigned] = useState('');
   const [result, setResult] = useState<'ok' | 'fail' | 'cancel'>('ok');
   const [reason, setReason] = useState('');
+  const [receiver, setReceiver] = useState('');
+  const [signature, setSignature] = useState('');
+  const [part, setPart] = useState(false);
+  const [rate, setRate] = useState<Record<string, string> | null>(null);
+  const [siteRated, setSiteRated] = useState(false);
   const [kgIn, setKgIn] = useState(() => {
-    const pl = boot.plan.find(x => x.dn === p.dn);
+    const pl = plan.find(x => x.dn === p.dn);
     return String(p.kg || (pl && pl.kg) || '');
   });
   const [tried, setTried] = useState(false);
-  const st = useStep();
+  const st = useStep(p.link ? { t: p.link.t, k: p.link.k } : undefined, p.link ? p.link.reload : undefined);
   const base = { tripId: p.trip.id, truckType: p.truckType };
   const label = stepName(n || 9) + ' · DN ' + p.dn;
   const head = (
     <button type="button" className="w-full flex items-center gap-3 bg-transparent border-0 p-0 text-left cursor-pointer" onClick={() => setOpen(!open)}>
       <span className="text-[22px]">📄</span>
       <span className="flex-1 min-w-0"><b className="block">DN {p.dn}</b><small className="muted">{p.cust}</small></span>
-      <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-oksoft text-ok whitespace-nowrap">{n ? stepName(n) : L(boot.legs[p.leg]) || p.leg}</span>
+      <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-oksoft text-ok whitespace-nowrap">{n ? stepName(n) : L(legs[p.leg]) || p.leg}</span>
     </button>
   );
-  if (!n || !open) return <div className="card">{head}</div>;
+  // After Delivered: the customer rating QR and the site rating (old form's done screen).
+  const after = rate && Object.keys(rate).length ? (
+    <>
+      <RateLinks tripId={p.trip.id} links={rate} open />
+      {!siteRated ? <SiteRateForm dns={Object.keys(rate)} send={p.link ? (body: any) => api('drvSiteRate', Object.assign({ t: p.link!.t, k: p.link!.k }, body), { noAuth: true }) : siteRateSigned(p.trip.id)} onDone={() => setSiteRated(true)} /> : null}
+    </>
+  ) : null;
+  if (!n || !open) return <><div className="card">{head}</div>{after}</>;
 
   const miss: Record<string, string> = {};
   if (n === 6 && !photo) miss.photo = t('សូមថតរូបភស្តុតាង', 'Take the proof photo');
@@ -325,6 +373,8 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
     if (!signed) miss.signed = t('សូមថតរូប DN ដែលអតិថិជនចុះហត្ថលេខា', 'Take the photo of the DN signed by the customer');
     if (!photo) miss.photo = t('សូមថតរូបទំនិញដែលបានប្រគល់', 'Take the photo of the goods delivered');
     if (!(Number(kgIn) > 0)) miss.kg = t('សូមវាយទំងន់ (kg)', 'Type the weight (kg)');
+    if (!receiver.trim()) miss.receiver = t('សូមវាយឈ្មោះអ្នកទទួល', 'Type the receiver name');
+    if (!signature) miss.signature = t('សូមឲ្យអ្នកទទួលចុះហត្ថលេខា', 'Ask the receiver to sign');
   }
   if (n === 9 && result !== 'ok') {
     if (reason.trim().length < 3) miss.reason = t('សូមសរសេរមូលហេតុ', 'Write the reason');
@@ -335,15 +385,18 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
     setTried(true);
     if (Object.keys(miss).length) { scrollToMissing(); return; }
     const one = [{ dn: p.dn }];
-    let ok = false;
-    if (n === 6) ok = await st.save({ ...base, code: 8, dns: one, photo }, label);
-    else if (n === 7) ok = await st.save({ ...base, code: 12, dns: one }, label);
-    else if (n === 8) ok = await st.save({ ...base, code: 13, dns: one }, label);
-    else if (result === 'ok') ok = await st.save({ ...base, code: 9, dns: [{ dn: p.dn, kg: Number(kgIn), final: true }], photos: [signed, photo] }, label);
-    else ok = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: one, remark: reason.trim(), photo }, label);
-    if (ok) { setTried(false); setPhoto(''); setSigned(''); }
+    let r: any = null;
+    if (n === 6) r = await st.save({ ...base, code: 8, dns: one, photo }, label);
+    else if (n === 7) r = await st.save({ ...base, code: 12, dns: one }, label);
+    else if (n === 8) r = await st.save({ ...base, code: 13, dns: one }, label);
+    else if (result === 'ok') {
+      r = await st.save({ ...base, code: 9, dns: [{ dn: p.dn, kg: Number(kgIn), final: !part }], photos: [signed, photo], receiver: receiver.trim(), signature }, label);
+      if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); setRate(o); }
+    } else r = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: one, remark: reason.trim(), photo }, label);
+    if (r) { setTried(false); setPhoto(''); setSigned(''); setSignature(''); }
   }
   return (
+    <>
     <div className="card space-y-3">
       {st.dialog}
       {head}
@@ -360,6 +413,11 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
               <Field icon="⚖️" label={t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} required error={m.kg} id="kg">
                 <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
               </Field>
+              <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5" checked={part} onChange={e => setPart(e.target.checked)} />{t('ប្រគល់តែមួយផ្នែក (នៅសល់ដឹកជើងក្រោយ)', 'Only part delivered (rest comes on another trip)')}</label>
+              <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required error={m.receiver} id="rcv">
+                <input className={'in ' + (m.receiver ? '!border-bad' : '')} value={receiver} onChange={e => setReceiver(e.target.value)} />
+              </Field>
+              <Field icon="✍️" label={t('ហត្ថលេខាអ្នកទទួល', 'Receiver signature')} required error={m.signature} id="sig"><SignaturePad value={signature} onChange={setSignature} label={false} /></Field>
             </>
           ) : (
             <>
@@ -374,5 +432,7 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
       {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
       <button type="button" className="btn-primary w-full" disabled={st.saving} onClick={submit}>{st.saving ? '…' : '💾 ' + t('កត់ត្រា', 'Record') + ' · ' + (n === 9 ? (result === 'ok' ? t('បានប្រគល់', 'Delivered') : result === 'fail' ? t('បរាជ័យ', 'Failed') : t('លុបចោល', 'Canceled')) : t(...STEP_NAMES[n]))}</button>
     </div>
+    {after}
+    </>
   );
 }

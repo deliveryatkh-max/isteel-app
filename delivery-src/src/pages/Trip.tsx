@@ -12,7 +12,6 @@ const custIdOf = (text: string) => { const m = String(text || '').match(/^\s*(\d
 export function TripPage(p: { id: string }) {
   useLang();
   const { boot, tick, live, setBusy, refreshOps } = useApp();
-  const [del, setDel] = useState<LogRow | null>(null);
   const [d, setD] = useState<TripDetail | null>(null);
   const [err, setErr] = useState('');
   const [n, setN] = useState(0);
@@ -30,14 +29,6 @@ export function TripPage(p: { id: string }) {
   if (!d) return <Spinner />;
   const next = nextCode(d);
   const canNext = !d.closed && boot.events.some(e => e.can);
-  const canSite = ['admin', 'supervisor', 'logistics'].indexOf(boot.user.roleKey) >= 0;
-  const setSite = async (r: LogRow) => {
-    if (!confirm(t('កំណត់ទីតាំងនេះជាទីតាំងអតិថិជន ', 'Set this location as the site of ') + r.cust + '?')) return;
-    setBusy(true);
-    try { await api('setSite', { custId: custIdOf(r.cust), custName: r.cust.replace(/^\s*\d+\s*-\s*/, ''), latlong: r.latlong, reason: 'Set from trip ' + d.id }); toast('✅ ' + t('បានកំណត់ទីតាំងអតិថិជន', 'Customer site saved')); setN(n + 1); }
-    catch (e: any) { toast(errText(e.message)); }
-    finally { setBusy(false); }
-  };
   return (
     <main className="max-w-2xl mx-auto p-3 sm:p-4">
       <section className="card">
@@ -57,6 +48,27 @@ export function TripPage(p: { id: string }) {
         {canNext ? <a className="btn-primary w-full mt-3 no-underline" href={'#/record?trip=' + encodeURIComponent(d.id) + '&code=' + next}>➕ {t('កត់ត្រាជំហានបន្ទាប់', 'Record the next step')}</a> : null}
       </section>
 
+      <TripSections d={d} reload={() => setN(n + 1)} />
+    </main>
+  );
+}
+
+/** Trip details below the header: DNs, driver link + QR, proof, rating links and the timeline (with photos, location, delete). */
+export function TripSections(p: { d: TripDetail; reload: () => void; hideTimeline?: boolean }) {
+  useLang();
+  const { boot, setBusy, refreshOps } = useApp();
+  const d = p.d;
+  const [del, setDel] = useState<LogRow | null>(null);
+  const canSite = ['admin', 'supervisor', 'logistics'].indexOf(boot.user.roleKey) >= 0;
+  const setSite = async (r: LogRow) => {
+    if (!confirm(t('កំណត់ទីតាំងនេះជាទីតាំងអតិថិជន ', 'Set this location as the site of ') + r.cust + '?')) return;
+    setBusy(true);
+    try { await api('setSite', { custId: custIdOf(r.cust), custName: r.cust.replace(/^\s*\d+\s*-\s*/, ''), latlong: r.latlong, reason: 'Set from trip ' + d.id }); toast('✅ ' + t('បានកំណត់ទីតាំងអតិថិជន', 'Customer site saved')); p.reload(); }
+    catch (e: any) { toast(errText(e.message)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <>
       {Object.keys(d.dnInfo).length ? (
         <section className="card">
           <h2 className="text-[15px] font-bold mt-0 mb-2">{t('DN នៅលើជើងនេះ', 'DNs on this trip')}</h2>
@@ -102,7 +114,7 @@ export function TripPage(p: { id: string }) {
 
       {d.rate && Object.keys(d.rate).length ? <RateLinks tripId={d.id} links={d.rate} /> : null}
 
-      <section className="card">
+      {p.hideTimeline ? null : <section className="card">
         <h2 className="text-[15px] font-bold mt-0 mb-2">{t('ប្រវត្តិជំហាន', 'Timeline')}</h2>
         <ol className="list-none m-0 p-0">
           {d.rows.map(r => (
@@ -126,9 +138,9 @@ export function TripPage(p: { id: string }) {
             </li>
           ))}
         </ol>
-      </section>
-      {del ? <DeleteEntry row={del} onClose={() => setDel(null)} onDone={left => { setDel(null); refreshOps(); toast('🗑 ' + t('បានលុប', 'Deleted')); if (left) setN(n + 1); else location.hash = '#/trips'; }} /> : null}
-    </main>
+      </section>}
+      {del ? <DeleteEntry row={del} onClose={() => setDel(null)} onDone={left => { setDel(null); refreshOps(); toast('🗑 ' + t('បានលុប', 'Deleted')); if (left) p.reload(); else location.hash = '#/'; }} /> : null}
+    </>
   );
 }
 

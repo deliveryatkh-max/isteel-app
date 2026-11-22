@@ -6,6 +6,8 @@ import { Alert, Badge, Header, PhotoInput, Spinner, toast, Toaster } from '../co
 import { useSubmit, warmLocation } from '../components/submit';
 import { Field, Section, STEP_LOOK, scrollToMissing } from '../components/Form';
 import { ProofFields, RateLinks, SiteRateForm } from '../components/Proof';
+import { DriverSteps } from './Steps';
+import type { TripSummary } from '../types';
 
 type DrvTrip = {
   trip: { id: string; plate: string; driver: string; round: string; stage: string; gateOut: number | null; closed?: boolean; dns: TripDn[] };
@@ -99,7 +101,10 @@ export function DriverPage(p: { tripId: string; k: string }) {
               </div>
               <div className="text-[13px] mt-1">⬆ {t('ចេញពីកន្លែងថ្លឹង', 'Gate Out')} {fmtTime(tr.gateOut)}</div>
             </section>
-            {!open.length ? <Alert tone="ok">{t('DN ទាំងអស់បានកត់ត្រារួច។ សូមអរគុណ!', 'All DNs are recorded. Thank you!')}</Alert> : (
+            {d!.legs.unloading ? (
+              // Kim's 9-step flow (22 Nov 2026): each DN shows its own next step, as on the signed-in screen.
+              <DriverSteps trip={tr as unknown as TripSummary} truckType="" link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
+            ) : !open.length ? <Alert tone="ok">{t('DN ទាំងអស់បានកត់ត្រារួច។ សូមអរគុណ!', 'All DNs are recorded. Thank you!')}</Alert> : (
               <>
                 <Section icon="🧭" title={t('ជំហាន', 'Step')} color={lk.color}>
                   <div className="grid gap-2">
