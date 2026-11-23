@@ -4,7 +4,23 @@ import { errText, t, useLang } from '../i18n';
 import { useApp } from '../state';
 import { Alert, Spinner, toast } from '../components/ui';
 
-type Row = { id: string; name: string; phone: string; link: string; chats: number };
+type Row = { id: string; name: string; phone: string; tg?: string; link: string; chats: number };
+
+/**
+ * The customer's Telegram chat link from the Customer master: Telegram column first (number or @username), else the phone.
+ * Cambodian numbers: 0xx… → +855xx…. Telegram opens the chat only if that number is on Telegram and allows it.
+ */
+export function tgChatUrl(r: { tg?: string; phone: string }): string {
+  const raw = String(r.tg || '').trim();
+  const user = raw.replace(/^https?:\/\/t\.me\//i, '').replace(/^@/, '');
+  if (/^[A-Za-z][A-Za-z0-9_]{4,}$/.test(user)) return 'https://t.me/' + user;
+  let n = String(raw || r.phone || '').split(/[,/;]/)[0].replace(/[^0-9+]/g, '');
+  if (!n) return '';
+  if (n[0] === '+') n = n.slice(1);
+  else if (/^0\d{7,9}$/.test(n)) n = '855' + n.slice(1);
+  else if (/^[1-9]\d{7,8}$/.test(n)) n = '855' + n;
+  return /^\d{10,15}$/.test(n) ? 'https://t.me/+' + n : '';
+}
 type Data = { bot: boolean; botName: string; rows: Row[] };
 
 /** The message Sales sends with the link (Khmer + English). */
@@ -41,7 +57,14 @@ export function JoinLinksPage() {
     const s = msgOf(r) + r.link;
     (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(() => toast('📋 ' + t('បានចម្លង', 'Copied')), () => window.prompt(t('ចម្លងសារ', 'Copy the message'), s));
   };
-  const send = (r: Row) => window.open('https://t.me/share/url?url=' + encodeURIComponent(r.link) + '&text=' + encodeURIComponent(msgOf(r)), '_blank');
+  // Kim (24 Nov 2026): the share page did not work. Send = copy the message, then open the customer's own Telegram chat
+  // (from the Telegram / phone number); Sales pastes and sends. No number: Copy only.
+  const send = (r: Row) => {
+    const url = tgChatUrl(r);
+    const s = msgOf(r) + r.link;
+    const go = () => { toast('📋 ' + t('បានចម្លងសារ: បិទភ្ជាប់ក្នុង Telegram', 'Message copied: paste it in Telegram')); window.open(url, '_blank'); };
+    (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(go, () => { window.prompt(t('ចម្លងសារ', 'Copy the message'), s); window.open(url, '_blank'); });
+  };
   const th = (k: keyof Row, km: string, en: string) => (
     <th className="sticky top-0 bg-[#0b4f6c] text-white text-left px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => setSort({ k, up: sort.k === k ? !sort.up : true })}>
       {t(km, en)}{sort.k === k ? (sort.up ? ' ▲' : ' ▼') : ''}
@@ -64,10 +87,10 @@ export function JoinLinksPage() {
           <tbody>
             {list.map(r => (
               <tr key={r.id} className="border-b border-line" data-cust={r.id}>
-                <td className="px-2 py-1.5">{r.name}<small className="block muted">{r.id}{r.phone ? ' · 📞 ' + r.phone : ''}</small></td>
+                <td className="px-2 py-1.5">{r.name}<small className="block muted">{r.id}{r.tg || r.phone ? ' · 📞 ' + (r.tg || r.phone) : ''}</small></td>
                 <td className={'px-2 py-1.5 whitespace-nowrap font-bold ' + (r.chats ? 'text-ok' : 'text-warn')}>{r.chats ? '✅ ' + t('បាទ/ចាស', 'Yes') + (r.chats > 1 ? ' · ' + r.chats : '') : '⏳ ' + t('មិនទាន់', 'Not yet')}</td>
                 <td className="px-2 py-1.5 whitespace-nowrap">
-                  <button type="button" className="btn btn-sm" onClick={() => send(r)}>✈ {t('ផ្ញើ', 'Send')}</button>{' '}
+                  {tgChatUrl(r) ? <><button type="button" className="btn btn-sm" onClick={() => send(r)}>✈ {t('ផ្ញើ', 'Send')}</button>{' '}</> : null}
                   <button type="button" className="btn btn-sm" onClick={() => copy(r)}>📋</button>
                 </td>
               </tr>

@@ -757,6 +757,7 @@ function joinLinks_(user) {
   if (['admin', 'supervisor', 'logistics'].indexOf(user.roleKey) < 0) fail_('DENIED', 'Only office roles can see customer join links.', 'មានតែបុគ្គលិកការិយាល័យទេ ដែលអាចមើលតំណភ្ជាប់អតិថិជន។');
   const cu = table_(SH.CUST);
   const cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name'), cPhone = col_(cu.head, 'Phone Number');
+  const cTg = col_(cu.head, 'Telegram');
   const chats = tgChats_();
   const seen = {};
   const rows = [];
@@ -764,7 +765,7 @@ function joinLinks_(user) {
     const id = text_(r[cId]).replace(/\.0+$/, '');
     if (!/^\d{6,}$/.test(id) || seen[id]) return;
     seen[id] = 1;
-    rows.push({ id: id, name: text_(r[cName]), phone: cPhone >= 0 ? text_(r[cPhone]).replace(/\.0+$/, '') : '', link: joinLink_(id), chats: (chats[id] || []).length });
+    rows.push({ id: id, name: text_(r[cName]), phone: cPhone >= 0 ? text_(r[cPhone]).replace(/\.0+$/, '') : '', tg: cTg >= 0 ? text_(r[cTg]).replace(/\.0+$/, '') : '', link: joinLink_(id), chats: (chats[id] || []).length });
   });
   return { bot: !!prop_('TRACK_BOT_TOKEN'), botName: trackBotName_(), rows: rows };
 }
