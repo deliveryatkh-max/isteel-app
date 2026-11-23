@@ -634,3 +634,12 @@ test('warehouses come from SSK-INBOUND-DATA Warehouse List (entrance code, else 
   assert.deepStrictEqual(b.warehouses, ['A1', 'WH OB']);
   assert.strictEqual(b.whNames.A1, 'WH IB · Raw Materials');
 });
+
+test('master file (Master Data - All - For Apps) wins over the old Warehouse List', () => {
+  const e = makeEnv(fixture(), { books: {
+    '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc': { Warehouse: [['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH GVM', 'G9', 'Master test']] },
+    '1dpT1fKej2LAqu8TCjDGjnutbK0AKc49j0NLig6JGXBM': { 'Warehouse List': [['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH IB', 'A1', 'Old']] } } });
+  e.run('setup()');
+  const b = ok(e.call('boot', {}, ADMIN));
+  assert.deepStrictEqual(b.warehouses, ['G9']);
+});

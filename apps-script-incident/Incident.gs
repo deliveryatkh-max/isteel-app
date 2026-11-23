@@ -125,6 +125,17 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+// ---- One master file for every app (Kim, 23 Nov 2026): Google Sheet "Master Data - All - For Apps" ----
+const MD_SHEET_DEFAULT = '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc';   // Script property MASTER_SHEET_ID wins
+let MD_BOOK_ = null;
+/** A tab of the master file, or null when it can't be opened (then the app falls back to its old tab). */
+function mdTab_(name) {
+  try {
+    if (!MD_BOOK_) MD_BOOK_ = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT);
+    return MD_BOOK_.getSheetByName(name);
+  } catch (e) { console.warn('Master Data file: ' + e); return null; }
+}
+
 function sheet_(name, cols, seed) {
   const ss = ss_();
   let sh = ss.getSheetByName(name);
@@ -331,7 +342,7 @@ function driverTruck_() {
   try {
     const ss = SpreadsheetApp.openById(prop_('USERS_SHEET_ID'));
     // Plates from the "Truck" tab (one row per plate, Kim 8 Nov 2026); drivers from "Driver & Truck" (CODE = usual truck).
-    const tk = ss.getSheetByName('Truck');
+    const tk = mdTab_('Truck') || ss.getSheetByName('Truck');
     if (tk && tk.getLastRow() > 1) {
       const ip = tk.getRange(1, 1, 1, tk.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim()).indexOf('CODE');
       if (ip >= 0) tk.getRange(2, ip + 1, tk.getLastRow() - 1, 1).getDisplayValues().forEach(r => { const p = String(r[0]).trim(); if (p && p !== '0' && out.plates.indexOf(p) < 0) out.plates.push(p); });

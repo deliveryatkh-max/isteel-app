@@ -90,8 +90,9 @@ function scFuel_() { return SpreadsheetApp.openById(prop_('USERS_SHEET_ID') || f
  * (first value per plate), so nothing is lost. Returns { sh, head }.
  */
 function scTruckSheet_() {
-  const ss = scFuel_();
-  let sh = ss.getSheetByName('Truck');
+  let sh = mdTab_('Truck');
+  const ss = sh ? null : scFuel_();
+  if (!sh) sh = ss.getSheetByName('Truck');
   if (!sh) {
     sh = ss.insertSheet('Truck');
     sh.getRange(1, 1, 1, SC_TRUCK_COLS.length).setValues([SC_TRUCK_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
@@ -169,7 +170,7 @@ function scTrucks_() {
 function scDelivery_() { return SpreadsheetApp.openById(prop_('DELIVERY_SHEET_ID') || SC_DELIVERY_ID); }
 /** Customers from SSK-DELIVERY-DATA › Customer: [id, name]. */
 function scCustomers_() {
-  const sh = scDelivery_().getSheetByName('Customer');
+  const sh = mdTab_('Customer') || scDelivery_().getSheetByName('Customer');
   if (!sh || sh.getLastRow() < 2) return [];
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim());
   const ci = head.indexOf('Customer ID'), cn = head.indexOf('Customer Name');
@@ -866,7 +867,7 @@ function scMaster_(p, user) {
       else { scAddTruck_(t, user); have[scNorm_(plate)] = t; added++; }
     });
   } else if (p.kind === 'customer') {
-    const sh = scDelivery_().getSheetByName('Customer') || fail_('SETUP', 'SSK-DELIVERY-DATA has no "Customer" tab.');
+    const sh = mdTab_('Customer') || scDelivery_().getSheetByName('Customer') || fail_('SETUP', 'SSK-DELIVERY-DATA has no "Customer" tab.');
     const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim());
     const ci = head.indexOf('Customer ID'), cn = head.indexOf('Customer Name'), cno = head.indexOf('No');
     const n = sh.getLastRow() - 1;

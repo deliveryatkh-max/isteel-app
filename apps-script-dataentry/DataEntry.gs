@@ -84,9 +84,23 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+// ---- One master file for every app (Kim, 23 Nov 2026): Google Sheet "Master Data - All - For Apps" ----
+const MD_SHEET_DEFAULT = '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc';   // Script property MASTER_SHEET_ID wins
+let MD_BOOK_ = null;
+/** A tab of the master file, or null when it can't be opened (then the app falls back to its old tab). */
+function mdTab_(name) {
+  try {
+    if (!MD_BOOK_) MD_BOOK_ = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT);
+    return MD_BOOK_.getSheetByName(name);
+  } catch (e) { console.warn('Master Data file: ' + e); return null; }
+}
+/** Old tab name -> tab in the master file. */
+const MD_MAP_ = { 'Price List': 'Delivery Price', 'GL Code': 'GL', 'Cost Center': 'Cost Center', 'Item List': 'Scale Item' };
+function mdOf_(name) { return MD_MAP_[name] ? mdTab_(MD_MAP_[name]) : null; }
+
 function sheet_(name, cols, seed) {
   const ss = ss_();
-  let sh = ss.getSheetByName(name);
+  let sh = mdOf_(name) || ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
