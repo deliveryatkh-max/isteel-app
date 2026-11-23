@@ -284,7 +284,7 @@ function allowed_() {
 
 function master_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('master_v2');
+  const hit = cache.get('master_v3');
   if (hit) return JSON.parse(hit);
   const ft = fuelTrucks_();
   let isiPlates, drivers;
@@ -300,11 +300,20 @@ function master_() {
   const cu = table_(SH.CUST);
   const cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name');
   const customers = cu.rows.filter(r => r[cId]).map(r => ({ id: text_(r[cId]), name: text_(r[cName]) }));
-  const wh = table_(SH.WH);   // WH_CODE only; the PASSWORD column is never read out
-  const whc = col_(wh.head, 'WH_CODE');
-  const warehouses = Array.from(new Set(wh.rows.map(r => text_(r[whc])).filter(Boolean)));
-  const m = { plates: isiPlates, drivers: drivers, customers: customers, warehouses: warehouses };
-  try { cache.put('master_v2', JSON.stringify(m), 600); } catch (e) { /* over 100 KB: just not cached */ }
+  // Kim (23 Nov 2026): one warehouse list, the "Warehouse List" tab of SSK-INBOUND-DATA (Warehouse Code | Entrace Code |
+  // Warehouse Description). The loading area is the entrance code (A1, I1 …), or the warehouse code when it has none.
+  let warehouses = [], whNames = {};
+  try {
+    const ib = inboundWarehouses_();
+    warehouses = ib.codes; whNames = ib.names;
+  } catch (e) { console.warn('Inbound Warehouse List not read: ' + e); }
+  if (!warehouses.length) {
+    const wh = table_(SH.WH);   // fallback: WH_CODE only; the PASSWORD column is never read out
+    const whc = col_(wh.head, 'WH_CODE');
+    warehouses = Array.from(new Set(wh.rows.map(r => text_(r[whc])).filter(Boolean)));
+  }
+  const m = { plates: isiPlates, drivers: drivers, customers: customers, warehouses: warehouses, whNames: whNames };
+  try { cache.put('master_v3', JSON.stringify(m), 600); } catch (e) { /* over 100 KB: just not cached */ }
   return m;
 }
 
@@ -314,6 +323,24 @@ function master_() {
  * every plate there counts as an ISI truck unless its company (ក្រុមហ៊ុន) is filled with a non-ISI name.
  * That tab has no truck-type column, so the plate's driver is shown under it instead.
  */
+const INBOUND_SHEET_DEFAULT = '1dpT1fKej2LAqu8TCjDGjnutbK0AKc49j0NLig6JGXBM';   // SSK-INBOUND-DATA (INBOUND_SHEET_ID property overrides)
+function inboundWarehouses_() {
+  const sh = SpreadsheetApp.openById(prop_('INBOUND_SHEET_ID') || INBOUND_SHEET_DEFAULT).getSheetByName('Warehouse List');
+  if (!sh) throw new Error('SSK-INBOUND-DATA has no "Warehouse List" tab.');
+  const t = tableOf_(sh);
+  const find = re => t.head.findIndex(h => re.test(h));
+  const iW = find(/^warehouse\s*code$/i), iE = find(/^entr/i), iD = find(/description/i);
+  if (iW < 0) throw new Error('"Warehouse List" needs a "Warehouse Code" header.');
+  const codes = [], names = {};
+  t.rows.forEach(r => {
+    const w = text_(r[iW]), e = iE < 0 ? '' : text_(r[iE]), code = e || w;
+    if (!code || names[code] != null) return;
+    codes.push(code);
+    names[code] = [e ? w : '', iD < 0 ? '' : text_(r[iD])].filter(Boolean).join(' · ');
+  });
+  return { codes: codes, names: names };
+}
+
 const FUEL_TRUCKS_TAB = 'Driver & Truck';
 function fuelTrucks_() {
   const id = prop_('USERS_SHEET_ID');
@@ -381,7 +408,7 @@ function boot_(user) {
     flow: FLOW,
     canCorrect: user.roleKey === 'admin' || user.roleKey === 'supervisor',
     isAdmin: user.roleKey === 'admin',
-    plates: m.plates, drivers: m.drivers, customers: m.customers, warehouses: m.warehouses, plan: planList,
+    plates: m.plates, drivers: m.drivers, customers: m.customers, warehouses: m.warehouses, whNames: m.whNames || {}, plan: planList,
     stages: STAGES, dnStatuses: DN_STATUS, legs: LEG, today: today, serverNow: Date.now(),
     settings: { warnMin: set.INSIDE_WARN_MIN, lateMin: set.INSIDE_LATE_MIN, farKm: set.FAR_KM },
     companies: companyNames_(co), plateCo: plateCo, trucks: trucks_(), complaintTypes: COMPLAINT_TYPES,

@@ -105,7 +105,7 @@ export function RecordPage() {
   }, [boot.drivers, plate]);
   const tripOpts: Opt[] = useMemo(() => trips.filter(x => tripFitsStep(x, code)).map(x => ({ value: x.id, label: x.plate + ' · ' + x.round, sub: x.id + ' · ' + L(boot.stages[x.stage]) + (x.dns.length ? ' · ' + x.dns.map(d => d.dn).join(', ') : '') })), [trips, lang, code]);
   const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
-  const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
+  const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w, sub: (boot.whNames || {})[w] || undefined })), [boot.warehouses]);
   const coOpts: Opt[] = useMemo(() => (boot.companies || []).map(c => ({ value: c, label: c })), [boot.companies]);
 
   const openDns = trip ? trip.dns.filter(d => dnFitsStep(d.leg, code)) : [];
