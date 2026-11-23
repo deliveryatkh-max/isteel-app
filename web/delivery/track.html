@@ -71,7 +71,7 @@
         <div class="muted" id="info"></div>
       </div>
       <div id="drv" class="card drv" hidden>
-        <div><div class="muted" data-t="តៃកុង|Driver"></div><b id="drvname"></b></div>
+        <div><div class="muted" id="drvlbl" data-t="តៃកុង|Driver"></div><b id="drvname"></b></div>
         <a id="drvtel" class="call" hidden></a>
       </div>
       <div id="mapcard" class="card" hidden>
@@ -97,7 +97,7 @@
     try { if (localStorage.getItem('app_lang') === 'en') lang = 'en'; } catch (e) {}
     var T = function (s) { var p = String(s).split('|'); return lang === 'en' ? p[1] || p[0] : p[0]; };
     var $ = function (id) { return document.getElementById(id); };
-    var info = null, map = null, truck = null, site = null, line = null, fitted = false;
+    var info = null, map = null, truck = null, site = null, line = null, fitted = false, fitted2 = false;
     var hm = function (ms) { return ms ? new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Phnom_Penh' }) : ''; };
     var ll = function (s) { var p = String(s || '').split(','); var a = Number(p[0]), b = Number(p[1]); return isFinite(a) && isFinite(b) && p.length === 2 ? [a, b] : null; };
     function km(a, b) { var R = 6371, r = Math.PI / 180, x = (b[0] - a[0]) * r, y = (b[1] - a[1]) * r; var h = Math.sin(x / 2) * Math.sin(x / 2) + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(y / 2) * Math.sin(y / 2); return 2 * R * Math.asin(Math.sqrt(h)); }
@@ -116,6 +116,21 @@
         .then(function (r) { return r.json(); })
         .then(function (r) { if (!r.ok) { var m = String(r.error || '').replace(/^[A-Z_]+:\s*/, '').split(' || '); var e = new Error(lang === 'en' ? m[0] : m[1] || m[0]); e.code = String(r.error || '').split(':')[0]; throw e; } return r.data; });
     }
+    // Live road route on this page (Kim, 24 Nov 2026), free OSRM public router, no key. Asked again only when the truck
+    // moved more than 150 m or after 3 minutes; any error keeps the straight dashed line.
+    var road = null, roadAsk = null;
+    function getRoad(pos, dest) {
+      var now = Date.now();
+      if (roadAsk && (roadAsk.busy || (km(roadAsk.pos, pos) < 0.15 && now - roadAsk.at < 180000))) return;
+      roadAsk = { pos: pos, at: now, busy: true };
+      var u = 'https://router.project-osrm.org/route/v1/driving/' + pos[1] + ',' + pos[0] + ';' + dest[1] + ',' + dest[0] + '?overview=full&geometries=geojson';
+      fetch(u).then(function (x) { return x.json(); }).then(function (j) {
+        var rt = j && j.routes && j.routes[0];
+        if (!rt) return;
+        road = { km: rt.distance / 1000, min: rt.duration / 60, path: rt.geometry.coordinates.map(function (c) { return [c[1], c[0]]; }) };
+        if (info) render();
+      }).catch(function () {}).then(function () { roadAsk.busy = false; });
+    }
     function render() {
       var r = info, x = r.times, leg = r.leg;
       var finished = leg === 'delivered' || leg === 'failed' || leg === 'canceled' || leg === 'moved';
@@ -123,8 +138,10 @@
         : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងធ្វើដំណើរ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
       $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : '', r.plate].filter(Boolean).join(' · ');   // no kg (Kim, 22 Nov 2026)
       var dv = r.driver || {};
-      $('drv').hidden = finished || !dv.name;
-      $('drvname').textContent = dv.name || '';
+      // Kim (24 Nov 2026): the call button always shows once the truck left (driver phone, else the office line).
+      $('drv').hidden = finished || !x.out || !(dv.name || dv.phone);
+      $('drvname').textContent = dv.name || T('អាយ អេស អាយ ស្ទីល|ISI Steel');
+      $('drvlbl').textContent = dv.office ? T('ទូរស័ព្ទការិយាល័យ|Office phone') : T('តៃកុង|Driver');
       $('drvtel').hidden = !dv.phone;
       if (dv.phone) { $('drvtel').href = 'tel:' + String(dv.phone).replace(/[^0-9+]/g, ''); $('drvtel').textContent = '📞 ' + dv.phone; }
       var steps = [
@@ -141,12 +158,22 @@
         var age = Math.max(0, Math.round((r.serverNow - g.t) / 60000));
         $('live').className = 'live' + (age > 10 ? ' old' : '');
         $('livet').textContent = age > 10 ? T('ឃើញចុងក្រោយ ' + hm(g.t) + '|Last seen ' + hm(g.t)) : 'LIVE';
-        $('gmap').href = 'https://www.google.com/maps/search/?api=1&query=' + pos[0] + ',' + pos[1];
+        // Kim (24 Nov 2026): Google Maps opens the driving route from the truck to the site (Google shows its own arrival time).
+        $('gmap').href = dest ? 'https://www.google.com/maps/dir/?api=1&origin=' + pos[0] + ',' + pos[1] + '&destination=' + dest[0] + ',' + dest[1] + '&travelmode=driving'
+          : 'https://www.google.com/maps/search/?api=1&query=' + pos[0] + ',' + pos[1];
         if (dest) {
-          var d = km(pos, dest) * 1.3;   // road distance is about 1.3 x the straight line
+          getRoad(pos, dest);
+          var d = road && road.km != null ? road.km : km(pos, dest) * 1.3;   // road distance (free OSRM route), else about 1.3 x the straight line
           $('dist').textContent = T('នៅសល់ ~' + Math.round(d) + ' km|~' + Math.round(d) + ' km to go') + ' · ' + T('ធ្វើបច្ចុប្បន្នភាព ' + hm(g.t) + '|updated ' + hm(g.t));
-          $('eta').textContent = d < 0.5 ? T('ជិតដល់|Arriving') : hm(r.serverNow + d / 35 * 3600000);   // about 35 km/h for a loaded truck
-        } else { $('eta').textContent = '—'; $('dist').textContent = T('ធ្វើបច្ចុប្បន្នភាព ' + hm(g.t) + '|updated ' + hm(g.t)); }
+          $('eta').style.fontSize = '';
+          // Route time for a car x 1.3 for a loaded truck; no route yet: about 35 km/h.
+          $('eta').textContent = d < 0.5 ? T('ជិតដល់|Arriving') : hm(r.serverNow + (road && road.min != null ? road.min * 1.3 * 60000 : d / 35 * 3600000));
+        } else {
+          // No site location saved for this customer: no arrival time can be worked out (it fills after the first delivery).
+          $('eta').style.fontSize = '16px';
+          $('eta').textContent = T('មិនទាន់មានទីតាំងអតិថិជន|No site location yet');
+          $('dist').textContent = T('ធ្វើបច្ចុប្បន្នភាព ' + hm(g.t) + '|updated ' + hm(g.t));
+        }
         if (window.L) {
           if (!map) {
             map = L.map('map', { zoomControl: true, attributionControl: true });
@@ -155,8 +182,12 @@
           var icon = L.divIcon({ className: '', html: '<div style="font-size:30px;line-height:1;filter:drop-shadow(0 2px 2px #0005)">🚚</div>', iconSize: [32, 32], iconAnchor: [16, 16] });
           if (!truck) truck = L.marker(pos, { icon: icon }).addTo(map); else truck.setLatLng(pos);
           if (dest && !site) site = L.marker(dest, { icon: L.divIcon({ className: '', html: '<div style="font-size:28px;line-height:1">📍</div>', iconSize: [28, 28], iconAnchor: [14, 26] }) }).addTo(map);
-          if (dest) { if (line) line.setLatLngs([pos, dest]); else line = L.polyline([pos, dest], { color: '#0b76a0', weight: 3, dashArray: '4 8' }).addTo(map); }
-          if (!fitted) { fitted = true; if (dest) map.fitBounds([pos, dest], { padding: [40, 40], maxZoom: 15 }); else map.setView(pos, 14); }
+          if (dest) {
+            var path = road && road.path ? road.path : [pos, dest];
+            if (line) line.setLatLngs(path); else line = L.polyline(path, { color: '#0b76a0', weight: 5, opacity: 0.85 }).addTo(map);
+            line.setStyle({ dashArray: road && road.path ? null : '4 8', weight: road && road.path ? 5 : 3 });
+          }
+          if (!fitted || (road && road.path && !fitted2)) { if (road && road.path) fitted2 = true; fitted = true; if (dest) map.fitBounds(road && road.path ? line.getBounds() : [pos, dest], { padding: [40, 40], maxZoom: 15 }); else map.setView(pos, 14); }
           setTimeout(function () { map.invalidateSize(); }, 50);
         }
       }

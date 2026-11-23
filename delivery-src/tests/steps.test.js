@@ -149,6 +149,11 @@ const errors = [];
   const cp = await as('nobody@test.kh');
   // The sandbox cannot reach cdnjs / OpenStreetMap: serve Leaflet from a local copy when LEAFLET_DIR is set.
   if (process.env.LEAFLET_DIR) await cp.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/leaflet\/1\.9\.4\/leaflet\.min\.(js|css)/, r => r.fulfill({ path: process.env.LEAFLET_DIR + '/leaflet.' + (r.request().url().endsWith('js') ? 'js' : 'css') }));
+  const ss = await api('setSite', { custId: '6100000001', latlong: '11.55,104.89', custName: 'TEST Customer A' }, 'google:admin@test.kh');
+  assert.ok(ss.ok, JSON.stringify(ss));
+  // Free OSRM road route (Kim, 24 Nov 2026): the sandbox has no internet, so a fake route answers.
+  let osrm = 0;
+  await cp.route(/router\.project-osrm\.org/, r => { osrm++; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routes: [{ distance: 5200, duration: 600, geometry: { coordinates: [[104.91, 11.56], [104.90, 11.555], [104.89, 11.55]] } }] }) }); });
   await cp.goto(BASE + '/delivery/track.html?d=9000000101&t=' + encodeURIComponent(trip) + '&k=' + tk);
   await cp.getByText(/Your steel is on the way|កំពុងធ្វើដំណើរ/).waitFor({ timeout: 10000 });
   await cp.locator('#gmap[href*="11.56,104.91"]').waitFor({ state: 'attached', timeout: 10000 });
@@ -156,6 +161,9 @@ const errors = [];
   assert.strictEqual(await cp.getByText(/ kg/).count(), 0, 'no kg');
   if (process.env.LEAFLET_DIR) await cp.locator('.leaflet-marker-icon').first().waitFor({ timeout: 10000 });
   await cp.waitForTimeout(1500);
+  await cp.waitForFunction(() => /^\d\d:\d\d$/.test(document.getElementById('eta').textContent), null, { timeout: 10000 });
+  assert.ok(osrm >= 1, 'road route asked');
+  assert.ok(/maps\/dir\/\?api=1&origin=11\.56,104\.91&destination=11\.55,104\.89/.test(await cp.locator('#gmap').getAttribute('href')), 'directions link');
   await cp.screenshot({ path: SHOTS + 'steps-07-track.png', fullPage: true });
   console.log('PASS customer live map');
   // Kim's O1 B (23 Nov 2026): the trip page = clean view; links behind a button

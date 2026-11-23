@@ -603,15 +603,47 @@ function trackLinks_(tripId, rows) {
   rows.forEach(r => { if (r.dn && !out[r.dn]) out[r.dn] = trackToken_(r.dn, tripId); });
   return out;
 }
-/** Driver of the trip with a phone from the Users sheet "Phone" column (Kim, 22 Nov 2026: shown to the customer). */
+/**
+ * Driver of the trip with a phone (Kim, 22/24 Nov 2026: shown to the customer, tap to call). Looks in the Users list, then in
+ * every row of the master Employee List (drivers without a Gmail too) by Full Name, Name, Khmer Name or Employee ID.
+ * No phone found: the Script property TRACK_CALL_PHONE (an office line), when set.
+ */
 function driverContact_(name) {
   const n = String(name || '').trim();
-  if (!n) return { name: '', phone: '' };
   const bare = x => String(x || '').replace(/^\s*\d+\s*[.\-]\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-  const d = usersCached_().filter(u => u.phone).find(u => u.name === n || bare(u.name) === bare(n));
-  let phone = d && d.phone ? String(d.phone).trim() : '';
-  if (/^[1-9]\d{7,8}$/.test(phone)) phone = '0' + phone;   // a number cell drops the leading 0
-  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: phone };
+  const fix = p => { p = String(p || '').replace(/\.0+$/, '').trim(); return /^[1-9]\d{7,8}$/.test(p) ? '0' + p : p; };   // a number cell drops the leading 0
+  let phone = '';
+  if (n) {
+    const d = usersCached_().filter(u => u.phone).find(u => u.name === n || bare(u.name) === bare(n));
+    phone = d && d.phone ? fix(d.phone) : '';
+    if (!phone) {
+      const m = employeePhones_();
+      phone = m[bare(n)] || m[String(n).trim().toLowerCase()] || '';
+      const id = (n.match(/\b(\d{5,})\b/) || [])[1];   // "Driver A 100001": employee ID in the name
+      if (!phone && id) phone = m[id] || '';
+    }
+  }
+  const office = !phone && prop_('TRACK_CALL_PHONE') ? fix(prop_('TRACK_CALL_PHONE')) : '';
+  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: phone || office, office: !!office };
+}
+/** name / ID (lower case) -> phone from the master Employee List, 10 minutes in the cache. */
+function employeePhones_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('emp_phones_v1');
+  if (hit) return JSON.parse(hit);
+  const out = {};
+  try {
+    const t = tableOf_(mdTab_('Employee List'));
+    const c = k => t.head.indexOf(k), ph = c('Phone');
+    if (ph >= 0) t.rows.forEach(r => {
+      let p = String(r[ph] == null ? '' : r[ph]).replace(/\.0+$/, '').trim();
+      if (/^[1-9]\d{7,8}$/.test(p)) p = '0' + p;
+      if (!p) return;
+      ['Full Name', 'Name', 'Khmer Name', 'Employee ID'].forEach(k => { const v = c(k) >= 0 ? String(r[c(k)] || '').replace(/\s+/g, ' ').trim().toLowerCase() : ''; if (v && !out[v]) out[v] = p; });
+    });
+  } catch (e) { console.warn('Employee phones: ' + e); }
+  try { cache.put('emp_phones_v1', JSON.stringify(out), 600); } catch (e) { /* too big */ }
+  return out;
 }
 /** What the customer sees: only this DN, the steps, the truck plate and position, the site pin, the driver's name and phone. */
 function trackInfo_(p) {
