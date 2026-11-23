@@ -1,4 +1,4 @@
-import { fmtDate, fmtTime, L, t, useLang } from '../i18n';
+import { fmtDate, fmtTime, L, t, useLang, noId } from '../i18n';
 import { tripHref, useApp } from '../state';
 import type { TripSummary } from '../types';
 import { Badge } from './ui';
@@ -29,7 +29,7 @@ export function TripCard(p: { trip: TripSummary; showDate?: boolean }) {
         <div className="min-w-0">
           <b className="text-[17px] tracking-wide">{x.plate || '—'}</b>
           <span className="muted text-[13px] ml-2">{x.round}</span>
-          <div className="muted text-[13px] truncate">{x.id}{x.driver ? ' · ' + x.driver : ''}</div>
+          <div className="muted text-[13px] truncate">{x.id}{x.driver ? ' · ' + noId(x.driver) : ''}</div>
         </div>
         <Badge k={x.stage} label={boot.stages[x.stage]} />
       </div>

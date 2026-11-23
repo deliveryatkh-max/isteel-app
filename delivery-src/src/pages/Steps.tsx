@@ -1,6 +1,6 @@
 import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { api, store } from '../api';
-import { errText, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang } from '../i18n';
+import { errText, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang, noId } from '../i18n';
 import { AppCtx, go, openTrips, useApp } from '../state';
 import type { Label, TripDetail, TripSummary } from '../types';
 import { Alert, Badge, Modal, Opt, PhotoInput, Picker, Segmented, Spinner, toast } from '../components/ui';
@@ -182,7 +182,7 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
           <b className="text-[22px] font-extrabold tracking-wide">{trip.plate}</b>
           <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn text-right" data-chip="step">{chip}</span>
         </div>
-        {office ? <small className="muted block">{[trip.driver, detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
+        {office ? <small className="muted block">{[noId(trip.driver), detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
         <StepBar done={done} />
         {office ? (
           <div className="flex justify-between muted text-[12px] mt-1">

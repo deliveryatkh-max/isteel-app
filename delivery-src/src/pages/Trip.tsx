@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { errText, fmtDate, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang } from '../i18n';
+import { errText, fmtDate, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang, noId } from '../i18n';
 import { dnHref, useApp } from '../state';
 import type { LogRow, TripDetail } from '../types';
 import { Alert, Badge, Kv, Modal, Spinner, toast } from '../components/ui';
@@ -40,7 +40,7 @@ export function TripPage(p: { id: string }) {
           </div>
           <Badge k={d.stage} label={boot.stages[d.stage]} />
         </div>
-        <Kv k={t('តៃកុង', 'Driver')} v={d.driver || '–'} />
+        <Kv k={t('តៃកុង', 'Driver')} v={noId(d.driver) || '–'} />
         {d.company ? <Kv k="3PL" v={d.company} /> : null}
         {d.complaints ? <Kv k={t('បណ្តឹង', 'Complaints')} v={<span className="text-bad">📣 {d.complaints}</span>} /> : null}
         <Kv k={t('ចូលថ្លឹង', 'Gate In')} v={fmtDateTime(d.gateIn)} />

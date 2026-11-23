@@ -624,7 +624,8 @@ function driverContact_(name) {
     }
   }
   const office = !phone && prop_('TRACK_CALL_PHONE') ? fix(prop_('TRACK_CALL_PHONE')) : '';
-  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: phone || office, office: !!office };
+  // No Employee ID shown to the customer (Kim, 24 Nov 2026): "Me Votha 100069" -> "Me Votha".
+  return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, '').replace(/\s*[(\[]?\b\d{5,7}\b[)\]]?\s*$/, '').trim(), phone: phone || office, office: !!office };
 }
 /**
  * The trip's driver; when the scale ticket had no driver (Kim, 24 Nov 2026: name and phone were blank), the last driver

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, flushOutbox } from '../api';
-import { errText, fmtTime, L, t, useLang } from '../i18n';
+import { errText, fmtTime, L, t, useLang, noId } from '../i18n';
 import type { Label, TripDn } from '../types';
 import { Alert, Badge, Header, PhotoInput, Spinner, toast, Toaster } from '../components/ui';
 import { useSubmit, warmLocation } from '../components/submit';
@@ -96,7 +96,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
           <>
             <section className="card">
               <div className="flex justify-between items-start gap-2">
-                <div><div className="text-[22px] font-bold">{tr.plate}</div><div className="muted text-[13px]">{tr.id} · {tr.round}{tr.driver ? ' · ' + tr.driver : ''}</div></div>
+                <div><div className="text-[22px] font-bold">{tr.plate}</div><div className="muted text-[13px]">{tr.id} · {tr.round}{tr.driver ? ' · ' + noId(tr.driver) : ''}</div></div>
                 <Badge k={tr.stage} label={d!.stages[tr.stage]} />
               </div>
               <div className="text-[13px] mt-1">⬆ {t('ចេញពីកន្លែងថ្លឹង', 'Gate Out')} {fmtTime(tr.gateOut)}</div>
