@@ -816,6 +816,7 @@
           ${tr ? ''
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div></div></div>
+        ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')} ${req}</label><div><input class="in${need(F.driver)}" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
         ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
         ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
@@ -855,6 +856,16 @@
     });
     // ✕ in the Truck No box clears the truck, its company and driver (Kim, 8 Nov 2026)
     if ($('#fPlateClr')) $('#fPlateClr').onclick = () => { const tr0 = truckOf(F.plate); F.plate = ''; if (!tr0 || F.company === tr0.company) F.company = ''; F.driver = ''; keepForm(); paintForm(); setTimeout(() => $('#fPlate') && $('#fPlate').focus(), 0); };
+    // Driver at the 1st weigh (Kim, 24 Nov 2026): the truck's usual drivers first, then every driver of the Employee List; a
+    // 3PL or customer driver who is not in the list is typed.
+    if ($('#fDriver')) picker($('#fDriver'), {
+      list: () => {
+        const tr3 = truckOf(F.plate), seen = {}, out = [];
+        ((tr3 && tr3.drivers) || []).forEach(d => { if (d && !seen[d]) { seen[d] = 1; out.push({ v: d, sub: '🚚 ' + (tr3.plate || '') }); } });
+        ((B && B.drivers) || []).forEach(d => { if (d[0] && !seen[d[0]]) { seen[d[0]] = 1; out.push({ v: d[0], sub: [d[1] !== d[0] ? d[1] : '', d[2]].filter(Boolean).join(' · ') }); } });
+        return out;
+      }, addNew: true, onPick: v => { upd('driver', v || ''); paintForm(); },
+    });
     const companies = () => { const s = []; trucks().forEach(x => { if (x.company && s.indexOf(x.company) < 0) s.push(x.company); }); return s.sort().map(v => ({ v })); };
     picker($('#fCompany'), { list: companies, addNew: true, fix: fixCompany, onPick: v => upd('company', v) });
     // Item and Destination are asked at the 2nd weigh only (Kim, 8 Nov 2026)
@@ -985,6 +996,7 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');
+    if (!ticketBy(F.cid) && !String(F.driver || '').trim()) miss.push('#fDriver');   // driver required at the 1st weigh (Kim, 24 Nov 2026)
     // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
     if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
@@ -3072,7 +3084,7 @@
     };
     const keep = () => set('sc_demo', JSON.stringify(db));
     const u = { name: 'Kim (demo)', email: 'kim@demo', admin: true, reviewer: true };
-    if (action === 'scBoot') return { user: Object.assign({ dnc: true }, u), prices: db.prices || [], people: [{ email: 'kim@demo', name: 'Kim (demo)', admin: true }, { email: 'dara@demo', name: 'Dara' }, { email: 'sok@demo', name: 'Sok' }], trucks: db.trucks, customers: db.customers, items: db.items, dests: db.dests, settings: db.settings, tickets: db.tickets, lastTare: {}, sheetUrl: '' };
+    if (action === 'scBoot') return { user: Object.assign({ dnc: true }, u), prices: db.prices || [], people: [{ email: 'kim@demo', name: 'Kim (demo)', admin: true }, { email: 'dara@demo', name: 'Dara' }, { email: 'sok@demo', name: 'Sok' }], trucks: db.trucks, drivers: [['អ៊ិន សំណាង', 'EN SAMNANG', '100531'], ['កាំង វណ្ណា', 'KANG VANNA', '100037']], customers: db.customers, items: db.items, dests: db.dests, settings: db.settings, tickets: db.tickets, lastTare: {}, sheetUrl: '' };
     if (action === 'scSave') {
       const out = [];
       p.ops.forEach(op => {
