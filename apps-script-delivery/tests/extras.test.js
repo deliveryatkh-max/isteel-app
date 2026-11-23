@@ -352,3 +352,16 @@ test('customer Telegram bot: join link saves the chat, Gate Out sends the live m
   const det = ok(e.call('trip', { tripId: id }, LOGI));
   assert.ok(/t\.me\/isisteellive_bot\?start=c6100000001_/.test(det.tgJoin['9000000001']));
 });
+
+test('customer join links: office only, one signed link per customer, joined chats counted', () => {
+  const e = makeEnv(fixture(), { props: { TRACK_BOT_TOKEN: 'tok' } }); e.run('setup()');
+  const sig = e.run("joinSig_('6100000001')");
+  e.tgUpdates.push({ update_id: 5, message: { chat: { id: 777 }, text: '/start c6100000001_' + sig } });
+  e.run('trackBotPoll()');
+  const d = ok(e.call('joinLinks', {}, LOGI));
+  assert.strictEqual(d.rows.length, 2);
+  assert.deepStrictEqual(d.rows.map(r => [r.id, r.chats]), [['6100000001', 1], ['6100000002', 0]]);
+  assert.ok(d.rows[1].link.endsWith('?start=c6100000002_' + e.run("joinSig_('6100000002')")));
+  const no = e.call('joinLinks', {}, WH);
+  assert.ok(!no.ok && /DENIED/.test(JSON.stringify(no.error)));
+});

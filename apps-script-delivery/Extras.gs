@@ -748,3 +748,23 @@ function setupTrackBot() {
   if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'trackBotPoll')) ScriptApp.newTrigger('trackBotPoll').timeBased().everyMinutes(1).create();
   return 'Bot ready: ' + JSON.stringify(trackBot_('getMe', {}).result || {});
 }
+
+/**
+ * Customer Join Links page (Kim, 24 Nov 2026): one row per customer of the Customer master with its signed join link and
+ * how many Telegram chats joined. Office roles only (Admin, Supervisor, Logistics); the link itself grants nothing but updates.
+ */
+function joinLinks_(user) {
+  if (['admin', 'supervisor', 'logistics'].indexOf(user.roleKey) < 0) fail_('DENIED', 'Only office roles can see customer join links.', 'មានតែបុគ្គលិកការិយាល័យទេ ដែលអាចមើលតំណភ្ជាប់អតិថិជន។');
+  const cu = table_(SH.CUST);
+  const cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name'), cPhone = col_(cu.head, 'Phone Number');
+  const chats = tgChats_();
+  const seen = {};
+  const rows = [];
+  cu.rows.forEach(r => {
+    const id = text_(r[cId]).replace(/\.0+$/, '');
+    if (!/^\d{6,}$/.test(id) || seen[id]) return;
+    seen[id] = 1;
+    rows.push({ id: id, name: text_(r[cName]), phone: cPhone >= 0 ? text_(r[cPhone]).replace(/\.0+$/, '') : '', link: joinLink_(id), chats: (chats[id] || []).length });
+  });
+  return { bot: !!prop_('TRACK_BOT_TOKEN'), botName: trackBotName_(), rows: rows };
+}
