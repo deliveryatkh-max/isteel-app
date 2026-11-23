@@ -318,6 +318,9 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
       // Kim (23 Nov 2026): the same DN can be loaded again at another warehouse: warn only.
       beep();
       setDnErr(t('DN ' + d + ' បានឡើងលើឡាននេះរួចហើយ។', 'DN ' + d + ' was already loaded on this truck.'));
+      // Same DN = same customer (Kim, 23 Nov 2026): fill the customer it was loaded with before.
+      const prev = ((trip.dns || []).find(z => z.dn === d && z.cust) || {}).cust || '';
+      if (!inPlan.has(d) && prev) setCusts(cur => (cur[d] ? cur : { ...cur, [d]: splitCust(prev) }));
       setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
       return;
     }
