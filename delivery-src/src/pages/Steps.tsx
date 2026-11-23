@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { api, store } from '../api';
 import { errText, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang } from '../i18n';
 import { AppCtx, go, openTrips, useApp } from '../state';
@@ -40,11 +40,18 @@ export function tripDone(trip: TripSummary): number {
   const open = trip.dns.filter(d => d.leg !== 'canceled' && drvStepOf(d.leg));
   return open.length ? Math.min(...open.map(d => drvStepOf(d.leg))) - 1 : 9;
 }
-/** The 9-step bar: green = done, amber = now (Kim's mockups, 23 Nov 2026). */
+/** The 9-step tracker (Kim, 24 Nov 2026): green ticks = done, pulsing dot = next step, hollow = later. */
 export function StepBar(p: { done: number }) {
   return (
-    <div className="flex gap-[3px] mt-2" data-bar={p.done}>
-      {Array.from({ length: 9 }, (_, i) => <i key={i} className="flex-1 h-[6px] rounded" style={{ background: i < p.done ? 'var(--ok)' : i === p.done ? '#f0a400' : 'var(--line)' }} />)}
+    <div className="flex items-center mt-3" data-bar={p.done}>
+      {Array.from({ length: 9 }, (_, i) => (
+        <Fragment key={i}>
+          {i ? <i className="flex-1 h-[2px]" style={{ background: i <= p.done ? 'var(--ok)' : 'var(--line)' }} /> : null}
+          <span className={'stepdot' + (i < p.done ? ' done' : i === p.done ? ' now' : '')} title={stepName(i + 1)}>
+            {i < p.done ? <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 6.2l2.2 2.2 4.8-4.8" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg> : i === p.done ? <b /> : null}
+          </span>
+        </Fragment>
+      ))}
     </div>
   );
 }
