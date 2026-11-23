@@ -117,3 +117,12 @@ body.nav-right .app-body { padding-right: 96px; }
 /* Required and still empty (Kim, 22 Nov 2026): red box and light red fill until filled, same as the other iSteel apps. */
 .need .in, .need input:not([type=checkbox]):not([type=file]), .need textarea, .need select { border-color: var(--bad) !important; box-shadow: 0 0 0 1px var(--bad) inset; background-color: var(--bad-soft) !important; }
 .need:not(:has(input:not([type=file]), textarea, select)) { border: 1.5px solid var(--bad); background: var(--bad-soft); border-radius: 14px; padding: 4px; }
+
+/* 9-step tracker (Kim, 24 Nov 2026): done = green tick, next = pulsing dot, later = hollow circle */
+.stepdot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); background: var(--card, #fff); display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; }
+.stepdot.done { background: var(--ok); border-color: var(--ok); }
+.stepdot.now { border-color: #1f6fc5; animation: stepPulse 1.4s ease-out infinite; }
+.stepdot.now b { width: 8px; height: 8px; border-radius: 50%; background: #1f6fc5; animation: stepBeat 1.4s ease-in-out infinite; }
+@keyframes stepPulse { 0% { box-shadow: 0 0 0 0 rgba(31, 111, 197, .45); } 70% { box-shadow: 0 0 0 7px rgba(31, 111, 197, 0); } 100% { box-shadow: 0 0 0 0 rgba(31, 111, 197, 0); } }
+@keyframes stepBeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(.65); } }
+@media (prefers-reduced-motion: reduce) { .stepdot.now, .stepdot.now b { animation: none; } }
