@@ -107,8 +107,22 @@ const fmt_ = (d, f) => Utilities.formatDate(d, TZ, f);
 const ymd_ = d => fmt_(d, 'yyyy-MM-dd');
 function now_() { return new Date(); }
 function ss_() { return SpreadsheetApp.getActive(); }
+
+// ---- One master file for every app (Kim, 23 Nov 2026): Google Sheet "Master Data - All - For Apps" ----
+const MD_SHEET_DEFAULT = '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc';   // Script property MASTER_SHEET_ID wins
+let MD_BOOK_ = null;
+/** A tab of the master file, or null when it can't be opened (then the app falls back to its old tab). */
+function mdTab_(name) {
+  try {
+    if (!MD_BOOK_) MD_BOOK_ = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT);
+    return MD_BOOK_.getSheetByName(name);
+  } catch (e) { console.warn('Master Data file: ' + e); return null; }
+}
+/** Old tab name -> tab in the master file. */
+const MD_MAP_ = { 'Customer': 'Customer', 'Customer Sites': 'Customer Site' };
+function mdOf_(name) { return MD_MAP_[name] ? mdTab_(MD_MAP_[name]) : null; }
 function sheet_(name) {
-  const sh = ss_().getSheetByName(name);
+  const sh = mdOf_(name) || ss_().getSheetByName(name);
   if (!sh) fail_('SETUP', 'The sheet tab "' + name + '" is missing. Run setup() in Apps Script.');
   return sh;
 }
@@ -209,7 +223,7 @@ function need_(user, level) {
 
 // ---------------------------------------------------------------- master data
 function table_(name) {
-  const sh = ss_().getSheetByName(name);
+  const sh = mdOf_(name) || ss_().getSheetByName(name);
   if (!sh || sh.getLastRow() < 2) return { head: [], rows: [] };
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   return { head: v[0].map(h => String(h).trim()), rows: v.slice(1) };
@@ -325,7 +339,7 @@ function master_() {
  */
 const INBOUND_SHEET_DEFAULT = '1dpT1fKej2LAqu8TCjDGjnutbK0AKc49j0NLig6JGXBM';   // SSK-INBOUND-DATA (INBOUND_SHEET_ID property overrides)
 function inboundWarehouses_() {
-  const sh = SpreadsheetApp.openById(prop_('INBOUND_SHEET_ID') || INBOUND_SHEET_DEFAULT).getSheetByName('Warehouse List');
+  const sh = mdTab_('Warehouse') || SpreadsheetApp.openById(prop_('INBOUND_SHEET_ID') || INBOUND_SHEET_DEFAULT).getSheetByName('Warehouse List');
   if (!sh) throw new Error('SSK-INBOUND-DATA has no "Warehouse List" tab.');
   const t = tableOf_(sh);
   const find = re => t.head.findIndex(h => re.test(h));
@@ -360,7 +374,7 @@ function fuelTrucks_() {
   });
   // Trucks are kept once in the "Truck" tab (Kim, 8 Nov 2026): its ISI plates count too, with their Truck Type.
   const types = {};
-  const tk = SpreadsheetApp.openById(id).getSheetByName('Truck');
+  const tk = mdTab_('Truck') || SpreadsheetApp.openById(id).getSheetByName('Truck');
   if (tk) {
     const tt = tableOf_(tk), jP = tt.head.indexOf('CODE'), jC = tt.head.indexOf('ក្រុមហ៊ុន'), jT = tt.head.indexOf('Truck Type');
     if (jP >= 0) tt.rows.forEach(r => {

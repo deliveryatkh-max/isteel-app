@@ -133,9 +133,23 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+// ---- One master file for every app (Kim, 23 Nov 2026): Google Sheet "Master Data - All - For Apps" ----
+const MD_SHEET_DEFAULT = '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc';   // Script property MASTER_SHEET_ID wins
+let MD_BOOK_ = null;
+/** A tab of the master file, or null when it can't be opened (then the app falls back to its old tab). */
+function mdTab_(name) {
+  try {
+    if (!MD_BOOK_) MD_BOOK_ = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT);
+    return MD_BOOK_.getSheetByName(name);
+  } catch (e) { console.warn('Master Data file: ' + e); return null; }
+}
+/** Old tab name -> tab in the master file. */
+const MD_MAP_ = { 'Warehouse List': 'Warehouse' };
+function mdOf_(name) { return MD_MAP_[name] ? mdTab_(MD_MAP_[name]) : null; }
+
 function sheet_(name, cols, seed) {
   const ss = ss_();
-  let sh = ss.getSheetByName(name);
+  let sh = mdOf_(name) || ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff');
@@ -287,7 +301,7 @@ function plates_() {
     // Plates from the "Truck" tab (one row per plate, Kim 8 Nov 2026), plus any usual truck still only in "Driver & Truck".
     const ss = SpreadsheetApp.openById(prop_('USERS_SHEET_ID'));
     ['Truck', 'Driver & Truck'].forEach(name => {
-      const sh = ss.getSheetByName(name);
+      const sh = (name === 'Truck' && mdTab_('Truck')) || ss.getSheetByName(name);
       if (!sh || sh.getLastRow() < 2) return;
       const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
       const ip = v[0].map(h => String(h).trim()).indexOf('CODE');
@@ -452,7 +466,7 @@ function boot_(user) {
  *  Warehouse Code | Entrance Code | Description, so each entrance belongs to a warehouse (site). */
 function whRows_() { return memo('wh', whRead_); }
 function whRead_() {
-  const sh = ss_().getSheetByName(SH.WH);
+  const sh = mdOf_(SH.WH) || ss_().getSheetByName(SH.WH);
   if (!sh || sh.getLastRow() < 2) return null;
   const v = sh.getRange(1, 1, sh.getLastRow(), Math.max(2, sh.getLastColumn())).getDisplayValues().map(r => r.map(x => String(x).trim()));
   const iEnt = v[0].findIndex(h => /^entr/i.test(h));

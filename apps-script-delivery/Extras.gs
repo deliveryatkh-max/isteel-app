@@ -55,13 +55,13 @@ function setupExtras_() {
 
 // ---------------------------------------------------------------- small tab helpers
 function xtab_(name) {
-  const sh = ss_().getSheetByName(name);
+  const sh = mdOf_(name) || ss_().getSheetByName(name);
   if (!sh) fail_('SETUP', 'The tab "' + name + '" is missing. Run setup() in Apps Script once more.', 'ខ្វះតារាង "' + name + '"។ សូមដំណើរការ setup() ម្តងទៀត។');
   return sh;
 }
 /** Rows of a feature tab as objects keyed by header (with _row = sheet row). Missing tab = no rows. */
 function xrows_(name) {
-  const sh = ss_().getSheetByName(name);
+  const sh = mdOf_(name) || ss_().getSheetByName(name);
   if (!sh || sh.getLastRow() < 2) return [];
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   const head = v[0].map(h => String(h).trim());

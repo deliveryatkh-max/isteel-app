@@ -393,15 +393,31 @@ function mask_(s) {
 }
 
 // ---- the master tab ----
+// ---- One master file for every app (Kim, 23 Nov 2026): Google Sheet "Master Data - All - For Apps" ----
+const MD_SHEET_DEFAULT = '1AtbdmWOJbYbiXD4vbpz6h5W3G2WWiek_grt1FeQ8hEc';   // Script property MASTER_SHEET_ID wins
+let MD_BOOK_ = null;
+/** A tab of the master file, or null when it can't be opened (then the app falls back to its old tab). */
+function mdTab_(name) {
+  try {
+    if (!MD_BOOK_) MD_BOOK_ = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT);
+    return MD_BOOK_.getSheetByName(name);
+  } catch (e) { console.warn('Master Data file: ' + e); return null; }
+}
+/** Old tab name -> tab in the master file. */
+const MD_MAP_ = { 'Truck': 'Truck', 'Type of Refill': 'Type of Refill', 'Equipment': 'Equipment' };
+function mdOf_(name) { return MD_MAP_[name] ? mdTab_(MD_MAP_[name]) : null; }
+
 let masterCache_ = null;   // read once per request
 
+/** The file that holds the employee list (the master file once it has an "Employee List" tab); its edits re-sync Users. */
+function empBookId_() { return mdTab_('Employee List') ? MD_BOOK_.getId() : (getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT); }
 function masterBook_() { return SpreadsheetApp.openById(getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT); }
 
 /** The "Employee & Approver" tab; columns named in need are added at the end when missing. */
 function master_(need) {
   const missing = (need || []).filter(h => !masterCache_ || masterCache_.header.indexOf(h) < 0);
   if (masterCache_ && !missing.length) return masterCache_;
-  const sh = masterBook_().getSheetByName(OT_EMP_TAB);
+  const sh = mdTab_('Employee List') || masterBook_().getSheetByName(OT_EMP_TAB);
   if (!sh) throw new Error('"' + OT_EMP_TAB + '" tab not found in SSK_OT_DATA.');
   const header = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
   const add = (need || []).filter(h => header.indexOf(h) < 0);
@@ -543,12 +559,12 @@ function syncUsersNow() {
 /** Every 10 minutes, and whenever someone edits SSK_OT_DATA. Made once from the home menu (or run setupUserSync). */
 function ensureUserSync_() {
   const props = PropertiesService.getScriptProperties();
-  const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
+  const id = empBookId_();
   if (props.getProperty('USYNC_TRIGGERS') === id) return;
   try { setupUserSync(); } catch (e) { console.log('User sync triggers: ' + e); }
 }
 function setupUserSync() {
-  const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
+  const id = empBookId_();
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'syncUsersNow').forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('syncUsersNow').timeBased().everyMinutes(10).create();
   ScriptApp.newTrigger('syncUsersNow').forSpreadsheet(id).onEdit().create();
@@ -574,7 +590,7 @@ let deptCache_ = null;   // read once per request
 function deptTable_() {
   if (deptCache_) return deptCache_;
   const ss = SpreadsheetApp.getActive();
-  let sheet = ss.getSheetByName(DEPT_SHEET);
+  let sheet = mdTab_('Department') || ss.getSheetByName(DEPT_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(DEPT_SHEET);
     sheet.getRange(1, 1, 1, 2).setValues([['Department', 'Function']]).setFontWeight('bold');
@@ -1620,7 +1636,7 @@ function setOdometer_(odo) {
   lock.waitLock(20000);
   try {
     const ss = SpreadsheetApp.getActive();
-    const sheet = ss.getSheetByName(SHEETS.TRUCK) || ss.getSheetByName(SHEETS.DRIVER_TRUCK);
+    const sheet = mdTab_('Truck') || ss.getSheetByName(SHEETS.TRUCK) || ss.getSheetByName(SHEETS.DRIVER_TRUCK);
     const lastCol = sheet.getLastColumn();
     const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
     const codeCol = header.indexOf(DT_PLATE);
@@ -2413,7 +2429,7 @@ function addNewNames_(p) {
     sheet.getRange(rowNum, 1, 1, header.length).setValues([header.map(h => data[h] === undefined ? '' : data[h])]);
   };
   // A new truck goes to the Truck tab (one row per plate); a new driver goes to Driver & Truck with it as usual truck.
-  const truckTab = ss.getSheetByName(SHEETS.TRUCK);
+  const truckTab = mdTab_('Truck') || ss.getSheetByName(SHEETS.TRUCK);
   if (truckTab && wantPlate && row[DT_PLATE] && !lists.plates.some(x => x.toUpperCase() === String(row[DT_PLATE]).toUpperCase())) {
     append(truckTab, { CODE: row[DT_PLATE], 'ក្រុមហ៊ុន': row['ក្រុមហ៊ុន'] || 'ISI Steel', 'Odometer Broken?': 'No' });
   }
@@ -2511,7 +2527,7 @@ function readTable_(name) {
 }
 
 function readTableNow_(name) {
-  const sheet = SpreadsheetApp.getActive().getSheetByName(name);
+  const sheet = mdOf_(name) || SpreadsheetApp.getActive().getSheetByName(name);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const values = sheet.getDataRange().getValues();
   const header = values.shift().map(h => String(h).trim());
@@ -3383,7 +3399,7 @@ function umDeptSave_(p, user) {
   lock.waitLock(20000);
   const lines = [];
   try {
-    const sheet = SpreadsheetApp.getActive().getSheetByName(DEPT_SHEET);
+    const sheet = mdTab_('Department') || SpreadsheetApp.getActive().getSheetByName(DEPT_SHEET);
     let header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
     const lower = () => header.map(h => h.toLowerCase());
     const dc = Math.max(0, lower().findIndex(h => h.indexOf('department') >= 0 || h.indexOf('ផ្នែក') >= 0));
@@ -3431,7 +3447,7 @@ function umDeptSave_(p, user) {
 // ---- OT line manager (the OT app's own sheet) ----
 function otEmpSheet_() {
   const id = getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT;
-  const sh = SpreadsheetApp.openById(id).getSheetByName(OT_EMP_TAB);
+  const sh = mdTab_('Employee List') || SpreadsheetApp.openById(id).getSheetByName(OT_EMP_TAB);
   if (!sh) throw new Error('"' + OT_EMP_TAB + '" tab not found in the OT sheet.');
   const values = sh.getDataRange().getValues();
   const keys = (values[0] || []).map(h => String(h).toLowerCase().replace(/[^a-z0-9]/g, ''));
