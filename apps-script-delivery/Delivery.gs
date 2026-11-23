@@ -79,7 +79,7 @@ function route_(action, p, user) {
     case 'trip': return tripDetail_(p.tripId, user);
     case 'record': return record_(p, user);
     case 'attach': return attach_(p, user);
-    case 'dn': return dnDetail_(p.dn);
+    case 'dn': return dnDetail_(p.dn, p.lite);
     case 'search': return search_(p);
     case 'history': return history_(p);
     case 'deleteEntry': need_(user, 'supervisor'); return deleteEntry_(p, user);
@@ -658,12 +658,13 @@ function dnsInfo_(dns, dnRows, plan) {
   return out;
 }
 
-function dnDetail_(dn) {
+function dnDetail_(dn, lite) {
   dn = normDn(dn);
   if (!dn) fail_('BAD', 'Type a DN number.', 'សូមវាយលេខ DN។');
   const plan = plan_();
   const rows = rowsWhere_('dn', [dn]);
   const info = dnsInfo_([dn], rows, plan)[dn];
+  if (lite) return info;   // typing a DN at Start Loading / driver scan: plan, legs and open trips only (fast)
   info.rows = rows.sort((a, b) => a.time - b.time);
   info.complaints = complaints_({ dn: dn }).items;
   info.siteRatings = siteRatingsOf_(dn);
