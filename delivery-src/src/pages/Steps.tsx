@@ -103,7 +103,7 @@ function WarehouseList() {
               <b className="block text-[20px] font-extrabold tracking-wide">{x.plate}</b>
               <small className="muted">{t('ចូល ', 'In ') + fmtTime(x.gateIn)}</small>
             </span>
-            <span className={'text-[12.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ' + (n === 5 ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>{n === 5 ? t('រង់ចាំថ្លឹងចេញ', 'Wait Gate Out') : n === 2 ? t('រង់ចាំឃ្លាំង', 'Waiting for warehouse') : stepName(n) + (x.wh ? ' · ' + x.wh : '')}</span>
+            <span className={'text-[12.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ' + (n === 5 ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>{n === 5 ? t('រង់ចាំថ្លឹងចេញ', 'Wait Gate Out') : n === 2 ? t('រង់ចាំឃ្លាំង', 'Waiting for warehouse') : t('ជំហានបន្ទាប់៖ ', 'Next step: ') + stepName(n) + (x.wh ? ' · ' + x.wh : '')}</span>
           </button>
         );
       })}
@@ -165,7 +165,8 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   const office = OFFICE.indexOf(boot.user.roleKey) >= 0;
   const canCancel = !trip.closed && office && boot.events.some(e => e.code === 10 && e.can);   // drivers and warehouse see only their step
   const done = tripDone(trip), cur = Math.min(done + 1, 9);
-  const chip = trip.closed ? L(boot.stages[trip.stage]) || trip.stage : stepName(cur) + (!trip.gateOut && trip.wh && cur >= 3 ? ' · ' + trip.wh : '');
+  // Kim (24 Nov 2026): say "Next step" so the chip is not read as the current status.
+  const chip = trip.closed ? L(boot.stages[trip.stage]) || trip.stage : t('ជំហានបន្ទាប់៖ ', 'Next step: ') + stepName(cur) + (!trip.gateOut && trip.wh && cur >= 3 ? ' · ' + trip.wh : '');
   return (
     <>
       {/* Kim's picks (23 Nov 2026): W2–W4 A / D1–D4 header = plate + step + bar; O1 B adds driver, times and the stops. */}
