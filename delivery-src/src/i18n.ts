@@ -50,3 +50,6 @@ export function ago(ms?: number | null) {
   return Math.floor(h / 24) + t(' ថ្ងៃមុន', ' d ago');
 }
 export const kg = (n?: number) => (n ? Math.round(n).toLocaleString('en-US') + ' kg' : '–');
+
+/** A driver's name without the Employee ID (Kim, 24 Nov 2026: hide Employee ID everywhere), e.g. "Me Votha 100069" -> "Me Votha". */
+export const noId = (s?: string | null) => String(s || '').replace(/\s*[(\[]?\b\d{5,7}\b[)\]]?\s*$/, '').trim();

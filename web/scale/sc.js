@@ -862,7 +862,7 @@
       list: () => {
         const tr3 = truckOf(F.plate), seen = {}, out = [];
         ((tr3 && tr3.drivers) || []).forEach(d => { if (d && !seen[d]) { seen[d] = 1; out.push({ v: d, sub: '🚚 ' + (tr3.plate || '') }); } });
-        ((B && B.drivers) || []).forEach(d => { if (d[0] && !seen[d[0]]) { seen[d[0]] = 1; out.push({ v: d[0], sub: [d[1] !== d[0] ? d[1] : '', d[2]].filter(Boolean).join(' · ') }); } });
+        ((B && B.drivers) || []).forEach(d => { if (d[0] && !seen[d[0]]) { seen[d[0]] = 1; out.push({ v: d[0], sub: d[1] !== d[0] ? d[1] : '' }); } });
         return out;
       }, addNew: true, onPick: v => { upd('driver', v || ''); paintForm(); },
     });

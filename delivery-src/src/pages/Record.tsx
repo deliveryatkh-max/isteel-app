@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { L, t, useLang, kg as fmtKg } from '../i18n';
+import { L, t, useLang, kg as fmtKg, noId } from '../i18n';
 import { go, openTrips, tripHref, useApp, useRoute } from '../state';
 import type { EventDef, PlanRow, TripSummary } from '../types';
 import { Alert, Badge, Opt, PhotoInput, Picker, Segmented, toast } from '../components/ui';
@@ -92,7 +92,7 @@ export function RecordPage() {
     if (truckType === 'isi') return boot.plates.map(p => ({ value: p.plate, label: '🏭 ' + p.plate, sub: p.type }));
     const isi = new Set(boot.plates.map(p => p.plate));
     return (boot.trucks || []).filter(x => x.type === truckType && !isi.has(x.plate))
-      .map(x => ({ value: x.plate, label: (x.type === 'customer' ? '🧑‍💼 ' : '🚛 ') + x.plate, sub: [x.co, x.driver].filter(Boolean).join(' · ') }));
+      .map(x => ({ value: x.plate, label: (x.type === 'customer' ? '🧑‍💼 ' : '🚛 ') + x.plate, sub: [x.co, noId(x.driver)].filter(Boolean).join(' · ') }));
   }, [boot.plates, boot.trucks, truckType, lang]);
   function chooseType(v: 'isi' | 'rented' | 'customer') {
     setTruckType(v);
@@ -101,7 +101,7 @@ export function RecordPage() {
   }
   const driverOpts: Opt[] = useMemo(() => {
     const mineFirst = boot.drivers.slice().sort((a, b) => Number(b.plate === plate) - Number(a.plate === plate));
-    return mineFirst.map(d => ({ value: d.name, label: d.name, sub: [d.plate, d.co].filter(Boolean).join(' · ') }));
+    return mineFirst.map(d => ({ value: d.name, label: noId(d.name), sub: [d.plate, d.co].filter(Boolean).join(' · ') }));
   }, [boot.drivers, plate]);
   const tripOpts: Opt[] = useMemo(() => trips.filter(x => tripFitsStep(x, code)).map(x => ({ value: x.id, label: x.plate + ' · ' + x.round, sub: x.id + ' · ' + L(boot.stages[x.stage]) + (x.dns.length ? ' · ' + x.dns.map(d => d.dn).join(', ') : '') })), [trips, lang, code]);
   const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
@@ -313,7 +313,7 @@ export function RecordPage() {
             <Picker id="trip" value={tripId} options={tripOpts} onChange={v => setTripId(v)} bad={!!miss.trip} placeholder={t('ជ្រើសរើសឡាន / ជើងដឹក', 'Choose the truck / trip')} />
             {trip ? (
               <div className="flex flex-wrap items-center gap-2 mt-2 text-[13.5px]">
-                <Badge k={trip.stage} label={boot.stages[trip.stage]} /><span className="muted">{trip.id}</span>{trip.driver ? <span className="muted">· 👷 {trip.driver}</span> : null}
+                <Badge k={trip.stage} label={boot.stages[trip.stage]} /><span className="muted">{trip.id}</span>{trip.driver ? <span className="muted">· 👷 {noId(trip.driver)}</span> : null}
               </div>
             ) : !trips.length ? <p className="muted text-sm mt-2 mb-0">{t('មិនមានជើងដឹកកំពុងដំណើរការ។ ចាប់ផ្តើមដោយ ចូលថ្លឹង។', 'No open trips. Start one with Gate In.')}</p> : null}
           </Field>
