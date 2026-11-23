@@ -103,7 +103,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
             </section>
             {d!.legs.unloading ? (
               // Kim's 9-step flow (22 Nov 2026): each DN shows its own next step, as on the signed-in screen.
-              <DriverSteps trip={tr as unknown as TripSummary} truckType="" sites={d!.sites} link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
+              <DriverSteps trip={tr as unknown as TripSummary} truckType="" sites={d!.sites} rateAll={d!.rate} siteRatedAll={d!.siteRated} link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
             ) : !open.length ? <Alert tone="ok">{t('DN ទាំងអស់បានកត់ត្រារួច។ សូមអរគុណ!', 'All DNs are recorded. Thank you!')}</Alert> : (
               <>
                 <Section icon="🧭" title={t('ជំហាន', 'Step')} color={lk.color}>
@@ -157,8 +157,8 @@ export function DriverPage(p: { tripId: string; k: string }) {
                 <button type="button" data-testid="save" className="btn w-full text-[17px] font-bold text-white border-0 min-h-[54px] mb-6 shadow-md" style={{ background: lk.color }} disabled={sub.sending} onClick={send}>{sub.sending ? '⏳ ' + t('កំពុងរក្សាទុក…', 'Saving…') : lk.icon + ' ' + t('កត់ត្រា', 'Record')}</button>
               </>
             )}
-            {d!.rate ? <RateLinks tripId={tr.id} links={d!.rate} /> : null}
-            {d!.rate ? <SiteRateForm key={n} dns={Object.keys(d!.rate).filter(dn => (d!.siteRated || []).indexOf(dn) < 0)}
+            {d!.rate && !d!.legs.unloading ? <RateLinks tripId={tr.id} links={d!.rate} /> : null}
+            {d!.rate && !d!.legs.unloading ? <SiteRateForm key={n} dns={Object.keys(d!.rate).filter(dn => (d!.siteRated || []).indexOf(dn) < 0)}
               send={body => api('drvSiteRate', Object.assign({ t: p.tripId, k: p.k }, body), { noAuth: true })} onDone={() => setN(n + 1)} /> : null}
           </>
         ) : null}

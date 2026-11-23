@@ -447,22 +447,58 @@ export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reloa
  * Driver steps 6–9 per stop (Kim, 23 Nov 2026): DNs to the same customer at the same step are recorded once together.
  * D2 B: map + route before arrival; D3 B: one arrival photo for the stop; D4 A: one Delivered form, untick a DN that is not delivered.
  */
-export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink; sites?: Record<string, string> }) {
+export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink; sites?: Record<string, string>; rateAll?: Record<string, string>; siteRatedAll?: string[] }) {
   const trip = p.trip;
   // After Delivered: the customer rating QR and the site rating stay on screen (the stop itself moves on).
   const [rate, setRate] = useState<Record<string, string> | null>(null);
   const [siteRated, setSiteRated] = useState(false);
+  const [cur, setCur] = useState(p.dn || '');
+  const [scan, setScan] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [scanErr, setScanErr] = useState('');
+  useEffect(() => { if (p.dn) setCur(p.dn); }, [p.dn]);
   if (!trip.gateOut) return <Alert tone="info">⏳ {t('រង់ចាំឡានថ្លឹងចេញនៅជញ្ជីង មុនពេលចេញដឹក។', 'Waiting for Gate Out at the scale before delivery.')}</Alert>;
-  const after = rate && Object.keys(rate).length ? (
+  const stops = groupStops(trip.dns.filter(d => d.leg !== 'canceled'), true);
+  // Kim (24 Nov 2026): at each customer the driver scans a DN; only that customer's stop is shown, never the others.
+  const sp = cur ? stops.find(x => x.dns.some(d => d.dn === cur)) : undefined;
+  // Rating links from the link page: only this customer's DNs (never another customer's DN).
+  const spRate: Record<string, string> = {};
+  if (!rate && sp && p.rateAll) sp.dns.forEach(d => { if (p.rateAll![d.dn]) spRate[d.dn] = p.rateAll![d.dn]; });
+  const shown = rate || spRate;
+  const siteLeft = Object.keys(shown).filter(dn => rate || (p.siteRatedAll || []).indexOf(dn) < 0);
+  const after = Object.keys(shown).length ? (
     <>
-      <RateLinks tripId={trip.id} links={rate} open />
-      {!siteRated ? <SiteRateForm dns={Object.keys(rate)} send={p.link ? (body: any) => api('drvSiteRate', Object.assign({ t: p.link!.t, k: p.link!.k }, body), { noAuth: true }) : siteRateSigned(trip.id)} onDone={() => setSiteRated(true)} /> : null}
+      <RateLinks tripId={trip.id} links={shown} open={!!rate} />
+      {!siteRated && siteLeft.length ? <SiteRateForm dns={siteLeft} send={p.link ? (body: any) => api('drvSiteRate', Object.assign({ t: p.link!.t, k: p.link!.k }, body), { noAuth: true }) : siteRateSigned(trip.id)} onDone={() => setSiteRated(true)} /> : null}
     </>
   ) : null;
-  const stops = groupStops(trip.dns.filter(d => d.leg !== 'canceled'), true)
-    .sort((a, b) => Number(b.dns.some(d => d.dn === p.dn)) - Number(a.dns.some(d => d.dn === p.dn)) || Number(!!b.step) - Number(!!a.step));
-  const first = (stops.find(x => x.step) || { key: '' }).key;
-  return <>{!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}{stops.map(sp => <StopStep key={sp.key + sp.dns.map(d => d.dn + d.leg).join()} trip={trip} truckType={p.truckType} stop={sp} open={sp.key === first} link={p.link} onRate={o => { setRate(o); setSiteRated(false); }} site={sp.dns.map(d => (p.sites || {})[d.dn]).filter(Boolean)[0] || ''} />)}{after}</>;
+  const left = stops.filter(x => x.step && x !== sp).length;
+  const pick = (raw: string) => {
+    const d = cleanDn(raw);
+    setScan(false); setTyped('');
+    if (!d) return;
+    if (!stops.some(x => x.dns.some(z => z.dn === d))) { beep(); setScanErr(t('DN ' + d + ' មិននៅលើឡាននេះទេ។', 'DN ' + d + ' is not on this truck.')); return; }
+    setScanErr(''); setRate(null); setSiteRated(false); setCur(d);
+  };
+  const scanCard = (
+    <div className="card">
+      <b className="block text-[16px] mb-1">📷 {sp ? t('ស្កេន DN នៅអតិថិជនបន្ទាប់', 'Scan a DN at the next customer') : t('ស្កេន DN នៅអតិថិជននេះ', 'Scan a DN at this customer')}</b>
+      <small className="muted block mb-2">{left ? t('នៅសល់ ' + left + ' កន្លែងទំលាក់', left + ' drop(s) left') : t('គ្មានកន្លែងទំលាក់ទៀតទេ', 'No more drops')}</small>
+      {scanErr ? <div className="mb-2"><Alert tone="bad">⚠️ {scanErr}</Alert></div> : null}
+      <div className="flex gap-2">
+        <button type="button" className="btn btn-primary flex-1" onClick={() => setScan(true)}>📷 {t('ស្កេន DN', 'Scan DN')}</button>
+        <input className="in flex-1 min-w-0" inputMode="numeric" placeholder={t('ឬវាយលេខ DN', 'or type the DN')} value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') pick(typed); }} />
+        {typed ? <button type="button" className="btn" onClick={() => pick(typed)}>OK</button> : null}
+      </div>
+      {scan ? <Scanner onCode={pick} onClose={() => setScan(false)} /> : null}
+    </div>
+  );
+  return <>
+    {!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}
+    {sp ? <StopStep key={sp.key + sp.dns.map(d => d.dn + d.leg).join()} trip={trip} truckType={p.truckType} stop={sp} open link={p.link} onRate={o => { setRate(o); setSiteRated(false); }} site={sp.dns.map(d => (p.sites || {})[d.dn]).filter(Boolean)[0] || ''} /> : null}
+    {after}
+    {!sp || (!sp.step && left) ? scanCard : null}
+  </>;
 }
 
 function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: boolean; link?: DrvLink; site: string; onRate: (o: Record<string, string>) => void }) {
