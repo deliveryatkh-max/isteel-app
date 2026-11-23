@@ -643,3 +643,17 @@ test('master file (Master Data - All - For Apps) wins over the old Warehouse Lis
   const b = ok(e.call('boot', {}, ADMIN));
   assert.deepStrictEqual(b.warehouses, ['G9']);
 });
+
+test('same DN loaded at a 2nd warehouse on the same truck: warning only (Kim, 23 Nov 2026)', () => {
+  const e = env(); e.run('setup()');
+  const t = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', ticket: 'T9' }, GUARD)).tripId;
+  v2Load(e, t, 'PNP1', ['9000000001'], 1200);
+  step(e);
+  const w = rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', dns: [{ dn: '9000000001' }] });
+  assert.ok(w.ok && w.data.needConfirm && w.data.needConfirm.some(x => x.code === 'DN_SECOND_PICKUP'), JSON.stringify(w));
+  ok(rec(e, WH, { v2: true, code: 5, tripId: t, wh: 'PNP2', dns: [{ dn: '9000000001' }], confirm: ['DN_SECOND_PICKUP', 'DN_DUPLICATE', 'DN_NOT_IN_PLAN', 'PLAN_OTHER_TRUCK'] }));
+  step(e); ok(rec(e, WH, { v2: true, code: 6, tripId: t, wh: 'PNP2', kg: 800, photo: PHOTO }));
+  const s = ok(e.call('trip', { tripId: t }, ADMIN)); const tr = s.trip || s;
+  assert.deepStrictEqual((tr.dns || []).map(d => d.dn), ['9000000001'], 'still one DN on the trip');
+  assert.strictEqual(tr.dns[0].loadKg, 2000, 'kg from both warehouses adds up');
+});
