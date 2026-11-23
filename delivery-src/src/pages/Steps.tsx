@@ -106,11 +106,11 @@ function WarehouseList() {
         return (
           <button key={x.id} type="button" className="card w-full text-left flex items-center gap-3 cursor-pointer" onClick={() => go('/steps/' + encodeURIComponent(x.id))}>
             {/* Kim's W1 A (23 Nov 2026): plate, time in, one status chip. */}
-            <span className="flex-1 min-w-0">
-              <b className="block text-[20px] font-extrabold tracking-wide">{x.plate}</b>
+            <span className="flex-1 shrink-0">
+              <b className="block text-[20px] font-extrabold tracking-wide whitespace-nowrap">{x.plate}</b>
               <small className="muted">{t('ចូល ', 'In ') + fmtTime(x.gateIn)}</small>
             </span>
-            <span className={'text-[12.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ' + (n === 5 ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>{n === 5 ? t('រង់ចាំថ្លឹងចេញ', 'Wait Gate Out') : n === 2 ? t('រង់ចាំឃ្លាំង', 'Waiting for warehouse') : t('ជំហានបន្ទាប់៖ ', 'Next step: ') + stepName(n) + (x.wh ? ' · ' + x.wh : '')}</span>
+            <span className={'text-[12.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap min-w-0 overflow-hidden text-ellipsis ' + (n === 5 ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>{n === 5 ? t('រង់ចាំថ្លឹងចេញ', 'Wait Gate Out') : n === 2 ? t('រង់ចាំឃ្លាំង', 'Waiting for warehouse') : t('ជំហានបន្ទាប់៖ ', 'Next step: ') + stepName(n) + (x.wh ? ' · ' + x.wh : '')}</span>
           </button>
         );
       })}
@@ -178,9 +178,10 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
     <>
       {/* Kim's picks (23 Nov 2026): W2–W4 A / D1–D4 header = plate + step + bar; O1 B adds driver, times and the stops. */}
       <div className="card">
-        <div className="flex items-center justify-between gap-2">
-          <b className="text-[22px] font-extrabold tracking-wide">{trip.plate}</b>
-          <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn text-right" data-chip="step">{chip}</span>
+        {/* Kim (24 Nov 2026): plate never wraps on a phone; the chip drops to the next line when it does not fit. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <b className="text-[22px] font-extrabold tracking-wide whitespace-nowrap shrink-0">{trip.plate}</b>
+          <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn whitespace-nowrap max-w-full overflow-hidden text-ellipsis" data-chip="step">{chip}</span>
         </div>
         {office ? <small className="muted block">{[noId(trip.driver), detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
         <StepBar done={done} />
