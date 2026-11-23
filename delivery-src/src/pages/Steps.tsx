@@ -307,9 +307,8 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const base = { tripId: trip.id, truckType: p.truckType };
   const label = (k: number) => stepName(k) + ' · ' + trip.plate;
   // Kim (22 Nov 2026): a DN already on another trip is flagged as soon as it is typed or scanned, not at Record.
-  // Others cannot add it; a Supervisor / Admin may (the server asks them to confirm).
-  const approver = boot.user.roleKey === 'admin' || boot.user.roleKey === 'supervisor';
-  const usedMsg = (d: string, ids: string[]) => t('DN ' + d + ' មាននៅលើជើងដឹក ' + ids.join(', ') + ' រួចហើយ។', 'DN ' + d + ' is already on trip ' + ids.join(', ') + '.') + (approver ? '' : ' ' + t('សូមឲ្យ Supervisor ឬ Admin កត់ត្រា។', 'Ask a Supervisor or Admin to record it.'));
+  // Kim (23 Nov 2026): one DN may have several pickups, so it is only a warning; anyone can still add it.
+  const usedMsg = (d: string, ids: string[]) => t('DN ' + d + ' មាននៅលើជើងដឹក ' + ids.join(', ') + ' រួចហើយ។', 'DN ' + d + ' is already on trip ' + ids.join(', ') + '.');
   const addDn = async (raw: string) => {
     const d = cleanDn(raw);
     setDnIn('');
@@ -336,7 +335,6 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     if (used.length) {
       beep();
       setDnErr(usedMsg(d, used));
-      if (!approver) return;
     }
     setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
   };
@@ -393,7 +391,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
               <button type="button" className="btn" onClick={() => addDn(dnIn)}>➕</button>
               <button type="button" className="btn" onClick={() => setScan(true)}>📷</button>
             </div>
-            {dnErr ? <div className="mt-2"><Alert tone={approver ? 'warn' : 'bad'}>⚠️ {dnErr}</Alert></div> : null}
+            {dnErr ? <div className="mt-2"><Alert tone="warn">⚠️ {dnErr}</Alert></div> : null}
             <div className="flex flex-wrap gap-2 mt-2">
               {dns.map(d => <button key={d} type="button" className="chip chip-on" onClick={() => setDns(dns.filter(x => x !== d))}>{d} ✕</button>)}
             </div>

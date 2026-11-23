@@ -140,10 +140,10 @@ test('6, 7, 8, 9: split DN over two trips (Kim example), customer stops, statuse
   step(e, 60);
   const t2 = gateIn(e, 'TEST-0001').tripId;
   assert.notStrictEqual(t2, t1);
-  // Kim (22 Nov 2026): a DN already on another trip is refused, unless a Supervisor or Admin confirms it.
-  const refused = rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] });
-  assert.ok(!refused.ok && /^DN_DUPLICATE/.test(refused.error), refused.error);
-  step(e); ok(rec(e, SUP, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE'] }));
+  // Kim (23 Nov 2026): a DN already on another trip is only a warning, for every role.
+  const warned = rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }] });
+  assert.ok(warned.ok && warned.data.needConfirm && warned.data.needConfirm[0].code === 'DN_DUPLICATE', JSON.stringify(warned));
+  step(e); ok(rec(e, LOGI, { code: 2, tripId: t2, dns: [{ dn: '9000000002' }], confirm: ['DN_DUPLICATE'] }));
   loadRest(e, t2);
   step(e, 20); ok(rec(e, ADMIN, { code: 8, tripId: t2, dns: [{ dn: '9000000002' }] }));
   step(e); ok(rec(e, ADMIN, { code: 9, tripId: t2, dns: [{ dn: '9000000002', kg: 1200 }] }));
