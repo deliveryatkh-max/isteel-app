@@ -232,19 +232,41 @@ function proofFor_(tripId) {
 }
 
 // ---------------------------------------------------------------- customer sites (location check)
+// Kim (24 Nov 2026): one place for a customer's location, the "Customer Latlong" column of the master Customer tab.
+// The old Customer Site tab was merged into it and is only read when the Customer tab has no such column.
+const CUST_LL = 'Customer Latlong';
+function custTab_() {
+  const rows = xrows_(SH.CUST);
+  const has = rows.length ? Object.prototype.hasOwnProperty.call(rows[0], CUST_LL) : false;
+  const byId = {};
+  rows.forEach(r => { const id = text_(r['Customer ID']).replace(/\.0+$/, ''); if (id && !byId[id]) byId[id] = r; });
+  return { rows: rows, has: has, byId: byId };
+}
 function sites_() {
-  const out = {};
-  xrows_(XT.SITES).forEach(r => { const id = text_(r['Customer ID']).replace(/\.0+$/, ''); if (id && r.LatLong) out[id] = { latlong: text_(r.LatLong), row: r._row, name: text_(r['Customer Name']) }; });
-  // Kim (24 Nov 2026): a customer with a "Customer Latlong" in the Customer master but no Customer Site row still has a site
-  // (no row: moving it from the trip screen adds a Customer Site row).
-  try {
-    const cu = table_(SH.CUST), cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name'), cLl = col_(cu.head, 'Customer Latlong');
-    if (cId >= 0 && cLl >= 0) cu.rows.forEach(r => {
-      const id = text_(r[cId]).replace(/\.0+$/, ''), ll = text_(r[cLl]).replace(/\s+/g, '');
-      if (id && !out[id] && distanceKm(ll, ll) != null) out[id] = { latlong: ll, row: 0, name: cName >= 0 ? text_(r[cName]) : '' };
+  const out = {}, cu = custTab_();
+  if (cu.has) {
+    Object.keys(cu.byId).forEach(id => {
+      const r = cu.byId[id], ll = text_(r[CUST_LL]).replace(/\s+/g, '');
+      if (distanceKm(ll, ll) != null) out[id] = { latlong: ll, row: r._row, name: text_(r['Customer Name']) };
     });
-  } catch (e) { console.warn('Customer Latlong: ' + e); }
+    return out;
+  }
+  xrows_(XT.SITES).forEach(r => { const id = text_(r['Customer ID']).replace(/\.0+$/, ''); if (id && r.LatLong) out[id] = { latlong: text_(r.LatLong), row: r._row, name: text_(r['Customer Name']), old: true }; });
   return out;
+}
+/** Saves a customer's location: their Customer row (a new row when the customer is not in the list yet). */
+function saveSite_(id, name, ll, by) {
+  const cu = custTab_();
+  if (!cu.has) {   // master Customer tab without the column: old Customer Site tab
+    const s = xrows_(XT.SITES).find(r => text_(r['Customer ID']).replace(/\.0+$/, '') === id);
+    if (s) { xset_(XT.SITES, s._row, 'LatLong', ll); xset_(XT.SITES, s._row, 'Set By', by); xset_(XT.SITES, s._row, 'Set Time', now_()); }
+    else xappend_(XT.SITES, { 'Customer ID': id, 'Customer Name': name, LatLong: ll, 'Set By': by, 'Set Time': now_() });
+    return;
+  }
+  const r = cu.byId[id];
+  if (r) { xset_(SH.CUST, r._row, CUST_LL, ll); return; }
+  const no = cu.rows.reduce((m, x) => Math.max(m, Number(x.No) || 0), 0) + 1;
+  xappend_(SH.CUST, { No: no, 'Customer ID': id, 'Customer Name': name, [CUST_LL]: ll });
 }
 /** First delivery with a location sets the customer site (Logistics can move it later). */
 function learnSites_(rows, email) {
@@ -252,7 +274,7 @@ function learnSites_(rows, email) {
   rows.forEach(r => {
     const id = custIdOf(r.cust);
     if (!id || !r.latlong || sites[id]) return;
-    xappend_(XT.SITES, { 'Customer ID': id, 'Customer Name': String(r.cust).replace(/^\s*\d+\s*-\s*/, ''), LatLong: r.latlong, 'Set By': 'first delivery: ' + email, 'Set Time': now_() });
+    saveSite_(id, String(r.cust).replace(/^\s*\d+\s*-\s*/, ''), r.latlong, 'first delivery: ' + email);
     sites[id] = { latlong: r.latlong };
   });
 }
@@ -273,8 +295,8 @@ function setSite_(p, user) {
   if (!/^\d{6,}$/.test(id) || distanceKm(ll, ll) == null) fail_('BAD', 'Customer or location is missing.', 'ខ្វះអតិថិជន ឬទីតាំង។');
   return withLock_(() => {
     const s = sites_()[id];
-    if (s && s.row) { audit_(user.email, 'Customer site', '', '', id, s.latlong, ll, String(p.reason || 'Moved from trip screen')); xset_(XT.SITES, s.row, 'LatLong', ll); xset_(XT.SITES, s.row, 'Set By', user.email); xset_(XT.SITES, s.row, 'Set Time', now_()); }
-    else xappend_(XT.SITES, { 'Customer ID': id, 'Customer Name': String(p.custName || ''), LatLong: ll, 'Set By': user.email, 'Set Time': now_() });
+    if (s) audit_(user.email, 'Customer site', '', '', id, s.latlong, ll, String(p.reason || 'Moved from trip screen'));
+    saveSite_(id, String(p.custName || (s && s.name) || ''), ll, user.email);
     return { ok: true };
   });
 }
