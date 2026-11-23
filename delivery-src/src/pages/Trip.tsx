@@ -55,7 +55,8 @@ export function TripPage(p: { id: string }) {
 }
 
 /** Trip details below the header: DNs, driver link + QR, proof, rating links and the timeline (with photos, location, delete). */
-export function TripSections(p: { d: TripDetail; reload: () => void; hideTimeline?: boolean; hideDns?: boolean }) {
+/** show: 'links' = driver link, tracking and rating only; 'history' = proof and timeline only (Kim's O1 B, 23 Nov 2026). */
+export function TripSections(p: { d: TripDetail; reload: () => void; hideTimeline?: boolean; hideDns?: boolean; show?: 'links' | 'history' }) {
   useLang();
   const { boot, setBusy, refreshOps } = useApp();
   const d = p.d;
@@ -68,9 +69,10 @@ export function TripSections(p: { d: TripDetail; reload: () => void; hideTimelin
     catch (e: any) { toast(errText(e.message)); }
     finally { setBusy(false); }
   };
+  const links = p.show !== 'history', hist = p.show !== 'links';
   return (
     <>
-      {!p.hideDns && Object.keys(d.dnInfo).length ? (
+      {!p.hideDns && !p.show && Object.keys(d.dnInfo).length ? (
         <section className="card">
           <h2 className="text-[15px] font-bold mt-0 mb-2">{t('DN នៅលើជើងនេះ', 'DNs on this trip')}</h2>
           {d.dns.map(x => {
@@ -96,9 +98,9 @@ export function TripSections(p: { d: TripDetail; reload: () => void; hideTimelin
         </section>
       ) : null}
 
-      {d.driverLink ? <DriverLink tripId={d.id} token={d.driverLink} /> : null}
+      {links && d.driverLink ? <DriverLink tripId={d.id} token={d.driverLink} /> : null}
 
-      {d.proof && d.proof.length ? (
+      {hist && d.proof && d.proof.length ? (
         <section className="card">
           <h2 className="text-[15px] font-bold mt-0 mb-2">✍️ {t('ភស្តុតាងប្រគល់', 'Proof of delivery')}</h2>
           {d.proof.map(x => (
@@ -113,10 +115,10 @@ export function TripSections(p: { d: TripDetail; reload: () => void; hideTimelin
         </section>
       ) : null}
 
-      {d.track && Object.keys(d.track).length && !d.closed ? <TrackLinks tripId={d.id} links={d.track} join={d.tgJoin} done={Object.fromEntries(d.dns.filter(x => ['delivered', 'failed', 'canceled', 'moved'].indexOf(x.leg) >= 0).map(x => [x.dn, true]))} /> : null}
-      {d.rate && Object.keys(d.rate).length ? <RateLinks tripId={d.id} links={d.rate} /> : null}
+      {links && d.track && Object.keys(d.track).length && !d.closed ? <TrackLinks tripId={d.id} links={d.track} join={d.tgJoin} done={Object.fromEntries(d.dns.filter(x => ['delivered', 'failed', 'canceled', 'moved'].indexOf(x.leg) >= 0).map(x => [x.dn, true]))} /> : null}
+      {links && d.rate && Object.keys(d.rate).length ? <RateLinks tripId={d.id} links={d.rate} /> : null}
 
-      {p.hideTimeline ? null : <section className="card">
+      {p.hideTimeline || !hist ? null : <section className="card">
         <h2 className="text-[15px] font-bold mt-0 mb-2">{t('ប្រវត្តិជំហាន', 'Timeline')}</h2>
         <ol className="list-none m-0 p-0">
           {d.rows.map(r => (

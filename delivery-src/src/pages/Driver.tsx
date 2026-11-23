@@ -11,7 +11,7 @@ import type { TripSummary } from '../types';
 
 type DrvTrip = {
   trip: { id: string; plate: string; driver: string; round: string; stage: string; gateOut: number | null; closed?: boolean; dns: TripDn[] };
-  stages: Record<string, Label>; legs: Record<string, Label>; rate?: Record<string, string>; siteRated?: string[];
+  stages: Record<string, Label>; legs: Record<string, Label>; rate?: Record<string, string>; siteRated?: string[]; sites?: Record<string, string>;
 };
 const DONE = ['delivered', 'failed', 'canceled', 'moved'];
 
@@ -103,7 +103,7 @@ export function DriverPage(p: { tripId: string; k: string }) {
             </section>
             {d!.legs.unloading ? (
               // Kim's 9-step flow (22 Nov 2026): each DN shows its own next step, as on the signed-in screen.
-              <DriverSteps trip={tr as unknown as TripSummary} truckType="" link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
+              <DriverSteps trip={tr as unknown as TripSummary} truckType="" sites={d!.sites} link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
             ) : !open.length ? <Alert tone="ok">{t('DN ទាំងអស់បានកត់ត្រារួច។ សូមអរគុណ!', 'All DNs are recorded. Thank you!')}</Alert> : (
               <>
                 <Section icon="🧭" title={t('ជំហាន', 'Step')} color={lk.color}>
