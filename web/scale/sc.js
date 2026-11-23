@@ -401,7 +401,7 @@
     function paint() {
       const q = norm(input.value);
       const all = opts.list();
-      items = all.filter(x => !q || norm(x.v).indexOf(q) >= 0 || norm(x.sub).indexOf(q) >= 0).slice(0, 40);
+      items = all.filter(x => !q || norm(x.v).indexOf(q) >= 0 || norm(x.sub).indexOf(q) >= 0 || norm(x.key).indexOf(q) >= 0).slice(0, 40);   // key: searchable, not shown (Employee ID)
       const exact = all.some(x => norm(x.v) === q);
       const fx = opts.fix || (v => v);
       const add = opts.addNew && q && !exact ? fx(input.value.trim()) : '';
@@ -862,7 +862,7 @@
       list: () => {
         const tr3 = truckOf(F.plate), seen = {}, out = [];
         ((tr3 && tr3.drivers) || []).forEach(d => { if (d && !seen[d]) { seen[d] = 1; out.push({ v: d, sub: '🚚 ' + (tr3.plate || '') }); } });
-        ((B && B.drivers) || []).forEach(d => { if (d[0] && !seen[d[0]]) { seen[d[0]] = 1; out.push({ v: d[0], sub: d[1] !== d[0] ? d[1] : '' }); } });
+        ((B && B.drivers) || []).forEach(d => { if (d[0] && !seen[d[0]]) { seen[d[0]] = 1; out.push({ v: d[0], sub: d[1] !== d[0] ? d[1] : '', key: d[2] || '' }); } });
         return out;
       }, addNew: true, onPick: v => { upd('driver', v || ''); paintForm(); },
     });
