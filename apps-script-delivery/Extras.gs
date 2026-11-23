@@ -675,17 +675,28 @@ function tgChats_() {
   return out;
 }
 function trackMessage_(dn, tripId, info) {
+  // Kim's wording (24 Nov 2026), Khmer only, with the driver's name and phone from Users.
+  const kg = info.kg ? '=' + Math.round(info.kg).toLocaleString('en-US') + ' kg' : '';
   return {
-    text: '🚚 ទំនិញរបស់អ្នកបានចេញពីរោងចក្រហើយ\nYour steel has left ISI Steel.\n\nDN ' + dn + (info.so ? ' · SO ' + info.so : '') + '\nឡាន / Truck ' + info.plate + (info.kg ? ' · ' + Math.round(info.kg).toLocaleString('en-US') + ' kg' : ''),
-    reply_markup: { inline_keyboard: [[{ text: '📍 មើលទីតាំងឡានផ្ទាល់ · Live map', url: trackLinkUrl_(dn, tripId) }]] },
+    text: '🚚 ទំនិញរបស់អ្នកបានចេញពីរោងចក្រ អាយ អេស អាយ ហើយ\n\n'
+      + '📄 លេខដឹក៖ DN ' + dn + kg + '\n'
+      + '🚛 ឡាន៖ ' + info.plate + '\n'
+      + '👷 អ្នកបើកបរ៖ ' + (info.driver || '-') + '\n'
+      + '📞 លេខទូរស័ព្ទ៖ ' + (info.phone || '-'),
+    reply_markup: { inline_keyboard: [[{ text: '📍 មើលទីតាំងឡានផ្ទាល់', url: trackLinkUrl_(dn, tripId) }]] },
   };
+}
+/** Driver name + phone for the Telegram message (same lookup as the live map page). */
+function trackDriver_(rows) {
+  const c = driverContact_((rows.filter(r => r.driver).pop() || {}).driver);
+  return { driver: c.name, phone: c.phone };
 }
 /** Gate Out: send each DN's live map link to the customer's joined chats (once per DN and trip). */
 function trackNotify_(tripId) {
   if (!prop_('TRACK_BOT_TOKEN')) return 0;
   const rows = rowsWhere_('trip', [tripId]);
   if (!rows.some(r => r.code === 7)) return 0;
-  const plan = plan_(), chats = tgChats_(), st = tripState(rows), cache = CacheService.getScriptCache();
+  const plan = plan_(), chats = tgChats_(), st = tripState(rows), cache = CacheService.getScriptCache(), drv = trackDriver_(rows);
   let sent = 0;
   Object.keys(st.dns).forEach(dn => {
     const d = st.dns[dn];
@@ -693,7 +704,7 @@ function trackNotify_(tripId) {
     const pl = plan[dn] || {};
     const to = chats[pl.custId || custIdOf(d.cust)] || [];
     to.forEach(chat => {
-      const m = trackMessage_(dn, tripId, { so: pl.so, plate: rows[0].plate, kg: d.loadKg || pl.kg });
+      const m = trackMessage_(dn, tripId, Object.assign({ so: pl.so, plate: rows[0].plate, kg: d.loadKg || pl.kg }, drv));
       const r = trackBot_('sendMessage', Object.assign({ chat_id: chat }, m));
       if (r && r.ok) sent++;
     });
@@ -737,7 +748,7 @@ function trackBotPoll() {
     Object.keys(byTrip).forEach(tripId => {
       const rows = rowsWhere_('trip', [tripId]), st = tripState(rows);
       if (!st.gateOut || st.closed) return;
-      dns.filter(dn => st.dns[dn] && !LEG_DONE[st.dns[dn].leg]).forEach(dn => trackBot_('sendMessage', Object.assign({ chat_id: chat }, trackMessage_(dn, tripId, { so: plan[dn].so, plate: rows[0].plate, kg: st.dns[dn].loadKg || plan[dn].kg }))));
+      dns.filter(dn => st.dns[dn] && !LEG_DONE[st.dns[dn].leg]).forEach(dn => trackBot_('sendMessage', Object.assign({ chat_id: chat }, trackMessage_(dn, tripId, Object.assign({ so: plan[dn].so, plate: rows[0].plate, kg: st.dns[dn].loadKg || plan[dn].kg }, trackDriver_(rows))))));
     });
   });
 }

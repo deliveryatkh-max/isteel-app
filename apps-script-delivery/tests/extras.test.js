@@ -348,6 +348,7 @@ test('customer Telegram bot: join link saves the chat, Gate Out sends the live m
   const sent = e.telegram.filter(m => m.chat_id === '777');
   assert.strictEqual(sent.length, 1, JSON.stringify(e.telegram));
   assert.ok(/track\.html\?d=9000000001/.test(sent[0].reply_markup.inline_keyboard[0][0].url));
+  assert.ok(/អាយ អេស អាយ/.test(sent[0].text) && /DN 9000000001=[0-9,]+ kg/.test(sent[0].text) && /ឡាន៖ TEST-0001/.test(sent[0].text) && /អ្នកបើកបរ៖ Driver A/.test(sent[0].text), sent[0].text);
   assert.ok(e.run("trackNotify_('" + id + "')") === 0, 'not sent twice');
   const det = ok(e.call('trip', { tripId: id }, LOGI));
   assert.ok(/t\.me\/isisteellive_bot\?start=c6100000001_/.test(det.tgJoin['9000000001']));
