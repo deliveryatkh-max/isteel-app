@@ -399,3 +399,19 @@ test('customer site falls back to Customer Latlong in the Customer master', () =
   assert.strictEqual(s['6100000002'].latlong, '11.55,104.92');
   assert.ok(!s['6100000001']);
 });
+
+test('customer location lives in Customer Latlong: first delivery fills it, Logistics moves it, new customer gets a row', () => {
+  const f = fixture();
+  f['Customer'] = [['No', 'Customer ID', 'Customer Name', 'Customer Latlong'], [1, '6100000001', 'TEST Customer A', ''], [2, '6100000002', 'TEST Customer B', '']];
+  const e = makeEnv(f); e.run('setup()');
+  const t1 = trip(e, 'TEST-0001', ['9000000001']);
+  step(e, 40); ok(rec(e, ADMIN, { code: 9, tripId: t1, dns: [{ dn: '9000000001', kg: 1000 }], latlong: '11.5500,104.9200' }));
+  const cust = () => e.ss.getSheetByName('Customer').rows;
+  assert.strictEqual(cust()[1][3], '11.5500,104.9200');
+  assert.strictEqual(tab(e, 'Customer Sites').length, 0, 'old tab not written');
+  ok(e.call('setSite', { custId: '6100000001', latlong: '11.6050,104.9300', reason: 'real gate' }, LOGI));
+  assert.strictEqual(cust()[1][3], '11.6050,104.9300');
+  ok(e.call('setSite', { custId: '6100000099', custName: 'TEST New', latlong: '11.7,104.8' }, LOGI));
+  const last = cust()[cust().length - 1];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(last.slice(0, 4))), [3, '6100000099', 'TEST New', '11.7,104.8']);
+});
