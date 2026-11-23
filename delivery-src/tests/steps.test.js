@@ -137,6 +137,9 @@ const errors = [];
   await lc.locator('input[type=file]').first().setInputFiles([IMG]);
   await save(lp, lc.getByRole('button', { name: /Arrival at destination \(/ }));
   await lp.locator('[data-stop="9000000101"]').getByRole('button', { name: /Start unloading \(/ }).waitFor({ timeout: 10000 });
+  // Kim (24 Nov 2026): the scanned DN stays chosen after a reload (no re-scan for the next step)
+  await lp.reload();
+  await lp.locator('[data-stop="9000000101"]').getByRole('button', { name: /Start unloading \(/ }).waitFor({ timeout: 10000 });
   await lp.screenshot({ path: SHOTS + 'steps-05-driver-link.png', fullPage: true });
   console.log('PASS driver link uses the new steps');
 
