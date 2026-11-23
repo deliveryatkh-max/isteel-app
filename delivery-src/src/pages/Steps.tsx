@@ -132,7 +132,7 @@ function DriverScan() {
     if (own.length) { go('/steps/' + encodeURIComponent(own[0].id) + '?dn=' + d); return; }
     setBusy(true);
     try {
-      const info = await api<{ openTrips: string[] }>('dn', { dn: d });
+      const info = await api<{ openTrips: string[] }>('dn', { dn: d, lite: 1 });
       if (info && info.openTrips && info.openTrips.length) go('/steps/' + encodeURIComponent(info.openTrips[info.openTrips.length - 1]) + '?dn=' + d);
       else setErr(t('DN ' + d + ' មិនទាន់នៅលើឡានណាមួយទេ។ ឃ្លាំងត្រូវវាយ DN ពេលឡើងទំនិញ។', 'DN ' + d + ' is not on a truck yet. The warehouse adds it at Start Loading.'));
     } catch (e: any) { setErr(errText(e.message)); }
@@ -336,9 +336,11 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     let used = local;
     let knownCust = '';
     openTrips(ops).forEach(x => x.dns.forEach(z => { if (z.dn === d && z.cust && !knownCust) knownCust = z.cust; }));
+    // Kim (24 Nov 2026): typing a DN was slow. The DN shows at once; the server check fills plan/customer/warning after.
+    setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
     if (!used.length) {
       try {
-        const info = await api<{ plan?: unknown; legs: { tripId: string; leg: string; cust?: string }[] }>('dn', { dn: d });
+        const info = await api<{ plan?: unknown; legs: { tripId: string; leg: string; cust?: string }[] }>('dn', { dn: d, lite: 1 });
         if (info.plan) setPlanHit(cur => ({ ...cur, [d]: true }));
         used = Array.from(new Set((info.legs || []).filter(l => l.tripId !== trip.id && l.leg !== 'canceled').map(l => l.tripId)));
         if (!knownCust) knownCust = ((info.legs || []).find(l => l.cust) || {}).cust || '';
@@ -349,7 +351,6 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
       beep();
       setDnErr(usedMsg(d, used));
     }
-    setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
   };
 
   if (n === 0) {
