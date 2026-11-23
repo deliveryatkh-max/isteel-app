@@ -170,10 +170,11 @@ const errors = [];
   await w.goto(BASE + '/delivery/#/steps/' + encodeURIComponent(g2.data.tripId));
   await w.getByText('3. Start loading').first().waitFor({ timeout: 10000 });
   await w.getByPlaceholder('Type the DN').fill('9000000101'); await w.getByPlaceholder('Type the DN').press('Enter');
-  await w.getByText(/is already on trip .* Ask a Supervisor/).waitFor({ timeout: 10000 });
-  assert.strictEqual(await w.getByRole('button', { name: '9000000101 ✕' }).count(), 0, 'used DN not added');
+  await w.getByText(/is already on trip/).waitFor({ timeout: 10000 });
+  // Kim (23 Nov 2026): several pickups per DN allowed, alert only: the DN is still added
+  assert.strictEqual(await w.getByRole('button', { name: '9000000101 ✕' }).count(), 1, 'used DN still added');
   await w.screenshot({ path: SHOTS + 'steps-06-dn-used.png' });
-  console.log('PASS used DN flagged when typed');
+  console.log('PASS used DN warned and still added');
 
   // Kim (23 Nov 2026): 2 DNs to one customer = one stop, recorded once
   const g3 = await api('scaleGate', { kind: 'in', plate: '3B-7777', driver: '07.Driver A', company: 'TEST 3PL', ticket: 'UI3', kg: 6000 }, 'google:guard@test.kh');
