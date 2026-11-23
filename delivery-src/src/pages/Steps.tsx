@@ -452,7 +452,10 @@ export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: stri
   // After Delivered: the customer rating QR and the site rating stay on screen (the stop itself moves on).
   const [rate, setRate] = useState<Record<string, string> | null>(null);
   const [siteRated, setSiteRated] = useState(false);
-  const [cur, setCur] = useState(p.dn || '');
+  // The scanned DN stays chosen after each save and reload (Kim, 24 Nov 2026: no re-scan at the same customer).
+  const curKey = 'drv_dn_' + trip.id;
+  const [cur, setCurS] = useState(() => { if (p.dn) return p.dn; try { return sessionStorage.getItem(curKey) || ''; } catch (e) { return ''; } });
+  const setCur = (d: string) => { setCurS(d); try { sessionStorage.setItem(curKey, d); } catch (e) { /* private mode */ } };
   const [scan, setScan] = useState(false);
   const [typed, setTyped] = useState('');
   const [scanErr, setScanErr] = useState('');
