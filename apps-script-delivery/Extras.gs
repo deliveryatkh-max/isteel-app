@@ -235,6 +235,15 @@ function proofFor_(tripId) {
 function sites_() {
   const out = {};
   xrows_(XT.SITES).forEach(r => { const id = text_(r['Customer ID']).replace(/\.0+$/, ''); if (id && r.LatLong) out[id] = { latlong: text_(r.LatLong), row: r._row, name: text_(r['Customer Name']) }; });
+  // Kim (24 Nov 2026): a customer with a "Customer Latlong" in the Customer master but no Customer Site row still has a site
+  // (no row: moving it from the trip screen adds a Customer Site row).
+  try {
+    const cu = table_(SH.CUST), cId = col_(cu.head, 'Customer ID'), cName = col_(cu.head, 'Customer Name'), cLl = col_(cu.head, 'Customer Latlong');
+    if (cId >= 0 && cLl >= 0) cu.rows.forEach(r => {
+      const id = text_(r[cId]).replace(/\.0+$/, ''), ll = text_(r[cLl]).replace(/\s+/g, '');
+      if (id && !out[id] && distanceKm(ll, ll) != null) out[id] = { latlong: ll, row: 0, name: cName >= 0 ? text_(r[cName]) : '' };
+    });
+  } catch (e) { console.warn('Customer Latlong: ' + e); }
   return out;
 }
 /** First delivery with a location sets the customer site (Logistics can move it later). */
@@ -264,7 +273,7 @@ function setSite_(p, user) {
   if (!/^\d{6,}$/.test(id) || distanceKm(ll, ll) == null) fail_('BAD', 'Customer or location is missing.', 'ខ្វះអតិថិជន ឬទីតាំង។');
   return withLock_(() => {
     const s = sites_()[id];
-    if (s) { audit_(user.email, 'Customer site', '', '', id, s.latlong, ll, String(p.reason || 'Moved from trip screen')); xset_(XT.SITES, s.row, 'LatLong', ll); xset_(XT.SITES, s.row, 'Set By', user.email); xset_(XT.SITES, s.row, 'Set Time', now_()); }
+    if (s && s.row) { audit_(user.email, 'Customer site', '', '', id, s.latlong, ll, String(p.reason || 'Moved from trip screen')); xset_(XT.SITES, s.row, 'LatLong', ll); xset_(XT.SITES, s.row, 'Set By', user.email); xset_(XT.SITES, s.row, 'Set Time', now_()); }
     else xappend_(XT.SITES, { 'Customer ID': id, 'Customer Name': String(p.custName || ''), LatLong: ll, 'Set By': user.email, 'Set Time': now_() });
     return { ok: true };
   });

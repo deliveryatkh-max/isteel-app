@@ -390,3 +390,12 @@ test('driver name: last driver of the same truck when the trip has none', () => 
   assert.strictEqual(e.run("tripDriverName_([{ plate: 'TEST-0001', driver: '' }])"), '01.Driver A');
   assert.strictEqual(e.run("tripDriverName_([{ plate: 'TEST-0001', driver: '05.Other' }])"), '05.Other');
 });
+
+test('customer site falls back to Customer Latlong in the Customer master', () => {
+  const f = fixture();
+  f['Customer'] = [['No', 'Customer ID', 'Customer Name', 'Customer Latlong'], [1, '6100000001', 'TEST Customer A', ''], [2, '6100000002', 'TEST Customer B', '11.55, 104.92']];
+  const e = makeEnv(f); e.run('setup()');
+  const s = JSON.parse(e.run("JSON.stringify(sites_())"));
+  assert.strictEqual(s['6100000002'].latlong, '11.55,104.92');
+  assert.ok(!s['6100000001']);
+});
