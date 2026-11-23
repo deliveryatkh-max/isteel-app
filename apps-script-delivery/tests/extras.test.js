@@ -366,3 +366,9 @@ test('customer join links: office only, one signed link per customer, joined cha
   const no = e.call('joinLinks', {}, WH);
   assert.ok(!no.ok && /DENIED/.test(JSON.stringify(no.error)));
 });
+
+test('driver contact: office phone when the driver has none', () => {
+  const e = makeEnv(fixture(), { props: { TRACK_CALL_PHONE: '23999888' } }); e.run('setup()');
+  const c = e.run("driverContact_('09.Nobody Known')");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c)), { name: 'Nobody Known', phone: '023999888', office: true });
+});
