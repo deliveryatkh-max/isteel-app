@@ -625,3 +625,12 @@ test('recorder: an Admin recording a truck step gets the truck group from the pl
   const r = logRows(e).filter(x => x[col('Master Trip ID')] === a.tripId).pop();
   assert.strictEqual(r[col('អ្នកកត់ត្រា')], '៥.ឡានជួល');
 });
+
+test('warehouses come from SSK-INBOUND-DATA Warehouse List (entrance code, else warehouse code)', () => {
+  const e = makeEnv(fixture(), { books: { '1dpT1fKej2LAqu8TCjDGjnutbK0AKc49j0NLig6JGXBM': { 'Warehouse List': [
+    ['Warehouse Code', 'Entrace Code', 'Warehouse Description'], ['WH IB', 'A1', 'Raw Materials'], ['WH OB', '', '']] } } });
+  e.run('setup()');
+  const b = ok(e.call('boot', {}, ADMIN));
+  assert.deepStrictEqual(b.warehouses, ['A1', 'WH OB']);
+  assert.strictEqual(b.whNames.A1, 'WH IB · Raw Materials');
+});

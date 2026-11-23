@@ -294,7 +294,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const [scan, setScan] = useState(false);
   const [tried, setTried] = useState(false);
   const st = useStep();
-  const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w })), [boot.warehouses]);
+  const whOpts: Opt[] = useMemo(() => boot.warehouses.map(w => ({ value: w, label: w, sub: (boot.whNames || {})[w] || undefined })), [boot.warehouses]);
   const custOpts: Opt[] = useMemo(() => boot.customers.map(c => ({ value: c.id + '-' + c.name, label: c.name, sub: c.id })), [boot.customers]);
   const [planHit, setPlanHit] = useState<Record<string, boolean>>({});   // older plan rows found by the DN lookup
   const planSet = useMemo(() => new Set(boot.plan.map(x => x.dn)), [boot.plan]);
