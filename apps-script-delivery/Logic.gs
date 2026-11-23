@@ -267,7 +267,9 @@ function checkEvent(ctx) {
     if (ev.code === 2 || ev.code === 5) {
       dns.forEach(dn => {
         const info = (ctx.dnInfo || {})[dn] || {};
-        if (onTrip(dn)) err('DN_ALREADY_ON_TRIP', 'DN ' + dn + ' is already on this trip.', 'DN ' + dn + ' មាននៅលើជើងដឹកនេះរួចហើយ។');
+        // Kim (23 Nov 2026): one DN may be picked up at several warehouses on the same trip: Start Loading only warns.
+        if (onTrip(dn) && ev.code === 5) warn('DN_SECOND_PICKUP', 'DN ' + dn + ' was already loaded on this truck. Load it again here only if part of it is at this warehouse.', 'DN ' + dn + ' បានឡើងលើឡាននេះរួចហើយ។ ឡើងម្តងទៀតនៅទីនេះ តែពេលទំនិញខ្លះនៅឃ្លាំងនេះ។');
+        else if (onTrip(dn)) err('DN_ALREADY_ON_TRIP', 'DN ' + dn + ' is already on this trip.', 'DN ' + dn + ' មាននៅលើជើងដឹកនេះរួចហើយ។');
         if (!info.plan) warn('DN_NOT_IN_PLAN', 'DN ' + dn + ' is not in Delivery Plan.', 'DN ' + dn + ' មិនមាននៅក្នុង Delivery Plan ទេ។');
         if (info.status === 'delivered') err('DN_DELIVERED', 'DN ' + dn + ' is already fully delivered.', 'DN ' + dn + ' បានប្រគល់គ្រប់ហើយ។');
         // A DN already on another trip, any day: a warning to confirm (Kim, 23 Nov 2026: several pickups for one DN are

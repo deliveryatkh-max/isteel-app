@@ -315,8 +315,10 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     if (!/^[0-9A-Z-]{4,20}$/.test(d) || dns.indexOf(d) >= 0) return;
     setDnErr('');
     if ((trip.dns || []).some(z => z.dn === d && z.leg !== 'canceled')) {
+      // Kim (23 Nov 2026): the same DN can be loaded again at another warehouse: warn only.
       beep();
-      setDnErr(t('DN ' + d + ' មាននៅលើជើងដឹកនេះរួចហើយ។', 'DN ' + d + ' is already on this trip.'));
+      setDnErr(t('DN ' + d + ' បានឡើងលើឡាននេះរួចហើយ។', 'DN ' + d + ' was already loaded on this truck.'));
+      setDns(cur => (cur.indexOf(d) >= 0 ? cur : cur.concat(d)));
       return;
     }
     const local = openTrips(ops).filter(x => x.id !== trip.id && x.dns.some(z => z.dn === d && z.leg !== 'canceled')).map(x => x.id);
