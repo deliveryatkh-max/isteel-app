@@ -145,7 +145,8 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   // or again when OLD_FORM is set to true. Links to it (Trip page, Scan) open the new steps of that trip instead.
   else if (page === 'record' && !isDriver && (!boot.flow || (OLD_FORM && route.q.toString()))) body = <RecordPage key={route.q.toString()} />;
   else if (page === 'record' || page === 'steps') body = <StepsPage key={route.path.join('/') + route.q.toString()} tripId={page === 'steps' ? route.path[1] : route.q.get('trip') || undefined} dn={route.q.get('dn') || undefined} />;
-  else if (page === 'trip' && route.path[1]) body = <TripPage id={route.path[1]} />;
+  // Kim's O1 B (23 Nov 2026): the trip page is the clean Steps view (old TripPage kept for the old form only).
+  else if (page === 'trip' && route.path[1]) body = OLD_FORM ? <TripPage id={route.path[1]} /> : <StepsPage key={'t' + route.path[1]} tripId={route.path[1]} />;
   else if (page === 'trips' && route.path[1] === 'history') body = <TripsPage />;
   else if (page === 'dn' && route.path[1]) body = <DnPage dn={route.path[1]} />;
   else if (page === 'dn') body = <DnSearchPage />;

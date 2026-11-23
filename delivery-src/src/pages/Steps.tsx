@@ -33,6 +33,23 @@ export const lastLoadOf = (x: TripSummary) => (x.lastLoad != null ? x.lastLoad :
 /** Driver step (6–9) for a DN, from its leg. 0 = done. */
 export const drvStepOf = (leg: string) => (DONE.indexOf(leg) >= 0 ? 0 : leg === 'at_customer' ? 7 : leg === 'unloading' ? 8 : leg === 'unloaded' ? 9 : 6);
 
+/** Steps done on the 9-step bar (0–9): warehouse steps until Gate Out, then the least advanced DN. */
+export function tripDone(trip: TripSummary): number {
+  if (trip.closed) return 9;
+  if (!trip.gateOut) { const ll = lastLoadOf(trip); return ll === 6 ? 4 : ll === 5 ? 3 : ll === 4 ? 2 : trip.gateIn ? 1 : 0; }
+  const open = trip.dns.filter(d => d.leg !== 'canceled' && drvStepOf(d.leg));
+  return open.length ? Math.min(...open.map(d => drvStepOf(d.leg))) - 1 : 9;
+}
+/** The 9-step bar: green = done, amber = now (Kim's mockups, 23 Nov 2026). */
+export function StepBar(p: { done: number }) {
+  return (
+    <div className="flex gap-[3px] mt-2" data-bar={p.done}>
+      {Array.from({ length: 9 }, (_, i) => <i key={i} className="flex-1 h-[6px] rounded" style={{ background: i < p.done ? 'var(--ok)' : i === p.done ? '#f0a400' : 'var(--line)' }} />)}
+    </div>
+  );
+}
+const OFFICE = ['admin', 'supervisor', 'logistics', 'security'];
+
 export function useStepsMode(): [Mode, ((m: Mode) => void) | null] {
   const { boot } = useApp();
   const k = boot.user.roleKey;
@@ -81,12 +98,12 @@ function WarehouseList() {
         const n = ll === 0 ? 2 : ll === 4 ? 3 : ll === 5 ? 4 : 5;
         return (
           <button key={x.id} type="button" className="card w-full text-left flex items-center gap-3 cursor-pointer" onClick={() => go('/steps/' + encodeURIComponent(x.id))}>
-            <span className="text-[28px]">🚛</span>
+            {/* Kim's W1 A (23 Nov 2026): plate, time in, one status chip. */}
             <span className="flex-1 min-w-0">
-              <b className="block text-[17px]">{x.plate}</b>
-              <small className="muted">{[x.driver, x.wh, t('ចូល ', 'In ') + fmtTime(x.gateIn)].filter(Boolean).join(' · ')}</small>
+              <b className="block text-[20px] font-extrabold tracking-wide">{x.plate}</b>
+              <small className="muted">{t('ចូល ', 'In ') + fmtTime(x.gateIn)}</small>
             </span>
-            <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-oksoft text-ok whitespace-nowrap">{n === 5 ? t('រង់ចាំចេញ', 'Wait Gate Out') : stepName(n)}</span>
+            <span className={'text-[12.5px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ' + (n === 5 ? 'bg-oksoft text-ok' : 'bg-warnsoft text-warn')}>{n === 5 ? t('រង់ចាំថ្លឹងចេញ', 'Wait Gate Out') : n === 2 ? t('រង់ចាំឃ្លាំង', 'Waiting for warehouse') : stepName(n) + (x.wh ? ' · ' + x.wh : '')}</span>
           </button>
         );
       })}
@@ -133,6 +150,7 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   const [detail, setDetail] = useState<TripDetail | null>(null);
   const [err, setErr] = useState('');
   const [hist, setHist] = useState(false);
+  const [links, setLinks] = useState(false);
   const [n, setN] = useState(0);
   const [cancel, setCancel] = useState(false);
   useEffect(() => {
@@ -144,36 +162,74 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   if (err) return <Alert tone="bad">{err}</Alert>;
   if (!trip) return <Spinner />;
   const truckType = boot.plates.some(x => x.plate === trip.plate) ? 'isi' : 'rented';
-  const canCancel = !trip.closed && boot.user.roleKey !== 'driver' && boot.events.some(e => e.code === 10 && e.can);   // drivers see only their DNs
+  const office = OFFICE.indexOf(boot.user.roleKey) >= 0;
+  const canCancel = !trip.closed && office && boot.events.some(e => e.code === 10 && e.can);   // drivers and warehouse see only their step
+  const done = tripDone(trip), cur = Math.min(done + 1, 9);
+  const chip = trip.closed ? L(boot.stages[trip.stage]) || trip.stage : stepName(cur) + (!trip.gateOut && trip.wh && cur >= 3 ? ' · ' + trip.wh : '');
   return (
     <>
+      {/* Kim's picks (23 Nov 2026): W2–W4 A / D1–D4 header = plate + step + bar; O1 B adds driver, times and the stops. */}
       <div className="card">
-        <div className="flex items-center gap-3">
-          <span className="text-[30px]">🚛</span>
-          <div className="flex-1 min-w-0">
-            <b className="block text-[19px]">{trip.plate}</b>
-            <small className="muted">{[trip.driver, detail && detail.company, trip.round, trip.id].filter(Boolean).join(' · ')}</small>
-            {/* Kim (23 Nov 2026): the DN numbers in the header (the separate DN box is gone). */}
-            {trip.dns.filter(d => d.leg !== 'canceled').length ? <div className="text-[14px] font-bold mt-0.5" data-dns="head">📄 DN {Array.from(new Set(trip.dns.filter(d => d.leg !== 'canceled').map(d => d.dn))).join(', ')}</div> : null}
+        <div className="flex items-center justify-between gap-2">
+          <b className="text-[22px] font-extrabold tracking-wide">{trip.plate}</b>
+          <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn text-right" data-chip="step">{chip}</span>
+        </div>
+        {office ? <small className="muted block">{[trip.driver, detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
+        <StepBar done={done} />
+        {office ? (
+          <div className="flex justify-between muted text-[12px] mt-1">
+            <span>⚖️ {t('ចូល', 'In')} {trip.gateIn ? fmtTime(trip.gateIn) : '–'}</span>
+            <span>⚖️ {t('ចេញ', 'Out')} {trip.gateOut ? fmtTime(trip.gateOut) : '–'}</span>
+            <span>{trip.id}</span>
           </div>
-          <Badge k={trip.stage} label={boot.stages[trip.stage]} />
-        </div>
-        <div className="grid grid-cols-2 gap-2 mt-2 text-[13.5px]">
-          <div>⚖️ {t('ចូល', 'In')}: <b>{fmtDateTime(trip.gateIn)}</b></div>
-          <div>⚖️ {t('ចេញ', 'Out')}: <b>{trip.gateOut ? fmtDateTime(trip.gateOut) : '–'}</b></div>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-3">
-          <button type="button" className="btn btn-sm" onClick={() => setHist(!hist)}>🕒 {t('ប្រវត្តិ', 'History')}</button>
-          {canCancel ? <button type="button" className="btn btn-sm !text-bad" onClick={() => setCancel(true)}>🚫 {t('លុបចោលជើងដឹក', 'Cancel trip')}</button> : null}
-        </div>
+        ) : null}
       </div>
+      {office && trip.dns.length ? <StopsCard trip={trip} /> : null}
       {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
         : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
-        : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} />}
-      {detail ? <TripSections d={detail} reload={() => setN(n + 1)} hideTimeline={!hist} hideDns /> : null}
+        : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} sites={detail ? detail.sites : undefined} />}
+      {office && detail ? (
+        <div className="grid gap-2">
+          <button type="button" className="btn w-full" onClick={() => setLinks(!links)}>🔗 {t('តំណតៃកុង / អតិថិជន', 'Driver / customer links')}</button>
+          {links ? <TripSections d={detail} reload={() => setN(n + 1)} show="links" /> : null}
+          <button type="button" className="btn w-full" onClick={() => setHist(!hist)}>🕒 {t('ប្រវត្តិ · រូបថត · ភស្តុតាង', 'History · photos · proof')}</button>
+          {hist ? <TripSections d={detail} reload={() => setN(n + 1)} show="history" /> : null}
+          {canCancel ? <button type="button" className="btn w-full !text-bad" onClick={() => setCancel(true)}>🚫 {t('លុបចោលជើងដឹក', 'Cancel trip')}</button> : null}
+        </div>
+      ) : null}
       {cancel ? <CancelTrip trip={trip} truckType={truckType} onClose={() => setCancel(false)} onDone={() => { setCancel(false); setN(n + 1); }} /> : null}
     </>
   );
+}
+
+/** Office (O1 B): DNs grouped by customer = stops, each DN ticked when delivered. */
+function StopsCard(p: { trip: TripSummary }) {
+  const stops = groupStops(p.trip.dns.filter(d => d.leg !== 'canceled'), false);
+  return (
+    <div className="card grid gap-2" data-stops={stops.length}>
+      {stops.map(sp => (
+        <div key={sp.key}>
+          <div className="flex justify-between gap-2"><b>📍 {sp.cust ? sp.cust.replace(/^\s*\d+\s*-\s*/, '') : 'DN ' + sp.dns[0].dn}</b><span className="muted text-[12.5px] whitespace-nowrap">{sp.dns.length} DN{sp.kg ? ' · ' + fmtKg(sp.kg) : ''}</span></div>
+          <div className="flex flex-wrap gap-1.5 mt-1">{sp.dns.map(d => <span key={d.dn} className={'text-[12.5px] font-bold rounded-md px-2 py-0.5 ' + (d.leg === 'delivered' ? 'bg-oksoft text-ok' : d.leg === 'failed' ? 'bg-badsoft text-bad' : 'bg-soft text-brand')}>{d.dn}{d.leg === 'delivered' ? ' ✓' : d.leg === 'failed' ? ' ✗' : ''}</span>)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** DNs to the same customer = one stop (Kim, 23 Nov 2026). byStep: also split by the driver step, so a stop records together. */
+type Stop = { key: string; cust: string; step: number; dns: TripSummary['dns']; kg: number };
+function groupStops(dns: TripSummary['dns'], byStep: boolean): Stop[] {
+  const out: Stop[] = [];
+  dns.forEach(d => {
+    const step = drvStepOf(d.leg);
+    const key = (d.cust || 'dn:' + d.dn) + (byStep ? '|' + step : '');
+    let g = out.find(x => x.key === key);
+    if (!g) { g = { key, cust: d.cust, step, dns: [], kg: 0 }; out.push(g); }
+    g.dns.push(d);
+    g.kg += Number(d.kg || d.loadKg || 0);
+  });
+  return out;
 }
 
 /** Cancel the whole trip with the reason (old form's Cancel, Kim 22 Nov 2026). */
@@ -341,6 +397,8 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
             <div className="flex flex-wrap gap-2 mt-2">
               {dns.map(d => <button key={d} type="button" className="chip chip-on" onClick={() => setDns(dns.filter(x => x !== d))}>{d} ✕</button>)}
             </div>
+            {/* Kim's W3 A: the customer from the Delivery Plan under the DNs. */}
+            {Array.from(new Set(dns.map(d => (boot.plan.find(x => x.dn === d) || { custName: '' }).custName).filter(Boolean))).map(c => <div key={c} className="muted text-[13px] mt-1">🏢 {c} ({t('ពីផែនការ', 'from plan')})</div>)}
           </Field>
           {dns.filter(d => !inPlan.has(d)).map(d => {
             const c = custs[d];
@@ -374,20 +432,34 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
 
 /** Driver link page (no sign-in): the signed trip link, the DN legs' names and a refresh after each save. */
 export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reload: () => void };
-export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink }) {
+/**
+ * Driver steps 6–9 per stop (Kim, 23 Nov 2026): DNs to the same customer at the same step are recorded once together.
+ * D2 B: map + route before arrival; D3 B: one arrival photo for the stop; D4 A: one Delivered form, untick a DN that is not delivered.
+ */
+export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink; sites?: Record<string, string> }) {
   const trip = p.trip;
+  // After Delivered: the customer rating QR and the site rating stay on screen (the stop itself moves on).
+  const [rate, setRate] = useState<Record<string, string> | null>(null);
+  const [siteRated, setSiteRated] = useState(false);
   if (!trip.gateOut) return <Alert tone="info">⏳ {t('រង់ចាំឡានថ្លឹងចេញនៅជញ្ជីង មុនពេលចេញដឹក។', 'Waiting for Gate Out at the scale before delivery.')}</Alert>;
-  const list = trip.dns.slice().sort((a, b) => Number(b.dn === p.dn) - Number(a.dn === p.dn));
-  // The scanned DN opens; with no scan, the first DN that still has a step opens.
-  const first = p.dn && list.some(d => d.dn === p.dn && drvStepOf(d.leg)) ? p.dn : (list.find(d => drvStepOf(d.leg)) || { dn: '' }).dn;
-  return <>{!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}{list.map(d => <DnStep key={d.dn + d.leg} trip={trip} truckType={p.truckType} dn={d.dn} leg={d.leg} cust={d.cust} kg={d.kg || d.loadKg || 0} open={d.dn === first} link={p.link} />)}</>;
+  const after = rate && Object.keys(rate).length ? (
+    <>
+      <RateLinks tripId={trip.id} links={rate} open />
+      {!siteRated ? <SiteRateForm dns={Object.keys(rate)} send={p.link ? (body: any) => api('drvSiteRate', Object.assign({ t: p.link!.t, k: p.link!.k }, body), { noAuth: true }) : siteRateSigned(trip.id)} onDone={() => setSiteRated(true)} /> : null}
+    </>
+  ) : null;
+  const stops = groupStops(trip.dns.filter(d => d.leg !== 'canceled'), true)
+    .sort((a, b) => Number(b.dns.some(d => d.dn === p.dn)) - Number(a.dns.some(d => d.dn === p.dn)) || Number(!!b.step) - Number(!!a.step));
+  const first = (stops.find(x => x.step) || { key: '' }).key;
+  return <>{!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}{stops.map(sp => <StopStep key={sp.key + sp.dns.map(d => d.dn + d.leg).join()} trip={trip} truckType={p.truckType} stop={sp} open={sp.key === first} link={p.link} onRate={o => { setRate(o); setSiteRated(false); }} site={sp.dns.map(d => (p.sites || {})[d.dn]).filter(Boolean)[0] || ''} />)}{after}</>;
 }
 
-function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: string; cust: string; kg: number; open: boolean; link?: DrvLink }) {
+function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: boolean; link?: DrvLink; site: string; onRate: (o: Record<string, string>) => void }) {
   const app = useContext(AppCtx);
   const legs = app ? app.boot.legs : p.link ? p.link.legs : {};
   const plan = app ? app.boot.plan : [];
-  const n = drvStepOf(p.leg);
+  const sp = p.stop, dnsAll = sp.dns.map(d => d.dn);
+  const n = sp.step;
   const [open, setOpen] = useState(p.open);
   const [photo, setPhoto] = useState('');
   const [signed, setSigned] = useState('');
@@ -396,38 +468,36 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
   const [receiver, setReceiver] = useState('');
   const [signature, setSignature] = useState('');
   const [part, setPart] = useState(false);
-  const [rate, setRate] = useState<Record<string, string> | null>(null);
-  const [siteRated, setSiteRated] = useState(false);
-  const [kgIn, setKgIn] = useState(() => {
-    const pl = plan.find(x => x.dn === p.dn);
-    return String(p.kg || (pl && pl.kg) || '');
-  });
+  const [tick, setTick] = useState<Record<string, boolean>>(() => Object.fromEntries(dnsAll.map(d => [d, true])));
+  const [kgs, setKgs] = useState<Record<string, string>>(() => Object.fromEntries(sp.dns.map(d => {
+    const pl = plan.find(x => x.dn === d.dn);
+    return [d.dn, String(d.kg || d.loadKg || (pl && pl.kg) || '')];
+  })));
   const [tried, setTried] = useState(false);
   const st = useStep(p.link ? { t: p.link.t, k: p.link.k } : undefined, p.link ? p.link.reload : undefined);
   const base = { tripId: p.trip.id, truckType: p.truckType };
-  const label = stepName(n || 9) + ' · DN ' + p.dn;
+  const name = sp.cust ? sp.cust.replace(/^\s*\d+\s*-\s*/, '') : 'DN ' + dnsAll[0];
+  const label = stepName(n || 9) + ' · ' + name;
+  const count = ' (' + dnsAll.length + ' DN)';
   const head = (
-    <button type="button" className="w-full flex items-center gap-3 bg-transparent border-0 p-0 text-left cursor-pointer" onClick={() => setOpen(!open)}>
-      <span className="text-[22px]">📄</span>
-      <span className="flex-1 min-w-0"><b className="block">DN {p.dn}</b><small className="muted">{p.cust}</small></span>
-      <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-oksoft text-ok whitespace-nowrap">{n ? stepName(n) : L(legs[p.leg]) || p.leg}</span>
+    <button type="button" className="w-full text-left bg-transparent border-0 p-0 cursor-pointer" onClick={() => setOpen(!open)}>
+      <div className="flex items-start justify-between gap-2">
+        <b className="text-[16px]">📍 {name}</b>
+        <span className="text-[12px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap bg-oksoft text-ok">{n ? stepName(n) : L(legs[sp.dns[0].leg]) || sp.dns[0].leg}</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">{dnsAll.map(d => <span key={d} className="text-[12.5px] font-bold rounded-md px-2 py-0.5 bg-soft text-brand">{d}</span>)}</div>
     </button>
   );
-  // After Delivered: the customer rating QR and the site rating (old form's done screen).
-  const after = rate && Object.keys(rate).length ? (
-    <>
-      <RateLinks tripId={p.trip.id} links={rate} open />
-      {!siteRated ? <SiteRateForm dns={Object.keys(rate)} send={p.link ? (body: any) => api('drvSiteRate', Object.assign({ t: p.link!.t, k: p.link!.k }, body), { noAuth: true }) : siteRateSigned(p.trip.id)} onDone={() => setSiteRated(true)} /> : null}
-    </>
-  ) : null;
-  if (!n || !open) return <><div className="card">{head}</div>{after}</>;
+  if (!n || !open) return <div className="card" data-stop={dnsAll.join(',')}>{head}</div>;
 
+  const picked = dnsAll.filter(d => tick[d]);
   const miss: Record<string, string> = {};
   if (n === 6 && !photo) miss.photo = t('សូមថតរូបភស្តុតាង', 'Take the proof photo');
   if (n === 9 && result === 'ok') {
+    if (!picked.length) miss.dns = t('សូមធីក DN ដែលបានប្រគល់', 'Tick the DNs delivered');
+    picked.forEach(d => { if (!(Number(kgs[d]) > 0)) miss.dns = t('សូមវាយទំងន់ (kg) របស់ DN ', 'Type the weight (kg) of DN ') + d; });
     if (!signed) miss.signed = t('សូមថតរូប DN ដែលអតិថិជនចុះហត្ថលេខា', 'Take the photo of the DN signed by the customer');
     if (!photo) miss.photo = t('សូមថតរូបទំនិញដែលបានប្រគល់', 'Take the photo of the goods delivered');
-    if (!(Number(kgIn) > 0)) miss.kg = t('សូមវាយទំងន់ (kg)', 'Type the weight (kg)');
     if (!receiver.trim()) miss.receiver = t('សូមវាយឈ្មោះអ្នកទទួល', 'Type the receiver name');
     if (!signature) miss.signature = t('សូមឲ្យអ្នកទទួលចុះហត្ថលេខា', 'Ask the receiver to sign');
   }
@@ -439,35 +509,54 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
   async function submit() {
     setTried(true);
     if (Object.keys(miss).length) { scrollToMissing(); return; }
-    const one = [{ dn: p.dn }];
+    const all = dnsAll.map(dn => ({ dn }));
     let r: any = null;
-    if (n === 6) r = await st.save({ ...base, code: 8, dns: one, photo }, label);
-    else if (n === 7) r = await st.save({ ...base, code: 12, dns: one }, label);
-    else if (n === 8) r = await st.save({ ...base, code: 13, dns: one }, label);
+    if (n === 6) r = await st.save({ ...base, code: 8, dns: all, photo }, label);
+    else if (n === 7) r = await st.save({ ...base, code: 12, dns: all }, label);
+    else if (n === 8) r = await st.save({ ...base, code: 13, dns: all }, label);
     else if (result === 'ok') {
-      r = await st.save({ ...base, code: 9, dns: [{ dn: p.dn, kg: Number(kgIn), final: !part }], photos: [signed, photo], receiver: receiver.trim(), signature }, label);
-      if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); setRate(o); }
-    } else r = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: one, remark: reason.trim(), photo }, label);
+      r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: [signed, photo], receiver: receiver.trim(), signature }, label);
+      if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); p.onRate(o); }
+    } else r = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: all, remark: reason.trim(), photo }, label);
     if (r) { setTried(false); setPhoto(''); setSigned(''); setSignature(''); }
   }
+  const saveText = n === 9 ? (result === 'ok' ? t('បានប្រគល់', 'Delivered') + ' (' + picked.length + ' DN)' : (result === 'fail' ? t('បរាជ័យ', 'Failed') : t('លុបចោល', 'Canceled')) + count) : t(...STEP_NAMES[n]) + count;
   return (
     <>
-    <div className="card space-y-3">
+    <div className="card space-y-3" data-stop={dnsAll.join(',')}>
       {st.dialog}
       {head}
       {n === 6 ? (
-        <Field icon="📷" label={t('រូបថតភស្តុតាងមកដល់', 'Arrival photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+        <>
+          {p.site ? (
+            <>
+              <iframe title="map" className="w-full h-[200px] rounded-xl border-0" loading="lazy" src={'https://maps.google.com/maps?q=' + encodeURIComponent(p.site) + '&z=13&output=embed'} />
+              <a className="btn w-full no-underline" href={'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(p.site)} target="_blank" rel="noopener">🧭 {t('បើកផ្លូវ', 'Directions')}</a>
+            </>
+          ) : null}
+          <Field icon="📷" label={t('រូបថតមកដល់', 'Arrival photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+          {dnsAll.length > 1 ? <div className="text-[12.5px] rounded-lg px-2.5 py-1.5 bg-warnsoft text-warn">💡 {t('រូបថតមួយ ប្រើសម្រាប់ DN ទាំង ' + dnsAll.length, 'One photo for all ' + dnsAll.length + ' DNs')}</div> : null}
+        </>
       ) : null}
       {n === 9 ? (
         <>
           <Segmented value={result} onChange={setResult} options={[{ v: 'ok', km: '✅ បានប្រគល់', en: '✅ Delivered' }, { v: 'fail', km: '⚠️ បរាជ័យ', en: '⚠️ Failed' }, { v: 'cancel', km: '🚫 លុបចោល', en: '🚫 Canceled' }]} />
           {result === 'ok' ? (
             <>
+              <Field icon="📄" label={t('DN ដែលបានប្រគល់ · ទំងន់ (kg)', 'DNs delivered · weight (kg)')} required need={!!miss.dns} error={m.dns} id="dnsok">
+                <div className="grid gap-1.5">
+                  {dnsAll.map(d => (
+                    <label key={d} className="flex items-center gap-2">
+                      <input type="checkbox" className="w-5 h-5" checked={!!tick[d]} onChange={e => setTick({ ...tick, [d]: e.target.checked })} />
+                      <b className="flex-1 text-[14px]">{d}</b>
+                      <input className="in !w-[110px] text-right" inputMode="decimal" disabled={!tick[d]} value={kgs[d] || ''} onChange={e => setKgs({ ...kgs, [d]: e.target.value.replace(/[^0-9.]/g, '') })} aria-label={'kg ' + d} />
+                    </label>
+                  ))}
+                  {dnsAll.length > 1 ? <span className="muted text-[12px]">{t('ដោះធីក DN ដែលមិនបានប្រគល់ (កត់ត្រាវាដាច់ដោយឡែកបន្ទាប់)', 'Untick a DN not delivered (record it on its own after)')}</span> : null}
+                </div>
+              </Field>
               <Field icon="✍️" label={t('រូបថត DN ដែលអតិថិជនចុះហត្ថលេខា', 'DN signed by customer')} required need={!!miss.signed} error={m.signed} id="signed"><PhotoInput value={signed} onChange={setSigned} /></Field>
               <Field icon="📦" label={t('រូបថតទំនិញដែលបានប្រគល់', 'Goods delivered photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
-              <Field icon="⚖️" label={t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} required need={!!miss.kg} error={m.kg} id="kg">
-                <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
-              </Field>
               <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5" checked={part} onChange={e => setPart(e.target.checked)} />{t('ប្រគល់តែមួយផ្នែក (នៅសល់ដឹកជើងក្រោយ)', 'Only part delivered (rest comes on another trip)')}</label>
               <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required need={!!miss.receiver} error={m.receiver} id="rcv">
                 <input className={'in ' + (m.receiver ? '!border-bad' : '')} value={receiver} onChange={e => setReceiver(e.target.value)} />
@@ -485,9 +574,8 @@ function DnStep(p: { trip: TripSummary; truckType: string; dn: string; leg: stri
         </>
       ) : null}
       {st.error ? <Alert tone="bad">{st.error}</Alert> : null}
-      <button type="button" className="btn-primary w-full" disabled={st.saving} onClick={submit}>{st.saving ? '…' : '💾 ' + t('កត់ត្រា', 'Record') + ' · ' + (n === 9 ? (result === 'ok' ? t('បានប្រគល់', 'Delivered') : result === 'fail' ? t('បរាជ័យ', 'Failed') : t('លុបចោល', 'Canceled')) : t(...STEP_NAMES[n]))}</button>
+      <button type="button" className={'btn-primary w-full ' + (n === 7 || n === 8 ? '!py-4 !text-[17px]' : '')} disabled={st.saving} onClick={submit}>{st.saving ? '…' : '💾 ' + saveText}</button>
     </div>
-    {after}
     </>
   );
 }

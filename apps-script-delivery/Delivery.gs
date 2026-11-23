@@ -591,6 +591,7 @@ function tripDetail_(tripId, user) {
   out.track = trackLinks_(tripId, all);
   if (prop_('TRACK_BOT_TOKEN')) { out.tgJoin = {}; Object.keys(out.track).forEach(dn => { const id = (plan[dn] || {}).custId || custIdOf((all.find(r => r.dn === dn) || {}).cust); if (id) out.tgJoin[dn] = joinLink_(id); }); }
   out.company = companyOf_(s.plate);
+  out.sites = dnSites_(s.dns, plan);
   out.complaints = complaintList_(xrows_(XT.COMPLAINTS).filter(r => text_(r['Trip ID']) === tripId)).length;
   return out;
 }
@@ -1267,7 +1268,7 @@ function driverTrip_(p) {
   const rated = {};
   xrows_(XT.SRATE).forEach(r => { if (String(r['Trip ID']) === c.tripId) rated[normDn(r.DN)] = 1; });
   return { trip: { id: s.id, plate: s.plate, driver: s.driver, round: s.round, stage: s.stage, gateOut: s.gateOut, closed: s.closed, dns: s.dns }, stages: STAGES, legs: LEG,
-    rate: rateLinks_(c.tripId, c.rows), siteRated: Object.keys(rated) };
+    rate: rateLinks_(c.tripId, c.rows), siteRated: Object.keys(rated), sites: dnSites_(s.dns, plan_()) };
 }
 function driverRecord_(p) {
   const c = checkDriverLink_(p);
@@ -1277,6 +1278,15 @@ function driverRecord_(p) {
   const type = tripTruckType_(c.rows[0].plate, p.dns);
   const allowed = allowed_();
   return saveEvent_(Object.assign({}, p, { tripId: c.tripId, plate: '' }), { email: 'driver-link', recorder: truckLabel_(type, String(allowed[code] || '').split('|').map(s => s.trim())) });
+}
+
+/** Customer site location for each DN of a trip (DN → "lat,long"), for the driver's map (Kim's D2 B, 23 Nov 2026). */
+function dnSites_(dns, plan) {
+  let sites = {};
+  try { sites = sites_(); } catch (e) { return {}; }
+  const out = {};
+  (dns || []).forEach(d => { const id = (plan[d.dn] || {}).custId || custIdOf(d.cust); if (id && sites[id]) out[d.dn] = sites[id].latlong; });
+  return out;
 }
 
 /** Customer rating links (DN → key) for the DNs delivered on this trip. */
