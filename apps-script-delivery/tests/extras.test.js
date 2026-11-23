@@ -383,3 +383,10 @@ test('driver contact: office phone when the driver has none', () => {
   const c = e.run("driverContact_('09.Nobody Known')");
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c)), { name: 'Nobody Known', phone: '023999888', office: true });
 });
+
+test('driver name: last driver of the same truck when the trip has none', () => {
+  const e = env();
+  trip(e, 'TEST-0001', ['9000000001']);
+  assert.strictEqual(e.run("tripDriverName_([{ plate: 'TEST-0001', driver: '' }])"), '01.Driver A');
+  assert.strictEqual(e.run("tripDriverName_([{ plate: 'TEST-0001', driver: '05.Other' }])"), '05.Other');
+});

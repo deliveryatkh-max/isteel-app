@@ -626,6 +626,22 @@ function driverContact_(name) {
   const office = !phone && prop_('TRACK_CALL_PHONE') ? fix(prop_('TRACK_CALL_PHONE')) : '';
   return { name: n.replace(/^\s*\d+\s*[.\-]\s*/, ''), phone: phone || office, office: !!office };
 }
+/**
+ * The trip's driver; when the scale ticket had no driver (Kim, 24 Nov 2026: name and phone were blank), the last driver
+ * recorded for the same truck, else the driver kept for that plate in the truck list.
+ */
+function tripDriverName_(rows) {
+  const own = (rows.filter(r => r.driver).pop() || {}).driver;
+  if (own) return own;
+  const plate = normPlate(rows[0] && rows[0].plate);
+  if (!plate) return '';
+  try {
+    const last = rowsWhere_('plate', [plate]).filter(r => r.driver).pop();
+    if (last) return last.driver;
+  } catch (e) { console.warn('Last driver: ' + e); }
+  const t = truckRows_().find(x => x.plate === plate);
+  return t ? t.driver : '';
+}
 /** name / ID (lower case) -> phone from the master Employee List, 10 minutes in the cache. */
 function employeePhones_() {
   const cache = CacheService.getScriptCache();
@@ -665,8 +681,7 @@ function trackInfo_(p) {
     times: { out: at(7), arrived: at(8), unloading: at(12), unloaded: at(13), delivered: at(9), failed: at(11), canceled: at(10) },
     site: site ? site.latlong : '', factory: '11.525575,104.868668', serverNow: Date.now(),
   };
-  const drvName = (rows.filter(r => r.driver).pop() || {}).driver;
-  if (!done) out.driver = driverContact_(drvName);
+  if (!done) out.driver = driverContact_(tripDriverName_(rows));
   if (!done && st.gateOut) out.gps = gpsLast_(tripId);
   if (d.leg === 'delivered') {
     const pr = proofFor_(tripId).filter(x => normDn(x.dn) === dn).pop();
@@ -720,7 +735,7 @@ function trackMessage_(dn, tripId, info) {
 }
 /** Driver name + phone for the Telegram message (same lookup as the live map page). */
 function trackDriver_(rows) {
-  const c = driverContact_((rows.filter(r => r.driver).pop() || {}).driver);
+  const c = driverContact_(tripDriverName_(rows));
   return { driver: c.name, phone: c.phone };
 }
 /** Gate Out: send each DN's live map link to the customer's joined chats (once per DN and trip). */
