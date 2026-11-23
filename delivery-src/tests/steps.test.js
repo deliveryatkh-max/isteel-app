@@ -170,6 +170,13 @@ const errors = [];
   assert.strictEqual(await ad.getByText('DNs on this trip').count(), 0, 'no DN box');
   await ad.screenshot({ path: SHOTS + 'steps-08-header-qr.png', fullPage: true });
   console.log('PASS header DNs and driver QR');
+  // Kim (24 Nov 2026): Customer join links page (office only)
+  await ad.goto(BASE + '/delivery/#/more');
+  await ad.getByText('Customer join links').click();
+  await ad.getByRole('button', { name: /^.*All \d+$/ }).click();
+  await ad.locator('[data-cust="6100000001"]').waitFor({ timeout: 10000 });
+  await ad.screenshot({ path: SHOTS + 'steps-10-join-links.png', fullPage: true });
+  console.log('PASS customer join links page');
 
   // A DN already on another trip is flagged when typed (Kim, 22 Nov 2026)
   const g2 = await api('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: 'Y', ticket: 'UI2', kg: 7000 }, 'google:guard@test.kh');

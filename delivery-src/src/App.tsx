@@ -12,6 +12,7 @@ import { TripPage } from './pages/Trip';
 import { TripsPage } from './pages/Trips';
 import { DnPage, DnSearchPage } from './pages/Dn';
 import { MorePage, QualityPage, UsersPage } from './pages/Admin';
+import { JoinLinksPage } from './pages/JoinLinks';
 import { ComplaintsPage } from './components/Complaints';
 import { HOME, ordered, PhoneFrame, SideNav, useLayout } from './components/Nav';
 
@@ -34,8 +35,9 @@ const TABS: Tab[] = [
 // so they get no Trips, Scan or old Record tab; warehouse staff open on the trucks inside.
 const DRIVER_TABS: Tab[] = [HOME, { id: 'record', icon: '📷', km: 'ស្កេន DN', en: 'Scan DN', big: true }, { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' }];
 const OLD_FORM = false;
+export const OFFICE = ['admin', 'supervisor', 'logistics'];
 const DRIVER_PAGES = ['', 'record', 'steps', 'more', 'complaints'];
-const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more' };
+const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more', joinlinks: 'more' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -154,12 +156,13 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   else if (page === 'quality' && boot.canCorrect) body = <QualityPage />;
   else if (page === 'users' && boot.isAdmin) body = <UsersPage />;
   else if (page === 'complaints') body = <ComplaintsPage />;
+  else if (page === 'joinlinks' && OFFICE.indexOf(roleKey) >= 0) body = <JoinLinksPage />;
   else if (page === 'dashboard' && boot.canKpi) body = <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
     ops: ['ជើងដឹក', 'Trips'], scan: ['ស្កេន DN', 'Scan DN'], record: ['កត់ត្រាដំណើរ', 'Record journey'], more: ['ផ្សេងៗ', 'More'],
   };
-  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
+  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : page === 'joinlinks' ? t('តំណភ្ជាប់ Telegram អតិថិជន', 'Customer join links') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
   return (
     <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, setBusy }}>
