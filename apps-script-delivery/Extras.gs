@@ -738,7 +738,7 @@ function trackNotify_(tripId) {
     to.forEach(chat => {
       const m = trackMessage_(dn, tripId, Object.assign({ so: pl.so, plate: rows[0].plate, kg: d.loadKg || pl.kg }, drv));
       const r = trackBot_('sendMessage', Object.assign({ chat_id: chat }, m));
-      if (r && r.ok) sent++;
+      if (r && r.ok) { sent++; tgRemember_(dn, tripId, chat, r.result && r.result.message_id); }
     });
     if (to.length) cache.put('tgsent_' + tripId + '_' + dn, '1', 21600);
   });
@@ -780,7 +780,10 @@ function trackBotPoll() {
     Object.keys(byTrip).forEach(tripId => {
       const rows = rowsWhere_('trip', [tripId]), st = tripState(rows);
       if (!st.gateOut || st.closed) return;
-      dns.filter(dn => st.dns[dn] && !LEG_DONE[st.dns[dn].leg]).forEach(dn => trackBot_('sendMessage', Object.assign({ chat_id: chat }, trackMessage_(dn, tripId, Object.assign({ so: plan[dn].so, plate: rows[0].plate, kg: st.dns[dn].loadKg || plan[dn].kg }, trackDriver_(rows))))));
+      dns.filter(dn => st.dns[dn] && !LEG_DONE[st.dns[dn].leg]).forEach(dn => {
+        const r = trackBot_('sendMessage', Object.assign({ chat_id: chat }, trackMessage_(dn, tripId, Object.assign({ so: plan[dn].so, plate: rows[0].plate, kg: st.dns[dn].loadKg || plan[dn].kg }, trackDriver_(rows)))));
+        if (r && r.ok) tgRemember_(dn, tripId, chat, r.result && r.result.message_id);
+      });
     });
   });
 }
@@ -811,4 +814,46 @@ function joinLinks_(user) {
     rows.push({ id: id, name: text_(r[cName]), phone: cPhone >= 0 ? text_(r[cPhone]).replace(/\.0+$/, '') : '', tg: cTg >= 0 ? text_(r[cTg]).replace(/\.0+$/, '') : '', link: joinLink_(id), chats: (chats[id] || []).length });
   });
   return { bot: !!prop_('TRACK_BOT_TOKEN'), botName: trackBotName_(), rows: rows };
+}
+
+// ---- Delivered message (Kim, 24 Nov 2026): reply to the Gate Out message in Telegram with the rating (survey) link.
+const tgMsgKey_ = (dn, tripId) => 'tgm_' + dn + '_' + tripId;
+/** Keeps the Gate Out message id per DN and chat (Script property, removed after Delivered / Failed / Canceled). */
+function tgRemember_(dn, tripId, chat, msgId) {
+  if (!msgId) return;
+  const props = PropertiesService.getScriptProperties(), k = tgMsgKey_(dn, tripId);
+  let m = {};
+  try { m = JSON.parse(props.getProperty(k) || '{}'); } catch (e) { m = {}; }
+  m[String(chat)] = msgId;
+  props.setProperty(k, JSON.stringify(m));
+}
+const rateLinkUrl_ = (dn, tripId) => trackPage_().replace(/track\.html.*$/, 'rate.html') + '?d=' + encodeURIComponent(dn) + '&t=' + encodeURIComponent(tripId) + '&k=' + rateToken_(dn, tripId);
+/** After Delivered (code 9): tell the customer's chats, as a reply to the Gate Out message when it is known. */
+function tgDelivered_(tripId, rows, plate, receiver) {
+  if (!prop_('TRACK_BOT_TOKEN')) return 0;
+  const props = PropertiesService.getScriptProperties(), plan = plan_(), chats = tgChats_();
+  let sent = 0;
+  rows.forEach(r => {
+    const dn = r.dn, k = tgMsgKey_(dn, tripId);
+    let known = {};
+    try { known = JSON.parse(props.getProperty(k) || '{}'); } catch (e) { known = {}; }
+    const pl = plan[dn] || {};
+    const to = Object.keys(known).length ? Object.keys(known) : (chats[pl.custId || custIdOf(r.cust)] || []);
+    to.forEach(chat => {
+      const body = {
+        chat_id: chat,
+        text: '✅ ទំនិញរបស់អ្នកបានប្រគល់រួចរាល់ហើយ\n\n'
+          + '📄 លេខដឹក៖ DN ' + dn + (r.kg ? '=' + Math.round(r.kg).toLocaleString('en-US') + ' kg' : '') + '\n'
+          + '🚛 ឡាន៖ ' + plate + '\n'
+          + (receiver ? '👤 អ្នកទទួល៖ ' + receiver + '\n' : '')
+          + '\n🙏 សូមអរគុណ! សូមជួយវាយតម្លៃសេវាដឹកជញ្ជូនរបស់យើង។',
+        reply_markup: { inline_keyboard: [[{ text: '⭐ វាយតម្លៃការដឹកជញ្ជូន', url: rateLinkUrl_(dn, tripId) }]] },
+      };
+      if (known[chat]) body.reply_parameters = { message_id: known[chat], allow_sending_without_reply: true };
+      const res = trackBot_('sendMessage', body);
+      if (res && res.ok) sent++;
+    });
+    props.deleteProperty(k);
+  });
+  return sent;
 }

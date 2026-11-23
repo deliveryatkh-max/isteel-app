@@ -352,6 +352,17 @@ test('customer Telegram bot: join link saves the chat, Gate Out sends the live m
   assert.ok(e.run("trackNotify_('" + id + "')") === 0, 'not sent twice');
   const det = ok(e.call('trip', { tripId: id }, LOGI));
   assert.ok(/t\.me\/isisteellive_bot\?start=c6100000001_/.test(det.tgJoin['9000000001']));
+  // Kim (24 Nov 2026): Delivered = a reply to the Gate Out message with the rating link
+  const gateMsg = 100 + e.telegram.indexOf(sent[0]) + 1;
+  e.telegram.length = 0;
+  step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 8, dns: [{ dn: '9000000001' }], photo: IMG, ref: ref() }), null));
+  step(e, 30); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], photos: [IMG, IMG], signature: SIG, receiver: 'Mr Sok', ref: ref() }), null));
+  const done = e.telegram.filter(m => m.chat_id === '777');
+  assert.strictEqual(done.length, 1, JSON.stringify(e.telegram));
+  assert.ok(/បានប្រគល់រួចរាល់/.test(done[0].text) && /អ្នកទទួល៖ Mr Sok/.test(done[0].text), done[0].text);
+  assert.strictEqual(done[0].reply_parameters.message_id, gateMsg);
+  assert.ok(/rate\.html\?d=9000000001&t=/.test(done[0].reply_markup.inline_keyboard[0][0].url));
+  assert.ok(!Object.keys(e.props).some(k => /^tgm_/.test(k)), 'message id cleaned up');
 });
 
 test('customer join links: office only, one signed link per customer, joined chats counted', () => {

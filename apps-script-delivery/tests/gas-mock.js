@@ -81,13 +81,13 @@ function makeEnv(sheets, opts) {
     console, JSON, Math, Number, String, Array, Object, Boolean, RegExp, Error, Set, Map, parseInt, parseFloat, isNaN, encodeURIComponent,
     Date: FakeDate, module: undefined,
     SpreadsheetApp: { getActive: () => ss, openById: id => { const b = (opts.books || {})[id]; if (!b) throw new Error('No spreadsheet ' + id); return b; } },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     CacheService: { getScriptCache: () => ({ get: k => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => true, releaseLock: () => {} }) },
     ContentService: { createTextOutput: s => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     ScriptApp: { getProjectTriggers: () => triggers, newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { triggers.push({ getHandlerFunction: () => fn }); } }) }) }) },
     UrlFetchApp: { fetch: (url, o) => {
-      if (/api\.telegram\.org/.test(url)) { const m = url.split('/').pop(); if (m === 'getUpdates') return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ ok: true, result: tgUpdates.splice(0) }) }; const body = JSON.parse(o.payload); if (m !== 'sendMessage') return { getResponseCode: () => 200, getContentText: () => '{"ok":true,"result":{}}' }; body._bot = url.split('/')[3]; telegram.push(body); return { getResponseCode: () => 200, getContentText: () => '{"ok":true}' }; }
+      if (/api\.telegram\.org/.test(url)) { const m = url.split('/').pop(); if (m === 'getUpdates') return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ ok: true, result: tgUpdates.splice(0) }) }; const body = JSON.parse(o.payload); if (m !== 'sendMessage') return { getResponseCode: () => 200, getContentText: () => '{"ok":true,"result":{}}' }; body._bot = url.split('/')[3]; telegram.push(body); return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ ok: true, result: { message_id: 100 + telegram.length } }) }; }
       const tok = decodeURIComponent(url.split('id_token=')[1]);
       const m = tok.match(/^google:(.+)$/);
       return m ? { getResponseCode: () => 200, getContentText: () => JSON.stringify({ aud: 'cid', email: m[1], email_verified: 'true', exp: Math.floor(clock / 1000) + 3600 }) }
