@@ -167,6 +167,30 @@ function scTrucks_() {
   return out;
 }
 
+/**
+ * Drivers for the 1st weigh (Kim, 24 Nov 2026: the scale enters the driver). From the master Employee List: Position
+ * "Driver, Delivery Truck" or "Driver, Trailer" (not assistants or forklift). [name shown (Khmer name, else Full Name), Full Name, ID].
+ */
+function scDrivers_() {
+  const sh = mdTab_('Employee List');
+  if (!sh || sh.getLastRow() < 2) return [];
+  const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  const h = v[0].map(x => String(x).trim()), c = k => h.indexOf(k);
+  const cId = c('Employee ID'), cFull = c('Full Name'), cKh = c('Khmer Name'), cPos = c('Position'), cAct = c('Active');
+  if (cPos < 0) return [];
+  const out = [], seen = {};
+  v.slice(1).forEach(r => {
+    if (!/^driver,\s*(delivery truck|trailer)/i.test(String(r[cPos]).trim())) return;
+    if (cAct >= 0 && /^(no|false)$/i.test(String(r[cAct]).trim())) return;
+    const full = cFull >= 0 ? String(r[cFull]).trim() : '', kh = cKh >= 0 ? String(r[cKh]).trim() : '';
+    const name = kh || full;
+    if (!name || seen[name]) return;
+    seen[name] = 1;
+    out.push([name, full, cId >= 0 ? String(r[cId]).trim() : '']);
+  });
+  return out;
+}
+
 function scDelivery_() { return SpreadsheetApp.openById(prop_('DELIVERY_SHEET_ID') || SC_DELIVERY_ID); }
 /** Customers from SSK-DELIVERY-DATA › Customer: [id, name]. */
 function scCustomers_() {
@@ -285,7 +309,7 @@ function scBoot_(user) {
     user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer, dnc: dnc },
     prices: dnc && typeof prices_ === 'function' ? prices_() : [],   // vendor prices: only for people who see the Debit Note check
     people: user.admin ? usersCached_().filter(u => u.okScale).map(u => ({ email: u.email, name: u.name, admin: u.admin })) : [],
-    trucks: scTrucks_(), customers: scCustomers_(), items: scItems_(), dests: scDests_(),
+    trucks: scTrucks_(), drivers: scDrivers_(), customers: scCustomers_(), items: scItems_(), dests: scDests_(),
     settings: scSettingsMap_(), tickets: tickets, lastTare: last, plateUse: use, sheetUrl: ss_().getUrl(), at: new Date().getTime(),
   };
 }
