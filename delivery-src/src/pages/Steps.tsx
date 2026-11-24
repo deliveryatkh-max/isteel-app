@@ -179,11 +179,12 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
       {/* Kim's picks (23 Nov 2026): W2–W4 A / D1–D4 header = plate + step + bar; O1 B adds driver, times and the stops. */}
       <div className="card">
         {/* Kim (24 Nov 2026): plate never wraps on a phone; the chip drops to the next line when it does not fit. */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* Kim (24 Nov 2026): driver · company · trip sits beside the plate, the chip under them. */}
+        <div className="flex items-baseline gap-3 min-w-0">
           <b className="text-[22px] font-extrabold tracking-wide whitespace-nowrap shrink-0">{trip.plate}</b>
-          <span className="text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn whitespace-nowrap max-w-full overflow-hidden text-ellipsis" data-chip="step">{chip}</span>
+          {office ? <small className="muted min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" data-info="trip">{[noId(trip.driver), detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
         </div>
-        {office ? <small className="muted block">{[noId(trip.driver), detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
+        <span className="inline-block mt-1 text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn whitespace-nowrap max-w-full overflow-hidden text-ellipsis" data-chip="step">{chip}</span>
         <StepBar done={done} />
         {office ? (
           <div className="flex justify-between muted text-[12px] mt-1">
