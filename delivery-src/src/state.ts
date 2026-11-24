@@ -10,7 +10,7 @@ export type Ctx = {
   live: number;
   refreshOps: () => Promise<void>;
   /** Puts a trip the server just returned into the Active list at once (no wait for 'ops'). */
-  patchTrip?: (trip: TripSummary) => void;
+  patchTrip?: (trip: TripSummary, hold?: boolean | 'release') => void;
   setBusy: (b: boolean) => void;
 };
 export const AppCtx = createContext<Ctx>(null as any);

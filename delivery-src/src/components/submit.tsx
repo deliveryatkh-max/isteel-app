@@ -26,7 +26,7 @@ export function warmLocation() {
 }
 export const getLatLong = warmLocation;
 
-export type SendResult = { ok: true; data: any } | { ok: false; queued?: boolean };
+export type SendResult = { ok: true; data: any } | { ok: false; queued?: boolean; warnings?: Warning[]; error?: string };
 
 /**
  * Sends one journey step. Warnings come back for the user to confirm (never confirmed for them);
@@ -60,7 +60,8 @@ export function useSubmit(action: 'record' | 'drvRecord') {
   const [error, setError] = useState('');
   const [ask, setAsk] = useState<{ warnings: Warning[]; resolve: (ok: boolean) => void } | null>(null);
 
-  async function send(payload: any, label: string): Promise<SendResult> {
+  /** noAsk: sent in the background (screen already moved on): a warning is handed back instead of asked here. */
+  async function send(payload: any, label: string, opts?: { noAsk?: boolean }): Promise<SendResult> {
     setBusy(n => n + 1); setError('');
     const body = Object.assign({ ref: newRef(), takenAt: Date.now(), confirm: [] as string[] }, payload);
     // Fast save: the step goes first without its photos (small, quick); the photos follow in the background.
@@ -73,6 +74,7 @@ export function useSubmit(action: 'record' | 'drvRecord') {
         const light = hasMedia ? Object.assign({}, body, { photo: undefined, photos: undefined, signature: undefined, later: true }) : body;
         const res = await api(action, light, { noAuth: action === 'drvRecord' });
         if (res && res.needConfirm) {
+          if (opts && opts.noAsk) return { ok: false, warnings: res.needConfirm };
           const yes = await new Promise<boolean>(resolve => setAsk({ warnings: res.needConfirm, resolve }));
           setAsk(null);
           if (!yes) return { ok: false };
@@ -89,7 +91,7 @@ export function useSubmit(action: 'record' | 'drvRecord') {
         return { ok: false, queued: true };
       }
       setError(errText(e.message));
-      return { ok: false };
+      return { ok: false, error: errText(e.message) };
     } finally {
       setBusy(n => n - 1);
     }

@@ -282,21 +282,52 @@ function CancelTrip(p: { trip: TripSummary; truckType: string; onClose: () => vo
   );
 }
 
-/** Saves one step; returns the server answer ({} when kept on the phone to send later), or null when it was not saved. */
+/** Steps whose instant save came back with a warning: the next try waits for the server (so the warning can be asked). */
+const askFirst = new Set<string>();
+
+/**
+ * Saves one step; returns the server answer ({} when kept on the phone to send later), or null when it was not saved.
+ * optimistic (Kim, 24 Nov 2026 "submit is still slow"): the screen moves to the next step at once and the step is sent
+ * in the background; a refusal or warning puts the trip back as the server has it and says why.
+ */
 function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
   const app = useContext(AppCtx);   // missing on the driver link page (no sign-in)
   const sub = useSubmit(link ? 'drvRecord' : 'record');
   const [saving, setSaving] = useState(false);
-  async function save(payload: any, label: string): Promise<any> {
+  const done = (r: any, label: string) => {
+    toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label);
+    if (app) { if (r.ok && r.data && r.data.trip && app.patchTrip) app.patchTrip(r.data.trip); app.refreshOps(); } else if (onSaved) onSaved();
+  };
+  async function save(payload: any, label: string, optimistic?: (trip: TripSummary) => TripSummary, trip?: TripSummary): Promise<any> {
+    const body = Object.assign({ v2: true }, payload, link || {});
+    const key = String(payload.tripId) + ':' + payload.code;
+    if (optimistic && trip && app && app.patchTrip && !askFirst.has(key)) {
+      app.patchTrip(optimistic(trip), true);
+      sub.send(body, label, { noAsk: true }).then(r => {
+        app.patchTrip!(trip, 'release');
+        if (r.ok || ('queued' in r && r.queued)) { done(r, label); return; }
+        if ('warnings' in r && r.warnings) { askFirst.add(key); toast('⚠️ ' + r.warnings.map(w => t(w.kh, w.en)).join(' ') + ' ' + t('សូមកត់ត្រាម្តងទៀត។', 'Please record again.')); }
+        else toast('⚠️ ' + t('មិនបានកត់ត្រា', 'Not recorded') + ': ' + label + ('error' in r && r.error ? ' · ' + r.error : ''));
+        app.refreshOps();
+      });
+      return {};
+    }
     setSaving(true);
     try {
-      const r = await sub.send(Object.assign({ v2: true }, payload, link || {}), label);
-      if (r.ok || ('queued' in r && r.queued)) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); if (app) { if (r.ok && r.data && r.data.trip && app.patchTrip) app.patchTrip(r.data.trip); app.refreshOps(); } else if (onSaved) onSaved(); return r.ok ? r.data || {} : {}; }
+      const r = await sub.send(body, label);
+      if (r.ok || ('queued' in r && r.queued)) { askFirst.delete(key); done(r, label); return r.ok ? r.data || {} : {}; }
       return null;
     } finally { setSaving(false); }
   }
   return { save, saving, error: sub.error, dialog: sub.dialog };
 }
+
+/** What the screen shows right after a step, before the server answers (same fields the server sets). */
+const afterLoad = (code: 4 | 6, wh?: string) => (x: TripSummary): TripSummary => ({ ...x, lastLoad: code, lastCode: code, wh: wh || x.wh, lastTime: Date.now() });
+const afterStop = (code: 8 | 12 | 13, dns: string[]) => (x: TripSummary): TripSummary => ({
+  ...x, lastCode: code, lastTime: Date.now(),
+  dns: x.dns.map(d => (dns.indexOf(d.dn) >= 0 && !['delivered', 'failed', 'canceled', 'moved'].includes(d.leg) ? { ...d, leg: code === 8 ? 'at_customer' : code === 12 ? 'unloading' : 'unloaded' } : d)),
+});
 
 function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   const { boot, ops } = useApp();
@@ -401,11 +432,11 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   async function submit() {
     setTried(true);
     if (Object.keys(miss).length) { scrollToMissing(); return; }
-    if (n === 2) await st.save({ ...base, code: 4, wh }, label(2));
+    if (n === 2) await st.save({ ...base, code: 4, wh }, label(2), afterLoad(4, wh), trip);
     else if (n === 3) {
       const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn, ...(inPlan.has(dn) ? {} : custs[dn] || {}) })) }, label(3));
       if (ok) setAgain(false);
-    } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4));
+    } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4), afterLoad(6), trip);
   }
   return (
     <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={n === 2 ? '2. ' + t('តើអ្នកមកឡើងទំនិញឃ្លាំងមួយណា? សូមជ្រើសរើស', 'Which warehouse are you loading at? Please choose')
@@ -590,9 +621,9 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
     if (Object.keys(miss).length) { scrollToMissing(); return; }
     const all = dnsAll.map(dn => ({ dn }));
     let r: any = null;
-    if (n === 6) r = await st.save({ ...base, code: 8, dns: all, photo }, label);
-    else if (n === 7) r = await st.save({ ...base, code: 12, dns: all }, label);
-    else if (n === 8) r = await st.save({ ...base, code: 13, dns: all }, label);
+    if (n === 6) r = await st.save({ ...base, code: 8, dns: all, photo }, label, afterStop(8, dnsAll), p.trip);
+    else if (n === 7) r = await st.save({ ...base, code: 12, dns: all }, label, afterStop(12, dnsAll), p.trip);
+    else if (n === 8) r = await st.save({ ...base, code: 13, dns: all }, label, afterStop(13, dnsAll), p.trip);
     else if (result === 'ok') {
       r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: [signed, photo], receiver: receiver.trim(), signature }, label);
       if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); p.onRate(o); }
