@@ -657,3 +657,13 @@ test('same DN loaded at a 2nd warehouse on the same truck: warning only (Kim, 23
   assert.deepStrictEqual((tr.dns || []).map(d => d.dn), ['9000000001'], 'still one DN on the trip');
   assert.strictEqual(tr.dns[0].loadKg, 2000, 'kg from both warehouses adds up');
 });
+
+test('record answers with the trip summary so the phone moves on at once', () => {
+  const e = env(); e.run('setup()');
+  const g = gateIn(e, 'TEST-0001');
+  assert.equal(g.trip.id, g.tripId); assert.equal(g.trip.plate, 'TEST-0001'); assert.equal(g.trip.legacy, false);
+  step(e); const r = ok(rec(e, WH, { code: 4, tripId: g.tripId, v2: true, wh: 'PNP1' }));
+  assert.equal(r.trip.lastLoad, 4); assert.equal(r.trip.wh, 'PNP1');
+  const o = ok(e.call('ops', {}, WH)).trips.find(x => x.id === g.tripId);
+  assert.deepEqual(r.trip, o);
+});

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExtern
 import { api, API_URL, CLIENT_ID, flushOutbox, outbox, setToken, signedEmail, store, token } from './api';
 import { errText, t, useLang } from './i18n';
 import { AppCtx, go, useRoute } from './state';
-import type { Boot, Ops } from './types';
+import type { Boot, Ops, TripSummary } from './types';
 import { Alert, BottomNav, Header, Spinner, Tab, Toaster, toast } from './components/ui';
 import { OpsPage } from './pages/Ops';
 import { ScanPage } from './pages/Scan';
@@ -82,6 +82,15 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
     try { const o = await api<Ops>('ops'); setOps(o); store.set(opsKey(), JSON.stringify(o)); setErr(''); }
     catch (e: any) { failed(e); }
     finally { setBusy(false); }
+  }, []);
+  const patchTrip = useCallback((trip: TripSummary) => {
+    setOps(o => {
+      if (!o) return o;
+      const has = o.trips.some(x => x.id === trip.id);
+      const n = { ...o, trips: has ? o.trips.map(x => (x.id === trip.id ? trip : x)) : [trip].concat(o.trips) };
+      store.set(opsKey(), JSON.stringify(n));
+      return n;
+    });
   }, []);
   const load = useCallback(async () => {
     setBusy(true);
@@ -165,7 +174,7 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : page === 'joinlinks' ? t('តំណភ្ជាប់ Telegram អតិថិជន', 'Customer join links') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
   return (
-    <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, setBusy }}>
+    <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, patchTrip, setBusy }}>
       <Header busy={busy} waiting={waiting} onOutbox={() => go('/more')} phoneView={phoneView} title={page === 'dn' ? t('តាមដាន DN', 'DN tracking') : t(...titles[tab])} sub={sub} />
       <div className="app-body">
         {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}

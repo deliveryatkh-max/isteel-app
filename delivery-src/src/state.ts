@@ -9,6 +9,8 @@ export type Ctx = {
   /** Goes up every minute while the app is open, so open pages refresh on their own (Kim, 12 Oct 2026). */
   live: number;
   refreshOps: () => Promise<void>;
+  /** Puts a trip the server just returned into the Active list at once (no wait for 'ops'). */
+  patchTrip?: (trip: TripSummary) => void;
   setBusy: (b: boolean) => void;
 };
 export const AppCtx = createContext<Ctx>(null as any);
