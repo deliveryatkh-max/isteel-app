@@ -35,7 +35,7 @@ const errors = [];
   await w.getByText('Trucks inside').waitFor();
   assert.ok(!(await w.getByText('Driver', { exact: false }).filter({ hasText: '🚚 Driver' }).count()), 'warehouse has no driver switch');
   await w.getByRole('button', { name: new RegExp(PLATE) }).click();
-  await w.getByText('2. Arrival at loading area').first().waitFor();
+  await w.getByText('2. Which warehouse are you loading at? Please choose').first().waitFor();
   await w.locator('#wh button, #wh [role=combobox]').first().click().catch(() => w.getByText('Choose the warehouse').click());
   await w.locator('[role=dialog] button', { hasText: 'PNP1' }).first().click();
   await save(w, w.getByRole('button', { name: /Record · Arrival/ }));

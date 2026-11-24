@@ -401,7 +401,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4));
   }
   return (
-    <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={stepName(n)}>
+    <Section icon={n === 2 ? '🏭' : n === 3 ? '🏗️' : '✅'} title={n === 2 ? '2. ' + t('តើអ្នកមកឡើងទំនិញឃ្លាំងមួយណា? សូមជ្រើសរើស', 'Which warehouse are you loading at? Please choose') : stepName(n)}>
       {st.dialog}
       {n === 2 || (n === 3 && again) ? (
         <Field icon="🏭" label={t('លេខកូដឃ្លាំង', 'Warehouse code')} required need={!!miss.wh} error={m.wh} id="wh">
