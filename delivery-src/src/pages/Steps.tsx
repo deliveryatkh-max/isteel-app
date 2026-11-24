@@ -202,7 +202,8 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
           </button>
         )}
       </div>
-      {office && trip.dns.length ? <StopsCard trip={trip} /> : null}
+      {/* Kim (24 Nov 2026): once the driver part shows the stop card, the stops list repeats it: hidden. */}
+      {office && trip.dns.length && !(trip.gateOut && !trip.closed && p.mode !== 'wh') ? <StopsCard trip={trip} /> : null}
       <div id="stepform" className="scroll-mt-20">
       {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
         : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
@@ -553,7 +554,10 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
     <button type="button" className="w-full text-left bg-transparent border-0 p-0 cursor-pointer" onClick={() => setOpen(!open)}>
       <div className="flex items-start justify-between gap-2">
         <b className="text-[16px]">📍 {name}</b>
-        <span className="text-[12px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap bg-oksoft text-ok">{n ? stepName(n) : L(legs[sp.dns[0].leg]) || sp.dns[0].leg}</span>
+        <span className="grid justify-items-end gap-1">
+          <span className="text-[12px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap bg-oksoft text-ok">{n ? stepName(n) : L(legs[sp.dns[0].leg]) || sp.dns[0].leg}</span>
+          <span className="muted text-[12.5px] whitespace-nowrap" data-stopkg>{dnsAll.length} DN{sp.kg ? ' · ' + fmtKg(sp.kg) : ''}</span>
+        </span>
       </div>
       <div className="flex flex-wrap gap-1.5 mt-1.5">{dnsAll.map(d => <span key={d} className="text-[12.5px] font-bold rounded-md px-2 py-0.5 bg-soft text-brand">{d}</span>)}</div>
     </button>
