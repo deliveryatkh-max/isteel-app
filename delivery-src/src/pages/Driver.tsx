@@ -8,6 +8,7 @@ import { Field, Section, STEP_LOOK, scrollToMissing } from '../components/Form';
 import { ProofFields, RateLinks, SiteRateForm } from '../components/Proof';
 import { DriverSteps } from './Steps';
 import type { TripSummary } from '../types';
+import { CalcButton } from '../components/Calc';
 
 type DrvTrip = {
   trip: { id: string; plate: string; driver: string; round: string; stage: string; gateOut: number | null; closed?: boolean; dns: TripDn[] };
@@ -133,7 +134,8 @@ export function DriverPage(p: { tripId: string; k: string }) {
                           <div className="grid gap-2 mt-2 pl-7">
                             <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5" checked={!!part[z.dn]} onChange={e => setPart(Object.assign({}, part, { [z.dn]: e.target.checked }))} />{t('ប្រគល់តែមួយផ្នែក (នៅសល់ដឹកជើងក្រោយ)', 'Only part delivered (rest comes on another trip)')}</label>
                             <label className="font-bold text-[14px]">⚖️ {t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} <span className="text-bad">*</span></label>
-                            <input className={'in ' + (miss['kg_' + z.dn] ? '!border-bad' : '')} data-missing={miss['kg_' + z.dn] ? '1' : undefined} inputMode="decimal" value={kg[z.dn] || ''} onChange={e => setKg(Object.assign({}, kg, { [z.dn]: e.target.value.replace(/[^0-9.]/g, '') }))} placeholder="kg" aria-label="kg" />
+                            <div className="flex gap-2"><input className={'in flex-1 min-w-0 ' + (miss['kg_' + z.dn] ? '!border-bad' : '')} data-missing={miss['kg_' + z.dn] ? '1' : undefined} inputMode="decimal" value={kg[z.dn] || ''} onChange={e => setKg(Object.assign({}, kg, { [z.dn]: e.target.value.replace(/[^0-9.]/g, '') }))} placeholder="kg" aria-label="kg" />
+                              <CalcButton value={kg[z.dn] || ''} onChange={v => setKg(k => Object.assign({}, k, { [z.dn]: v }))} title={'DN ' + z.dn + ' · kg'} /></div>
                             {miss['kg_' + z.dn] ? <span className="text-bad text-[13px] font-semibold">⚠️ {miss['kg_' + z.dn]}</span> : null}
                           </div>
                         ) : null}
