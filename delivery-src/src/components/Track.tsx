@@ -56,7 +56,7 @@ export function TrackLinks(p: { tripId: string; links: Record<string, string>; j
       <p className="muted text-[13px] mt-0">{t('ផ្ញើតំណនេះទៅអតិថិជន ដើម្បីមើលឡាននៅលើផែនទីផ្ទាល់ (មិនចាំបាច់ចូលគណនី)។', 'Send this link to the customer to see the truck on a live map (no sign-in).')}</p>
       {dns.map(dn => {
         const url = trackUrl(dn, p.tripId, p.links[dn]);
-        const msg = t('🚚 ទំនិញរបស់អ្នក (DN ' + dn + ') កំពុងធ្វើដំណើរ។ មើលទីតាំងឡានផ្ទាល់:', '🚚 Your steel (DN ' + dn + ') is on the way. See the truck live:');
+        const msg = t('🚚 ទំនិញរបស់អ្នក (DN ' + dn + ') កំពុងនៅតាមផ្លូវ។ មើលទីតាំងឡានផ្ទាល់:', '🚚 Your steel (DN ' + dn + ') is on the way. See the truck live:');
         return (
           <div key={dn} className="border-t border-line py-2 flex items-center justify-between gap-2 flex-wrap">
             <b>DN {dn}</b>
