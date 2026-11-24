@@ -18,6 +18,7 @@ class Range {
     return out;
   }
   getValue() { return this.getValues()[0][0]; }
+  getFormulas() { return this.getValues().map(r => r.map(v => (typeof v === 'string' && v[0] === '=' ? v : ''))); }
   setValues(v) {
     if (v.length !== this.nr || v.some(r => r.length !== this.nc)) throw new Error('setValues size mismatch ' + v.length + 'x' + v[0].length + ' vs ' + this.nr + 'x' + this.nc);
     v.forEach((row, i) => row.forEach((x, j) => this.sh.set(this.r + i, this.c + j, x)));

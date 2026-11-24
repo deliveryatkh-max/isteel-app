@@ -54,7 +54,6 @@ export function MorePage() {
       <Link href="#/complaints" icon="📣" km="បណ្តឹងអតិថិជន" en="Customer complaints" />
       <Link href="#/trips/history" icon="🗂️" km="ប្រវត្តិជើងដឹក" en="Trip history" />
       {boot.canCorrect ? <Link href="#/quality" icon="🩺" km="ពិនិត្យគុណភាពទិន្នន័យ" en="Data quality check" sub={t('បង្ហាញតែបញ្ហា មិនកែស្វ័យប្រវត្តិ', 'Shows problems only; nothing is changed')} /> : null}
-      {boot.isAdmin ? <Link href="#/users" icon="👥" km="អ្នកប្រើប្រាស់ និងតួនាទី" en="Users and roles" /> : null}
     </main>
   );
 }

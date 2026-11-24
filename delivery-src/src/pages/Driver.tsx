@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, flushOutbox } from '../api';
 import { errText, fmtTime, L, t, useLang, noId } from '../i18n';
 import type { Label, TripDn } from '../types';
@@ -37,9 +37,12 @@ export function DriverPage(p: { tripId: string; k: string }) {
   const [formErr, setFormErr] = useState('');
   const [queued, setQueued] = useState(false);
   const sub = useSubmit('drvRecord');
+  // Steps sent in the background (instant saves): an older answer must not undo the screen; reload when all are back.
+  const pending = useRef(0);
   useEffect(() => {
     api<DrvTrip>('drvTrip', { t: p.tripId, k: p.k }, { noAuth: true })
       .then(x => {
+        if (pending.current > 0) return;
         setD(x); setErr('');
         const open = x.trip.dns.filter(z => DONE.indexOf(z.leg) < 0);
         if (open.length === 1) setPicked({ [open[0].dn]: true });
@@ -104,7 +107,9 @@ export function DriverPage(p: { tripId: string; k: string }) {
             </section>
             {d!.legs.unloading ? (
               // Kim's 9-step flow (22 Nov 2026): each DN shows its own next step, as on the signed-in screen.
-              <DriverSteps trip={tr as unknown as TripSummary} truckType="" sites={d!.sites} rateAll={d!.rate} siteRatedAll={d!.siteRated} link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1) }} />
+              <DriverSteps trip={tr as unknown as TripSummary} truckType="" sites={d!.sites} rateAll={d!.rate} siteRatedAll={d!.siteRated} link={{ t: p.tripId, k: p.k, legs: d!.legs, reload: () => setN(n + 1),
+                patch: f => { pending.current++; setD(x => (x ? { ...x, trip: f(x.trip as unknown as TripSummary) as any } : x)); },
+                settle: () => { pending.current = Math.max(0, pending.current - 1); if (!pending.current) setN(k => k + 1); } }} />
             ) : !open.length ? <Alert tone="ok">{t('DN ទាំងអស់បានកត់ត្រារួច។ សូមអរគុណ!', 'All DNs are recorded. Thank you!')}</Alert> : (
               <>
                 <Section icon="🧭" title={t('ជំហាន', 'Step')} color={lk.color}>

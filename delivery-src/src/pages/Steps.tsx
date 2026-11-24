@@ -2,7 +2,7 @@ import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { api, store } from '../api';
 import { errText, fmtDateTime, fmtTime, kg as fmtKg, L, t, useLang, noId } from '../i18n';
 import { AppCtx, go, openTrips, useApp } from '../state';
-import type { Label, TripDetail, TripSummary } from '../types';
+import type { Label, TripDetail, TripDn, TripSummary } from '../types';
 import { Alert, Badge, Modal, Opt, PhotoInput, Picker, Segmented, Spinner, toast } from '../components/ui';
 import { Field, Section, scrollToMissing } from '../components/Form';
 import { MultiPhoto, RateLinks, SignaturePad, SiteRateForm, siteRateSigned } from '../components/Proof';
@@ -291,7 +291,7 @@ const askFirst = new Set<string>();
  * optimistic (Kim, 24 Nov 2026 "submit is still slow"): the screen moves to the next step at once and the step is sent
  * in the background; a refusal or warning puts the trip back as the server has it and says why.
  */
-function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
+function useStep(link?: { t: string; k: string }, onSaved?: () => void, drv?: DrvLink) {
   const app = useContext(AppCtx);   // missing on the driver link page (no sign-in)
   const sub = useSubmit(link ? 'drvRecord' : 'record');
   const [saving, setSaving] = useState(false);
@@ -299,17 +299,20 @@ function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
     toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label);
     if (app) { if (r.ok && r.data && r.data.trip && app.patchTrip) app.patchTrip(r.data.trip); app.refreshOps(); } else if (onSaved) onSaved();
   };
-  async function save(payload: any, label: string, optimistic?: (trip: TripSummary) => TripSummary, trip?: TripSummary): Promise<any> {
+  async function save(payload: any, label: string, optimistic?: (trip: TripSummary) => TripSummary, trip?: TripSummary, onAnswer?: (data: any) => void): Promise<any> {
     const body = Object.assign({ v2: true }, payload, link || {});
     const key = String(payload.tripId) + ':' + payload.code;
-    if (optimistic && trip && app && app.patchTrip && !askFirst.has(key)) {
-      app.patchTrip(optimistic(trip), true);
+    // Signed-in screens patch the trip in the app; the driver link page (no sign-in) patches its own copy (Kim, 24 Nov 2026).
+    const canPatch = app ? !!app.patchTrip : !!(drv && drv.patch);
+    if (optimistic && trip && canPatch && !askFirst.has(key)) {
+      if (app) app.patchTrip!(optimistic(trip), true); else drv!.patch!(optimistic);
       sub.send(body, label, { noAsk: true }).then(r => {
-        app.patchTrip!(trip, 'release');
-        if (r.ok || ('queued' in r && r.queued)) { done(r, label); return; }
-        if ('warnings' in r && r.warnings) { askFirst.add(key); toast('⚠️ ' + r.warnings.map(w => t(w.kh, w.en)).join(' ') + ' ' + t('សូមកត់ត្រាម្តងទៀត។', 'Please record again.')); }
+        if (app) app.patchTrip!(trip, 'release');
+        const ok = r.ok || ('queued' in r && r.queued);
+        if (ok) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); if (r.ok && onAnswer) onAnswer(r.data || {}); }
+        else if ('warnings' in r && r.warnings) { askFirst.add(key); toast('⚠️ ' + r.warnings.map(w => t(w.kh, w.en)).join(' ') + ' ' + t('សូមកត់ត្រាម្តងទៀត។', 'Please record again.')); }
         else toast('⚠️ ' + t('មិនបានកត់ត្រា', 'Not recorded') + ': ' + label + ('error' in r && r.error ? ' · ' + r.error : ''));
-        app.refreshOps();
+        if (app) { if (ok && r.ok && r.data && r.data.trip) app.patchTrip!(r.data.trip); app.refreshOps(); } else drv!.settle!();
       });
       return {};
     }
@@ -328,6 +331,15 @@ const afterLoad = (code: 4 | 6, wh?: string) => (x: TripSummary): TripSummary =>
 const afterStop = (code: 8 | 12 | 13, dns: string[]) => (x: TripSummary): TripSummary => ({
   ...x, lastCode: code, lastTime: Date.now(),
   dns: x.dns.map(d => (dns.indexOf(d.dn) >= 0 && !['delivered', 'failed', 'canceled', 'moved'].includes(d.leg) ? { ...d, leg: code === 8 ? 'at_customer' : code === 12 ? 'unloading' : 'unloaded' } : d)),
+});
+
+const afterStart = (wh: string, add: TripDn[]) => (x: TripSummary): TripSummary => ({
+  ...x, lastLoad: 5, lastCode: 5, wh: wh || x.wh, lastTime: Date.now(),
+  dns: x.dns.concat(add.filter(a => !x.dns.some(d => d.dn === a.dn))),
+});
+const afterDeliver = (dns: string[]) => (x: TripSummary): TripSummary => ({
+  ...x, lastCode: 9, lastTime: Date.now(),
+  dns: x.dns.map(d => (dns.indexOf(d.dn) >= 0 && !['delivered', 'failed', 'canceled', 'moved'].includes(d.leg) ? { ...d, leg: 'delivered' } : d)),
 });
 
 function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
@@ -435,7 +447,14 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
     if (Object.keys(miss).length) { scrollToMissing(); return; }
     if (n === 2) await st.save({ ...base, code: 4, wh }, label(2), afterLoad(4, wh), trip);
     else if (n === 3) {
-      const ok = await st.save({ ...base, code: 5, wh: again ? wh : trip.wh, dns: dns.map(dn => ({ dn, ...(inPlan.has(dn) ? {} : custs[dn] || {}) })) }, label(3));
+      // Instant when no warning can come back: every DN is in the Delivery Plan for this truck and on no other trip.
+      const np = (s: string) => String(s || '').replace(/[\s-]/g, '').toUpperCase();
+      const planOf = (dn: string) => (boot.plan || []).find(x => x.dn === dn);
+      const usedElsewhere = (dn: string) => ((ops && ops.trips) || []).some(x => x.id !== trip.id && x.dns.some(d => d.dn === dn && d.leg !== 'canceled'));
+      const clean = dns.every(dn => { const pl = planOf(dn); return pl && (!pl.plate || np(pl.plate) === np(trip.plate)) && !usedElsewhere(dn) && !trip.dns.some(d => d.dn === dn); });
+      const w = again ? wh : trip.wh || '';
+      const add: TripDn[] = dns.map(dn => { const pl = planOf(dn); return { dn, cust: pl ? (pl.custId && pl.custName ? pl.custId + '-' + pl.custName : pl.custName || pl.custId) : '', leg: 'picked', kg: 0 }; });
+      const ok = await st.save({ ...base, code: 5, wh: w, dns: dns.map(dn => ({ dn, ...(inPlan.has(dn) ? {} : custs[dn] || {}) })) }, label(3), clean ? afterStart(w, add) : undefined, clean ? trip : undefined);
       if (ok) setAgain(false);
     } else await st.save({ ...base, code: 6, wh: trip.wh, kg: Number(kgIn), photos, websling: websling === 'yes' }, label(4), afterLoad(6), trip);
   }
@@ -497,7 +516,7 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
 }
 
 /** Driver link page (no sign-in): the signed trip link, the DN legs' names and a refresh after each save. */
-export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reload: () => void };
+export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reload: () => void; patch?: (f: (x: TripSummary) => TripSummary) => void; settle?: () => void };
 /**
  * Driver steps 6–9 per stop (Kim, 23 Nov 2026): DNs to the same customer at the same step are recorded once together.
  * D2 B: map + route before arrival; D3 B: one arrival photo for the stop; D4 A: one Delivered form, untick a DN that is not delivered.
@@ -584,7 +603,7 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
     return [d.dn, String(d.kg || d.loadKg || (pl && pl.kg) || '')];
   })));
   const [tried, setTried] = useState(false);
-  const st = useStep(p.link ? { t: p.link.t, k: p.link.k } : undefined, p.link ? p.link.reload : undefined);
+  const st = useStep(p.link ? { t: p.link.t, k: p.link.k } : undefined, p.link ? p.link.reload : undefined, p.link);
   const base = { tripId: p.trip.id, truckType: p.truckType };
   const name = sp.cust ? sp.cust.replace(/^\s*\d+\s*-\s*/, '') : 'DN ' + dnsAll[0];
   const label = stepName(n || 9) + ' · ' + name;
@@ -628,8 +647,11 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
     else if (n === 7) r = await st.save({ ...base, code: 12, dns: all }, label, afterStop(12, dnsAll), p.trip);
     else if (n === 8) r = await st.save({ ...base, code: 13, dns: all }, label, afterStop(13, dnsAll), p.trip);
     else if (result === 'ok') {
-      r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: signed.concat(goods), receiver: receiver.trim(), signature }, label);
-      if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); p.onRate(o); }
+      // Instant (Kim, 24 Nov 2026 "still slow"): the stop shows Delivered at once; the rating links appear when the answer comes.
+      const onRate = p.onRate;
+      const rated = (a: any) => { if (a && a.rate && a.rate.length) { const o: Record<string, string> = {}; a.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); onRate(o); } };
+      r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: signed.concat(goods), receiver: receiver.trim(), signature }, label, afterDeliver(picked), p.trip, rated);
+      rated(r);
     } else r = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: all, remark: reason.trim(), photo }, label);
     if (r) { setTried(false); setPhoto(''); setSigned([]); setGoods([]); setSignature(''); }
   }

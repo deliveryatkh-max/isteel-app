@@ -796,7 +796,8 @@ function scaleTrip_(p) {
   const tripId = onSite[0];
   const rows = rowsWhere_('trip', [tripId]).sort((a, b) => a.time - b.time || a.seq - b.seq);
   const st = tripState(rows);
-  if (st.lastLoad !== 6) return { found: true, tripId: tripId, ready: false };
+  const k = driverLinkToken_(tripId);   // driver link QR on the weighing ticket (Kim, 24 Nov 2026)
+  if (st.lastLoad !== 6) return { found: true, tripId: tripId, k: k, ready: false };
   const out = [], seen = {};
   let batch = [], closed = false;
   rows.forEach(r => {
@@ -816,7 +817,7 @@ function scaleTrip_(p) {
       closed = true;
     }
   });
-  return { found: true, tripId: tripId, ready: true, dns: out };
+  return { found: true, tripId: tripId, k: k, ready: true, dns: out };
 }
 
 /** The Time Log "អ្នកកត់ត្រា" value: the user's group from Type Record (Security → ១.សន្តិសុខ …). */
