@@ -117,6 +117,11 @@ const errors = [];
   await save(d, c9.getByRole('button', { name: /Delivered \(/ }));
   await d.locator('[data-stop="9000000102"]').getByText(/Delivered/).first().waitFor({ timeout: 10000 });
   await d.getByText(/rating|វាយតម្លៃ/i).first().waitFor({ timeout: 10000 });
+  // Kim (24 Nov 2026): the driver survey stays (after refreshes and a reload) until it is sent
+  await d.waitForTimeout(3000);
+  await d.getByText('Rate the customer site').waitFor({ timeout: 5000 });
+  await d.reload();
+  await d.getByText('Rate the customer site').waitFor({ timeout: 10000 });
   console.log('PASS driver steps 6-9 for one DN, rating shown');
 
   // Driver link (no sign-in): the other DN, with the new per-DN steps
