@@ -817,7 +817,7 @@ function trackBotPoll() {
         xappend_(TG_CUST, { 'Customer ID': custId, 'Customer Name': name, 'Chat ID': chat, 'Telegram Name': [m.from && m.from.first_name, m.from && m.from.last_name].filter(Boolean).join(' '), 'Joined Time': now_(), Active: 'Yes' });
       }
     });
-    trackBot_('sendMessage', { chat_id: chat, text: '✅ ' + (name ? name + ': ' : '') + 'បានភ្ជាប់រួចរាល់។ អ្នកនឹងទទួលតំណផែនទីផ្ទាល់ រាល់ពេលឡានចេញពីរោងចក្រ។\nConnected. You will get a live map link every time a truck leaves ISI Steel.' });
+    trackBot_('sendMessage', { chat_id: chat, text: '✅ បានភ្ជាប់រួចរាល់' + (name ? ' សម្រាប់អតិថិជន៖ ' + String(name).replace(/^\s*\d+\s*-\s*/, '') : '') + '។ អ្នកនឹងទទួលតំណផែនទីផ្ទាល់ រាល់ពេលឡានចេញពីរោងចក្រ។\nConnected. You will get a live map link every time a truck leaves ISI Steel.' });
     // Deliveries already on the way for this customer (last 3 days)
     const from = ymd_(new Date(Date.now() - 3 * 86400000));
     const dns = Object.keys(plan).filter(k => plan[k].custId === custId && (!plan[k].date || plan[k].date >= from));
