@@ -7,12 +7,13 @@ import { Field, Section } from './Form';
 export const MAX_PHOTOS = 5;
 
 /** Up to 5 photos (camera or gallery), shrunk on the phone so they send fast. */
-export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void; label?: string }) {
+export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void; label?: string; max?: number }) {
   useLang();
+  const MAX = p.max || MAX_PHOTOS;
   const cam = useRef<HTMLInputElement>(null), gal = useRef<HTMLInputElement>(null);
   const add = async (files: FileList | null) => {
     if (!files) return;
-    const room = MAX_PHOTOS - p.value.length;
+    const room = MAX - p.value.length;
     const out: string[] = [];
     for (const f of Array.from(files).slice(0, room)) out.push(await shrinkPhoto(f, 1024));
     p.onChange(p.value.concat(out));
@@ -20,7 +21,7 @@ export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void
   return (
     <div>
       {p.label ? <span className="lbl">{p.label}</span> : null}
-      <span className="block muted text-[12.5px] mb-1.5">{p.value.length}/{MAX_PHOTOS} {t('រូប', 'photos')}</span>
+      <span className="block muted text-[12.5px] mb-1.5">{p.value.length}/{MAX} {t('រូប', 'photos')}</span>
       {p.value.length ? (
         <div className="flex flex-wrap gap-2 mb-2">
           {p.value.map((src, i) => (
@@ -32,7 +33,7 @@ export function MultiPhoto(p: { value: string[]; onChange: (v: string[]) => void
           ))}
         </div>
       ) : null}
-      {p.value.length < MAX_PHOTOS ? (
+      {p.value.length < MAX ? (
         <div className="flex gap-2">
           <button type="button" className="btn btn-sm" onClick={() => cam.current?.click()}>📷 {t('ថតរូប', 'Take photo')}</button>
           <button type="button" className="btn btn-sm" onClick={() => gal.current?.click()}>🖼️ {t('ពីវិចិត្រសាល', 'From gallery')}</button>

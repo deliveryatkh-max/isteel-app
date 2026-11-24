@@ -571,7 +571,8 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
   const n = sp.step;
   const [open, setOpen] = useState(p.open);
   const [photo, setPhoto] = useState('');
-  const [signed, setSigned] = useState('');
+  const [signed, setSigned] = useState<string[]>([]);   // Kim (24 Nov 2026): several photos of the signed DN
+  const [goods, setGoods] = useState<string[]>([]);     // and of the goods delivered
   const [result, setResult] = useState<'ok' | 'fail' | 'cancel'>('ok');
   const [reason, setReason] = useState('');
   const [receiver, setReceiver] = useState('');
@@ -608,8 +609,8 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
   if (n === 9 && result === 'ok') {
     if (!picked.length) miss.dns = t('សូមធីក DN ដែលបានប្រគល់', 'Tick the DNs delivered');
     picked.forEach(d => { if (!(Number(kgs[d]) > 0)) miss.dns = t('សូមវាយទំងន់ (kg) របស់ DN ', 'Type the weight (kg) of DN ') + d; });
-    if (!signed) miss.signed = t('សូមថតរូប DN ដែលអតិថិជនចុះហត្ថលេខា', 'Take the photo of the DN signed by the customer');
-    if (!photo) miss.photo = t('សូមថតរូបទំនិញដែលបានប្រគល់', 'Take the photo of the goods delivered');
+    if (!signed.length) miss.signed = t('សូមថតរូប DN ដែលអតិថិជនចុះហត្ថលេខា', 'Take the photo of the DN signed by the customer');
+    if (!goods.length) miss.photo = t('សូមថតរូបទំនិញដែលបានប្រគល់', 'Take the photo of the goods delivered');
     if (!receiver.trim()) miss.receiver = t('សូមវាយឈ្មោះអ្នកទទួល', 'Type the receiver name');
     if (!signature) miss.signature = t('សូមឲ្យអ្នកទទួលចុះហត្ថលេខា', 'Ask the receiver to sign');
   }
@@ -627,10 +628,10 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
     else if (n === 7) r = await st.save({ ...base, code: 12, dns: all }, label, afterStop(12, dnsAll), p.trip);
     else if (n === 8) r = await st.save({ ...base, code: 13, dns: all }, label, afterStop(13, dnsAll), p.trip);
     else if (result === 'ok') {
-      r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: [signed, photo], receiver: receiver.trim(), signature }, label);
+      r = await st.save({ ...base, code: 9, dns: picked.map(dn => ({ dn, kg: Number(kgs[dn]), final: !part })), photos: signed.concat(goods), receiver: receiver.trim(), signature }, label);
       if (r && r.rate && r.rate.length) { const o: Record<string, string> = {}; r.rate.forEach((x: { dn: string; k: string }) => { o[x.dn] = x.k; }); p.onRate(o); }
     } else r = await st.save({ ...base, code: result === 'fail' ? 11 : 10, dns: all, remark: reason.trim(), photo }, label);
-    if (r) { setTried(false); setPhoto(''); setSigned(''); setSignature(''); }
+    if (r) { setTried(false); setPhoto(''); setSigned([]); setGoods([]); setSignature(''); }
   }
   const saveText = n === 9 ? (result === 'ok' ? t('បានប្រគល់', 'Delivered') + ' (' + picked.length + ' DN)' : (result === 'fail' ? t('បរាជ័យ', 'Failed') : t('លុបចោល', 'Canceled')) + count) : t(...STEP_NAMES[n]) + count;
   return (
@@ -668,8 +669,8 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
                   {dnsAll.length > 1 ? <span className="muted text-[12px]">{t('ដោះធីក DN ដែលមិនបានប្រគល់ (កត់ត្រាវាដាច់ដោយឡែកបន្ទាប់)', 'Untick a DN not delivered (record it on its own after)')}</span> : null}
                 </div>
               </Field>
-              <Field icon="✍️" label={t('រូបថត DN ដែលអតិថិជនចុះហត្ថលេខា', 'DN signed by customer')} required need={!!miss.signed} error={m.signed} id="signed"><PhotoInput value={signed} onChange={setSigned} /></Field>
-              <Field icon="📦" label={t('រូបថតទំនិញដែលបានប្រគល់', 'Goods delivered photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+              <Field icon="✍️" label={t('រូបថត DN ដែលអតិថិជនចុះហត្ថលេខា', 'DN signed by customer')} required need={!!miss.signed} error={m.signed} id="signed"><MultiPhoto value={signed} onChange={setSigned} /></Field>
+              <Field icon="📦" label={t('រូបថតទំនិញដែលបានប្រគល់', 'Goods delivered photo')} required need={!!miss.photo} error={m.photo} id="photo"><MultiPhoto value={goods} onChange={setGoods} /></Field>
               <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5" checked={part} onChange={e => setPart(e.target.checked)} />{t('ប្រគល់តែមួយផ្នែក (នៅសល់ដឹកជើងក្រោយ)', 'Only part delivered (rest comes on another trip)')}</label>
               <Field icon="🙋" label={t('ឈ្មោះអ្នកទទួល', 'Receiver name')} required need={!!miss.receiver} error={m.receiver} id="rcv">
                 <input className={'in ' + (m.receiver ? '!border-bad' : '')} value={receiver} onChange={e => setReceiver(e.target.value)} />
