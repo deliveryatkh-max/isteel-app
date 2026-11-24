@@ -366,7 +366,12 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
   };
 
   if (n === 0) {
-    if (done) return <Alert tone="info">⏳ {t('ឡើងទំនិញរួចរាល់។ រង់ចាំថ្លឹងចេញនៅជញ្ជីង។', 'Picking done. Waiting for Gate Out at the scale.')}</Alert>;
+    if (done) return (
+      <div className="waitline" data-wait="gateout">
+        <span className="ok">✅ {t('ឡើងទំនិញរួចរាល់', 'Loading done')}</span>
+        <span className="wait">⏳ {t('រង់ចាំថ្លឹងចេញនៅជញ្ជីង', 'Waiting for Gate Out at the scale')}<span className="dots"><i /><i /><i /></span></span>
+      </div>
+    );
     return (
       <Section icon="✅" title={t('ឡើងទំនិញរួចនៅ ', 'Loading done at ') + (trip.wh || '')}>
         <p className="muted mt-0">{t('តើឡានត្រូវទៅឃ្លាំងមួយទៀតទេ?', 'Does the truck go to another warehouse?')}</p>
@@ -599,7 +604,7 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
               <a className="btn w-full no-underline" href={'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(p.site)} target="_blank" rel="noopener">🧭 {t('បើកផ្លូវ', 'Directions')}</a>
             </>
           ) : null}
-          <Field icon="📷" label={t('រូបថតមកដល់', 'Arrival photo')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
+          <Field icon="📷" label={t('សូមថតរូបទីតាំងដែលបានមកដល់', 'Please take a photo of the place you arrived at')} required need={!!miss.photo} error={m.photo} id="photo"><PhotoInput value={photo} onChange={setPhoto} /></Field>
           {dnsAll.length > 1 ? <div className="text-[12.5px] rounded-lg px-2.5 py-1.5 bg-warnsoft text-warn">💡 {t('រូបថតមួយ ប្រើសម្រាប់ DN ទាំង ' + dnsAll.length, 'One photo for all ' + dnsAll.length + ' DNs')}</div> : null}
         </>
       ) : null}
