@@ -122,6 +122,14 @@ const errors = [];
   await d.getByText('Rate the customer site').waitFor({ timeout: 5000 });
   await d.reload();
   await d.getByText('Rate the customer site').waitFor({ timeout: 10000 });
+  // Kim picked survey option A: face buttons, all 3 answers before Send
+  assert.ok(await d.getByRole('button', { name: /Send rating/ }).isDisabled(), 'send waits for 3 answers');
+  await d.getByRole('radio', { name: /< 30 min/ }).click();
+  await d.getByRole('radio', { name: /^.?.?\s*Yes$/ }).first().click().catch(() => d.locator('.faces').nth(1).locator('.face').first().click());
+  await d.locator('.faces').nth(2).locator('.face').first().click();
+  await d.screenshot({ path: SHOTS + 'steps-04b-survey.png', fullPage: true });
+  await d.getByRole('button', { name: /Send rating/ }).click();
+  await d.getByText('Rate the customer site').waitFor({ state: 'detached', timeout: 10000 });
   console.log('PASS driver steps 6-9 for one DN, rating shown');
 
   // Driver link (no sign-in): the other DN, with the new per-DN steps
