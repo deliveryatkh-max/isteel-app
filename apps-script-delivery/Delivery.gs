@@ -1009,6 +1009,11 @@ function saveEvent_(p, who) {
     if (code === 1 && photoUrls.length > 1) saveProof_(newRows, tripId, '', '', photoUrls, who.email);
     if (code === 1 && !master_().plates.some(x => x.plate === plate)) rememberTruck_(plate, p.company, p.truckType, who.email, p.driver);
     const res = { ok: true, tripId: tripId, round: round, keys: newRows.map(r => r.key), stage: after.stage, time: at.getTime(), photo: photoUrl };
+    // The trip as the Active list shows it, so the phone moves to the next step without waiting for 'ops'.
+    try {
+      const meta = code === 1 ? { [tripId]: { date: ymd_(at), plate: plate, driver: driver, round: round } } : {};
+      res.trip = tripSummary_(tripId, tripRows.concat(newRows).filter(r => r.trip === tripId), Object.assign({}, idx, meta), doneAfter);
+    } catch (e) { console.error('trip summary: ' + e); }
     if (code === 9) res.rate = newRows.map(r => ({ dn: r.dn, k: rateToken_(r.dn, tripId) }));
     if (code === 9) { try { res.notifiedDone = tgDelivered_(tripId, newRows, rowsWhere_('trip', [tripId])[0].plate, p.receiver); } catch (e) { console.error('tgDelivered: ' + e); } }   // Telegram: delivered + rating link
     if (code === 10 || code === 11) newRows.forEach(r => { try { PropertiesService.getScriptProperties().deleteProperty(tgMsgKey_(r.dn, tripId)); } catch (e) { /* none */ } });

@@ -289,7 +289,7 @@ function useStep(link?: { t: string; k: string }, onSaved?: () => void) {
     setSaving(true);
     try {
       const r = await sub.send(Object.assign({ v2: true }, payload, link || {}), label);
-      if (r.ok || ('queued' in r && r.queued)) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); if (app) app.refreshOps(); else if (onSaved) onSaved(); return r.ok ? r.data || {} : {}; }
+      if (r.ok || ('queued' in r && r.queued)) { toast('✅ ' + t('បានកត់ត្រា', 'Recorded') + ': ' + label); if (app) { if (r.ok && r.data && r.data.trip && app.patchTrip) app.patchTrip(r.data.trip); app.refreshOps(); } else if (onSaved) onSaved(); return r.ok ? r.data || {} : {}; }
       return null;
     } finally { setSaving(false); }
   }
