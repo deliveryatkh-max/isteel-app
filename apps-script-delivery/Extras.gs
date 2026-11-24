@@ -425,6 +425,7 @@ function complaintResolve_(p, user) {
 
 // ---------------------------------------------------------------- delay alerts (time trigger every 10 minutes)
 function checkDelays() {
+  try { syncPlanStatus(); } catch (e) { console.error('Plan STATUS: ' + e); }   // Kim (24 Nov 2026): every 10 minutes with this timer
   const s = settings_();
   if (!prop_('TELEGRAM_BOT_TOKEN') || !s.TELEGRAM_CHAT_ID) return;
   const rows = tailRows_(1500);
@@ -447,6 +448,54 @@ function checkDelays() {
   });
   Object.keys(sent).forEach(id => { if (now - sent[id] > 2 * 86400000) delete sent[id]; });
   if (msgs.length && telegram_(msgs.join('\n'))) props.setProperty('DELAY_SENT', JSON.stringify(sent));
+}
+
+// ---------------------------------------------------------------- Delivery Plan STATUS (Kim, 24 Nov 2026)
+/**
+ * Writes the latest status of each DN into the Delivery Plan "STATUS" column: the finished state (Delivered, Partially
+ * Delivered, Delivery Failed, Canceled) or else the latest step of its trip (for example "៥.ចេញពីកន្លែងថ្លឹង"), blank when
+ * nothing is recorded yet. Only that column changes; it is left alone when it holds formulas. Runs with the 10-minute
+ * checkDelays timer; can also be run by hand from the editor.
+ */
+function syncPlanStatus() {
+  const sh = sheet_(SH.PLAN);
+  const last = sh.getLastRow();
+  if (last < 2) return { changed: 0 };
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim().toUpperCase());
+  const iDn = head.indexOf('DN NUMBER'), iSt = head.indexOf('STATUS');
+  if (iDn < 0 || iSt < 0) return { changed: 0, note: 'No DN NUMBER or STATUS column' };
+  const stRange = sh.getRange(2, iSt + 1, last - 1, 1);
+  if (stRange.getFormulas().some(r => r[0])) return { changed: 0, note: 'STATUS has formulas: left alone' };
+  const dnCol = sh.getRange(2, iDn + 1, last - 1, 1).getValues().map(r => normDn(r[0]));
+  const now = stRange.getValues().map(r => String(r[0] == null ? '' : r[0]));
+  const want = {};
+  dnCol.forEach(d => { if (d) want[d] = 1; });
+  const L = sheet_(SH.LOG), C = logCols_();
+  const lr = L.getLastRow();
+  const rows = lr >= 2 ? L.getRange(2, 1, lr - 1, C.width).getValues().map((v, i) => parseRow_(v, i + 2, C)).filter(r => r.trip && r.code) : [];
+  const groups = groupTrips_(rows);
+  const latest = {};   // dn -> { time, text }
+  Object.keys(groups).forEach(id => {
+    const g = groups[id];
+    const dns = Array.from(new Set(g.map(r => r.dn).filter(d => d && want[d])));
+    if (!dns.length) return;
+    dns.forEach(dn => {
+      // this DN's own rows, plus the trip steps (Gate In, warehouse, Gate Out) that have no DN
+      const mine = g.filter(r => r.dn === dn || (!r.dn && r.code !== 10)).sort((a, b) => a.time - b.time || a.row - b.row).pop();
+      if (mine && (!latest[dn] || mine.time >= latest[dn].time)) latest[dn] = { time: mine.time, text: (EV[mine.code] || {}).kh || mine.eventText };
+    });
+  });
+  const dnRows = rows.filter(r => r.dn && want[r.dn]);
+  const info = dnsInfo_(Object.keys(latest), dnRows, plan_());
+  const out = dnCol.map((dn, i) => {
+    if (!dn || !latest[dn]) return [now[i]];   // nothing recorded: keep what is there
+    const st = (info[dn] || {}).status;
+    const fin = st === 'delivered' || st === 'partial' || st === 'failed' || st === 'canceled';
+    return [fin ? DN_STATUS[st].kh : latest[dn].text];
+  });
+  const changed = out.filter((r, i) => r[0] !== now[i]).length;
+  if (changed) stRange.setValues(out);
+  return { changed: changed };
 }
 
 // ---------------------------------------------------------------- Report tab: time spent at each area (Kim, 24 Nov 2026, option C)

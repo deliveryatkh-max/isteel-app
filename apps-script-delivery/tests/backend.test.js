@@ -583,6 +583,26 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   assert.strictEqual(rep.views.wh.find(w => w.key === 'PNP2').gate, 20);
   assert.ok(rep.views.cust.length >= 1 && rep.views.co.length === 1 && rep.views.driver.length === 1);
   assert.strictEqual(rep.targets.load, 90);
+  // Delivery Plan STATUS (Kim, 24 Nov 2026): the finished state per DN, written by the 10-minute timer
+  e.run('syncPlanStatus()');
+  const planTab = e.ss.getSheetByName('Delivery Plan').rows;
+  const ph = planTab[0], iS = ph.indexOf('STATUS'), iD = ph.indexOf('DN NUMBER');
+  const stOf = dn => (planTab.find(r => String(r[iD]) === dn) || [])[iS];
+  assert.strictEqual(stOf('9000000001'), 'បានប្រគល់');
+  assert.strictEqual(stOf('9000000002'), 'ប្រគល់មិនបាន');
+});
+
+test('Delivery Plan STATUS shows the latest step while the DN is on the way', () => {
+  const e = env(); e.run('setup()');
+  const g = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', driver: '01.Driver A', ticket: 'T9', kg: 9000 }, GUARD));
+  v2Load(e, g.tripId, 'PNP1', ['9000000001'], 1200);
+  e.run('syncPlanStatus()');
+  const planTab = e.ss.getSheetByName('Delivery Plan').rows;
+  const ph = planTab[0];
+  const row = planTab.find(r => String(r[ph.indexOf('DN NUMBER')]) === '9000000001');
+  assert.strictEqual(row[ph.indexOf('STATUS')], '៤.ឡើងទំនិញ រួចរាល់');
+  const other = planTab.find(r => String(r[ph.indexOf('DN NUMBER')]) === '9000000003');
+  assert.ok(!other || !other[ph.indexOf('STATUS')], 'untouched DN stays blank');
 });
 
 test('Scale Gate In needs a signed-in active user; old trips are untouched', () => {

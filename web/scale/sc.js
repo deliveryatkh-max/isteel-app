@@ -117,13 +117,21 @@
   // Kim (22 Nov 2026): the 2nd weigh of a loading truck is filled with the DNs and actual kg the warehouse typed in
   // Delivery. Until the last warehouse has recorded End Loading, nothing is filled and the weigher types them.
   async function loadFromDelivery(x) {
-    if (DEMO || !DLV_API || !x || typeOf(x) !== 'Out' || (x.dns || []).length) return;
+    if (DEMO || !DLV_API || !x || typeOf(x) !== 'Out') return;
     try {
       const res = await fetch(DLV_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'scaleTrip', token: get(TOKEN_KEY), payload: { plate: x.plate } }) });
       const data = await res.json();
       if (data && data.session) set(TOKEN_KEY, data.session);
-      if (!data || !data.ok || !data.data || !data.data.found || F.cid !== x.cid || F.dns.length) return;
+      if (!data || !data.ok || !data.data || !data.data.found) return;
       const d = data.data;
+      // Driver link (Kim, 24 Nov 2026): a driver who is not signed in scans the DRIVERQR picture on the ticket.
+      if (d.k && d.tripId) {
+        const m = getJ('sc_drv', {});
+        m[x.cid] = new URL('../delivery/', location.href).href + '?t=' + encodeURIComponent(d.tripId) + '&k=' + encodeURIComponent(d.k);
+        const ks = Object.keys(m); ks.slice(0, Math.max(0, ks.length - 200)).forEach(c => delete m[c]);
+        set('sc_drv', JSON.stringify(m));
+      }
+      if (F.cid !== x.cid || F.dns.length) return;
       if (!d.ready) { toast('⏳ ' + t('ឃ្លាំងមិនទាន់ឡើងទំនិញរួច។ សូមវាយ DN និង kg ដោយដៃ។', 'Loading is not finished yet. Type the DN and kg.')); return; }
       const list = (d.dns || []).filter(z => z && z.dn && !dnUsedBy(z.dn));
       if (!list.length) return;
@@ -2577,9 +2585,13 @@
     el.onerror = () => { delete libs[src]; rej(new Error('Could not load ' + src)); };
     document.head.appendChild(el);
   }));
-  function qrPng(x) {
+  function qrPng(x) { return qrOf(ticketUrl(x)); }
+  /** Driver link of a ticket, saved when the truck was opened for its 2nd weigh. */
+  const drvUrl = x => (x && getJ('sc_drv', {})[x.cid]) || '';
+  const whitePng = () => { const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 8, 8); return c.toDataURL('image/png'); };
+  function qrOf(text) {
     try {
-      const qr = qrcode(0, 'M'); qr.addData(ticketUrl(x)); qr.make();
+      const qr = qrcode(0, 'M'); qr.addData(text); qr.make();
       const n = qr.getModuleCount(), cell = 8, q = 4, c = document.createElement('canvas');
       c.width = c.height = (n + 2 * q) * cell;
       const g = c.getContext('2d');
@@ -2654,7 +2666,7 @@
     for (const n of Object.keys(parts)) {
       const rp = n.replace(/^word\//, 'word/_rels/') + '.rels', rf = zip.file(rp);
       relsOf[n] = rf ? await rf.async('string') : '';
-      for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE']) {
+      for (const key of ['QR', 'PHOTO1', 'PHOTO2', 'BARCODE', 'DRIVERQR']) {
         if (found.some(f => f.key === key)) continue;
         const at = parts[n].search(new RegExp('<wp:docPr\\b[^>]*(?:descr|title|name)="' + key + '"', 'i'));
         const emb = at >= 0 ? parts[n].slice(at).match(/r:embed="([^"]+)"/) : null;
@@ -2680,6 +2692,10 @@
     const qrTarget = picT.QR || '';
     const qr = qrPng(x);
     if (qrTarget && qr && zip.file(qrTarget)) zip.file(qrTarget, qr.split(',')[1], { base64: true });
+    if (picT.DRIVERQR && zip.file(picT.DRIVERQR)) {   // blank when the truck has no Delivery trip
+      const du = drvUrl(x), dq = (du && qrOf(du)) || whitePng();
+      zip.file(picT.DRIVERQR, dq.split(',')[1], { base64: true });
+    }
     const bc = picT.BARCODE && barcodePng(x.plate);
     if (bc && zip.file(picT.BARCODE)) zip.file(picT.BARCODE, bc.split(',')[1], { base64: true });
     [1, 2].forEach(k => { const ph = phLocal(x, k), tg = picT['PHOTO' + k]; if (ph && tg && zip.file(tg)) zip.file(tg, ph.split(',')[1], { base64: true }); });
@@ -3005,7 +3021,7 @@
         'Empty = the standard ticket. Download the template, change it in Word keeping the {{...}} words, then put it in Drive. The QR picture keeps the alt text "QR". The fonts used in the Word file (e.g. MiSans Khmer) must be embedded in it (Word › Options › Save › Embed fonts) or installed on this PC.')}
         <a href="scale-ticket-template.docx" download>⬇ scale-ticket-template.docx</a></p>
       <details class="hint"><summary>${t('ពាក្យ {{...}} ដែលប្រើបាន', 'Words you can use')}</summary>
-        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{EmptyTruck}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')} · ${t('បាកូដលេខឡាន: រូបក្នុង Word ដែលមាន Alt Text "BARCODE"', 'Plate barcode: a picture in Word with alt text "BARCODE"')}</span></details>
+        <span class="mono">{{TicketNo}} {{Date}} {{TruckNo}} {{Company}} {{Item}} {{Destination}} {{DN}} {{DNCount}} {{DNTotal}} {{DNVariance}} {{DNCheck}} {{Tarp}} {{EmptyTruck}} {{Note}} {{Weight1}} {{Time1}} {{Source1}} {{Weight2}} {{Time2}} {{Source2}} {{Gross}} {{Tare}} {{Net}} {{Warning}} {{Operator}} {{Status}} {{Printed}} {{CompanyName}} {{Customer}} {{Driver}} {{Type}} · ${t('រូបថតឡាន: រូបក្នុង Word ដែលមាន Alt Text "PHOTO1" ឬ "PHOTO2"', 'Truck photos: a picture in Word with alt text "PHOTO1" or "PHOTO2"')} · ${t('បាកូដលេខឡាន: រូបក្នុង Word ដែលមាន Alt Text "BARCODE"', 'Plate barcode: a picture in Word with alt text "BARCODE"')} · ${t('QR សម្រាប់អ្នកបើកបរ (ជំហានដឹកជញ្ជូន): រូបក្នុង Word ដែលមាន Alt Text "DRIVERQR"', 'Driver QR (delivery steps): a picture in Word with alt text "DRIVERQR"')}</span></details>
       <div class="field mt"><label class="f" for="rTpl5">${t('Link គំរូ A5 (មិនចាំបាច់)', 'Link of the A5 template (optional)')}</label>
         <input class="in" id="rTpl5" autocomplete="off" placeholder="https://drive.google.com/file/d/..." value="${esc(s.SCALE_TEMPLATE_A5_LINK || '')}"></div>
       <p class="hint">${t('ទុកទទេ = គំរូ A4 បង្រួមជា A5 ដោយខ្លួនឯង។ ចុច "ច្បាប់ចម្លង A5" ដើម្បីទាញយក កែក្នុង Word ហើយដាក់ក្នុង Drive។',
