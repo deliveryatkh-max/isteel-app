@@ -77,13 +77,18 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
     if (e.code === 'NOACCESS') { setNeed('noaccess'); setErr(errText(e.message)); return; }
     setErr(errText(e.message));
   };
+  // Trips shown ahead of the server while their step is still being sent (an older 'ops' answer must not undo them).
+  const held = useRef<Record<string, TripSummary>>({});
+  const withHeld = (o: Ops): Ops => (Object.keys(held.current).length ? { ...o, trips: o.trips.map(x => held.current[x.id] || x) } : o);
   const refreshOps = useCallback(async () => {
     setBusy(true);
-    try { const o = await api<Ops>('ops'); setOps(o); store.set(opsKey(), JSON.stringify(o)); setErr(''); }
+    try { const o = withHeld(await api<Ops>('ops')); setOps(o); store.set(opsKey(), JSON.stringify(o)); setErr(''); }
     catch (e: any) { failed(e); }
     finally { setBusy(false); }
   }, []);
-  const patchTrip = useCallback((trip: TripSummary) => {
+  const patchTrip = useCallback((trip: TripSummary, hold?: boolean | 'release') => {
+    if (hold === true) held.current[trip.id] = trip; else delete held.current[trip.id];
+    if (hold === 'release') return;
     setOps(o => {
       if (!o) return o;
       const has = o.trips.some(x => x.id === trip.id);
