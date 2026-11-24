@@ -550,7 +550,7 @@ function tripTimes_(g) {
 
 /** Report tab (office roles): averages per warehouse / 3PL / customer / driver for trips with Gate In in [from, to]. */
 function report_(p, user) {
-  needAny_(user, ['admin', 'supervisor', 'logistics']);
+  needAny_(user, ['admin', 'supervisor']);   // Kim (24 Nov 2026): Report only for Admin and Supervisor
   const from = /^\d{4}-\d\d-\d\d$/.test(p.from || '') ? p.from : ymd_(new Date(Date.now() - 6 * 86400000));
   const to = /^\d{4}-\d\d-\d\d$/.test(p.to || '') ? p.to : ymd_(now_());
   const cache = CacheService.getScriptCache();
