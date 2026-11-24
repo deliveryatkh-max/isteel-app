@@ -173,8 +173,9 @@ const errors = [];
   const ad = await as('admin@test.kh');
   await ad.goto(BASE + '/delivery/#/trip/' + encodeURIComponent(trip));
   // Kim's O1 B (23 Nov 2026): stops card, 9-step bar, links behind a button
-  await ad.locator('[data-stops]').waitFor({ timeout: 10000 });
-  assert.ok(/9000000101/.test(await ad.locator('[data-stops]').textContent()), 'DNs in the stops card');
+  // Kim (24 Nov 2026): while the driver part shows a stop card, the stops list is hidden (no duplicate)
+  await ad.locator('[data-stops], [data-stop]').first().waitFor({ timeout: 10000 });
+  assert.ok(/9000000101/.test(await ad.locator('[data-stops], [data-stop]').first().textContent()), 'DNs in the stops or stop card');
   await ad.getByRole('button', { name: /Driver \/ customer links/ }).click();
   await ad.locator('[data-qr="driver"] svg').waitFor({ timeout: 10000 });
   await ad.getByText(/Live tracking link|តំណតាមដាន/).waitFor({ timeout: 10000 });
