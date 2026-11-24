@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { errText, t, useLang } from '../i18n';
-import { Alert, Segmented, shrinkPhoto, toast } from './ui';
+import { Alert, shrinkPhoto, toast } from './ui';
 import { Field, Section } from './Form';
 
 export const MAX_PHOTOS = 5;
@@ -151,6 +151,20 @@ export function RateLinks(p: { tripId: string; links: Record<string, string>; op
 
 // ---------------------------------------------------------------- driver / 3PL rates the customer site
 type Wait = '' | 'short' | 'mid' | 'long';
+/** Big face buttons, green / orange / red (Kim picked survey option A, 24 Nov 2026). */
+function Faces<T extends string>(p: { value: T | ''; onChange: (v: T) => void; options: { v: T; face: string; km: string; en: string }[] }) {
+  const tone = ['g', 'm', 'r'];
+  return (
+    <div className="faces" role="radiogroup">
+      {p.options.map((o, i) => (
+        <button key={o.v} type="button" role="radio" aria-checked={p.value === o.v} className={'face ' + tone[i] + (p.value === o.v ? ' on' : '')} onClick={() => p.onChange(o.v)}>
+          <b aria-hidden="true">{o.face}</b>{t(o.km, o.en)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SiteRateForm(p: { dns: string[]; send: (body: any) => Promise<any>; onDone: () => void }) {
   useLang();
   const [wait, setWait] = useState<Wait>('');
@@ -162,7 +176,7 @@ export function SiteRateForm(p: { dns: string[]; send: (body: any) => Promise<an
   const [saving, setSaving] = useState(false);
   if (!p.dns.length) return null;
   const save = async () => {
-    if (!wait && !help && !access) return setErr(t('សូមជ្រើសយ៉ាងហោចណាស់មួយ។', 'Choose at least one answer.'));
+    if (!wait || !help || !access) return setErr(t('សូមឆ្លើយទាំង ៣ សំណួរ។', 'Answer all 3 questions.'));
     setSaving(true); setErr('');
     try { await p.send({ dns: p.dns, wait, help, access, custDelay, remark: remark.trim() }); toast('✅ ' + t('អរគុណ', 'Thank you')); p.onDone(); }
     catch (e: any) { setErr(errText(e.message)); }
@@ -170,17 +184,17 @@ export function SiteRateForm(p: { dns: string[]; send: (body: any) => Promise<an
   };
   return (
     <section className="card grid gap-3">
-      <h2 className="text-[15px] font-bold m-0">🏗️ {t('វាយតម្លៃទីតាំងអតិថិជន', 'Rate the customer site')} <span className="muted font-normal text-[13px]">· {p.dns.join(', ')}</span></h2>
-      <div><span className="lbl">{t('រង់ចាំទំលាក់', 'Waiting to unload')}</span>
-        <Segmented value={wait} onChange={setWait} options={[{ v: 'short', km: '< ៣០ នាទី', en: '< 30 min' }, { v: 'mid', km: '៣០–៦០ នាទី', en: '30–60 min' }, { v: 'long', km: '> ១ ម៉ោង', en: '> 1 hour' }]} /></div>
-      <div><span className="lbl">{t('អតិថិជនជួយទំលាក់?', 'Customer helped unload?')}</span>
-        <Segmented value={help} onChange={setHelp} options={[{ v: 'yes', km: 'បាទ/ចាស', en: 'Yes' }, { v: 'some', km: 'បន្តិចបន្តួច', en: 'A little' }, { v: 'no', km: 'ទេ', en: 'No' }]} /></div>
-      <div><span className="lbl">{t('ផ្លូវចូល', 'Site access')}</span>
-        <Segmented value={access} onChange={setAccess} options={[{ v: 'easy', km: 'ងាយ', en: 'Easy' }, { v: 'hard', km: 'ពិបាក', en: 'Hard' }, { v: 'blocked', km: 'បិទ', en: 'Blocked' }]} /></div>
+      <h2 className="text-[15px] font-bold m-0">🏗️ {t('វាយតម្លៃទីតាំងអតិថិជន', 'Rate the customer site')} <span className="req-badge">{t('ត្រូវធ្វើ', 'Required')}</span> <span className="muted font-normal text-[13px]">· {p.dns.join(', ')}</span></h2>
+      <div><span className="lbl">⏱️ {t('រង់ចាំទំលាក់', 'Waiting to unload')}</span>
+        <Faces value={wait} onChange={setWait} options={[{ v: 'short', face: '😊', km: '< ៣០ នាទី', en: '< 30 min' }, { v: 'mid', face: '😐', km: '៣០–៦០ នាទី', en: '30–60 min' }, { v: 'long', face: '😫', km: '> ១ ម៉ោង', en: '> 1 hour' }]} /></div>
+      <div><span className="lbl">🙋 {t('អតិថិជនជួយទំលាក់?', 'Customer helped unload?')}</span>
+        <Faces value={help} onChange={setHelp} options={[{ v: 'yes', face: '👍', km: 'បាទ/ចាស', en: 'Yes' }, { v: 'some', face: '🤏', km: 'បន្តិចបន្តួច', en: 'A little' }, { v: 'no', face: '👎', km: 'ទេ', en: 'No' }]} /></div>
+      <div><span className="lbl">🛣️ {t('ផ្លូវចូល', 'Site access')}</span>
+        <Faces value={access} onChange={setAccess} options={[{ v: 'easy', face: '✅', km: 'ងាយ', en: 'Easy' }, { v: 'hard', face: '⚠️', km: 'ពិបាក', en: 'Hard' }, { v: 'blocked', face: '⛔', km: 'បិទ', en: 'Blocked' }]} /></div>
       <label className="flex items-center gap-2 text-[14.5px]"><input type="checkbox" className="w-5 h-5" checked={custDelay} onChange={e => setCustDelay(e.target.checked)} />{t('យឺតដោយសារអតិថិជន', 'Delay caused by the customer')}</label>
       <textarea className="in min-h-[56px]" value={remark} onChange={e => setRemark(e.target.value)} placeholder={t('កំណត់សំគាល់ (មិនចាំបាច់)', 'Remark (optional)')} aria-label={t('កំណត់សំគាល់', 'Remark')} />
       {err ? <Alert tone="bad">{err}</Alert> : null}
-      <button type="button" className="btn-primary" disabled={saving} onClick={save}>{saving ? t('កំពុងរក្សាទុក…', 'Saving…') : t('ផ្ញើការវាយតម្លៃ', 'Send rating')}</button>
+      <button type="button" className="btn-primary" disabled={saving || !wait || !help || !access} onClick={save}>{saving ? t('កំពុងរក្សាទុក…', 'Saving…') : '📨 ' + t('ផ្ញើការវាយតម្លៃ', 'Send rating')}</button>
     </section>
   );
 }
