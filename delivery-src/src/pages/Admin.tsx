@@ -50,6 +50,7 @@ export function MorePage() {
       </section>
       {boot.canKpi ? <Link href="#/dashboard" icon="📈" km="Dashboard" en="Dashboard" sub="OTIF · Turnaround · 3PL scorecard" /> : null}
       {['admin', 'supervisor', 'logistics'].indexOf(boot.user.roleKey) >= 0 ? <Link href="#/joinlinks" icon="✈️" km="តំណភ្ជាប់ Telegram អតិថិជន" en="Customer join links" sub={t('ផ្ញើម្តង ទទួលផែនទីផ្ទាល់រាល់ពេលឡានចេញ', 'Send once; live map at every Gate Out')} /> : null}
+      {boot.canKpi ? <Link href="#/scan" icon="📷" km="ស្កេន / ស្វែងរក DN" en="Scan / find a DN" sub={t('ម៉ឺនុយស្កេនបានផ្លាស់មកទីនេះ', 'The Scan menu moved here')} /> : null}
       <Link href="#/complaints" icon="📣" km="បណ្តឹងអតិថិជន" en="Customer complaints" />
       <Link href="#/trips/history" icon="🗂️" km="ប្រវត្តិជើងដឹក" en="Trip history" />
       {boot.canCorrect ? <Link href="#/quality" icon="🩺" km="ពិនិត្យគុណភាពទិន្នន័យ" en="Data quality check" sub={t('បង្ហាញតែបញ្ហា មិនកែស្វ័យប្រវត្តិ', 'Shows problems only; nothing is changed')} /> : null}

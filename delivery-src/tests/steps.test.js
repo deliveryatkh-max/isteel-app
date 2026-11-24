@@ -248,6 +248,21 @@ const errors = [];
   assert.deepStrictEqual(td3.data.dns.map(x => x.leg), ['at_customer', 'at_customer'], JSON.stringify(td3.data.dns));
   console.log('PASS one stop for 2 DNs to the same customer');
 
+  // 📊 Report tab replaces Scan for office roles (Kim, 24 Nov 2026, option C)
+  const rp = await as('admin@test.kh'); 
+  await rp.goto(BASE + '/delivery/#/');
+  await rp.locator('nav').getByText('Report').first().click();
+  await rp.locator('[data-report] table tbody tr').first().waitFor({ timeout: 15000 });
+  assert.strictEqual(await rp.locator('nav').getByText(/^Scan$/).count(), 0, 'Scan tab gone');
+  assert.ok(/PNP|W/.test(await rp.locator('[data-report] table tbody').textContent()), 'warehouse rows');
+  await rp.screenshot({ path: SHOTS + 'steps-10-report.png', fullPage: true });
+  await rp.getByRole('tab', { name: 'Customer' }).click();
+  await rp.getByText('Customers who keep trucks longest').waitFor({ timeout: 10000 });
+  const [dl] = await Promise.all([rp.waitForEvent('download'), rp.getByRole('button', { name: /Excel/ }).click()]);
+  assert.ok(/\.csv$/.test(dl.suggestedFilename()));
+  await rp.screenshot({ path: SHOTS + 'steps-10b-report-cust.png', fullPage: true });
+  console.log('PASS report tab');
+
   const s = await (await fetch(BASE + '/__sheet')).json();
   const rows = s.log.filter(r => r.includes(trip));
   console.log('rows for trip', rows.length);

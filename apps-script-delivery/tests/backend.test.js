@@ -573,6 +573,16 @@ test('9-step flow: Scale Gate In, two warehouses, Scale Gate Out, per-DN unloadi
   step(e); ok(rec(e, ADMIN, { v2: true, code: 11, tripId: t, dns: [{ dn: '9000000002' }], remark: 'customer closed', photo: PHOTO }));
   const end = ok(e.call('trip', { tripId: t }, ADMIN));
   assert.strictEqual((end.trip || end).stage, 'completed');
+  // Report tab (Kim, 24 Nov 2026): time at each area; office roles only
+  assert.ok(!e.call('report', {}, WH).ok);
+  const rep = ok(e.call('report', { fresh: true }, ADMIN));
+  assert.strictEqual(rep.summary.trips, 1);
+  const tr = rep.trips[0];
+  assert.deepStrictEqual([tr.wait, tr.load, tr.gate, tr.road, tr.total], [10, 15, 20, 30, 125], JSON.stringify(tr));   // wait PNP1 5 + PNP2 5; load 10 + 5; Gate Out 20 after; arrival 30 after
+  assert.deepStrictEqual(rep.views.wh.map(w => [w.key, w.wait, w.load]), [['PNP1', 5, 10], ['PNP2', 5, 5]]);
+  assert.strictEqual(rep.views.wh.find(w => w.key === 'PNP2').gate, 20);
+  assert.ok(rep.views.cust.length >= 1 && rep.views.co.length === 1 && rep.views.driver.length === 1);
+  assert.strictEqual(rep.targets.load, 90);
 });
 
 test('Scale Gate In needs a signed-in active user; old trips are untouched', () => {

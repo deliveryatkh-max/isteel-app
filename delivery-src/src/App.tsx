@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, API_URL, CLIENT_ID, flushOutbox, outbox, setToken, signedEmail, store, token } from './api';
 import { errText, t, useLang } from './i18n';
 import { AppCtx, go, useRoute } from './state';
@@ -6,6 +6,8 @@ import type { Boot, Ops, TripSummary } from './types';
 import { Alert, BottomNav, Header, Spinner, Tab, Toaster, toast } from './components/ui';
 import { OpsPage } from './pages/Ops';
 import { ScanPage } from './pages/Scan';
+import ReportPage from './pages/Report';
+import DashboardPage from './pages/Dashboard';   // in the main file: a lazy chunk loads a second copy of the app (delivery.js without ?v)
 import { RecordPage } from './pages/Record';
 import { StepsPage } from './pages/Steps';
 import { TripPage } from './pages/Trip';
@@ -17,11 +19,7 @@ import { ComplaintsPage } from './components/Complaints';
 import { HOME, ordered, PhoneFrame, SideNav, useLayout } from './components/Nav';
 
 // The dashboard is loaded only when opened. After an update the old file name may be gone: reload once to get the new one.
-const DashboardPage = lazy(() => import('./pages/Dashboard').catch(e => {
-  const k = 'dlv_chunk_reload';
-  if (Date.now() - Number(sessionStorage.getItem(k) || 0) > 30000) { sessionStorage.setItem(k, String(Date.now())); location.reload(); }
-  throw e;
-}));
+
 
 // Five buttons (Kim, 12 Oct 2026): Summary is inside Trips, DN search is inside Scan, Refresh is the ISI STEEL logo.
 const TABS: Tab[] = [
@@ -33,11 +31,14 @@ const TABS: Tab[] = [
 ];
 // Kim's 9-step flow (20 Nov 2026): Record opens the new Steps screen. Drivers see only their own truck (opened by scanning a DN),
 // so they get no Trips, Scan or old Record tab; warehouse staff open on the trucks inside.
+// Kim (24 Nov 2026): office roles get 📊 Report in place of Scan (Scan / DN search moved to More).
+const REPORT_TAB: Tab = { id: 'report', icon: '📊', km: 'របាយការណ៍', en: 'Report', big: true };
+const OFFICE_TABS: Tab[] = TABS.map(x => (x.id === 'scan' ? REPORT_TAB : x));
 const DRIVER_TABS: Tab[] = [HOME, { id: 'record', icon: '📷', km: 'ស្កេន DN', en: 'Scan DN', big: true }, { id: 'more', icon: '☰', km: 'ផ្សេងៗ', en: 'More' }];
 const OLD_FORM = false;
 export const OFFICE = ['admin', 'supervisor', 'logistics'];
 const DRIVER_PAGES = ['', 'record', 'steps', 'more', 'complaints'];
-const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more', joinlinks: 'more' };
+const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more', joinlinks: 'more', report: 'report' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -153,7 +154,8 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   if (isDriver && DRIVER_PAGES.indexOf(page) < 0) page = 'steps';
   if (page === '' && (isDriver || roleKey === 'warehouse')) page = 'steps';
   const tab = TAB_OF[page] || 'ops';
-  const tabs = isDriver ? DRIVER_TABS : TABS;
+  const tabs = isDriver ? DRIVER_TABS : boot.canKpi ? OFFICE_TABS : TABS;
+  const navOrder = boot.canKpi ? lay.prefs.order.map(id => (id === 'scan' ? 'report' : id)) : lay.prefs.order;   // a saved order keeps Report where Scan was
   let body;
   if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
   // Old step form: opened with a query (Trip page "next step" links, "Other step") or while the Apps Script is still the old one.
@@ -171,10 +173,11 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   else if (page === 'users' && boot.isAdmin) body = <UsersPage />;
   else if (page === 'complaints') body = <ComplaintsPage />;
   else if (page === 'joinlinks' && OFFICE.indexOf(roleKey) >= 0) body = <JoinLinksPage />;
-  else if (page === 'dashboard' && boot.canKpi) body = <Suspense fallback={<Spinner />}><DashboardPage /></Suspense>;
+  else if (page === 'report' && boot.canKpi) body = <ReportPage />;
+  else if (page === 'dashboard' && boot.canKpi) body = <DashboardPage />;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
-    ops: ['ជើងដឹក', 'Trips'], scan: ['ស្កេន DN', 'Scan DN'], record: ['កត់ត្រាដំណើរ', 'Record journey'], more: ['ផ្សេងៗ', 'More'],
+    ops: ['ជើងដឹក', 'Trips'], scan: ['ស្កេន DN', 'Scan DN'], report: ['របាយការណ៍', 'Report'], record: ['កត់ត្រាដំណើរ', 'Record journey'], more: ['ផ្សេងៗ', 'More'],
   };
   const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : page === 'joinlinks' ? t('តំណភ្ជាប់ Telegram អតិថិជន', 'Customer join links') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
@@ -185,8 +188,8 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
         {err ? <div className="max-w-3xl mx-auto px-3 pt-3"><Alert tone="bad">{err}</Alert></div> : null}
         {body}
       </div>
-      {side ? <SideNav items={ordered(tabs, lay.prefs.order)} active={tab} side={side} onTab={onTab} onSide={() => lay.save({ side: side === 'left' ? 'right' : 'left' })} onOrder={ids => lay.save({ order: ids })} />
-        : <BottomNav tabs={ordered(tabs, lay.prefs.order)} active={tab} onTab={onTab} />}
+      {side ? <SideNav items={ordered(tabs, navOrder)} active={tab} side={side} onTab={onTab} onSide={() => lay.save({ side: side === 'left' ? 'right' : 'left' })} onOrder={ids => lay.save({ order: ids })} />
+        : <BottomNav tabs={ordered(tabs, navOrder)} active={tab} onTab={onTab} />}
       <Toaster />
     </AppCtx.Provider>
   );
