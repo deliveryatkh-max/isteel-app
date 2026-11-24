@@ -27,12 +27,6 @@
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
     h1 { font-size: 19px; margin: 0 0 4px; }
     .muted { color: var(--muted); font-size: 14px; }
-    .q { margin: 14px 0 6px; font-weight: 600; }
-    .stars { display: flex; gap: 4px; }
-    .stars button { flex: 1; font-size: 34px; line-height: 1; padding: 6px 0; border: 0; background: transparent; color: var(--line); cursor: pointer; }
-    .stars.small button { font-size: 26px; }
-    .stars button.on { color: var(--star); }
-    textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; }
     .btn { width: 100%; min-height: 50px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
     .btn:disabled { opacity: .55; }
     .msg { padding: 10px 14px; border-radius: 12px; font-weight: 600; }
@@ -40,21 +34,44 @@
     .ok { background: rgba(30,123,70,.12); color: var(--ok); text-align: center; font-size: 18px; padding: 24px 14px; }
     [hidden] { display: none !important; }
   
-    #map { height: 300px; border-radius: 16px; border: 1px solid var(--line); z-index: 0; }
-    .eta { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-    .big { font-size: 26px; font-weight: 800; line-height: 1.1; }
-    .live { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 20px; font-size: 13px; font-weight: 700; background: rgba(30,123,70,.12); color: var(--ok); }
-    .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: p 1.4s infinite; }
+    /* Kim picked layout C (24 Nov 2026): orange status bar, two big numbers, map, 4-step bar, driver card with 2 buttons */
+    :root { --orange: #c2410c; --orangebg: #fff1e6; --okbg: #e7f7ec; --sky: #61cbf4; }
+    @media (prefers-color-scheme: dark) { :root { --orange: #fb923c; --orangebg: #3a2410; --okbg: #0f2e1c; } }
+    .status { border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; background: var(--card); border: 2px solid var(--line); }
+    .status h1 { font-size: 18px; margin: 0 0 2px; }
+    .status.go { background: var(--orangebg); border-color: var(--orange); } .status.go h1 { color: var(--orange); }
+    .status.done { background: var(--okbg); border-color: var(--ok); } .status.done h1 { color: var(--ok); }
+    .dots { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; } .dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: bounce 1.2s infinite; }
+    .dots i:nth-child(2) { animation-delay: .2s; } .dots i:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+    .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .nums > div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-width: 0; }
+    .nums b { display: block; font-size: 28px; font-weight: 800; line-height: 1.15; }
+    .nums small { display: block; color: var(--muted); font-size: 12.5px; }
+    #map { height: 240px; border-radius: 12px; z-index: 0; }
+    .mapcard { padding: 8px; }
+    .live { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 800; background: rgba(30,123,70,.12); color: var(--ok); }
+    .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: p 1.4s infinite; }
     .live.old { background: rgba(84,98,116,.12); color: var(--muted); } .live.old i { background: var(--muted); animation: none; }
     @keyframes p { 50% { opacity: .3; } }
-    ol { list-style: none; margin: 0; padding: 0; }
-    ol li { display: flex; gap: 10px; align-items: center; padding: 5px 0; }
-    ol li b.d { width: 12px; height: 12px; border-radius: 50%; background: var(--line); flex: none; }
-    ol li.on b.d { background: var(--accent); } ol li.off { color: var(--muted); }
-    .gbtn { display: block; text-align: center; margin-top: 10px; padding: 11px; border-radius: 12px; border: 1.5px solid var(--line); color: var(--text); text-decoration: none; font-weight: 600; }
-    .drv { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-    .call { padding: 10px 14px; border-radius: 12px; background: var(--ok); color: #fff; text-decoration: none; font-weight: 700; white-space: nowrap; }
+    .hstep { display: grid; grid-template-columns: repeat(4, 1fr); position: relative; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted); list-style: none; margin: 0; padding: 0; }
+    .hstep:before { content: ""; position: absolute; top: 17px; left: 12.5%; right: 12.5%; height: 4px; background: var(--line); border-radius: 4px; }
+    .hstep .bar { position: absolute; top: 17px; left: 12.5%; height: 4px; background: var(--ok); border-radius: 4px; transition: width .4s; }
+    .hstep li { position: relative; z-index: 1; display: grid; justify-items: center; gap: 3px; line-height: 1.3; }
+    .hstep li > b { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--card); border: 2px solid var(--line); font-size: 17px; }
+    .hstep li.on { color: var(--text); } .hstep li.on > b { background: var(--ok); border-color: var(--ok); color: #fff; }
+    .hstep li.now { color: var(--text); } .hstep li.now > b { border-color: var(--sky); animation: ring 1.6s infinite; }
+    .hstep small { color: var(--muted); font-weight: 400; }
+    @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(97,203,244,.6); } 70% { box-shadow: 0 0 0 9px rgba(97,203,244,0); } 100% { box-shadow: 0 0 0 0 rgba(97,203,244,0); } }
+    .drv { display: flex; align-items: center; gap: 10px; }
+    .av { width: 44px; height: 44px; border-radius: 50%; background: #011e41; color: #fff; display: grid; place-items: center; font-size: 22px; flex: none; }
+    .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .btns.one { grid-template-columns: 1fr; }
+    .call, .gbtn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 8px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 15px; white-space: nowrap; }
+    .call { background: var(--ok); color: #fff; }
+    .gbtn { border: 1.5px solid var(--line); color: var(--text); background: var(--card); }
     .stamp { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body>
@@ -66,25 +83,25 @@
     <div id="err" class="msg bad" hidden></div>
     <div id="load" class="muted" data-t="កំពុងផ្ទុក…|Loading…"></div>
     <div id="view" hidden>
-      <div class="card">
-        <h1 id="title"></h1>
+      <div class="status" id="status">
+        <h1><span id="title"></span><span class="dots" id="dots" hidden><i></i><i></i><i></i></span></h1>
         <div class="muted" id="info"></div>
       </div>
-      <div id="drv" class="card drv" hidden>
-        <div><div class="muted" id="drvlbl" data-t="តៃកុង|Driver"></div><b id="drvname"></b></div>
-        <a id="drvtel" class="call" hidden></a>
+      <div class="nums" id="nums" hidden>
+        <div><small data-t="⏱️ នៅសល់ពេល|⏱️ Time left"></small><b id="left">—</b><small id="eta"></small></div>
+        <div><small data-t="📍 នៅសល់ចម្ងាយ|📍 Distance left"></small><b id="dist">—</b><small><span class="live" id="live"><i></i><span id="livet"></span></span> <span id="upd"></span></small></div>
       </div>
-      <div id="mapcard" class="card" hidden>
-        <div id="map"></div>
-        <div class="eta" style="margin-top:10px">
-          <div><div class="muted" data-t="ប៉ាន់ស្មានមកដល់|Estimated arrival"></div><div class="big" id="eta">—</div></div>
-          <div style="text-align:right"><span class="live" id="live"><i></i><span id="livet"></span></span><div class="muted" id="dist" style="margin-top:4px"></div></div>
-        </div>
-        <a class="gbtn" id="gmap" target="_blank" rel="noopener" data-t="🗺️ បើកក្នុង Google Maps|🗺️ Open in Google Maps"></a>
-      </div>
+      <div id="mapcard" class="card mapcard" hidden><div id="map"></div></div>
       <div id="nogps" class="card muted" hidden data-t="📍 ទីតាំងឡាននឹងបង្ហាញនៅពេលតៃកុងចាប់ផ្តើមចែករំលែក។|📍 The truck location shows once the driver starts sharing it."></div>
       <div id="donecard" class="card msg ok" hidden></div>
-      <div class="card"><ol id="steps"></ol></div>
+      <div class="card"><ol class="hstep" id="steps"></ol></div>
+      <div id="drv" class="card" hidden>
+        <div class="drv"><div class="av">🚛</div><div style="min-width:0"><b id="plate"></b><div class="muted"><span id="drvlbl"></span> <span id="drvname"></span></div></div></div>
+        <div class="btns" id="btns">
+          <a id="drvtel" class="call" hidden></a>
+          <a class="gbtn" id="gmap" target="_blank" rel="noopener" hidden>🗺️ Google Maps</a>
+        </div>
+      </div>
       <a id="rate" class="btn" style="display:block;text-align:center;text-decoration:none;line-height:50px" hidden data-t="⭐ វាយតម្លៃការដឹកជញ្ជូន|⭐ Rate this delivery"></a>
       <div class="stamp" id="stamp"></div>
     </div>
@@ -135,25 +152,39 @@
       var r = info, x = r.times, leg = r.leg;
       var finished = leg === 'delivered' || leg === 'failed' || leg === 'canceled' || leg === 'moved';
       $('title').textContent = finished ? (leg === 'delivered' ? T('✅ បានប្រគល់រួចរាល់|✅ Delivered') : leg === 'failed' ? T('⚠️ ប្រគល់មិនបាន|⚠️ Not delivered') : T('ការដឹកនេះត្រូវបានបញ្ចប់|This delivery was closed'))
-        : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងនៅតាមផ្លូវ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
-      $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : '', r.plate].filter(Boolean).join(' · ');   // no kg (Kim, 22 Nov 2026)
+        : x.arrived ? T('📍 ឡានមកដល់ទីតាំងរបស់អ្នកហើយ|📍 The truck is at your site') : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងនៅតាមផ្លូវ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
+      $('status').className = 'status' + (leg === 'delivered' ? ' done' : !finished && x.out ? ' go' : '');
+      $('dots').hidden = finished || !x.out;
+      $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : ''].filter(Boolean).join(' · ');
+      $('plate').textContent = r.plate || '';   // no kg (Kim, 22 Nov 2026)
       var dv = r.driver || {};
       // Kim (24 Nov 2026): the call button always shows once the truck left (driver phone, else the office line).
       $('drv').hidden = finished || !x.out || !(dv.name || dv.phone);
       $('drvname').textContent = dv.name || T('អាយ អេស អាយ ស្ទីល|ISI Steel');
       $('drvlbl').textContent = dv.office ? T('ទូរស័ព្ទការិយាល័យ|Office phone') : T('តៃកុង|Driver');
       $('drvtel').hidden = !dv.phone;
-      if (dv.phone) { $('drvtel').href = 'tel:' + String(dv.phone).replace(/[^0-9+]/g, ''); $('drvtel').textContent = '📞 ' + dv.phone; }
+      if (dv.phone) { $('drvtel').href = 'tel:' + String(dv.phone).replace(/[^0-9+]/g, ''); $('drvtel').textContent = '📞 ' + (dv.office ? T('ហៅការិយាល័យ|Call office') : T('ហៅតៃកុង|Call driver')); $('drvtel').title = dv.phone; }
       var steps = [
-        [T('ចេញពីរោងចក្រ|Left the plant'), x.out],
-        [T('មកដល់ទីតាំងរបស់អ្នក|Arrived at your site'), x.arrived],
-        [T('កំពុងទម្លាក់ទំនិញ|Unloading'), x.unloading || x.unloaded],
-        [leg === 'failed' ? T('ប្រគល់មិនបាន|Not delivered') : leg === 'canceled' ? T('បានលុបចោល|Canceled') : T('បានប្រគល់|Delivered'), x.delivered || x.failed || x.canceled],
+        ['🏭', T('ចេញពីរោងចក្រ|Left the plant'), x.out],
+        ['🚚', T('នៅតាមផ្លូវ|On the way'), x.arrived && x.out],   // done once it arrived; pulses while on the road
+        ['📍', T('មកដល់|Arrived'), x.arrived],
+        [leg === 'failed' || leg === 'canceled' ? '⚠️' : '✅', leg === 'failed' ? T('ប្រគល់មិនបាន|Not delivered') : leg === 'canceled' ? T('បានលុបចោល|Canceled') : T('បានប្រគល់|Delivered'), x.delivered || x.failed || x.canceled],
       ];
-      $('steps').innerHTML = '';
-      steps.forEach(function (s) { var li = document.createElement('li'); li.className = s[1] ? 'on' : 'off'; li.innerHTML = '<b class="d"></b><span></span>'; li.lastChild.textContent = s[0] + (s[1] ? ' · ' + hm(s[1]) : ''); $('steps').appendChild(li); });
+      // done steps get a green tick; the first step not done yet (once the truck left) pulses
+      var nDone = 0; while (nDone < 4 && steps[nDone][2]) nDone++;
+      if (finished && steps[3][2]) nDone = 4;
+      $('steps').innerHTML = '<span class="bar" style="width:' + (Math.max(0, nDone - 1) * 25) + '%"></span>';
+      steps.forEach(function (s, i) {
+        var li = document.createElement('li'), done = i < nDone, now = !done && !finished && x.out && i === nDone;
+        li.className = done ? 'on' : now ? 'now' : '';
+        li.innerHTML = '<b></b><span></span><small></small>';
+        li.firstChild.textContent = done ? '✓' : s[0]; li.children[1].textContent = s[1];
+        li.lastChild.textContent = done && s[2] && i !== 1 ? hm(s[2]) : '';
+        $('steps').appendChild(li);
+      });
       var g = r.gps, pos = g && ll(g.ll), dest = ll(r.site);
-      $('mapcard').hidden = finished || !pos; $('nogps').hidden = finished || !x.out || !!pos;
+      $('mapcard').hidden = $('nums').hidden = $('gmap').hidden = finished || !pos; $('nogps').hidden = finished || !x.out || !!pos;
+      $('btns').className = 'btns' + ($('gmap').hidden || $('drvtel').hidden ? ' one' : '');
       if (pos && !finished) {
         var age = Math.max(0, Math.round((r.serverNow - g.t) / 60000));
         $('live').className = 'live' + (age > 10 ? ' old' : '');
@@ -164,15 +195,18 @@
         if (dest) {
           getRoad(pos, dest);
           var d = road && road.km != null ? road.km : km(pos, dest) * 1.3;   // road distance (free OSRM route), else about 1.3 x the straight line
-          $('dist').textContent = T('នៅសល់ ~' + Math.round(d) + ' km|~' + Math.round(d) + ' km to go') + ' · ' + T('ធ្វើបច្ចុប្បន្នភាព ' + hm(g.t) + '|updated ' + hm(g.t));
-          $('eta').style.fontSize = '';
+          $('dist').textContent = Math.round(d) + ' km';
+          $('upd').textContent = hm(g.t);
           // Route time for a car x 1.3 for a loaded truck; no route yet: about 35 km/h.
-          $('eta').textContent = d < 0.5 ? T('ជិតដល់|Arriving') : hm(r.serverNow + (road && road.min != null ? road.min * 1.3 * 60000 : d / 35 * 3600000));
+          var ms = road && road.min != null ? road.min * 1.3 * 60000 : d / 35 * 3600000, mins = Math.round(ms / 60000);
+          $('left').style.fontSize = '';
+          $('left').textContent = d < 0.5 ? T('ជិតដល់|Arriving') : String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+          $('eta').textContent = d < 0.5 ? '' : T('មកដល់ ~' + hm(r.serverNow + ms) + '|Arrives ~' + hm(r.serverNow + ms));
         } else {
           // No site location saved for this customer: no arrival time can be worked out (it fills after the first delivery).
-          $('eta').style.fontSize = '16px';
-          $('eta').textContent = T('មិនទាន់មានទីតាំងអតិថិជន|No site location yet');
-          $('dist').textContent = T('ធ្វើបច្ចុប្បន្នភាព ' + hm(g.t) + '|updated ' + hm(g.t));
+          $('left').style.fontSize = '15px';
+          $('left').textContent = T('មិនទាន់មានទីតាំងអតិថិជន|No site location yet');
+          $('eta').textContent = ''; $('dist').textContent = '—'; $('upd').textContent = hm(g.t);
         }
         if (window.L) {
           if (!map) {
