@@ -34,7 +34,7 @@ const LOG_COLS = {
 const OPS_ROWS = 6000;        // Operations screens read only the newest rows of Time Log (plenty for 30+ days)
 const OPEN_DAYS = 14;         // open trips older than this drop off the Active list (they stay in History)
 const DRIVER_LINK_DAYS = 4;   // a driver link works for this many days after Gate In
-const MAX_PHOTOS = 5;         // photos per step (Delivered: proof of delivery)
+const MAX_PHOTOS = 10;        // photos per step (Delivered: up to 5 signed DN + 5 goods photos, Kim 24 Nov 2026)
 
 // ---------------------------------------------------------------- web entry points
 function doGet() { return json_({ ok: true, app: 'Delivery Journey' }); }

@@ -54,14 +54,14 @@ test('Delivered with signature, receiver and several photos: proof row, first ph
   const e = env();
   const id = trip(e, 'TEST-0001', ['9000000001']);
   step(e, 40);
-  const r = ok(rec(e, ADMIN, { code: 9, tripId: id, dns: [{ dn: '9000000001', kg: 1000 }], photos: [IMG, IMG, IMG, IMG, IMG, IMG], signature: SIG, receiver: 'Mr Test', latlong: '11.5,104.9' }));
-  assert.strictEqual(e.files.length, 6, '5 photos + signature (6th photo dropped)');
-  assert.ok(e.files[5].name.endsWith('.png'));
+  const r = ok(rec(e, ADMIN, { code: 9, tripId: id, dns: [{ dn: '9000000001', kg: 1000 }], photos: Array(11).fill(IMG), signature: SIG, receiver: 'Mr Test', latlong: '11.5,104.9' }));
+  assert.strictEqual(e.files.length, 11, '10 photos + signature (11th photo dropped)');
+  assert.ok(e.files[10].name.endsWith('.png'));
   const proof = tab(e, 'Delivery Proof');
   assert.strictEqual(proof.length, 1);
   assert.strictEqual(proof[0][3], '9000000001');
   assert.strictEqual(proof[0][4], 'Mr Test');
-  assert.strictEqual(proof[0][6].split('\n').length, 5);
+  assert.strictEqual(proof[0][6].split('\n').length, 10);
   assert.strictEqual(r.rate[0].dn, '9000000001');
   const d = ok(e.call('trip', { tripId: id }, ADMIN));
   assert.strictEqual(d.proof[0].receiver, 'Mr Test');
