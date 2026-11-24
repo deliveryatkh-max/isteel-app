@@ -319,7 +319,9 @@ function rateInfo_(p) {
 function rateSave_(p) {
   const c = checkRate_(p);
   const star = v => { const n = Math.round(Number(v)); return n >= 1 && n <= 5 ? n : 0; };
-  const overall = star(p.overall);
+  // Kim (24 Nov 2026): the total score is worked out from the 3 answers (average, 1 decimal); old links still send Overall
+  const three = [star(p.polite), star(p.ontime), star(p.goods)];
+  const overall = three.every(Boolean) ? Math.round(three.reduce((a, x) => a + x, 0) / 3 * 10) / 10 : star(p.overall);
   if (!overall) fail_('BAD', 'Choose 1 to 5 stars.', 'សូមជ្រើស ១ ដល់ ៥ ផ្កាយ។');
   return withLock_(() => {
     const info = rateInfo_(p);

@@ -27,16 +27,29 @@
     h1 { font-size: 19px; margin: 0 0 4px; }
     .muted { color: var(--muted); font-size: 14px; }
     .q { margin: 14px 0 6px; font-weight: 600; }
-    .stars { display: flex; gap: 4px; }
-    .stars button { flex: 1; font-size: 34px; line-height: 1; padding: 6px 0; border: 0; background: transparent; color: var(--line); cursor: pointer; }
-    .stars.small button { font-size: 26px; }
-    .stars button.on { color: var(--star); }
     textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; }
     .btn { width: 100%; min-height: 50px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; }
     .btn:disabled { opacity: .55; }
     .msg { padding: 10px 14px; border-radius: 12px; font-weight: 600; }
     .bad { background: rgba(179,38,30,.1); color: var(--bad); }
     .ok { background: rgba(30,123,70,.12); color: var(--ok); text-align: center; font-size: 18px; padding: 24px 14px; }
+    /* Kim picked option A (24 Nov 2026): 5 faces per question; the total is grey until all 3 are answered */
+    :root { --good: #15803d; --goodbg: #e7f7ec; --mid: #b45309; --midbg: #fff4e0; --badbg: #fdecec; --greybg: #eceef1; --grey: #8a929c; }
+    @media (prefers-color-scheme: dark) { :root { --good: #4ade80; --goodbg: #0f2e1c; --mid: #fbbf24; --midbg: #3a2a10; --badbg: #3a1414; --greybg: #1e242d; --grey: #7d8794; } }
+    .total { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; margin-top: 12px; border: 2px solid var(--line); background: var(--greybg); color: var(--grey); border-radius: 14px; padding: 12px 14px; transition: background .3s, border-color .3s, color .3s; }
+    .total span { font-weight: 700; } .total b { grid-row: span 2; font-size: 30px; font-weight: 800; } .total small { font-size: 12.5px; }
+    .total.t1 { border-color: var(--bad); background: var(--badbg); color: var(--bad); }
+    .total.t3 { border-color: var(--mid); background: var(--midbg); color: var(--mid); }
+    .total.t5 { border-color: var(--good); background: var(--goodbg); color: var(--good); }
+    .total.pop b { animation: pop .4s; } @keyframes pop { 50% { transform: scale(1.25); } }
+    .faces { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .faces button { border: 2px solid var(--line); background: var(--card); border-radius: 12px; padding: 6px 0; font: inherit; font-size: 26px; line-height: 1.2; display: grid; justify-items: center; color: var(--muted); cursor: pointer; transition: transform .15s; }
+    .faces button small { font-size: 10.5px; font-weight: 600; line-height: 1.3; }
+    .faces button.on { transform: scale(1.06); }
+    .faces button.on.l1, .faces button.on.l2 { border-color: var(--bad); background: var(--badbg); color: var(--bad); }
+    .faces button.on.l3 { border-color: var(--mid); background: var(--midbg); color: var(--mid); }
+    .faces button.on.l4, .faces button.on.l5 { border-color: var(--good); background: var(--goodbg); color: var(--good); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -52,14 +65,13 @@
     <form id="form" class="card" hidden>
       <h1 data-t="តើការដឹកជញ្ជូនយ៉ាងម៉េចដែរ?|How was your delivery?"></h1>
       <div class="muted" id="info"></div>
-      <div class="q" data-t="ពិន្ទុរួម *|Overall *"></div>
-      <div class="stars" data-k="overall"></div>
-      <div class="q" data-t="តៃកុងគួរសម|Driver was polite"></div>
-      <div class="stars small" data-k="polite"></div>
-      <div class="q" data-t="មកដល់ទាន់ពេល|Arrived on time"></div>
-      <div class="stars small" data-k="ontime"></div>
-      <div class="q" data-t="ទំនិញល្អ គ្រប់ចំនួន|Goods complete and undamaged"></div>
-      <div class="stars small" data-k="goods"></div>
+      <div class="total" id="total" aria-live="polite"><span data-t="⭐ ពិន្ទុរួម|⭐ Total score"></span><b id="tval">– / 5</b><small id="tword"></small></div>
+      <div class="q" data-t="👷 តៃកុងគួរសម *|👷 Driver was polite *"></div>
+      <div class="faces" data-k="polite"></div>
+      <div class="q" data-t="⏰ មកដល់ទាន់ពេល *|⏰ Arrived on time *"></div>
+      <div class="faces" data-k="ontime"></div>
+      <div class="q" data-t="📦 ទំនិញល្អ គ្រប់ចំនួន *|📦 Goods complete and undamaged *"></div>
+      <div class="faces" data-k="goods"></div>
       <div class="q" data-t="មតិ (មិនចាំបាច់)|Comment (optional)"></div>
       <textarea id="comment" maxlength="500"></textarea>
       <div id="ferr" class="msg bad" hidden style="margin-top:10px"></div>
@@ -73,21 +85,39 @@
     try { if (localStorage.getItem('app_lang') === 'en') lang = 'en'; } catch (e) {}
     var T = function (s) { var p = String(s).split('|'); return lang === 'en' ? p[1] || p[0] : p[0]; };
     var $ = function (id) { return document.getElementById(id); };
-    var info = null, vals = { overall: 0, polite: 0, ontime: 0, goods: 0 };
+    var info = null, vals = { polite: 0, ontime: 0, goods: 0 };
+    var FACES = ['😡', '🙁', '😐', '🙂', '😍'];
+    var WORDS = ['', 'អាក្រក់ណាស់|Very bad', 'មិនល្អ|Bad', 'មធ្យម|OK', 'ល្អ|Good', 'ល្អណាស់|Very good'];
+    function score() {
+      var v = [vals.polite, vals.ontime, vals.goods], n = v.filter(Boolean).length, box = $('total');
+      box.className = 'total';
+      if (n < 3) { $('tval').textContent = '– / 5'; $('tword').textContent = T('ឆ្លើយទាំង ៣ សំណួរ|Answer all 3 questions') + ' (' + n + '/3)'; $('send').disabled = true; return 0; }
+      var avg = Math.round((v[0] + v[1] + v[2]) / 3 * 10) / 10;
+      box.classList.add(avg >= 4 ? 't5' : avg >= 3 ? 't3' : 't1'); void box.offsetWidth; box.classList.add('pop');
+      $('tval').textContent = avg + ' / 5'; $('tword').textContent = T(WORDS[Math.round(avg)]); $('send').disabled = false;
+      return avg;
+    }
     function paint() {
       document.documentElement.lang = lang;
       document.querySelectorAll('[data-t]').forEach(function (el) { el.textContent = T(el.getAttribute('data-t')); });
       $('fkh').className = lang === 'km' ? 'on' : ''; $('fen').className = lang === 'en' ? 'on' : '';
+      document.querySelectorAll('.faces button').forEach(function (b) { b.lastChild.textContent = T(WORDS[b.value]); });
+      if ($('total')) { var c = $('total').className; score(); $('total').className = c; }
       if (info) $('info').textContent = (info.cust ? info.cust + ' · ' : '') + 'DN ' + info.dn + ' · ' + info.plate + ' · ' +
         new Date(info.time).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Phnom_Penh' });
     }
     $('lang').onclick = function () { lang = lang === 'en' ? 'km' : 'en'; try { localStorage.setItem('app_lang', lang); } catch (e) {} paint(); };
-    document.querySelectorAll('.stars').forEach(function (box) {
+    document.querySelectorAll('.faces').forEach(function (box) {
       var k = box.getAttribute('data-k');
       for (var i = 1; i <= 5; i++) {
         var b = document.createElement('button');
-        b.type = 'button'; b.textContent = '★'; b.setAttribute('aria-label', i + ' / 5'); b.value = i;
-        b.onclick = function () { vals[k] = Number(this.value); box.querySelectorAll('button').forEach(function (x) { x.className = Number(x.value) <= vals[k] ? 'on' : ''; }); };
+        b.type = 'button'; b.value = i; b.className = 'l' + i; b.setAttribute('aria-label', i + ' / 5'); b.setAttribute('aria-pressed', 'false');
+        b.appendChild(document.createTextNode(FACES[i - 1])); b.appendChild(document.createElement('small'));
+        b.onclick = function () {
+          vals[k] = Number(this.value);
+          box.querySelectorAll('button').forEach(function (x) { var on = Number(x.value) === vals[k]; x.className = 'l' + x.value + (on ? ' on' : ''); x.setAttribute('aria-pressed', String(on)); });
+          score();
+        };
         box.appendChild(b);
       }
     });
@@ -110,12 +140,13 @@
     $('form').onsubmit = function (ev) {
       ev.preventDefault();
       $('ferr').hidden = true;
-      if (!vals.overall) { fail($('ferr'), { code: 'BAD', message: T('សូមជ្រើសផ្កាយសម្រាប់ពិន្ទុរួម។|Choose the stars for Overall.') }); return; }
+      var overall = score();
+      if (!overall) { fail($('ferr'), { code: 'BAD', message: T('សូមឆ្លើយទាំង ៣ សំណួរ។|Answer all 3 questions.') }); return; }
       $('send').disabled = true;
-      call('rateSave', Object.assign({}, link, vals, { comment: $('comment').value.trim() }))
+      call('rateSave', Object.assign({}, link, vals, { overall: overall, comment: $('comment').value.trim() }))
         .then(function () { $('form').hidden = true; $('done').hidden = false; })
         .catch(function (e) { if (e.code === 'DONE') { $('form').hidden = true; $('done').hidden = false; } else fail($('ferr'), e); })
-        .then(function () { $('send').disabled = false; });
+        .then(function () { score(); });
     };
   })();
   </script>

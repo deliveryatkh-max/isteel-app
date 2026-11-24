@@ -94,6 +94,11 @@ test('customer rating link: no sign-in, one rating per DN and trip, low rating a
   assert.strictEqual(e.telegram.length, 1);
   assert.ok(/2\/5/.test(e.telegram[0].text));
   assert.strictEqual(ok(e.call('dn', { dn: '9000000001' }, ADMIN)).custRatings[0].overall, 2);
+  // the total is the average of the 3 answers when all 3 are given (the overall sent is ignored)
+  const id2 = trip(e, 'TEST-0002', ['9000000002']);
+  step(e, 40); const k2 = ok(rec(e, ADMIN, { code: 9, tripId: id2, dns: [{ dn: '9000000002', kg: 1000 }] })).rate[0].k;
+  ok(e.call('rateSave', { d: '9000000002', t: id2, k: k2, overall: 1, polite: 5, ontime: 4, goods: 4 }, null));
+  assert.strictEqual(tab(e, 'Customer Ratings').pop()[5], 4.3);
 });
 
 test('site rating from the driver link after the trip is finished; customer delay needs Logistics to confirm', () => {
