@@ -154,8 +154,10 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   if (isDriver && DRIVER_PAGES.indexOf(page) < 0) page = 'steps';
   if (page === '' && (isDriver || roleKey === 'warehouse')) page = 'steps';
   const tab = TAB_OF[page] || 'ops';
-  const tabs = isDriver ? DRIVER_TABS : boot.canKpi ? OFFICE_TABS : TABS;
-  const navOrder = boot.canKpi ? lay.prefs.order.map(id => (id === 'scan' ? 'report' : id)) : lay.prefs.order;   // a saved order keeps Report where Scan was
+  // Kim (24 Nov 2026): 📊 Report only for Admin and Supervisor, ☰ More only for Admin. The ⏳ waiting icon still opens More.
+  const canReport = roleKey === 'admin' || roleKey === 'supervisor';
+  const tabs = (isDriver ? DRIVER_TABS : canReport ? OFFICE_TABS : TABS).filter(x => x.id !== 'more' || boot.isAdmin);
+  const navOrder = canReport ? lay.prefs.order.map(id => (id === 'scan' ? 'report' : id)) : lay.prefs.order;   // a saved order keeps Report where Scan was
   let body;
   if (page === 'scan') body = <ScanPage key={route.path.join('/')} dn={route.path[1]} />;
   // Old step form: opened with a query (Trip page "next step" links, "Other step") or while the Apps Script is still the old one.
@@ -173,7 +175,7 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   else if (page === 'users' && boot.isAdmin) body = <UsersPage />;
   else if (page === 'complaints') body = <ComplaintsPage />;
   else if (page === 'joinlinks' && OFFICE.indexOf(roleKey) >= 0) body = <JoinLinksPage />;
-  else if (page === 'report' && boot.canKpi) body = <ReportPage />;
+  else if (page === 'report' && canReport) body = <ReportPage />;
   else if (page === 'dashboard' && boot.canKpi) body = <DashboardPage />;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
