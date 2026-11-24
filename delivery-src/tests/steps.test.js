@@ -56,7 +56,13 @@ const errors = [];
   await w.screenshot({ path: SHOTS + 'steps-01b-customer.png' });
   await save(w, w.getByRole('button', { name: /Record · Start loading/ }));
   await w.getByText('4. Goods weight, photos and webbing slings').first().waitFor({ timeout: 10000 });
-  await w.locator('#kg input').fill('1500');
+  // Kim (24 Nov 2026): 🧮 on number boxes, + − × ÷ like Stock Count: 1000 + 250 × 2 = 1500
+  await w.locator('#kg').getByRole('button', { name: 'Calculator' }).click();
+  for (const k of ['1', '0', '0', '0', '+', '2', '5', '0', '×', '2']) await w.locator('.calc-keys button', { hasText: new RegExp('^' + k.replace('+', '\\+') + '$') }).click();
+  assert.strictEqual((await w.locator('[data-calc] b').textContent()).trim(), '1,500', 'calculator result');
+  await w.screenshot({ path: SHOTS + 'steps-01c-calc.png' });
+  await w.getByRole('button', { name: /Put in the box/ }).click();
+  assert.strictEqual(await w.locator('#kg input').first().inputValue(), '1500', 'calculator fills the box');
   await w.locator('#photos input[type=file]').first().setInputFiles([IMG]);
   await w.getByRole('button', { name: 'Yes', exact: true }).click();
   await save(w, w.getByRole('button', { name: /Record · End loading/ }));

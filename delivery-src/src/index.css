@@ -170,3 +170,16 @@ body.nav-right .app-body { padding-right: 96px; }
 .face.on.r { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
 .face:focus-visible { outline: 2px solid #61cbf4; outline-offset: 2px; }
 .req-badge { display: inline-block; background: var(--bad-soft); color: var(--bad); font-size: 11px; font-weight: 700; border-radius: 99px; padding: 1px 8px; vertical-align: middle; }
+
+/* 🧮 calculator (Kim, 24 Nov 2026: same as Stock Count) */
+.calcb { flex: none; width: 46px; border: 1px solid var(--line); background: var(--soft); border-radius: 10px; font-size: 20px; cursor: pointer; }
+.calcb:disabled { opacity: .4; cursor: not-allowed; }
+.calc-disp { background: #011e41; color: #fff; border-radius: 12px; padding: 10px 14px; text-align: right; display: grid; gap: 2px; margin-bottom: 10px; }
+.calc-disp small { color: #9fd8f2; font-size: 14px; min-height: 18px; word-break: break-all; }
+.calc-disp b { font-size: 30px; font-variant-numeric: tabular-nums; word-break: break-all; }
+.calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.calc-keys button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 12px; padding: 14px 0; font-size: 22px; font-weight: 700; cursor: pointer; }
+.calc-keys button:active { transform: scale(.96); }
+.calc-keys button.op { background: var(--soft); color: var(--brand); }
+.calc-keys button.clr { color: var(--bad); }
+.calc-keys button.eq { grid-column: span 3; background: #0b76a0; border-color: #0b76a0; color: #fff; }

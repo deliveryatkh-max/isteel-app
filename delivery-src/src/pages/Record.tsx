@@ -8,6 +8,7 @@ import { warmLocation } from '../components/submit';
 import { Scanner } from '../components/Scanner';
 import { useSubmit } from '../components/submit';
 import { MultiPhoto, ProofFields, RateLinks, SiteRateForm, siteRateSigned } from '../components/Proof';
+import { CalcButton } from '../components/Calc';
 
 export type DnLine = { dn: string; custId: string; custName: string; so: string; kg: string; final: boolean; inPlan: boolean };
 const DONE_LEGS = ['delivered', 'failed', 'canceled', 'moved'];
@@ -344,8 +345,9 @@ export function RecordPage() {
                         <label className="flex items-center gap-2 text-[14px]"><input type="checkbox" className="w-5 h-5 accent-[#0b76a0]" checked={dv.final} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: dv.kg, final: e.target.checked } }))} />
                           {t('DN នេះប្រគល់គ្រប់ (ឬផ្នែកចុងក្រោយ)', 'This finishes the DN (all, or the last part)')}</label>
                         <label className="font-bold text-[14px]">⚖️ {t('ទំងន់ដែលប្រគល់ (kg)', 'Delivered weight (kg)')} <span className="text-bad">*</span></label>
-                        <input className={'in ' + (kgMiss ? '!border-bad' : '')} inputMode="decimal" value={dv.kg} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: e.target.value.replace(/[^0-9.]/g, ''), final: dv.final } }))}
+                        <div className="flex gap-2"><input className={'in flex-1 min-w-0 ' + (kgMiss ? '!border-bad' : '')} inputMode="decimal" value={dv.kg} onChange={e => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: e.target.value.replace(/[^0-9.]/g, ''), final: dv.final } }))}
                           placeholder={pl && pl.kg ? String(pl.kg) : 'kg'} aria-label="kg" />
+                          <CalcButton value={dv.kg} onChange={v => setDelivered(Object.assign({}, delivered, { [d.dn]: { kg: v, final: dv.final } }))} title={'DN ' + d.dn + ' · kg'} /></div>
                         {kgMiss ? <span className="text-bad text-[13px] font-semibold">⚠️ {kgMiss}</span> : null}
                         {pl && pl.kg && Number(dv.kg) > 0 && Number(dv.kg) < pl.kg * 0.995 ? <span className="text-[12.5px] text-warn font-semibold">{t('តិចជាងផែនការ (' + fmtKg(pl.kg) + '): DN នឹងនៅ ប្រគល់មួយផ្នែក រហូតដល់គ្រប់ទំងន់។', 'Less than the plan (' + fmtKg(pl.kg) + '): the DN stays Partly delivered until the weight is complete.')}</span> : null}
                       </div>
@@ -364,7 +366,8 @@ export function RecordPage() {
             <Picker id="wh" value={wh} options={whOpts} onChange={v => setWh(v)} bad={!!miss.wh} placeholder={t('ជ្រើសឃ្លាំង', 'Choose the warehouse')} />
           </Field>
           <Field icon="⚖️" label={t('ទំងន់ (kg)', 'Weight (kg)')} required htmlFor="loadkg" error={miss.loadKg}>
-            <input id="loadkg" className={'in ' + (miss.loadKg ? '!border-bad' : '')} inputMode="decimal" value={loadKg} onChange={e => setLoadKg(e.target.value.replace(/[^0-9.]/g, ''))} />
+            <div className="flex gap-2"><input id="loadkg" className={'in flex-1 min-w-0 ' + (miss.loadKg ? '!border-bad' : '')} inputMode="decimal" value={loadKg} onChange={e => setLoadKg(e.target.value.replace(/[^0-9.]/g, ''))} />
+              <CalcButton value={loadKg} onChange={setLoadKg} title={t('ទំងន់ (kg)', 'Weight (kg)')} /></div>
           </Field>
           <Field icon="🪢" label={t('ប្រើ Websling?', 'Websling used?')} required error={miss.websling}>
             <Segmented value={websling} onChange={setWebsling} options={[{ v: 'yes', km: '✅ ប្រើ', en: '✅ Yes' }, { v: 'no', km: '❌ មិនប្រើ', en: '❌ No' }]} />

@@ -8,6 +8,7 @@ import { Field, Section, scrollToMissing } from '../components/Form';
 import { MultiPhoto, RateLinks, SignaturePad, SiteRateForm, siteRateSigned } from '../components/Proof';
 import { TripSections } from './Trip';
 import { GpsShare } from '../components/Track';
+import { CalcButton } from '../components/Calc';
 import { beep, ScanView, Scanner } from '../components/Scanner';
 import { useSubmit, warmLocation } from '../components/submit';
 
@@ -479,7 +480,8 @@ function WarehouseStep(p: { trip: TripSummary; truckType: string }) {
       ) : null}
       {n === 4 ? (<>
           <Field icon="⚖️" label={t('ទំងន់សរុបជាក់ស្តែង (kg)', 'Total actual weight (kg)')} required need={!!miss.kg} error={m.kg} id="kg">
-            <input className={'in ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
+            <div className="flex gap-2"><input className={'in flex-1 min-w-0 ' + (m.kg ? '!border-bad' : '')} inputMode="decimal" value={kgIn} onChange={e => setKgIn(e.target.value.replace(/[^0-9.]/g, ''))} />
+              <CalcButton value={kgIn} onChange={setKgIn} title={t('ទំងន់សរុបជាក់ស្តែង (kg)', 'Total actual weight (kg)')} /></div>
           </Field>
           <Field icon="📷" label={t('រូបថតទំនិញ', 'Goods photos')} required need={!!miss.photos} error={m.photos} id="photos">
             <MultiPhoto value={photos} onChange={setPhotos} />
@@ -656,11 +658,12 @@ function StopStep(p: { trip: TripSummary; truckType: string; stop: Stop; open: b
               <Field icon="📄" label={t('DN ដែលបានប្រគល់ · ទំងន់ (kg)', 'DNs delivered · weight (kg)')} required need={!!miss.dns} error={m.dns} id="dnsok">
                 <div className="grid gap-1.5">
                   {dnsAll.map(d => (
-                    <label key={d} className="flex items-center gap-2">
-                      <input type="checkbox" className="w-5 h-5" checked={!!tick[d]} onChange={e => setTick({ ...tick, [d]: e.target.checked })} />
-                      <b className="flex-1 text-[14px]">{d}</b>
+                    <div key={d} className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 flex-1"><input type="checkbox" className="w-5 h-5" checked={!!tick[d]} onChange={e => setTick({ ...tick, [d]: e.target.checked })} />
+                      <b className="flex-1 text-[14px]">{d}</b></label>
                       <input className="in !w-[110px] text-right" inputMode="decimal" disabled={!tick[d]} value={kgs[d] || ''} onChange={e => setKgs({ ...kgs, [d]: e.target.value.replace(/[^0-9.]/g, '') })} aria-label={'kg ' + d} />
-                    </label>
+                      <CalcButton value={kgs[d] || ''} disabled={!tick[d]} onChange={v => setKgs(k => ({ ...k, [d]: v }))} title={'DN ' + d + ' · kg'} />
+                    </div>
                   ))}
                   {dnsAll.length > 1 ? <span className="muted text-[12px]">{t('ដោះធីក DN ដែលមិនបានប្រគល់ (កត់ត្រាវាដាច់ដោយឡែកបន្ទាប់)', 'Untick a DN not delivered (record it on its own after)')}</span> : null}
                 </div>
