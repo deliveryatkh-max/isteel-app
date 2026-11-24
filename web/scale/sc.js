@@ -1149,14 +1149,21 @@
     bestPdf(tk).then(b64 => { if (b64 && set('sc_pdf_' + tk.cid, b64) && LOC[tk.cid]) { LOC[tk.cid].v = (Number(LOC[tk.cid].v) || 0) + 1; if (Q.indexOf(tk.cid) < 0) Q.push(tk.cid); saveLoc(); flush(); } }).catch(() => {});
   }
 
+  // Warnings at the 2nd weigh show in a pop-up, easy to see (Kim, 24 Nov 2026)
   function paintWarn() {
-    const box = $('#warnBox');
-    if (!box) return;
-    if (!PENDING) { box.innerHTML = ''; return; }
-    box.innerHTML = `<div class="alert warn big">${PENDING.warn.map(x => `<div>⚠️ ${esc(t(x.km, x.en))}</div>`).join('')}
-      <div class="btns"><button type="button" class="btn" id="wCancel">${t('បោះបង់ ហើយពិនិត្យ', 'Cancel and check')}</button><button type="button" class="btn warnbtn" id="wForce">${t('រក្សាទុកដដែល', 'Save anyway')}</button></div></div>`;
-    $('#wCancel').onclick = () => { PENDING = null; paintWarn(); };
-    $('#wForce').onclick = () => weigh2(true);
+    const old = $('#warnPop');
+    if (old) old.remove();
+    if ($('#warnBox')) $('#warnBox').innerHTML = '';
+    if (!PENDING) return;
+    const back = document.createElement('div');
+    back.className = 'popwrap'; back.id = 'warnPop';
+    back.innerHTML = `<div class="popbox warnpop" role="alertdialog" aria-modal="true"><h3>⚠️ ${t('សូមពិនិត្យមុនរក្សាទុក', 'Please check before saving')}</h3>
+      ${PENDING.warn.map(x => `<div class="wline">⚠️ ${esc(t(x.km, x.en))}</div>`).join('')}
+      <div class="btns"><button type="button" class="btn big" id="wCancel">${t('បោះបង់ ហើយពិនិត្យ', 'Cancel and check')}</button><button type="button" class="btn warnbtn big" id="wForce">${t('រក្សាទុកដដែល', 'Save anyway')}</button></div></div>`;
+    document.body.appendChild(back);
+    back.querySelector('#wCancel').onclick = () => { PENDING = null; paintWarn(); };
+    back.querySelector('#wForce').onclick = () => { back.remove(); weigh2(true); };
+    back.querySelector('#wCancel').focus();
   }
 
   function doneHtml(tk) {
