@@ -135,7 +135,7 @@
       var r = info, x = r.times, leg = r.leg;
       var finished = leg === 'delivered' || leg === 'failed' || leg === 'canceled' || leg === 'moved';
       $('title').textContent = finished ? (leg === 'delivered' ? T('✅ បានប្រគល់រួចរាល់|✅ Delivered') : leg === 'failed' ? T('⚠️ ប្រគល់មិនបាន|⚠️ Not delivered') : T('ការដឹកនេះត្រូវបានបញ្ចប់|This delivery was closed'))
-        : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងធ្វើដំណើរ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
+        : x.out ? T('🚚 ទំនិញរបស់អ្នកកំពុងនៅតាមផ្លូវ|🚚 Your steel is on the way') : T('🏭 កំពុងរៀបចំនៅរោងចក្រ|🏭 Being prepared at the plant');
       $('info').textContent = [r.cust, 'DN ' + r.dn, r.so ? 'SO ' + r.so : '', r.plate].filter(Boolean).join(' · ');   // no kg (Kim, 22 Nov 2026)
       var dv = r.driver || {};
       // Kim (24 Nov 2026): the call button always shows once the truck left (driver phone, else the office line).
