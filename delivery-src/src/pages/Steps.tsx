@@ -176,28 +176,38 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   const chip = trip.closed ? L(boot.stages[trip.stage]) || trip.stage : t('ជំហានបន្ទាប់៖ ', 'Next step: ') + stepName(cur) + (!trip.gateOut && trip.wh && cur >= 3 ? ' · ' + trip.wh : '');
   return (
     <>
-      {/* Kim's picks (23 Nov 2026): W2–W4 A / D1–D4 header = plate + step + bar; O1 B adds driver, times and the stops. */}
-      <div className="card">
-        {/* Kim (24 Nov 2026): plate never wraps on a phone; the chip drops to the next line when it does not fit. */}
-        {/* Kim (24 Nov 2026): driver · company · trip sits beside the plate, the chip under them. */}
-        <div className="flex items-baseline gap-3 min-w-0">
-          <b className="text-[22px] font-extrabold tracking-wide whitespace-nowrap shrink-0">{trip.plate}</b>
-          {office ? <small className="muted min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" data-info="trip">{[noId(trip.driver), detail && detail.company, trip.round].filter(Boolean).join(' · ')}</small> : null}
-        </div>
-        <span className="inline-block mt-1 text-[12.5px] font-bold rounded-full px-2.5 py-1 bg-warnsoft text-warn whitespace-nowrap max-w-full overflow-hidden text-ellipsis" data-chip="step">{chip}</span>
-        <StepBar done={done} />
-        {office ? (
-          <div className="flex justify-between muted text-[12px] mt-1">
-            <span>⚖️ {t('ចូល', 'In')} {trip.gateIn ? fmtTime(trip.gateIn) : '–'}</span>
-            <span>⚖️ {t('ចេញ', 'Out')} {trip.gateOut ? fmtTime(trip.gateOut) : '–'}</span>
-            <span>{trip.id}</span>
+      {/* Kim (24 Nov 2026): header option D for every screen: navy band with the number plate (blue), 9 slim
+          segments, Gate In/Out times, a big done/9 counter and one button that jumps to the step to record. */}
+      <div className="card tripcard">
+        <div className="tripband">
+          <div className="flex items-center justify-between gap-3">
+            <span className="lpbadge"><small>CAMBODIA</small><b>{trip.plate}</b></span>
+            <span className="tripinfo min-w-0 text-right" data-info="trip">
+              <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{[office ? noId(trip.driver) : '', office && detail ? detail.company : '', trip.round].filter(Boolean).join(' · ')}</span>
+              <span className="block">{trip.id}</span>
+            </span>
           </div>
-        ) : null}
+          <div className="tripsegs" data-bar={done}>
+            {Array.from({ length: 9 }, (_, i) => <i key={i} className={i < done ? 'd' : i === done ? 'n' : ''} title={stepName(i + 1)} />)}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 muted text-[12.5px]">
+          <span>⚖️ {t('ចូល', 'In')} {trip.gateIn ? fmtTime(trip.gateIn) : '–'}</span>
+          <span>⚖️ {t('ចេញ', 'Out')} {trip.gateOut ? fmtTime(trip.gateOut) : '–'}</span>
+          <span className="tripcount">{done}<small>/9</small></span>
+        </div>
+        {trip.closed ? <span className="block mt-2 text-[13px] font-bold text-ok" data-chip="step">✅ {chip}</span> : (
+          <button type="button" className="tripcta" data-chip="step" onClick={() => { const el = document.getElementById('stepform'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+            💾 <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t('កត់ត្រា · ', 'Record · ') + chip.replace(/^(ជំហានបន្ទាប់៖ |Next step: )/, '')}</span>
+          </button>
+        )}
       </div>
       {office && trip.dns.length ? <StopsCard trip={trip} /> : null}
+      <div id="stepform" className="scroll-mt-20">
       {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
         : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
         : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} sites={detail ? detail.sites : undefined} />}
+      </div>
       {office && detail ? (
         <div className="grid gap-2">
           <button type="button" className="btn w-full" onClick={() => setLinks(!links)}>🔗 {t('តំណតៃកុង / អតិថិជន', 'Driver / customer links')}</button>
