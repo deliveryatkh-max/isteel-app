@@ -141,7 +141,9 @@ body.nav-right .app-body { padding-right: 96px; }
 @keyframes segPulse { 50% { opacity: .45; } }
 .tripcount { font-size: 28px; font-weight: 800; line-height: 1; color: #0b76a0; font-variant-numeric: tabular-nums; }
 .tripcount small { font-size: 14px; font-weight: 600; color: var(--muted); }
-.tripcta { margin-top: 10px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px; border: 0; border-radius: 12px; background: #084f6a; color: #fff; font-weight: 600; font-size: 14px; padding: 11px 12px; cursor: pointer; min-width: 0; }
+.tripcta { margin-top: 8px; width: 100%; display: flex; align-items: center; gap: 6px; border: 0; background: none; color: #0b76a0; font-weight: 700; font-size: 14px; padding: 2px 0; cursor: pointer; min-width: 0; text-align: left; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tripcta { color: #61cbf4; } }
+:root[data-theme="dark"] .tripcta { color: #61cbf4; }
 .tripcta:focus-visible { outline: 2px solid #61cbf4; outline-offset: 2px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tripcount { color: #61cbf4; } }
 :root[data-theme="dark"] .tripcount { color: #61cbf4; }

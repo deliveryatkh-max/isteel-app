@@ -177,7 +177,7 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
   return (
     <>
       {/* Kim (24 Nov 2026): header option D for every screen: navy band with the number plate (blue), 9 slim
-          segments, Gate In/Out times, a big done/9 counter and one button that jumps to the step to record. */}
+          segments, Gate In/Out times, a big done/9 counter and a plain "Next step: …" line (Kim: no button look, the form below has the Record button). */}
       <div className="card tripcard">
         <div className="tripband">
           <div className="flex items-center justify-between gap-3">
@@ -198,7 +198,7 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
         </div>
         {trip.closed ? <span className="block mt-2 text-[13px] font-bold text-ok" data-chip="step">✅ {chip}</span> : (
           <button type="button" className="tripcta" data-chip="step" onClick={() => { const el = document.getElementById('stepform'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
-            💾 <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t('កត់ត្រា · ', 'Record · ') + chip.replace(/^(ជំហានបន្ទាប់៖ |Next step: )/, '')}</span>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">{chip}</span>
           </button>
         )}
       </div>
