@@ -27,6 +27,10 @@ const SETTING_DEFAULTS = [
   ['OTIF_TARGET', 95, 'OTIF target in % for the 3PL scorecard'],
   ['RATING_TARGET', 4, 'Customer rating target (1-5 stars)'],
   ['TURNAROUND_TARGET_MIN', 180, 'Gate In to Gate Out target in minutes'],
+  ['TARGET_WAIT_MIN', 40, 'Report: Gate In (or the last warehouse) to arrival at the next warehouse, target in minutes'],
+  ['TARGET_LOAD_MIN', 90, 'Report: arrival at a warehouse to End Loading, target in minutes'],
+  ['TARGET_GATE_MIN', 30, 'Report: End Loading to Gate Out, target in minutes'],
+  ['TARGET_SITE_MIN', 60, 'Report: arrival at the customer to Delivered, target in minutes'],
   ['TELEGRAM_CHAT_ID', '', 'Telegram group for alerts (bot token goes in Script properties as TELEGRAM_BOT_TOKEN)'],
 ];
 const COMPLAINT_TYPES = ['late', 'driver', 'damage', 'short', 'wrong', 'other'];
@@ -92,7 +96,7 @@ function settings_() {
   const out = {};
   SETTING_DEFAULTS.forEach(d => { out[d[0]] = d[1]; });
   xrows_(XT.SETTINGS).forEach(r => { const k = String(r.Setting || '').trim(); if (k) out[k] = typeof r.Value === 'number' ? r.Value : String(r.Value == null ? '' : r.Value).trim(); });
-  ['INSIDE_WARN_MIN', 'INSIDE_LATE_MIN', 'FAR_KM', 'OTIF_TARGET', 'RATING_TARGET', 'TURNAROUND_TARGET_MIN'].forEach(k => { out[k] = Number(out[k]) || SETTING_DEFAULTS.find(d => d[0] === k)[1]; });
+  ['INSIDE_WARN_MIN', 'INSIDE_LATE_MIN', 'FAR_KM', 'OTIF_TARGET', 'RATING_TARGET', 'TURNAROUND_TARGET_MIN', 'TARGET_WAIT_MIN', 'TARGET_LOAD_MIN', 'TARGET_GATE_MIN', 'TARGET_SITE_MIN'].forEach(k => { out[k] = Number(out[k]) || SETTING_DEFAULTS.find(d => d[0] === k)[1]; });
   cache.put('settings_v1', JSON.stringify(out), 300);
   return out;
 }
@@ -443,6 +447,124 @@ function checkDelays() {
   });
   Object.keys(sent).forEach(id => { if (now - sent[id] > 2 * 86400000) delete sent[id]; });
   if (msgs.length && telegram_(msgs.join('\n'))) props.setProperty('DELAY_SENT', JSON.stringify(sent));
+}
+
+// ---------------------------------------------------------------- Report tab: time spent at each area (Kim, 24 Nov 2026, option C)
+/**
+ * Minutes of one trip of the 9-step flow, from the first time of each step (codes: 1 Gate In, 4 arrival at a warehouse,
+ * 6 End Loading, 7 Gate Out, 8 arrival at the customer, 12/13 unloading, 9/10/11 Delivered/Canceled/Failed).
+ * wh: one visit per warehouse (wait = Gate In or the previous End Loading to arrival; load = arrival to End Loading);
+ * gate = last End Loading to Gate Out; stops: one per customer (road = Gate Out or the previous stop's end to arrival;
+ * wait = arrival to Start Unloading; unload = Start to Finish Unloading; sign = Finish Unloading to Delivered).
+ * total = Gate In to the last Delivered / Failed / Canceled (only when every DN is finished).
+ */
+function tripTimes_(g) {
+  const sorted = g.slice().sort((a, b) => a.time - b.time);
+  const min = (a, b) => (a != null && b != null && b >= a ? Math.round((b - a) / 60000) : null);
+  const first = code => { const r = sorted.find(x => x.code === code); return r ? r.time : null; };
+  const gin = first(1), gout = first(7);
+  const out = { gin: gin, gout: gout, wh: [], stops: [], gate: null, plant: min(gin, gout), total: null };
+  // a visit opens at arrival (4), or at Start Loading (5) when the arrival step was skipped, and closes at End Loading (6)
+  let prev = gin, open = null;
+  sorted.filter(r => r.code === 4 || r.code === 5 || r.code === 6).forEach(r => {
+    if (r.code === 4 || (r.code === 5 && !open)) {
+      if (open && r.code === 4) out.wh.push(open);
+      open = { wh: r.wh || 'Unknown', wait: min(prev, r.time), load: null, at: r.time };
+    } else if (r.code === 6 && open) { open.load = min(open.at, r.time); out.wh.push(open); open = null; prev = r.time; }
+  });
+  if (open) out.wh.push(open);
+  out.wh.forEach(w => { delete w.at; });
+  const ends = sorted.filter(r => r.code === 6);
+  if (ends.length) out.gate = min(ends[ends.length - 1].time, gout);
+  // stops: DNs of the same customer arrive together (one stop per customer)
+  const byCust = {};
+  sorted.filter(r => r.dn && [8, 12, 13, 9, 10, 11].indexOf(r.code) >= 0).forEach(r => {
+    const k = custIdOf(r.cust) || r.cust || r.dn;
+    const s = byCust[k] || (byCust[k] = { cust: String(r.cust || '').replace(/^\s*\d+\s*-\s*/, '') || 'DN ' + r.dn, dns: {} });
+    s.dns[r.dn] = 1;
+    const f = { 8: 'arr', 12: 'us', 13: 'ue', 9: 'done', 10: 'done', 11: 'done' }[r.code];
+    if (s[f] == null || (f === 'done' ? r.time > s[f] : r.time < s[f])) s[f] = r.time;
+  });
+  let last = gout;
+  Object.keys(byCust).map(k => byCust[k]).filter(s => s.arr != null).sort((a, b) => a.arr - b.arr).forEach(s => {
+    out.stops.push({ cust: s.cust, dns: Object.keys(s.dns).length, road: min(last, s.arr), wait: min(s.arr, s.us), unload: min(s.us, s.ue), sign: min(s.ue, s.done), site: min(s.arr, s.done) });
+    if (s.done != null) last = s.done;
+  });
+  out.road = out.stops.length ? out.stops[0].road : null;
+  const dns = {}, fin = {};
+  g.forEach(r => { if (r.dn && r.code !== 10) dns[r.dn] = 1; if (r.dn && [9, 10, 11].indexOf(r.code) >= 0) fin[r.dn] = Math.max(fin[r.dn] || 0, r.time); });
+  const tripCanceled = g.some(r => r.code === 10 && !r.dn);
+  const dnList = Object.keys(dns);
+  if (gin != null && !tripCanceled && dnList.length && dnList.every(d => fin[d])) out.total = min(gin, Math.max.apply(null, dnList.map(d => fin[d])));
+  return out;
+}
+
+/** Report tab (office roles): averages per warehouse / 3PL / customer / driver for trips with Gate In in [from, to]. */
+function report_(p, user) {
+  needAny_(user, ['admin', 'supervisor', 'logistics']);
+  const from = /^\d{4}-\d\d-\d\d$/.test(p.from || '') ? p.from : ymd_(new Date(Date.now() - 6 * 86400000));
+  const to = /^\d{4}-\d\d-\d\d$/.test(p.to || '') ? p.to : ymd_(now_());
+  const cache = CacheService.getScriptCache();
+  const ck = 'rep1_' + from + '_' + to;
+  const hit = !p.fresh && cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  const s = settings_();
+  const sh = sheet_(SH.LOG), C = logCols_();
+  const lastRow = sh.getLastRow();
+  const vals = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, C.width).getValues() : [];
+  const groups = groupTrips_(vals.map((v, i) => parseRow_(v, i + 2, C)).filter(r => r.trip));
+  const co = companies_();
+  const coOf = plate => co[normPlate(plate)] || 'Unknown';
+  const acc = {}, add = (view, key, col, v) => {
+    if (v == null) return;
+    const o = (acc[view] || (acc[view] = {}))[key] || (acc[view][key] = { n: {}, sum: {}, trips: {} });
+    o.n[col] = (o.n[col] || 0) + 1; o.sum[col] = (o.sum[col] || 0) + v;
+  };
+  const count = (view, key, id) => { const o = (acc[view] || (acc[view] = {}))[key] || (acc[view][key] = { n: {}, sum: {}, trips: {} }); o.trips[id] = 1; };
+  const trips = [];
+  Object.keys(groups).forEach(id => {
+    const g = groups[id];
+    const tt = tripTimes_(g);
+    if (tt.gin == null) return;
+    const day = ymd_(new Date(tt.gin));
+    if (day < from || day > to) return;
+    const gi = g.find(r => r.code === 1) || {};
+    const drv = (g.filter(r => r.driver).pop() || {}).driver || 'Unknown';
+    const c = coOf(gi.plate);
+    const atSite = tt.stops.reduce((a, x) => (x.site != null ? a + x.site : a), 0) || null;
+    const load = tt.wh.reduce((a, x) => (x.load != null ? a + x.load : a), 0) || null;
+    const wait = tt.wh.reduce((a, x) => (x.wait != null ? a + x.wait : a), 0) || null;
+    trips.push({ id: id, day: day, plate: gi.plate || '', co: c, driver: drv, wh: tt.wh.map(x => x.wh).join(', '), cust: tt.stops.map(x => x.cust).join(', '),
+      wait: wait, load: load, gate: tt.gate, road: tt.road, site: atSite, plant: tt.plant, total: tt.total });
+    tt.wh.forEach((w, i) => { count('wh', w.wh, id); add('wh', w.wh, 'wait', w.wait); add('wh', w.wh, 'load', w.load); if (i === tt.wh.length - 1) add('wh', w.wh, 'gate', tt.gate); });
+    [['co', c], ['driver', drv]].forEach(v => {
+      count(v[0], v[1], id);
+      add(v[0], v[1], 'plant', tt.plant); add(v[0], v[1], 'road', tt.road); add(v[0], v[1], 'site', atSite); add(v[0], v[1], 'total', tt.total);
+    });
+    tt.stops.forEach(st => { count('cust', st.cust, id); ['road', 'wait', 'unload', 'site'].forEach(k => add('cust', st.cust, k, st[k])); });
+  });
+  const avg = (o, k) => (o.n[k] ? Math.round(o.sum[k] / o.n[k]) : null);
+  const views = {};
+  ['wh', 'co', 'driver', 'cust'].forEach(v => {
+    const a = acc[v] || {};
+    views[v] = Object.keys(a).map(k => {
+      const o = a[k], row = { key: k, trips: Object.keys(o.trips).length };
+      Object.keys(o.n).forEach(col => { row[col] = avg(o, col); });
+      return row;
+    }).sort((x, y) => y.trips - x.trips);
+  });
+  const mean = k => { const xs = trips.map(t => t[k]).filter(x => x != null); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null; };
+  const done = trips.filter(t => t.total != null);
+  const out = {
+    from: from, to: to, builtAt: Date.now(),
+    targets: { wait: s.TARGET_WAIT_MIN, load: s.TARGET_LOAD_MIN, gate: s.TARGET_GATE_MIN, site: s.TARGET_SITE_MIN, plant: s.TURNAROUND_TARGET_MIN },
+    summary: { trips: trips.length, done: done.length, total: mean('total'), plant: mean('plant'), wait: mean('wait'), load: mean('load'), gate: mean('gate'), road: mean('road'), site: mean('site'),
+      underPlant: trips.filter(t => t.plant != null).length ? Math.round(trips.filter(t => t.plant != null && t.plant <= s.TURNAROUND_TARGET_MIN).length * 100 / trips.filter(t => t.plant != null).length) : null },
+    views: views,
+    trips: trips.sort((a, b) => (b.total || b.plant || 0) - (a.total || a.plant || 0)).slice(0, 500),
+  };
+  try { cache.put(ck, JSON.stringify(out), 300); } catch (e) { /* too big to cache */ }
+  return out;
 }
 
 // ---------------------------------------------------------------- KPIs: turnaround, OTIF, 3PL scorecard (Supervisor / Admin / Logistics)
