@@ -205,8 +205,9 @@ function TruckSteps(p: { id: string; mode: Mode; dn?: string }) {
       {/* Kim (24 Nov 2026): once the driver part shows the stop card, the stops list repeats it: hidden. */}
       {office && trip.dns.length && !(trip.gateOut && !trip.closed && p.mode !== 'wh') ? <StopsCard trip={trip} /> : null}
       <div id="stepform" className="scroll-mt-20">
-      {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert>
-        : p.mode === 'wh' ? <WarehouseStep trip={trip} truckType={truckType} />
+      {trip.closed ? <Alert tone="ok">✅ {t('ជើងដឹកនេះបានបញ្ចប់', 'This trip is finished')}</Alert> : null}
+      {/* Kim (24 Nov 2026): the driver's survey stays after the last Delivered closes the trip, until it is sent. */}
+      {p.mode === 'wh' ? (trip.closed ? null : <WarehouseStep trip={trip} truckType={truckType} />)
         : <DriverSteps trip={trip} truckType={truckType} dn={p.dn} sites={detail ? detail.sites : undefined} />}
       </div>
       {office && detail ? (
@@ -471,8 +472,12 @@ export type DrvLink = { t: string; k: string; legs: Record<string, Label>; reloa
 export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: string; link?: DrvLink; sites?: Record<string, string>; rateAll?: Record<string, string>; siteRatedAll?: string[] }) {
   const trip = p.trip;
   // After Delivered: the customer rating QR and the site rating stay on screen (the stop itself moves on).
-  const [rate, setRate] = useState<Record<string, string> | null>(null);
-  const [siteRated, setSiteRated] = useState(false);
+  // Kept in the session (Kim, 24 Nov 2026): a reload or the trip closing never hides the survey before it is sent.
+  const rateKey = 'drv_rate_' + trip.id;
+  const [rate, setRateS] = useState<Record<string, string> | null>(() => { try { return JSON.parse(sessionStorage.getItem(rateKey) || 'null'); } catch (e) { return null; } });
+  const [siteRated, setSiteRatedS] = useState(() => { try { return sessionStorage.getItem(rateKey + '_done') === '1'; } catch (e) { return false; } });
+  const setRate = (o: Record<string, string> | null) => { setRateS(o); try { o ? sessionStorage.setItem(rateKey, JSON.stringify(o)) : sessionStorage.removeItem(rateKey); } catch (e) { /* private mode */ } };
+  const setSiteRated = (v: boolean) => { setSiteRatedS(v); try { sessionStorage.setItem(rateKey + '_done', v ? '1' : ''); } catch (e) { /* private mode */ } };
   // The scanned DN stays chosen after each save and reload (Kim, 24 Nov 2026: no re-scan at the same customer).
   const curKey = 'drv_dn_' + trip.id;
   const [cur, setCurS] = useState(() => { if (p.dn) return p.dn; try { return sessionStorage.getItem(curKey) || ''; } catch (e) { return ''; } });
@@ -519,9 +524,9 @@ export function DriverSteps(p: { trip: TripSummary; truckType: string; dn?: stri
   );
   return <>
     {!trip.closed ? <GpsShare tripId={trip.id} link={p.link ? { t: p.link.t, k: p.link.k } : undefined} /> : null}
-    {sp ? <StopStep key={sp.key + sp.dns.map(d => d.dn + d.leg).join()} trip={trip} truckType={p.truckType} stop={sp} open link={p.link} onRate={o => { setRate(o); setSiteRated(false); }} site={sp.dns.map(d => (p.sites || {})[d.dn]).filter(Boolean)[0] || ''} /> : null}
+    {sp && !trip.closed ? <StopStep key={sp.key + sp.dns.map(d => d.dn + d.leg).join()} trip={trip} truckType={p.truckType} stop={sp} open link={p.link} onRate={o => { setRate(o); setSiteRated(false); }} site={sp.dns.map(d => (p.sites || {})[d.dn]).filter(Boolean)[0] || ''} /> : null}
     {after}
-    {!sp || (!sp.step && left) ? scanCard : null}
+    {!trip.closed && (!sp || (!sp.step && left)) ? scanCard : null}
   </>;
 }
 
