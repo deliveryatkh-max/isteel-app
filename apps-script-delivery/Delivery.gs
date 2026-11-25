@@ -37,9 +37,13 @@ const DRIVER_LINK_DAYS = 4;   // a driver link works for this many days after Ga
 const MAX_PHOTOS = 10;        // photos per step (Delivered: up to 5 signed DN + 5 goods photos, Kim 24 Nov 2026)
 
 // ---------------------------------------------------------------- web entry points
-function doGet() { return json_({ ok: true, app: 'Delivery Journey' }); }
+function doGet(e) {
+  if (isTraccar_(e)) return json_(traccarIn_(e));   // Traccar Client app (Kim, 25 Nov 2026)
+  return json_({ ok: true, app: 'Delivery Journey' });
+}
 
 function doPost(e) {
+  if (isTraccar_(e)) return json_(traccarIn_(e));
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
@@ -54,7 +58,6 @@ function doPost(e) {
     if (body.action === 'rateSave') return json_({ ok: true, data: rateSave_(p) });
     // Customer live tracking (22 Nov 2026): the driver's phone sends GPS; the customer page reads it (both signed links).
     if (body.action === 'drvGps') return json_({ ok: true, data: driverGps_(p) });
-    if (body.action === 'drvTgLive') return json_({ ok: true, data: drvTgLive_(p) });
     if (body.action === 'trackInfo') return json_({ ok: true, data: trackInfo_(p) });
     // Truck Scale (20 Nov 2026): the 1st weigh opens the trip (Gate In), the 2nd weigh closes it (Gate Out).
     // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
@@ -98,7 +101,6 @@ function route_(action, p, user) {
     case 'report': return report_(p, user);
     case 'gps': return userGps_(p, user);
     case 'gpsReport': return gpsReport_(p, user);
-    case 'tgLive': return tgLive_(p, user);
     case 'joinLinks': return joinLinks_(user);
     default: fail_('BAD', 'Unknown action');
   }

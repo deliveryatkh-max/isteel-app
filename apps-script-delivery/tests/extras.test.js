@@ -459,30 +459,29 @@ test('phone GPS report: Admin only, longest place and driver, trip path for the 
   assert.strictEqual(one.trips[0].path.length, 9);
 });
 
-test('driver live location through Telegram: signed start links the chat, live updates become GPS (Kim, 25 Nov 2026)', () => {
-  const e = makeEnv(fixture(), { props: { TRACK_BOT_TOKEN: 'tok' } }); e.run('setup()');
+test('Traccar Client app: keyed URL, links the truck on the road, keeps points with no trip (Kim, 25 Nov 2026)', () => {
+  const e = env();
   const id = trip(e, 'TEST-0001', ['9000000001']);
-  const url = ok(e.call('tgLive', { tripId: id }, LOGI)).url;
-  const det = ok(e.call('trip', { tripId: id }, LOGI));
-  assert.strictEqual(ok(e.call('drvTgLive', { t: id, k: det.driverLink }, null)).url, url);
-  const arg = url.split('?start=')[1];
-  assert.ok(/^d.+_[A-Za-z0-9_-]{10}$/.test(arg), url);
-  e.tgUpdates.push({ update_id: 10, message: { chat: { id: 555 }, from: { first_name: 'Dara' }, text: '/start ' + arg } });
-  e.tgUpdates.push({ update_id: 11, message: { chat: { id: 556 }, text: '/start d' + id + '_wrongsig00' } });
-  e.run('trackBotPoll()');
-  assert.strictEqual(e.props['tgdrv_555'], id);
-  assert.ok(!e.props['tgdrv_556'], 'wrong signature not linked');
-  assert.ok(e.telegram.some(m => m.chat_id === 555 && /Live Location/.test(m.text)));
-  e.tgUpdates.push({ update_id: 12, message: { chat: { id: 555 }, location: { latitude: 11.6, longitude: 104.9, live_period: 28800 } } });
-  e.tgUpdates.push({ update_id: 13, edited_message: { chat: { id: 555 }, location: { latitude: 11.61, longitude: 104.91, horizontal_accuracy: 8 } } });
-  e.tgUpdates.push({ update_id: 14, edited_message: { chat: { id: 999 }, location: { latitude: 11.7, longitude: 104.9 } } });   // unknown chat: ignored
-  e.run('trackBotPoll()');
+  e.run("PropertiesService.getScriptProperties().setProperty('TRACCAR_KEY', 'abc123')");
+  const get = q => JSON.parse(e.ctx.doGet({ parameter: q }).text);
+  assert.ok(!get({ k: 'bad', id: 'TEST-0001', lat: '11.6', lon: '104.9' }).ok, 'wrong key refused');
+  const now = Math.round(e.now() / 1000);
+  assert.strictEqual(get({ k: 'abc123', id: 'TEST-0001', lat: '11.6', lon: '104.9', timestamp: String(now), accuracy: '9' }).saved, 1);
+  assert.strictEqual(get({ k: 'abc123', id: 'TEST-0001', lat: '11.601', lon: '104.9', timestamp: String(now + 30) }).saved, 0, 'within 2 min: not logged again');
+  // JSON format (new Traccar Client), an unknown phone with no trip
+  const post = JSON.parse(e.ctx.doPost({ parameter: { k: 'abc123' }, postData: { contents: JSON.stringify({ device_id: '100999', location: { timestamp: new Date(e.now()).toISOString(), coords: { latitude: 11.7, longitude: 104.95, accuracy: 5 } } }) } }).text);
+  assert.strictEqual(post.saved, 1);
   const g = tab(e, 'Live GPS');
-  assert.strictEqual(g.length, 1, 'one row: newest point of the batch');
-  assert.ok(g[0].includes('11.610000,104.910000') && g[0].includes('telegram'), JSON.stringify(g[0]));
-  step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
-  e.tgUpdates.push({ update_id: 15, edited_message: { chat: { id: 555 }, location: { latitude: 11.62, longitude: 104.92 } } });
-  e.run('trackBotPoll()');
-  assert.ok(!e.props['tgdrv_555'], 'unlinked when the trip is finished');
-  assert.ok(e.telegram.some(m => m.chat_id === '555' && /stop sharing/.test(m.text)));
+  assert.strictEqual(g.length, 2);
+  assert.ok(g[0].includes(id) && g[0].includes('traccar'), JSON.stringify(g[0]));
+  assert.ok(g[1].includes('') && g[1].some(c => /^traccar:100999/.test(String(c))));
+  // customer map sees the Traccar point
+  const det = ok(e.call('trip', { tripId: id }, LOGI));
+  assert.strictEqual(ok(e.call('trackInfo', { d: '9000000001', t: id, k: det.track['9000000001'] }, null)).gps.src, 'traccar');
+  // the normal app API still works
+  assert.ok(e.call('boot', {}, LOGI).ok);
+  const day = e.run(`ymd_(new Date(${e.now()}))`);
+  const rep = ok(e.call('gpsReport', { from: day, to: day }, ADMIN));
+  assert.strictEqual(rep.trips.length, 2);
+  assert.ok(rep.trips.some(t => /^D:100999:/.test(t.id) && t.driver === '100999'));
 });

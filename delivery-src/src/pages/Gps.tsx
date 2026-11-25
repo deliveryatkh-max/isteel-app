@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { errText, t, useLang, ymdNow, ymdOf } from '../i18n';
 import { useApp } from '../state';
-import { Alert, Spinner } from '../components/ui';
+import { Alert, Spinner, toast } from '../components/ui';
 
 type Stop = { ll: string; from: number; to: number; min: number; gap: boolean; label: string };
 type Gap = { from: number; to: number; min: number; km: number };
@@ -16,7 +16,7 @@ type Trip = {
 type Place = { ll: string; label: string; visits: number; total: number; longest: number; trucks: string[]; drivers: string[] };
 type Drv = { driver: string; trips: number; stopMin: number; stops: number; longest: (Stop & { trip: string; plate: string }) | null };
 type Rep = {
-  from: string; to: string; factory: string; rules: { radiusM: number; minMin: number; gapMin: number };
+  from: string; to: string; factory: string; traccar?: string; rules: { radiusM: number; minMin: number; gapMin: number };
   summary: { trips: number; points: number; tracked: number; stop: number; noSignal: number; moving: number; km: number; stops: number };
   places: Place[]; drivers: Drv[]; trips: Trip[];
 };
@@ -117,7 +117,7 @@ export default function GpsPage() {
           <section className="card !p-0 overflow-hidden">
             <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
               <h2 className="text-[15px] font-bold m-0 flex-1">
-                🗺️ {one ? t('ផែនទីពេលវេលា', 'Timeline map') + ' · ' + one.plate + ' · ' + one.id : t('កន្លែងដែលឡានឈប់យូរ', 'Where trucks stop longest')}
+                🗺️ {one ? t('ផែនទីពេលវេលា', 'Timeline map') + ' · ' + (one.plate || one.driver) + (one.id.indexOf('D:') === 0 ? '' : ' · ' + one.id) : t('កន្លែងដែលឡានឈប់យូរ', 'Where trucks stop longest')}
               </h2>
               {sel ? <button type="button" className="btn btn-sm" onClick={() => setSel('')}>✕ {t('ទាំងអស់', 'All')}</button> : null}
             </div>
@@ -180,7 +180,7 @@ export default function GpsPage() {
                   {trips.map(x => (
                     <tr key={x.id} className={'border-b border-line cursor-pointer ' + (sel === x.id ? 'bg-oksoft' : 'hover:bg-[rgba(11,79,108,.06)]')} onClick={() => { setSel(x.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
                       <td className="px-1.5 py-1.5 whitespace-nowrap">{dayOf(x.day)} {clock(x.start)}</td>
-                      <td className="px-1.5 whitespace-nowrap font-semibold">{x.plate}</td>
+                      <td className="px-1.5 whitespace-nowrap font-semibold">{x.plate || (x.id.indexOf('D:') === 0 ? '📱' : '')}</td>
                       <td className="px-1.5">{x.driver}</td>
                       <td className="px-1.5 text-right">{x.km}</td>
                       <td className="px-1.5 text-right">{hm(x.moving)}</td>
@@ -192,13 +192,31 @@ export default function GpsPage() {
               </table>
             </div>
           </section>
+          {d.traccar ? <TraccarSetup url={d.traccar} /> : null}
           <p className="muted text-[12px] text-center mt-2">
-            {t('ឈប់ = នៅក្នុង ' + d.rules.radiusM + ' ម៉ែត្រ យ៉ាងតិច ' + d.rules.minMin + ' នាទី · GPS ពីទូរស័ព្ទតៃកុង ចាប់ពីថ្លឹងចេញ រហូតដល់ប្រគល់ ពេលបើកទំព័រ',
+            {t('ឈប់ = នៅក្នុង ' + d.rules.radiusM + ' ម៉ែត្រ យ៉ាងតិច ' + d.rules.minMin + ' នាទី · GPS ពីទូរស័ព្ទតៃកុង (ទំព័រកម្មវិធី ឬ Traccar)',
               'Stop = within ' + d.rules.radiusM + ' m for ' + d.rules.minMin + ' min or more · GPS from the driver phone, Gate Out to delivered, while the page is open')}
           </p>
         </>
       )}
     </main>
+  );
+}
+
+function TraccarSetup(p: { url: string }) {
+  const copy = async () => { try { await navigator.clipboard.writeText(p.url); toast(t('បានចម្លង', 'Copied')); } catch { window.prompt('Server URL', p.url); } };
+  return (
+    <details className="card">
+      <summary className="font-bold text-[15px] cursor-pointer">📱 {t('ដំឡើង Traccar លើទូរស័ព្ទតៃកុង (តាមដាន ទោះបិទកម្មវិធី)', 'Set up Traccar on driver phones (tracks when the app is closed)')}</summary>
+      <ol className="text-[13.5px] pl-5 mt-2 mb-0 space-y-1.5">
+        <li>{t('ដំឡើងកម្មវិធី "Traccar Client" (ឥតគិតថ្លៃ) ពី Google Play ឬ App Store', 'Install the free "Traccar Client" app from Google Play or the App Store')}</li>
+        <li>{t('Server URL ៖', 'Server URL:')} <code className="break-all text-[12px] bg-[rgba(11,79,108,.08)] px-1 rounded">{p.url}</code> <button type="button" className="btn btn-sm ml-1" onClick={copy}>{t('ចម្លង', 'Copy')}</button></li>
+        <li>{t('Device identifier = លេខបុគ្គលិក (Employee ID) របស់តៃកុង ឬ ផ្លាកលេខឡាន', 'Device identifier = the driver\'s Employee ID, or the truck plate')}</li>
+        <li>{t('Frequency = 60 · Accuracy = High · បើក Service', 'Frequency = 60 · Accuracy = High · turn Service on')}</li>
+        <li>{t('អនុញ្ញាតទីតាំង "គ្រប់ពេល" (Allow all the time) និងកុំឲ្យសន្សំថ្ម (Battery: Unrestricted)', 'Allow location "All the time" and set Battery to Unrestricted')}</li>
+      </ol>
+      <p className="muted text-[12px] mt-2 mb-0">{t('កុំចែក URL នេះជាសាធារណៈ', 'Keep this URL private')}</p>
+    </details>
   );
 }
 
@@ -212,7 +230,7 @@ function Timeline(p: { trip: Trip }) {
   rows.sort((a, b) => a.t - b.t);
   return (
     <section className="card">
-      <h2 className="text-[15px] font-bold mt-0 mb-1">⏱️ {x.plate} · {x.driver}</h2>
+      <h2 className="text-[15px] font-bold mt-0 mb-1">⏱️ {x.plate ? x.plate + ' · ' : ''}{x.driver}</h2>
       <div className="muted text-[12.5px] mb-2">{x.km} km · {t('បើក', 'moving')} {hm(x.moving)} · {t('ឈប់', 'stopped')} {hm(x.stopMin)}{x.noSignal ? ' · ' + t('គ្មានសញ្ញា', 'no signal') + ' ' + hm(x.noSignal) : ''}</div>
       {rows.map((r, i) => (
         <div key={i} className="flex gap-2.5 py-1.5 border-b border-line last:border-0 text-[13.5px]">
