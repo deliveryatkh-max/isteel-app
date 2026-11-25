@@ -28,28 +28,13 @@ export function GpsShare(p: { tripId: string; link?: { t: string; k: string } })
     const id = navigator.geolocation.watchPosition(send, e => setState(e.code === 1 ? 'denied' : ''), { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
     return () => navigator.geolocation.clearWatch(id);
   }, [p.tripId, p.link && p.link.k]);
-  // Kim (25 Nov 2026): Telegram Live Location keeps sending when this app is closed.
-  const [tg, setTg] = useState(() => { try { return sessionStorage.getItem('tglive_' + p.tripId) || ''; } catch (e) { return ''; } });
-  useEffect(() => {
-    if (tg) return;
-    const call = p.link ? api<{ url: string }>('drvTgLive', { t: p.link.t, k: p.link.k }, { noAuth: true }) : api<{ url: string }>('tgLive', { tripId: p.tripId });
-    call.then(x => { if (x && x.url) { setTg(x.url); try { sessionStorage.setItem('tglive_' + p.tripId, x.url); } catch (e) { /* none */ } } }).catch(() => { /* old script: no button */ });
-  }, [p.tripId]);
-  const tgBtn = tg ? (
-    <a href={tg} target="_blank" rel="noopener" className="btn w-full mb-2 no-underline !bg-[#229ED9] !text-white !border-[#229ED9]" data-testid="tg-live">
-      ✈️ {t('ចែករំលែកទីតាំងផ្ទាល់ក្នុង Telegram (ផ្ញើបន្ត ទោះបិទកម្មវិធី)', 'Share live location in Telegram (keeps going when the app is closed)')}
-    </a>
-  ) : null;
-  if (state === 'denied') return <>{tgBtn}<Alert tone="warn">📍 {t('សូមអនុញ្ញាតទីតាំង (Location) ដើម្បីឲ្យអតិថិជនមើលឃើញឡាន។', 'Allow Location so the customer can see the truck.')}</Alert></>;
-  if (state === 'none') return tgBtn;
+  if (state === 'denied') return <Alert tone="warn">📍 {t('សូមអនុញ្ញាតទីតាំង (Location) ដើម្បីឲ្យអតិថិជនមើលឃើញឡាន។', 'Allow Location so the customer can see the truck.')}</Alert>;
+  if (state === 'none') return null;
   return (
-    <>
-    {tgBtn}
     <div className="flex items-center gap-2 text-[13px] text-ok font-semibold mb-2" data-testid="gps-share">
       <span className={'inline-block w-2.5 h-2.5 rounded-full ' + (state === 'on' ? 'bg-ok animate-pulse' : 'bg-line')} />
       {state === 'on' ? t('កំពុងចែករំលែកទីតាំងជាមួយអតិថិជន · សូមបើកទំព័រនេះ', 'Sharing location with the customer · keep this page open') : t('កំពុងរកទីតាំង…', 'Finding location…')}
     </div>
-    </>
   );
 }
 
