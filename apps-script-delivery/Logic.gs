@@ -346,6 +346,41 @@ function matchText(hay, q) {
   return !w || String(hay || '').toLowerCase().indexOf(w) >= 0 || squash(hay).indexOf(squash(w)) >= 0;
 }
 
+/**
+ * Phone GPS stops (Kim, 25 Nov 2026): one trip's points [{t, ll, acc}] sorted by time become stops (the phone stayed
+ * within radiusM of one place for at least minMin minutes) and no-signal gaps (no point for gapMin minutes while the
+ * phone moved, e.g. the driver page was closed). A gap with both ends at the same place counts as part of that stop.
+ */
+const GPS_STOP = { radiusM: 150, minMin: 5, gapMin: 10, badAccM: 300 };
+function gpsStops(points, opts) {
+  const o = Object.assign({}, GPS_STOP, opts || {});
+  const pts = (points || []).filter(p => p && p.t && distanceKm(p.ll, p.ll) != null && !(p.acc > o.badAccM)).sort((a, b) => a.t - b.t);
+  const ll = p => String(p.ll).split(',').map(Number);
+  const out = { stops: [], gaps: [], km: 0, start: pts.length ? pts[0].t : null, end: pts.length ? pts[pts.length - 1].t : null, points: pts.length };
+  let i = 0;
+  while (i < pts.length) {
+    let lat = ll(pts[i])[0], lng = ll(pts[i])[1], n = 1, j = i + 1, gap = false;
+    while (j < pts.length) {
+      const km = distanceKm(lat + ',' + lng, pts[j].ll);
+      if (km * 1000 > o.radiusM) break;
+      if (pts[j].t - pts[j - 1].t > o.gapMin * 60000) gap = true;
+      const q = ll(pts[j]); lat = (lat * n + q[0]) / (n + 1); lng = (lng * n + q[1]) / (n + 1); n++; j++;
+    }
+    const from = pts[i].t, to = pts[j - 1].t;
+    if (j - i >= 2 && to - from >= o.minMin * 60000) {
+      out.stops.push({ ll: lat.toFixed(6) + ',' + lng.toFixed(6), from: from, to: to, min: Math.round((to - from) / 60000), gap: gap });
+    }
+    if (j < pts.length) {
+      const d = distanceKm(pts[j - 1].ll, pts[j].ll);
+      out.km += d;
+      if (pts[j].t - pts[j - 1].t > o.gapMin * 60000) out.gaps.push({ from: pts[j - 1].t, to: pts[j].t, min: Math.round((pts[j].t - pts[j - 1].t) / 60000), km: Math.round(d * 10) / 10 });
+    }
+    i = j;
+  }
+  out.km = Math.round(out.km * 10) / 10;
+  return out;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { EVENTS, EV, FLOW, DEFAULT_ALLOWED, AT_CUSTOMER, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf, matchText };
+  module.exports = { EVENTS, EV, FLOW, DEFAULT_ALLOWED, AT_CUSTOMER, STAGES, DN_STATUS, LEG, LEG_DONE, eventCode, tripState, dnStatus, nextTripId, nextKey, roleKey, canRecord, checkEvent, isDuplicate, roundText, roundNumber, normDn, normPlate, DUPLICATE_MINUTES, SEGMENTS, stageMinutes, otifOf, distanceKm, custIdOf, matchText, gpsStops, GPS_STOP };
 }

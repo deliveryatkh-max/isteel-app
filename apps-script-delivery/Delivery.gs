@@ -96,6 +96,7 @@ function route_(action, p, user) {
     case 'kpi': return kpi_(p, user);
     case 'report': return report_(p, user);
     case 'gps': return userGps_(p, user);
+    case 'gpsReport': return gpsReport_(p, user);
     case 'joinLinks': return joinLinks_(user);
     default: fail_('BAD', 'Unknown action');
   }

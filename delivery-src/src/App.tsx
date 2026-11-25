@@ -7,6 +7,7 @@ import { Alert, BottomNav, Header, Spinner, Tab, Toaster, toast } from './compon
 import { OpsPage } from './pages/Ops';
 import { ScanPage } from './pages/Scan';
 import ReportPage from './pages/Report';
+import GpsPage from './pages/Gps';
 import DashboardPage from './pages/Dashboard';   // in the main file: a lazy chunk loads a second copy of the app (delivery.js without ?v)
 import { RecordPage } from './pages/Record';
 import { StepsPage } from './pages/Steps';
@@ -38,7 +39,7 @@ const DRIVER_TABS: Tab[] = [HOME, { id: 'record', icon: '📷', km: 'ស្ក�
 const OLD_FORM = false;
 export const OFFICE = ['admin', 'supervisor', 'logistics'];
 const DRIVER_PAGES = ['', 'record', 'steps', 'more', 'complaints'];
-const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more', joinlinks: 'more', report: 'report' };
+const TAB_OF: Record<string, string> = { steps: 'record', '': 'ops', trips: 'ops', trip: 'ops', scan: 'scan', dn: 'scan', record: 'record', more: 'more', quality: 'more', users: 'more', complaints: 'more', dashboard: 'more', joinlinks: 'more', gps: 'more', report: 'report' };
 
 // Opens at once from what the phone saw last time, then refreshes from the server (Kim: everything must be fast).
 const bootKey = () => 'dlv_boot_' + signedEmail();
@@ -176,12 +177,13 @@ function App({ lay }: { lay: ReturnType<typeof useLayout> }) {
   else if (page === 'complaints') body = <ComplaintsPage />;
   else if (page === 'joinlinks' && OFFICE.indexOf(roleKey) >= 0) body = <JoinLinksPage />;
   else if (page === 'report' && canReport) body = <ReportPage />;
+  else if (page === 'gps' && boot.isAdmin) body = <GpsPage />;
   else if (page === 'dashboard' && boot.canKpi) body = <DashboardPage />;
   else body = <OpsPage />;
   const titles: Record<string, [string, string]> = {
     ops: ['ជើងដឹក', 'Trips'], scan: ['ស្កេន DN', 'Scan DN'], report: ['របាយការណ៍', 'Report'], record: ['កត់ត្រាដំណើរ', 'Record journey'], more: ['ផ្សេងៗ', 'More'],
   };
-  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : page === 'joinlinks' ? t('តំណភ្ជាប់ Telegram អតិថិជន', 'Customer join links') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
+  const sub = page === 'trip' ? route.path[1] : page === 'dn' && route.path[1] ? 'DN ' + route.path[1] : page === 'quality' ? t('គុណភាពទិន្នន័យ', 'Data quality') : page === 'users' ? t('អ្នកប្រើប្រាស់', 'Users') : page === 'complaints' ? t('បណ្តឹង', 'Complaints') : page === 'dashboard' ? 'Dashboard' : page === 'gps' ? t('ចលនាឡាន (GPS ទូរស័ព្ទ)', 'Truck movement (phone GPS)') : page === 'joinlinks' ? t('តំណភ្ជាប់ Telegram អតិថិជន', 'Customer join links') : t('ដំណើរដឹកជញ្ជូន', 'Delivery journey');
 
   return (
     <AppCtx.Provider value={{ boot, ops, tick, live, refreshOps, patchTrip, setBusy }}>

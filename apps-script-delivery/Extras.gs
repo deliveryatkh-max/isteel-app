@@ -800,6 +800,78 @@ function userGps_(p, user) {
   if (!rows.length) fail_('NOTFOUND', 'Trip ' + tripId + ' was not found.', 'រកមិនឃើញជើងដឹក ' + tripId + '។');
   return gpsSave_(tripId, tripState(rows), rows[0].plate, p, 'phone', user.email);
 }
+/**
+ * Phone GPS report (Kim, 25 Nov 2026; Admin only, More menu): where each truck stopped and for how long, the places
+ * where trucks stay longest, per driver, and one trip's route + stops for the map. Reads only the Live GPS tab
+ * (points exist from Gate Out until the trip ends, while the driver page is open). Nothing is written.
+ */
+const FACTORY_LL = '11.525575,104.868668';
+function gpsReport_(p, user) {
+  needAny_(user, ['admin']);
+  const from = /^\d{4}-\d\d-\d\d$/.test(p.from || '') ? p.from : ymd_(new Date(Date.now() - 6 * 86400000));
+  const to = /^\d{4}-\d\d-\d\d$/.test(p.to || '') ? p.to : ymd_(now_());
+  const one = String(p.tripId || '').trim();
+  const ck = 'gpsrep1_' + from + '_' + to + '_' + one;
+  const cache = CacheService.getScriptCache();
+  const hit = !p.fresh && cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  const byTrip = {};
+  xrows_(GPS_TAB).forEach(r => {
+    const id = text_(r['Trip ID']), t = timeOf_(r.Time);
+    if (!id || !t || (one && id !== one)) return;
+    (byTrip[id] || (byTrip[id] = { plate: text_(r['Truck No.']), pts: [] })).pts.push({ t: t, ll: text_(r.LatLong), acc: Number(r['Accuracy (m)']) || 0 });
+  });
+  const idx = tripsSheetIndex_();
+  const sites = sites_();
+  const siteList = Object.keys(sites).map(id => ({ ll: sites[id].latlong, name: sites[id].name || id }));
+  const label = ll => {
+    if (distanceKm(ll, FACTORY_LL) < 1) return 'ISI';
+    let best = null, bd = 0.4;
+    siteList.forEach(x => { const d = distanceKm(ll, x.ll); if (d != null && d < bd) { bd = d; best = x.name; } });
+    return best || '';
+  };
+  const trips = [], sum = { trips: 0, points: 0, tracked: 0, stop: 0, noSignal: 0, km: 0, stops: 0 }, drivers = {}, places = [];
+  Object.keys(byTrip).forEach(id => {
+    const g = gpsStops(byTrip[id].pts);
+    if (!g.points) return;
+    const day = ymd_(new Date(g.start));
+    if (day < from || day > to) return;
+    const ti = idx[id] || {};
+    const driver = String(ti.driver || '').replace(/^\d+\./, '').trim() || '–';
+    const stops = g.stops.map(x => Object.assign({ label: label(x.ll) }, x));
+    const stopMin = stops.reduce((a, x) => a + x.min, 0);
+    const lostMin = g.gaps.filter(x => x.km > GPS_STOP.radiusM / 1000).reduce((a, x) => a + x.min, 0);
+    const tracked = Math.round((g.end - g.start) / 60000);
+    const longest = stops.slice().sort((a, b) => b.min - a.min)[0] || null;
+    const trip = { id: id, day: day, plate: ti.plate || byTrip[id].plate, driver: driver, start: g.start, end: g.end, km: g.km, tracked: tracked,
+      stopMin: stopMin, noSignal: lostMin, moving: Math.max(0, tracked - stopMin - lostMin), stops: stops, gaps: g.gaps, longest: longest };
+    if (one) trip.path = byTrip[id].pts.filter(x => !(x.acc > GPS_STOP.badAccM)).sort((a, b) => a.t - b.t).map(x => x.ll.split(',').map(Number).concat([x.t]));
+    trips.push(trip);
+    sum.trips++; sum.points += g.points; sum.tracked += tracked; sum.stop += stopMin; sum.noSignal += lostMin; sum.km += g.km; sum.stops += stops.length;
+    const d = drivers[driver] || (drivers[driver] = { driver: driver, trips: 0, stopMin: 0, stops: 0, longest: null });
+    d.trips++; d.stopMin += stopMin; d.stops += stops.length;
+    if (longest && (!d.longest || longest.min > d.longest.min)) d.longest = Object.assign({ trip: id, plate: trip.plate }, longest);
+    stops.forEach(x => {
+      // Same place = within 300 m of a place already found (centre of its first stop).
+      let pl = places.find(q => distanceKm(q.ll, x.ll) < 0.3);
+      if (!pl) { pl = { ll: x.ll, label: x.label, visits: 0, total: 0, longest: 0, trucks: {}, drivers: {} }; places.push(pl); }
+      pl.visits++; pl.total += x.min; pl.longest = Math.max(pl.longest, x.min); pl.trucks[trip.plate] = 1; pl.drivers[driver] = 1;
+      if (!pl.label && x.label) pl.label = x.label;
+    });
+  });
+  sum.km = Math.round(sum.km * 10) / 10;
+  sum.moving = Math.max(0, sum.tracked - sum.stop - sum.noSignal);
+  trips.sort((a, b) => b.start - a.start);
+  const out = {
+    from: from, to: to, summary: sum, rules: GPS_STOP, factory: FACTORY_LL,
+    places: places.map(q => ({ ll: q.ll, label: q.label, visits: q.visits, total: q.total, longest: q.longest, trucks: Object.keys(q.trucks), drivers: Object.keys(q.drivers) }))
+      .sort((a, b) => b.total - a.total).slice(0, 50),
+    drivers: Object.keys(drivers).map(k => drivers[k]).sort((a, b) => b.stopMin - a.stopMin),
+    trips: trips.slice(0, 300),
+  };
+  try { cache.put(ck, JSON.stringify(out), 300); } catch (e) { /* too big for the cache: fine */ }
+  return out;
+}
 /** Customer tracking links (DN → key) for every DN on the trip once it has gone out. */
 function trackLinks_(tripId, rows) {
   const out = {};

@@ -420,3 +420,41 @@ test('customer location lives in Customer Latlong: first delivery fills it, Logi
   const last = cust()[cust().length - 1];
   assert.deepStrictEqual(JSON.parse(JSON.stringify(last.slice(0, 4))), [3, '6100000099', 'TEST New', '11.7,104.8']);
 });
+
+test('phone GPS stops: finds stops, no-signal gaps and km (Kim, 25 Nov 2026)', () => {
+  const t0 = Date.parse('2026-11-25T08:00:00+07:00'), m = 60000;
+  const pts = [];
+  for (let i = 0; i <= 20; i += 2) pts.push({ t: t0 + i * m, ll: (11.55 + (i % 4 ? 0.0003 : 0)) + ',104.92' });   // 20 min at one place (small jitter)
+  for (let i = 1; i <= 5; i++) pts.push({ t: t0 + (20 + i * 2) * m, ll: (11.55 + i * 0.01) + ',104.92' });       // driving north ~5.5 km
+  pts.push({ t: t0 + 31 * m, ll: '11.60,104.92', acc: 900 });                                                    // bad accuracy: ignored
+  pts.push({ t: t0 + 60 * m, ll: '11.70,104.92' });                                                              // page closed 30 min, moved 11 km
+  const g = L.gpsStops(pts);
+  assert.strictEqual(g.stops.length, 1);
+  assert.strictEqual(g.stops[0].min, 20);
+  assert.strictEqual(g.gaps.length, 1);
+  assert.strictEqual(g.gaps[0].min, 30);
+  assert.ok(g.km > 15 && g.km < 18, 'km ' + g.km);
+  assert.strictEqual(g.points, 17);
+});
+
+test('phone GPS report: Admin only, longest place and driver, trip path for the map', () => {
+  const e = env();
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  e.run('gpsTabReady_()');
+  const base = e.now();
+  const add = (min, ll) => e.run(`xappend_(GPS_TAB, { Time: new Date(${base + min * 60000}), 'Trip ID': '${id}', 'Truck No.': 'TEST-0001', LatLong: '${ll}', 'Accuracy (m)': 10, Source: 'phone', User: 'x' })`);
+  [0, 2, 4, 6].forEach(x => add(x, '11.600000,104.900000'));       // 6 min stop
+  add(10, '11.650000,104.900000');
+  [14, 20, 30, 44].forEach(x => add(x, '11.700000,104.900000'));   // 30 min stop
+  const day = e.run(`ymd_(new Date(${base}))`);
+  assert.ok(!e.call('gpsReport', { from: day, to: day }, SUP).ok, 'Supervisor cannot open it');
+  const d = ok(e.call('gpsReport', { from: day, to: day }, ADMIN));
+  assert.strictEqual(d.summary.trips, 1);
+  assert.strictEqual(d.summary.stops, 2);
+  assert.strictEqual(d.places[0].total, 30);
+  assert.strictEqual(d.drivers[0].longest.min, 30);
+  assert.strictEqual(d.trips[0].tracked, 44);
+  assert.ok(!d.trips[0].path, 'no path in the list');
+  const one = ok(e.call('gpsReport', { from: day, to: day, tripId: id }, ADMIN));
+  assert.strictEqual(one.trips[0].path.length, 9);
+});
