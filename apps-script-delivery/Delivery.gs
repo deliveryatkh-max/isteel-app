@@ -54,6 +54,7 @@ function doPost(e) {
     if (body.action === 'rateSave') return json_({ ok: true, data: rateSave_(p) });
     // Customer live tracking (22 Nov 2026): the driver's phone sends GPS; the customer page reads it (both signed links).
     if (body.action === 'drvGps') return json_({ ok: true, data: driverGps_(p) });
+    if (body.action === 'drvTgLive') return json_({ ok: true, data: drvTgLive_(p) });
     if (body.action === 'trackInfo') return json_({ ok: true, data: trackInfo_(p) });
     // Truck Scale (20 Nov 2026): the 1st weigh opens the trip (Gate In), the 2nd weigh closes it (Gate Out).
     // Any active iSteel user may send it; the scale operator does not need the ដឹកជញ្ជូន tick.
@@ -97,6 +98,7 @@ function route_(action, p, user) {
     case 'report': return report_(p, user);
     case 'gps': return userGps_(p, user);
     case 'gpsReport': return gpsReport_(p, user);
+    case 'tgLive': return tgLive_(p, user);
     case 'joinLinks': return joinLinks_(user);
     default: fail_('BAD', 'Unknown action');
   }
