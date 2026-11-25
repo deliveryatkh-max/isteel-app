@@ -980,6 +980,29 @@ const joinSig_ = id => b64url_(Utilities.computeHmacSha256Signature('tg|' + id, 
 const trackBotName_ = () => prop_('TRACK_BOT_NAME') || 'isisteellive_bot';
 const trackPage_ = () => prop_('TRACK_PAGE_URL') || TRACK_PAGE_DEFAULT;
 const trackLinkUrl_ = (dn, tripId) => trackPage_() + '?d=' + encodeURIComponent(dn) + '&t=' + encodeURIComponent(tripId) + '&k=' + trackToken_(dn, tripId);
+// Driver live location through Telegram (Kim, 25 Nov 2026): keeps sending GPS when the app is closed. The driver opens
+// t.me/<bot>?start=d<TRIP>_<sig> once, then shares Live Location in that chat; each update is saved like phone GPS.
+const tgLiveSig_ = tripId => b64url_(Utilities.computeHmacSha256Signature('tgd|' + tripId, linkSecret_())).slice(0, 10);
+const tgLiveLink_ = tripId => (prop_('TRACK_BOT_TOKEN') ? 'https://t.me/' + trackBotName_() + '?start=d' + tripId + '_' + tgLiveSig_(tripId) : '');
+function tgLive_(p, user) {
+  needAny_(user, ['driver', 'admin', 'supervisor', 'logistics']);
+  return { url: tgLiveLink_(String(p.tripId || '').trim()) };
+}
+function drvTgLive_(p) { const c = checkDriverLink_(p); return { url: tgLiveLink_(c.tripId) }; }
+/** A live location from a driver's chat: the trip it was linked to (Script property tgdrv_<chat>). */
+function tgLiveSave_(chat, loc, who) {
+  const props = PropertiesService.getScriptProperties();
+  const tripId = props.getProperty('tgdrv_' + chat);
+  if (!tripId) return;
+  const rows = rowsWhere_('trip', [tripId]);
+  const st = rows.length ? tripState(rows) : null;
+  if (!st || st.closed) {
+    props.deleteProperty('tgdrv_' + chat);
+    trackBot_('sendMessage', { chat_id: chat, text: '✅ ជើងដឹក ' + tripId + ' បានបញ្ចប់។ អាចឈប់ចែករំលែកទីតាំងបាន។ សូមអរគុណ!\nTrip ' + tripId + ' is finished. You can stop sharing your location. Thank you!' });
+    return;
+  }
+  try { gpsSave_(tripId, st, rows[0].plate, { ll: loc.latitude + ',' + loc.longitude, acc: loc.horizontal_accuracy || 0 }, 'telegram', 'tg:' + who); } catch (e) { console.warn('Telegram GPS not saved: ' + e.message); }
+}
 function joinLink_(custId) { return /^\d{6,}$/.test(custId) ? 'https://t.me/' + trackBotName_() + '?start=c' + custId + '_' + joinSig_(custId) : ''; }
 
 function trackBot_(method, payload) {
@@ -1041,13 +1064,22 @@ function trackBotPoll() {
   if (!prop_('TRACK_BOT_TOKEN')) return;
   const props = PropertiesService.getScriptProperties();
   const offset = Number(props.getProperty('TRACK_BOT_OFFSET') || 0);
-  const res = trackBot_('getUpdates', { offset: offset, timeout: 0, allowed_updates: ['message'] });
+  const res = trackBot_('getUpdates', { offset: offset, timeout: 0, allowed_updates: ['message', 'edited_message'] });
   if (!res || !res.ok || !res.result.length) return;
+  const lastLoc = {};   // newest live location per chat in this batch
   res.result.forEach(u => {
     props.setProperty('TRACK_BOT_OFFSET', String(u.update_id + 1));
+    const lm = u.edited_message || u.message;
+    if (lm && lm.chat && lm.location) lastLoc[String(lm.chat.id)] = { loc: lm.location, who: [lm.from && lm.from.first_name, lm.from && lm.from.last_name].filter(Boolean).join(' ') };
     const m = u.message;
     if (!m || !m.chat || !/^\/start\b/.test(String(m.text || ''))) return;
     const arg = String(m.text).split(/\s+/)[1] || '';
+    const dl = arg.match(/^d([0-9A-Za-z-]{3,40})_([A-Za-z0-9_-]{10})$/);
+    if (dl && dl[2] === tgLiveSig_(dl[1])) {
+      props.setProperty('tgdrv_' + m.chat.id, dl[1]);
+      trackBot_('sendMessage', { chat_id: m.chat.id, text: '🚚 ជើងដឹក ' + dl[1] + '\nសូមចុច 📎 → ទីតាំង (Location) → ចែករំលែកទីតាំងផ្ទាល់ (Share My Live Location) → 8 ម៉ោង។ វានៅតែផ្ញើ ទោះបិទកម្មវិធីក៏ដោយ។\nTap 📎 → Location → Share My Live Location → 8 hours. It keeps sending even when the app is closed.' });
+      return;
+    }
     const g = arg.match(/^c(\d{6,})_([A-Za-z0-9_-]{10})$/);
     if (!g || g[2] !== joinSig_(g[1])) {
       trackBot_('sendMessage', { chat_id: m.chat.id, text: 'សួស្តី! សូមបើកតំណដែល ISI Steel Sales ផ្ញើឲ្យ ដើម្បីទទួលដំណឹងពេលទំនិញចេញដឹក។\nHello! Please open the link ISI Steel Sales sent you to get delivery updates.' });
@@ -1078,6 +1110,7 @@ function trackBotPoll() {
       });
     });
   });
+  Object.keys(lastLoc).forEach(chat => tgLiveSave_(chat, lastLoc[chat].loc, lastLoc[chat].who));
 }
 /** Run once after TRACK_BOT_TOKEN is set: turns off any webhook and starts the 1-minute bot timer. */
 function setupTrackBot() {

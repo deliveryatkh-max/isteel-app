@@ -458,3 +458,31 @@ test('phone GPS report: Admin only, longest place and driver, trip path for the 
   const one = ok(e.call('gpsReport', { from: day, to: day, tripId: id }, ADMIN));
   assert.strictEqual(one.trips[0].path.length, 9);
 });
+
+test('driver live location through Telegram: signed start links the chat, live updates become GPS (Kim, 25 Nov 2026)', () => {
+  const e = makeEnv(fixture(), { props: { TRACK_BOT_TOKEN: 'tok' } }); e.run('setup()');
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  const url = ok(e.call('tgLive', { tripId: id }, LOGI)).url;
+  const det = ok(e.call('trip', { tripId: id }, LOGI));
+  assert.strictEqual(ok(e.call('drvTgLive', { t: id, k: det.driverLink }, null)).url, url);
+  const arg = url.split('?start=')[1];
+  assert.ok(/^d.+_[A-Za-z0-9_-]{10}$/.test(arg), url);
+  e.tgUpdates.push({ update_id: 10, message: { chat: { id: 555 }, from: { first_name: 'Dara' }, text: '/start ' + arg } });
+  e.tgUpdates.push({ update_id: 11, message: { chat: { id: 556 }, text: '/start d' + id + '_wrongsig00' } });
+  e.run('trackBotPoll()');
+  assert.strictEqual(e.props['tgdrv_555'], id);
+  assert.ok(!e.props['tgdrv_556'], 'wrong signature not linked');
+  assert.ok(e.telegram.some(m => m.chat_id === 555 && /Live Location/.test(m.text)));
+  e.tgUpdates.push({ update_id: 12, message: { chat: { id: 555 }, location: { latitude: 11.6, longitude: 104.9, live_period: 28800 } } });
+  e.tgUpdates.push({ update_id: 13, edited_message: { chat: { id: 555 }, location: { latitude: 11.61, longitude: 104.91, horizontal_accuracy: 8 } } });
+  e.tgUpdates.push({ update_id: 14, edited_message: { chat: { id: 999 }, location: { latitude: 11.7, longitude: 104.9 } } });   // unknown chat: ignored
+  e.run('trackBotPoll()');
+  const g = tab(e, 'Live GPS');
+  assert.strictEqual(g.length, 1, 'one row: newest point of the batch');
+  assert.ok(g[0].includes('11.610000,104.910000') && g[0].includes('telegram'), JSON.stringify(g[0]));
+  step(e, 40); ok(e.call('drvRecord', filled({ t: id, k: det.driverLink, code: 9, dns: [{ dn: '9000000001', kg: 1000 }], ref: ref() }), null));
+  e.tgUpdates.push({ update_id: 15, edited_message: { chat: { id: 555 }, location: { latitude: 11.62, longitude: 104.92 } } });
+  e.run('trackBotPoll()');
+  assert.ok(!e.props['tgdrv_555'], 'unlinked when the trip is finished');
+  assert.ok(e.telegram.some(m => m.chat_id === '555' && /stop sharing/.test(m.text)));
+});
