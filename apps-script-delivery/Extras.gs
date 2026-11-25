@@ -817,9 +817,13 @@ function gpsReport_(p, user) {
   if (hit) return JSON.parse(hit);
   const byTrip = {};
   xrows_(GPS_TAB).forEach(r => {
-    const id = text_(r['Trip ID']), t = timeOf_(r.Time);
-    if (!id || !t || (one && id !== one)) return;
-    (byTrip[id] || (byTrip[id] = { plate: text_(r['Truck No.']), pts: [] })).pts.push({ t: t, ll: text_(r.LatLong), acc: Number(r['Accuracy (m)']) || 0 });
+    const t = timeOf_(r.Time);
+    if (!t) return;
+    // Traccar points with no trip: one group per phone per day (Trip ID shown as –)
+    const user = text_(r.User), dev = user.replace(/^traccar:/, '');
+    const id = text_(r['Trip ID']) || (/^traccar:/.test(user) ? 'D:' + dev.split(' ')[0] + ':' + ymd_(new Date(t)) : '');
+    if (!id || (one && id !== one)) return;
+    (byTrip[id] || (byTrip[id] = { plate: text_(r['Truck No.']), dev: id.indexOf('D:') === 0 ? dev : '', pts: [] })).pts.push({ t: t, ll: text_(r.LatLong), acc: Number(r['Accuracy (m)']) || 0 });
   });
   const idx = tripsSheetIndex_();
   const sites = sites_();
@@ -837,7 +841,7 @@ function gpsReport_(p, user) {
     const day = ymd_(new Date(g.start));
     if (day < from || day > to) return;
     const ti = idx[id] || {};
-    const driver = String(ti.driver || '').replace(/^\d+\./, '').trim() || '–';
+    const driver = String(ti.driver || '').replace(/^\d+\./, '').trim() || byTrip[id].dev || '–';
     const stops = g.stops.map(x => Object.assign({ label: label(x.ll) }, x));
     const stopMin = stops.reduce((a, x) => a + x.min, 0);
     const lostMin = g.gaps.filter(x => x.km > GPS_STOP.radiusM / 1000).reduce((a, x) => a + x.min, 0);
@@ -863,13 +867,107 @@ function gpsReport_(p, user) {
   sum.moving = Math.max(0, sum.tracked - sum.stop - sum.noSignal);
   trips.sort((a, b) => b.start - a.start);
   const out = {
-    from: from, to: to, summary: sum, rules: GPS_STOP, factory: FACTORY_LL,
+    from: from, to: to, summary: sum, rules: GPS_STOP, factory: FACTORY_LL, traccar: one ? '' : traccarUrl_(),
     places: places.map(q => ({ ll: q.ll, label: q.label, visits: q.visits, total: q.total, longest: q.longest, trucks: Object.keys(q.trucks), drivers: Object.keys(q.drivers) }))
       .sort((a, b) => b.total - a.total).slice(0, 50),
     drivers: Object.keys(drivers).map(k => drivers[k]).sort((a, b) => b.stopMin - a.stopMin),
     trips: trips.slice(0, 300),
   };
   try { cache.put(ck, JSON.stringify(out), 300); } catch (e) { /* too big for the cache: fine */ }
+  return out;
+}
+// ---------------------------------------------------------------- Traccar Client app (Kim, 25 Nov 2026)
+// Drivers install the free Traccar Client app, which keeps sending GPS when the app is closed or the phone is locked.
+// In the app: Server URL = this script's /exec URL + ?k=<TRACCAR_KEY>, Device identifier = the driver's Employee ID
+// (or the truck plate). Each point goes to Live GPS (Source "traccar"), linked to the driver's trip on the road
+// (Gate Out, not finished) when there is one; points with no trip are kept too (Trip ID empty) for the movement report.
+// Both formats are read: OsmAnd query (id, lat, lon, timestamp, accuracy) and JSON (device_id, location.coords).
+function isTraccar_(e) {
+  const q = (e && e.parameter) || {};
+  if (q.k && (q.lat || q.id || q.deviceid)) return true;
+  return !!(q.k && e.postData && /"(location|device_id)"/.test(String(e.postData.contents || '').slice(0, 2000)));
+}
+function traccarKey_() {
+  const props = PropertiesService.getScriptProperties();
+  let k = props.getProperty('TRACCAR_KEY');
+  if (!k) { k = Utilities.getUuid().replace(/-/g, '').slice(0, 16); props.setProperty('TRACCAR_KEY', k); }
+  return k;
+}
+/** The Server URL to type in the Traccar Client app (Admin only, shown on the GPS report). */
+function traccarUrl_() {
+  let url = '';
+  try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { /* not deployed */ }
+  return url ? url + '?k=' + traccarKey_() : '';
+}
+function traccarIn_(e) {
+  const q = e.parameter || {};
+  const key = prop_('TRACCAR_KEY');
+  if (!key || String(q.k || '') !== key) return { ok: false, error: 'DENIED' };
+  const pts = [];
+  if (q.lat != null && q.lon != null) pts.push({ id: q.id || q.deviceid, lat: q.lat, lon: q.lon, t: q.timestamp, acc: q.accuracy });
+  else {
+    let j = {};
+    try { j = JSON.parse(e.postData.contents || '{}'); } catch (err) { return { ok: false, error: 'BAD' }; }
+    [].concat(j.location || j.locations || []).forEach(l => { const c = l.coords || l; pts.push({ id: j.device_id || q.id, lat: c.latitude, lon: c.longitude, t: l.timestamp, acc: c.accuracy }); });
+  }
+  let saved = 0;
+  pts.forEach(x => { if (traccarSave_(x)) saved++; });
+  return { ok: true, saved: saved };
+}
+const pointTime_ = t => { const n = Number(t); if (n > 1e12) return n; if (n > 1e9) return n * 1000; const d = t ? Date.parse(t) : NaN; return isNaN(d) ? Date.now() : d; };
+function traccarSave_(x) {
+  const dev = String(x.id || '').trim().slice(0, 40);
+  const ll = cleanLatLong_(x.lat + ',' + x.lon);
+  if (!dev || !ll) return false;
+  const t = Math.min(pointTime_(x.t), Date.now() + 60000);
+  const acc = Math.max(0, Math.round(Number(x.acc) || 0));
+  const cache = CacheService.getScriptCache();
+  const tr = traccarTrip_(dev);
+  if (tr.trip) cache.put('gps_' + tr.trip, JSON.stringify({ ll: ll, acc: acc, t: t, src: 'traccar' }), 21600);   // customer map
+  const last = Number(cache.get('trc_last_' + dev) || 0);
+  if (last && Math.abs(t - last) < GPS_LOG_MIN * 60000) return false;
+  cache.put('trc_last_' + dev, String(t), 21600);
+  gpsTabReady_();
+  xappend_(GPS_TAB, { Time: new Date(t), 'Trip ID': tr.trip, 'Truck No.': tr.plate, LatLong: ll, 'Accuracy (m)': acc, Source: 'traccar', User: 'traccar:' + dev + (tr.name ? ' ' + tr.name : '') });
+  return true;
+}
+/** Employee ID → names (Employee List of the master file). */
+function employeeNames_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('emp_names_v1');
+  if (hit) return JSON.parse(hit);
+  const out = {};
+  try {
+    const t = tableOf_(mdTab_('Employee List'));
+    const c = k => t.head.indexOf(k), id = c('Employee ID');
+    if (id >= 0) t.rows.forEach(r => {
+      const k = String(r[id] == null ? '' : r[id]).replace(/\.0+$/, '').trim().toLowerCase();
+      if (k) out[k] = ['Full Name', 'Name', 'Khmer Name'].map(h => (c(h) >= 0 ? String(r[c(h)] || '').replace(/\s+/g, ' ').trim() : '')).filter(Boolean);
+    });
+  } catch (e) { console.warn('Employee names: ' + e); }
+  try { cache.put('emp_names_v1', JSON.stringify(out), 600); } catch (e) { /* too big */ }
+  return out;
+}
+/** The trip on the road for a Traccar device: device = Employee ID (driver name match) or truck plate. Cached 5 min. */
+function traccarTrip_(dev) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('trc_trip_' + dev);
+  if (hit) return JSON.parse(hit);
+  const bare = x => String(x || '').replace(/^\s*\d+\s*[.\-]\s*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const names = (employeeNames_()[dev.toLowerCase()] || []);
+  const want = names.map(bare);
+  const plate = normPlate(dev);
+  const idx = tripsSheetIndex_(), since = Date.now() - 2 * 86400000;
+  const ids = Object.keys(idx).filter(id => {
+    const r = idx[id];
+    return r.gateOut && r.gateIn > since && (want.indexOf(bare(r.driver)) >= 0 || (plate && r.plate === plate));
+  }).sort((a, b) => idx[b].gateOut - idx[a].gateOut);
+  let out = { trip: '', plate: '', name: names[0] || '' };
+  for (let i = 0; i < ids.length; i++) {
+    const rows = rowsWhere_('trip', [ids[i]]);
+    if (rows.length && !tripState(rows).closed) { out = { trip: ids[i], plate: idx[ids[i]].plate, name: names[0] || bare(idx[ids[i]].driver) }; break; }
+  }
+  cache.put('trc_trip_' + dev, JSON.stringify(out), 300);
   return out;
 }
 /** Customer tracking links (DN → key) for every DN on the trip once it has gone out. */

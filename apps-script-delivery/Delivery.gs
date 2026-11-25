@@ -37,9 +37,13 @@ const DRIVER_LINK_DAYS = 4;   // a driver link works for this many days after Ga
 const MAX_PHOTOS = 10;        // photos per step (Delivered: up to 5 signed DN + 5 goods photos, Kim 24 Nov 2026)
 
 // ---------------------------------------------------------------- web entry points
-function doGet() { return json_({ ok: true, app: 'Delivery Journey' }); }
+function doGet(e) {
+  if (isTraccar_(e)) return json_(traccarIn_(e));   // Traccar Client app (Kim, 25 Nov 2026)
+  return json_({ ok: true, app: 'Delivery Journey' });
+}
 
 function doPost(e) {
+  if (isTraccar_(e)) return json_(traccarIn_(e));
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {

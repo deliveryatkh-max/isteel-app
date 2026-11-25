@@ -458,3 +458,30 @@ test('phone GPS report: Admin only, longest place and driver, trip path for the 
   const one = ok(e.call('gpsReport', { from: day, to: day, tripId: id }, ADMIN));
   assert.strictEqual(one.trips[0].path.length, 9);
 });
+
+test('Traccar Client app: keyed URL, links the truck on the road, keeps points with no trip (Kim, 25 Nov 2026)', () => {
+  const e = env();
+  const id = trip(e, 'TEST-0001', ['9000000001']);
+  e.run("PropertiesService.getScriptProperties().setProperty('TRACCAR_KEY', 'abc123')");
+  const get = q => JSON.parse(e.ctx.doGet({ parameter: q }).text);
+  assert.ok(!get({ k: 'bad', id: 'TEST-0001', lat: '11.6', lon: '104.9' }).ok, 'wrong key refused');
+  const now = Math.round(e.now() / 1000);
+  assert.strictEqual(get({ k: 'abc123', id: 'TEST-0001', lat: '11.6', lon: '104.9', timestamp: String(now), accuracy: '9' }).saved, 1);
+  assert.strictEqual(get({ k: 'abc123', id: 'TEST-0001', lat: '11.601', lon: '104.9', timestamp: String(now + 30) }).saved, 0, 'within 2 min: not logged again');
+  // JSON format (new Traccar Client), an unknown phone with no trip
+  const post = JSON.parse(e.ctx.doPost({ parameter: { k: 'abc123' }, postData: { contents: JSON.stringify({ device_id: '100999', location: { timestamp: new Date(e.now()).toISOString(), coords: { latitude: 11.7, longitude: 104.95, accuracy: 5 } } }) } }).text);
+  assert.strictEqual(post.saved, 1);
+  const g = tab(e, 'Live GPS');
+  assert.strictEqual(g.length, 2);
+  assert.ok(g[0].includes(id) && g[0].includes('traccar'), JSON.stringify(g[0]));
+  assert.ok(g[1].includes('') && g[1].some(c => /^traccar:100999/.test(String(c))));
+  // customer map sees the Traccar point
+  const det = ok(e.call('trip', { tripId: id }, LOGI));
+  assert.strictEqual(ok(e.call('trackInfo', { d: '9000000001', t: id, k: det.track['9000000001'] }, null)).gps.src, 'traccar');
+  // the normal app API still works
+  assert.ok(e.call('boot', {}, LOGI).ok);
+  const day = e.run(`ymd_(new Date(${e.now()}))`);
+  const rep = ok(e.call('gpsReport', { from: day, to: day }, ADMIN));
+  assert.strictEqual(rep.trips.length, 2);
+  assert.ok(rep.trips.some(t => /^D:100999:/.test(t.id) && t.driver === '100999'));
+});
