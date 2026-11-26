@@ -1068,7 +1068,13 @@
   const dnTol = () => { const v = S().SCALE_DN_VAR_KG; return v === '' || v == null || isNaN(Number(v)) ? 120 : Math.max(0, Number(v)); };
   const dnKgOf = (x, d) => { const v = x && x.dnkg ? Number(x.dnkg[d]) : 0; return v > 0 ? v : 0; };
   const dnSum = x => { const l = x.dns || []; return !l.length || l.some(d => !dnKgOf(x, d)) ? null : l.reduce((a, d) => a + dnKgOf(x, d), 0); };
-  const dnCheck = x => { const s = dnSum(x); if (s == null || x.net === '' || x.net == null) return null; const d = Math.round(Number(x.net) - s); return { sum: s, d, ok: Math.abs(d) <= dnTol() }; };
+  // Pallet Kg (Kim, 26 Nov 2026): lightest weigh marked Empty + pallets minus lightest marked Empty truck. Taken off the
+  // net when the tare was weighed without the pallets, so the net is the cargo only.
+  const palletKg = x => { const w = [{ kg: Number(x.w1), e: x.empty1 }].concat((x.again || []).map(c => ({ kg: Number(c.kg), e: c.e }))).filter(o => o.kg > 0);
+    const lo = e => { const l = w.filter(o => o.e === e).map(o => o.kg); return l.length ? Math.min.apply(null, l) : null; };
+    const em = lo('Yes'), pa = lo('Pallet'); return em != null && pa != null && pa > em && Number(x.tare) < pa ? Math.round(pa - em) : 0; };
+  const cargoNet = x => (x.net === '' || x.net == null ? x.net : Math.round(Number(x.net) - palletKg(x)));
+  const dnCheck = x => { const s = dnSum(x); if (s == null || x.net === '' || x.net == null) return null; const d = Math.round(Number(cargoNet(x)) - s); return { sum: s, d, ok: Math.abs(d) <= dnTol() }; };
   const dnList = x => (x.dns || []).map(d => (dnKgOf(x, d) ? d + ' (' + kg(dnKgOf(x, d)) + ' kg)' : d)).join(', ');
   const dnWarn = (sel, kgv) => { const s = dnSum(F); if (s == null) return []; const d = Math.round(Math.abs(kgv - Number(sel.w1)) - s);
     return Math.abs(d) > dnTol() ? [{ km: 'ទម្ងន់ DN សរុប ' + kg(s) + ' kg ខុសពីទម្ងន់សុទ្ធ ' + sgn(d) + ' kg (អនុញ្ញាត ±' + dnTol() + ' kg)', en: 'DN total ' + kg(s) + ' kg differs from the scale net by ' + sgn(d) + ' kg (allowed ±' + dnTol() + ' kg)' }] : []; };
@@ -2323,8 +2329,8 @@
       </div>`}
       <div class="w3 mt"><div><small>${t('លើកទី១', '1st')} · ${dmy(x.t1)} ${hm(x.t1)}</small><b>${kg(x.w1)}</b><em class="src">${esc(x.s1 || '')}</em></div>
         <div><small>${t('លើកទី២', '2nd')} · ${dmy(x.t2)} ${hm(x.t2)}</small><b>${kg(x.w2)}</b><em class="src">${esc(x.s2 || '')}</em></div>
-        <div><small>${t('សុទ្ធ', 'Net')}</small><b>${kg(x.net)}</b></div></div>
-      ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(x.net)} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
+        ${palletKg(x) ? `<div><small>🪵 ${t('ទម្ងន់ផាឡែត', 'Pallet Kg')}</small><b>${kg(palletKg(x))}</b></div>` : ''}<div><small>${t('សុទ្ធ', 'Net')}${palletKg(x) ? ' (' + t('ទំនិញ', 'cargo') + ')' : ''}</small><b>${kg(cargoNet(x))}</b></div></div>
+      ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(cargoNet(x))} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
       ${phSrc(x, 1) || phSrc(x, 2) ? `<div class="camths mt">${camThumb(phSrc(x, 1), '📷 ' + t('លើកទី១', '1st weigh') + ' · ' + hm(x.t1), t('គ្មានរូប', 'No photo'))}${camThumb(phSrc(x, 2), '📷 ' + t('លើកទី២', '2nd weigh') + (x.t2 ? ' · ' + hm(x.t2) : ''), t('គ្មានរូប', 'No photo'))}</div>` : ''}
       ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th>${t('ឡានទទេ', 'Empty Truck')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td>${emptyTxt(c.e)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
@@ -2630,7 +2636,7 @@
       TicketNo: x.no || '', Date: dmy(x.t2 || x.t1), TruckNo: x.plate || '', Company: x.company || '', Item: x.item || '', Destination: x.dest || '', Tarp: x.tarp === 'Yes' ? 'គ្របតង់' : x.tarp === 'No' ? 'មិនគ្របតង់' : '', EmptyTruck: x.empty1 === 'Yes' ? 'ឡានទទេ' : x.empty1 === 'Pallet' ? 'ឡានទទេ+ផាឡែត' : '',
       DN: dnList(x), DNCount: String(dns.length), DNTotal: dnSum(x) == null ? '' : kg(dnSum(x)), DNVariance: dnCheck(x) ? sgn(dnCheck(x).d) : '', DNCheck: dnCheck(x) ? (dnCheck(x).ok ? 'MATCH' : 'VARIANCE') : '', Note: x.note || '', Customer: x.customer || '', Driver: x.driver || '', Type: TYPE[typeOf(x)] ? TYPE[typeOf(x)][0] : '',
       Weight1: kg(x.w1), Time1: when(x.t1), Source1: src(x.s1), Weight2: kg(x.w2), Time2: when(x.t2), Source2: src(x.s2),
-      Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
+      Gross: kg(x.gross), Tare: kg(x.tare), Net: kg(cargoNet(x)), PalletKg: kg(palletKg(x)), NetAll: kg(x.net), Warning: x.warn ? 'ការព្រមាន: ' + CORE.warnKm(x.warn) : '', Operator: x.op || '',   // Khmer on the ticket (Kim, 12 Nov 2026)
       Status: x.status === 'Void' ? 'CANCELLED' : x.agn ? 'SCALE AGAIN #' + x.agn + ' · NOT FINISHED' : x.status === 'Open' ? 'NOT FINISHED' : '',
       // {{Again}}: each Scale again with its Empty truck answer (Kim, 18 Nov 2026)
       Again: (x.again || []).map(c => kg(c.kg) + ' kg' + (c.e === 'Yes' ? ' (ទទេ)' : c.e === 'Pallet' ? ' (ទទេ+ផាឡែត)' : c.e === 'No' ? ' (មានទំនិញ)' : '')).join(' · '),

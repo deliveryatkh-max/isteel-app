@@ -586,3 +586,6 @@ h3.mt { margin: 18px 2px 8px; font-size: 16px; }
 .popbox.warnpop h3 { margin: 0 0 12px; font-size: 21px; color: #8a5300; }
 .popbox.warnpop .wline { background: #fff6e0; border: 1px solid #f3d38a; border-radius: 10px; padding: 10px 12px; margin: 0 0 8px; font-weight: 600; color: #6b4300; line-height: 1.5; }
 .popbox.warnpop .btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; }
+
+/* Pallet Kg cell (26 Nov 2026) */
+.w3:has(> div:nth-child(4)) { grid-template-columns: repeat(4, 1fr); }
