@@ -42,7 +42,10 @@
   const typeOf = x => (x.type === 'In' || x.type === 'Out' || x.type === 'Scrap' ? x.type : dirOf(x.w1, x.w2));
   /** At the 2nd weigh: is a DN needed? Yes unless the scale now reads lighter than the 1st weigh (truck came in loaded). */
   // DN is required when the truck came to load goods, and not when it came to unload (Kim, 8 Nov 2026): only the tick decides.
-  const dnNeed = sel => !!sel && ['In', 'Scrap'].indexOf(F.type || sel.type || 'Out') < 0;
+  // Truck goes back without goods (Kim, 26 Nov 2026): saved as the Item; no Item, Destination or DN at the 2nd weigh
+  const RET = 'ឡានត្រលប់ទៅវិញ គ្មានទំនិញ';
+  const isRet = () => typeof F !== 'undefined' && F && F.item === RET;
+  const dnNeed = sel => !!sel && !isRet() && ['In', 'Scrap'].indexOf(F.type || sel.type || 'Out') < 0;
 
   // ---------------------------------------------------------------- Apps Script
   const msgOf = e => { const s = String(e || 'Error'); const m = s.match(/^([A-Z_]+):\s*([\s\S]*)$/); const txt = m ? m[2] : s; const p = txt.split(' || '); return { code: m ? m[1] : '', text: t(p[1] || p[0], p[0]) }; };
@@ -817,7 +820,8 @@
       ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${req}</span>
         <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${EMPTY_OPTS.map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
-        <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+        <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div>
+        <label class="chip retchip${isRet() ? ' on' : ''}"><input type="checkbox" id="fRet"${isRet() ? ' checked' : ''}> 🔙 ${t(RET, 'Truck goes back, no goods')}</label></div>` : ''}
       </div>
       <div class="fgrid">
         <div class="frow2"><div class="field"><label class="f lc-navy">🚚 ${t('លេខឡាន', 'Truck No')} ${req}</label><div class="clrwrap"><input class="in${need(F.plate)}${sel ? ' locked' : ''}" id="fPlate" autocomplete="off" value="${esc(F.plate)}" placeholder="3B-5956"${sel ? ' readonly tabindex="-1" title="' + t('មិនអាចប្តូរលេខឡាននៅលើកទី២', 'The truck number can\'t be changed at the 2nd weigh') + '"' : ''}>${sel ? '<span class="lockic" aria-hidden="true">🔒</span>' : F.plate ? `<button type="button" class="clr" id="fPlateClr" aria-label="Clear" title="${t('សម្អាត', 'Clear')}">✕</button>` : ''}</div>
@@ -825,8 +829,8 @@
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div></div></div>
         ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')} ${req}</label><div><input class="in${need(F.driver)}" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
-        ${sel ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
+        ${sel && !isRet() ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
+        ${sel && !isRet() ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
           <div class="search"><input class="in ddl${!destsOf(F.dest).length ? ' need' : ''}" id="fDest" autocomplete="off" value=""><div class="sugg msel" id="destBox" hidden></div></div></div>` : ''}
         ${sel && dnNeed(sel) ? `<div class="field span2"><label class="f lc-pink">🧾 ${t('លេខ DN', 'DN No')} ${req}</label>
@@ -855,6 +859,7 @@
     document.querySelectorAll('input[name="fJob"]').forEach(r => { r.onchange = () => { upd('type', r.value); if (r.value === 'In') { F.dns = []; F.dnkg = {}; F.load = ''; keepForm(); } else if (!F.load) { F.load = get('sc_load') || LOAD_DEF; keepForm(); } paintForm(); }; });   // Unload: no DN, no loading place (Kim, 12 Nov 2026)   // Unload: no DN (Kim, 12 Nov 2026)
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
+    if ($('#fRet')) $('#fRet').onchange = e => { if (e.target.checked) { F.item = RET; F.dest = ''; F.dns = []; F.dnkg = {}; } else F.item = ''; keepForm(); paintForm(); };
     document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     // The truck number is fixed after the 1st weigh (Kim, 9 Nov 2026)
     if (!sel) picker($('#fPlate'), {
@@ -1007,10 +1012,10 @@
     if (!ticketBy(F.cid) && !String(F.driver || '').trim()) miss.push('#fDriver');   // driver required at the 1st weigh (Kim, 24 Nov 2026)
     // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
-    if (second && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
+    if (second && !isRet() && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
     if (second && !F.tarp) miss.push('#tarpBox');
     if (second && !F.dns.length) {   // DN needed only when the truck leaves loaded (Out)
-      if (dnNeed(ticketBy(F.cid)) || (!ticketBy(F.cid) && ['In', 'Scrap'].indexOf(F.type) < 0)) miss.push('#dnBox');
+      if (dnNeed(ticketBy(F.cid)) || (!ticketBy(F.cid) && !isRet() && ['In', 'Scrap'].indexOf(F.type) < 0)) miss.push('#dnBox');
     }
     if (second && F.dns.length && dnNeed(ticketBy(F.cid))) {   // the kg written on every DN (Kim, 10 Nov 2026)
       const e = $$('[data-dk]').filter(k => !dnKgOf(F, F.dns[+k.dataset.dk]));
@@ -1311,8 +1316,8 @@
       const q = String(SITEQ || '').toLowerCase().replace(/[\s\-.]/g, '');
       const open = q ? all.filter(x => [x.plate, x.company].join(' ').toLowerCase().replace(/[\s\-.]/g, '').indexOf(q) >= 0) : all;
       $('#siteCnt').textContent = all.length ? '(' + (q ? open.length + ' / ' : '') + all.length + ')' : '';
-      $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>DN</th><th>${t('ចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th>${isAdmin() ? '<th></th>' : ''}</tr>
-        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b>${lastAgain(x) ? ` <span class="agpill">🔁 ${kg(lastAgain(x).kg)}${x.again.length > 1 ? ' · ' + x.again.length + '×' : ''}</span>` : ''}</td><td>${esc(x.company || '')}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td>${isAdmin() ? `<td class="nw rowacts"><button type="button" class="rowic" data-tedit="${esc(x.cid)}" title="${t('កែ', 'Edit')}" aria-label="Edit">✏️</button><button type="button" class="rowic del" data-tdel="${esc(x.cid)}" title="${t('លុប', 'Delete')}" aria-label="Delete">🗑</button></td>` : ''}</tr>`; }).join('')}</table></div>
+      $('#site').innerHTML = q && all.length && !open.length ? `<div class="empty">${t('រកមិនឃើញ', 'No match')}</div>` : open.length ? `<div class="tbl"><table><tr><th>${t('ឡាន', 'Truck')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Company')}</th><th>${t('ថ្ងៃចូល', 'Date In')}</th><th>DN</th><th>${t('ម៉ោងចូល', 'In')}</th><th class="r">${t('លើកទី១', '1st')}</th><th>${t('រង់ចាំ', 'Wait')}</th>${isAdmin() ? '<th></th>' : ''}</tr>
+        ${open.map(x => { const m = Math.round((Date.now() - new Date(x.t1)) / 60000); return `<tr class="pick${x.cid === F.cid ? ' on' : ''}${x.err ? ' errrow' : ''}" data-open="${esc(x.cid)}"><td><b>${esc(x.plate)}</b>${lastAgain(x) ? ` <span class="agpill">🔁 ${kg(lastAgain(x).kg)}${x.again.length > 1 ? ' · ' + x.again.length + '×' : ''}</span>` : ''}</td><td>${esc(x.company || '')}</td><td class="nw">${dmy(x.t1).slice(0, 5)}</td><td>${x.dns && x.dns.length ? x.dns.length : '<span class="need-t">0</span>'}</td><td>${hm(x.t1)}</td><td class="r mono">${kg(x.w1)}</td><td><span class="badge ${m > 120 ? 'pending' : 'approved'}">${m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60)}</span></td>${isAdmin() ? `<td class="nw rowacts"><button type="button" class="rowic" data-tedit="${esc(x.cid)}" title="${t('កែ', 'Edit')}" aria-label="Edit">✏️</button><button type="button" class="rowic del" data-tdel="${esc(x.cid)}" title="${t('លុប', 'Delete')}" aria-label="Delete">🗑</button></td>` : ''}</tr>`; }).join('')}</table></div>
         <p class="hint">${t('ចុចលើឡាន ដើម្បីថ្លឹងលើកទី២', 'Tap a truck to load it for the 2nd weigh')}</p>`
         : `<div class="empty">${t('គ្មានឡានរង់ចាំ', 'No truck waiting')}</div>`;
       fitSite();
