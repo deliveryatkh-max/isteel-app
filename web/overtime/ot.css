@@ -261,3 +261,36 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 
 /* Forms 50% wider on computers (Kim, 5 Nov 2026) */
 @media (min-width: 900px) { main { max-width: 930px; } }
+
+/* My Team and My info (team.js, Kim 26 Nov 2026) */
+.tm-tiles { display: grid; gap: 10px; margin-bottom: 16px; }
+.tm-tile { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line);
+  box-shadow: var(--shadow); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.tm-tile .ic { width: 48px; height: 48px; flex: none; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; background: var(--soft); }
+.tm-tile .ic.bad { background: var(--bad-soft); } .tm-tile .ic.ok { background: var(--ok-soft); } .tm-tile .ic.warn { background: var(--warn-soft); }
+.tm-tile b { display: block; font-size: 17px; }
+.tm-tile small { display: block; color: var(--muted); font-size: 13.5px; }
+.tm-tile i { margin-left: auto; font-style: normal; font-size: 22px; color: var(--muted); }
+.tm-sec { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 4px 2px 8px; }
+.tm-log { padding: 4px 14px; }
+.tm-li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tm-li:last-child { border-bottom: 0; }
+.tm-li b { display: block; font-size: 14.5px; }
+.tm-li small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.tm-chip { flex: none; font-size: 12px; font-weight: 600; border-radius: 99px; padding: 2px 9px; margin-top: 1px; background: var(--soft); color: var(--brand); white-space: nowrap; }
+.tm-chip.bad { background: var(--bad-soft); color: var(--bad); } .tm-chip.ok { background: var(--ok-soft); color: var(--ok); } .tm-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.tm-steps { display: flex; align-items: center; gap: 8px; margin: 0 2px 12px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.tm-steps b { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--soft); color: var(--brand); font-size: 13px; }
+.tm-steps b.on { background: var(--brand); color: var(--on-brand); }
+.tm-steps span { flex: 1; height: 2px; background: var(--line); }
+.tm-hits { display: grid; gap: 6px; margin-top: 10px; }
+.tm-hit { width: 100%; text-align: left; font: inherit; color: var(--text); background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 9px 12px; cursor: pointer; }
+.tm-hit.on { border-color: var(--accent); background: var(--soft); }
+.tm-hit b { display: block; font-size: 15px; } .tm-hit small { display: block; color: var(--muted); font-size: 13px; }
+.tm-kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 15px; }
+.tm-kv span { color: var(--muted); } .tm-kv b { text-align: right; overflow-wrap: anywhere; }
+.btn.tm-bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+.tm-photo { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.tm-photo .pic { width: 96px; height: 96px; flex: none; border-radius: 50%; overflow: hidden; background: var(--soft); display: flex; align-items: center; justify-content: center; font-size: 44px; }
+.tm-photo .pic img { width: 100%; height: 100%; object-fit: cover; }
+.tm-photo label.btn { cursor: pointer; }

@@ -815,7 +815,7 @@
     finally { if ($('#qBtn')) $('#qBtn').disabled = false; }
   }
 
-  // ---------- start menu (Kim, 30 Oct 2026): Overtime | Sign up as OT approver ----------
+  // ---------- start menu (Kim, 30 Oct 2026): Overtime | Sign up as OT approver (+ My info, My Team: team.js) ----------
   function openForm() { if (state.tab !== 'new') state.scanned = false; renderNew(); if (get(K.id) && !state.emp) pick(get(K.id)); }
   function renderMenu() {
     state.tab = 'menu'; paintTabs(); redraw = renderMenu; stopSignupPoll();
@@ -828,6 +828,9 @@
       </div>`;
     $('#mOt').onclick = openForm;
     $('#mSign').onclick = () => renderSignup();
+    // My info (everyone) and My Team (supervisors and admins): team.js (Kim, 26 Nov 2026)
+    if (window.OT_TEAM) OT_TEAM.tiles($('.menu2'), { back: renderMenu, onMenu: () => state.tab === 'menu',
+      enter: fn => { stopSignupPoll(); state.tab = 'team'; paintTabs(); redraw = fn; } });
   }
 
   // Sign up as OT approver: type your Line Manager ID, open Telegram, press Start. The bot saves the chat ID and

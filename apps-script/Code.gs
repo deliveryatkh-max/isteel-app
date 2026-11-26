@@ -118,6 +118,12 @@ const ACTIONS = {
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
   umMenus: umMenus_,
+  teamInit: teamInit_,
+  teamFind: teamFind_,
+  teamResign: teamResign_,
+  teamNew: teamNew_,
+  teamVacancy: teamVacancy_,
+  myInfoSave: myInfoSave_,
   saver: fuelSaver_,
   sapPost: sapPost_,
   reportCols: reportColsSave_,
@@ -548,6 +554,8 @@ function syncUsersNow() {
   try {
     masterCache_ = null;
     cache.remove('usync_again');
+    // Overtime › My Team: the last working day has passed → switched off (Kim, 26 Nov 2026).
+    try { if (teamAutoOff_()) masterCache_ = null; } catch (e) { console.log('Team auto-off: ' + e); }
     out = syncUsers_(false);
   } finally {
     lock.releaseLock();
@@ -3515,4 +3523,278 @@ function umOtSave_(p, user) {
   }
   const log = umLog_(user.name || user.email, String(p.email || ''), name, ['OT approver: ' + (before || '–') + ' → ' + p.manager]);
   return { manager: p.manager, tg: p.tg, log };
+}
+
+// ---------- Overtime › My Team and My info (Kim, 26 Nov 2026, option C) ----------
+// My Team (supervisors and admins only): mark a resignation, add a new comer, log a vacancy. Everything is written
+// to the one employee list (Employee & Approver / Employee List); vacancies go to a "Recruitment" tab in the same
+// file. My info (everyone signed in): their own English and Khmer name and an employee photo.
+// Every change is a line in the "Team Changes" tab of this (Fuel) spreadsheet.
+const TEAM_LOG = 'Team Changes';
+const TEAM_LOG_COLS = ['Time', 'By', 'Type', 'Employee ID', 'Name', 'Detail'];
+const RECRUIT_TAB = 'Recruitment';
+const RECRUIT_COLS = ['Request ID', 'Vacancy Title', 'Expected Join Date', 'Warehouse', 'Status', 'Added By', 'Added At', 'Filled By ID', 'Filled At'];
+const TEAM_COLS = ['Last Working Day', 'Resign Reason', 'Employee Photo'];
+const EMP_PHOTO_FOLDER = 'Employee Photos';
+const KH_ONLY = /^[ក-៿᧠-᧿\s]+$/;
+
+const teamCan_ = user => user.role === 'admin' || user.job === 'supervisor';
+function needTeam_(user) {
+  if (!teamCan_(user)) throw new Error('NOACCESS: Supervisors and admins only. / សម្រាប់តែ Supervisor និង Admin ប៉ុណ្ណោះ។');
+}
+const ymdOf_ = d => Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+function dateOfYmd_(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+const ymdCell_ = v => (v instanceof Date ? ymdOf_(v) : String(v || '').slice(0, 10));
+/** The signed-in person's row in the employee list (by Employee ID, else by Gmail), or -1. */
+function myRow_(m, user) {
+  const byId = rowById_(m, idText_(user.employeeId));
+  return byId >= 0 ? byId : rowByEmail_(m, user.email);
+}
+
+function teamLog_(user, type, id, name, detail) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(TEAM_LOG);
+  if (!sh) {
+    sh = ss.insertSheet(TEAM_LOG);
+    sh.getRange(1, 1, 1, TEAM_LOG_COLS.length).setValues([TEAM_LOG_COLS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const row = [new Date(), user.name || user.email, type, String(id || ''), name || '', detail || ''];
+  sh.appendRow(row);
+  sh.getRange(sh.getLastRow(), 4).setNumberFormat('@');
+}
+function teamLogRead_(n) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(TEAM_LOG);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const last = sh.getLastRow(), k = Math.min(n, last - 1);
+  return sh.getRange(last - k + 1, 1, k, TEAM_LOG_COLS.length).getValues().reverse().map(r => ({
+    time: r[0] instanceof Date ? r[0].getTime() : 0, by: String(r[1]), type: String(r[2]), id: String(r[3]), name: String(r[4]), detail: String(r[5]),
+  }));
+}
+
+/** The Recruitment tab, in the same file as the employee list (made the first time). */
+function recruitTab_() {
+  const book = master_().sh.getParent();
+  let sh = book.getSheetByName(RECRUIT_TAB);
+  if (!sh) {
+    sh = book.insertSheet(RECRUIT_TAB);
+    sh.getRange(1, 1, 1, RECRUIT_COLS.length).setValues([RECRUIT_COLS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const header = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim());
+  RECRUIT_COLS.filter(h => header.indexOf(h) < 0).forEach(h => { sh.getRange(1, header.length + 1).setValue(h).setFontWeight('bold'); header.push(h); });
+  const n = sh.getLastRow() - 1;
+  const values = n > 0 ? sh.getRange(2, 1, n, header.length).getValues() : [];
+  const col = h => header.indexOf(h);
+  const list = values.map((r, i) => ({
+    i: i, reqId: String(r[col('Request ID')] || '').trim(), title: String(r[col('Vacancy Title')] || '').trim(),
+    join: ymdCell_(r[col('Expected Join Date')]), wh: String(r[col('Warehouse')] || '').trim(),
+    status: String(r[col('Status')] || 'Open').trim() || 'Open', by: String(r[col('Added By')] || ''), filledBy: idText_(r[col('Filled By ID')]),
+  })).filter(v => v.reqId || v.title);
+  return { sh, header, col, list };
+}
+
+let empPhotoFolderCache_ = null;
+function empPhotoFolder_() {
+  if (empPhotoFolderCache_) return empPhotoFolderCache_;
+  const id = getSetting_('EMP_PHOTO_FOLDER_ID');
+  if (id) { try { return (empPhotoFolderCache_ = DriveApp.getFolderById(id)); } catch (e) { /* recreate below */ } }
+  const parents = cardFolder_().getParents();
+  const folder = (parents.hasNext() ? parents.next() : DriveApp.getRootFolder()).createFolder(EMP_PHOTO_FOLDER);
+  setSetting_('EMP_PHOTO_FOLDER_ID', folder.getId());
+  return (empPhotoFolderCache_ = folder);
+}
+function photoDataUrl_(url) {
+  const id = fileIdFromUrl_(url);
+  if (!id) return null;
+  try { const b = DriveApp.getFileById(id).getBlob(); return 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()); }
+  catch (e) { return null; }
+}
+
+/** What the menu needs: my own details, and for supervisors the recent changes, open vacancies and pick lists. */
+function teamInit_(p, user) {
+  const m = master_(TEAM_COLS);
+  const i = myRow_(m, user);
+  const e = i >= 0 ? mRow_(m, m.values[i], i) : null;
+  const photoUrl = e && m.col('Employee Photo') >= 0 ? String(m.values[i][m.col('Employee Photo')] || '') : '';
+  const out = {
+    can: teamCan_(user),
+    me: e ? { id: e.id, full: e.full, kh: e.kh, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), photo: p.noPhoto ? null : photoDataUrl_(photoUrl), hasPhoto: !!photoUrl } : null,
+  };
+  if (out.can) Object.assign(out, teamLists_());
+  return out;
+}
+function teamLists_() {
+  const r = recruitTab_();
+  const uniq = a => a.filter((x, k) => x && a.indexOf(x) === k).sort();
+  return {
+    log: teamLogRead_(20),
+    open: r.list.filter(v => v.status === 'Open').map(v => ({ reqId: v.reqId, title: v.title, join: v.join, wh: v.wh })),
+    titles: uniq(r.list.map(v => v.title)),
+    warehouses: uniq(IB_WAREHOUSES.concat(r.list.map(v => v.wh))),
+  };
+}
+
+/** Search the employee list by ID or any part of the English or Khmer name (at most 20). */
+function teamFind_(p, user) {
+  needTeam_(user);
+  const q = String(p.q || '').trim().toLowerCase();
+  if (q.length < 2) return { list: [] };
+  const m = master_(TEAM_COLS);
+  const lwd = m.col('Last Working Day');
+  const list = [];
+  rowsOf_(m).some(e => {
+    if (!e.id) return false;
+    if ((e.id + ' ' + e.full + ' ' + e.kh).toLowerCase().indexOf(q) < 0) return false;
+    list.push({ id: e.id, full: e.full, kh: e.kh, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), lastDay: lwd >= 0 ? ymdCell_(m.values[e.i][lwd]) : '' });
+    return list.length >= 20;
+  });
+  return { list };
+}
+
+/** Resigned: the last working day is kept; on or after that day the person is switched off in every app. */
+function teamResign_(p, user) {
+  needTeam_(user);
+  const id = idText_(p.id), day = dateOfYmd_(p.lastDay), reason = String(p.reason || '').trim().slice(0, 200);
+  if (!id) throw new Error('Choose the employee. / សូមជ្រើសរើសបុគ្គលិក។');
+  if (!day) throw new Error('Last working day is required. / សូមបញ្ចូលថ្ងៃធ្វើការចុងក្រោយ។');
+  let name = '';
+  const out = umRun_(() => {
+    const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
+    const i = rowById_(m, id);
+    if (i < 0) throw new Error('Employee ID ' + id + ' is not in the list. / រកមិនឃើញលេខ ' + id + '។');
+    const e = mRow_(m, m.values[i], i);
+    name = e.full || e.kh;
+    mPut_(m, i, 'Last Working Day', day);
+    mPut_(m, i, 'Resign Reason', reason);
+    mPut_(m, i, 'Off Note', 'Resigned, last day ' + ymdOf_(day) + ' (' + (user.name || user.email) + ')');
+    const today = dateOfYmd_(ymdOf_(new Date()));
+    const offNow = day.getTime() < today.getTime();
+    if (offNow) { mPut_(m, i, 'Active', 'No'); mPut_(m, i, 'Off At', new Date()); }
+    return { id, name, lastDay: ymdOf_(day), offNow };
+  });
+  teamLog_(user, 'Resigned', id, name, 'Last day ' + out.lastDay + (reason ? ' · ' + reason : ''));
+  return Object.assign(out, { log: teamLogRead_(20) });
+}
+
+/** New comer: a new row with ID and names; line manager, department and function are the supervisor's own. */
+function teamNew_(p, user) {
+  needTeam_(user);
+  const id = idText_(p.id);
+  const full = String(p.full || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 100);
+  const kh = String(p.kh || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (!/^\d{6}$/.test(id) || +id < EMP_ID_MIN || +id > EMP_ID_MAX) throw new Error('Employee ID must be 6 digits (' + EMP_ID_MIN + '–' + EMP_ID_MAX + '). / លេខកាតត្រូវមាន ៦ ខ្ទង់។');
+  if (!full || !/^[A-Z .'-]+$/.test(full)) throw new Error('Full name in English letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។');
+  if (!kh || !KH_ONLY.test(kh)) throw new Error('Full name in Khmer letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។');
+  const reqId = String(p.reqId || '').trim();
+  let mgr = '';
+  umRun_(() => {
+    const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
+    if (rowById_(m, id) >= 0) throw new Error('DUP: Employee ID ' + id + ' is already in the list. / លេខកាត ' + id + ' មានក្នុងបញ្ជីរួចហើយ។');
+    const mi = myRow_(m, user);
+    const me = mi >= 0 ? mRow_(m, m.values[mi], mi) : null;
+    mgr = String(p.mgr || '').trim().slice(0, 100) || (me ? me.full : '') || user.name || '';
+    const i = mNewRow_(m);
+    mPut_(m, i, m.c.id, id);
+    if (m.c.full >= 0) mPut_(m, i, m.c.full, full);
+    if (m.c.kh >= 0) mPut_(m, i, m.c.kh, kh);
+    if (m.c.mgr >= 0 && mgr) mPut_(m, i, m.c.mgr, mgr);
+    if (me && m.c.dept >= 0 && me.dept) mPut_(m, i, m.c.dept, me.dept);
+    if (me && m.c.fn >= 0 && me.fn) mPut_(m, i, m.c.fn, me.fn);
+  });
+  if (reqId) {
+    const r = recruitTab_();
+    const v = r.list.find(x => x.reqId === reqId);
+    if (v) {
+      r.sh.getRange(v.i + 2, r.col('Status') + 1).setValue('Filled');
+      r.sh.getRange(v.i + 2, r.col('Filled By ID') + 1).setNumberFormat('@').setValue(id);
+      r.sh.getRange(v.i + 2, r.col('Filled At') + 1).setValue(new Date());
+    }
+  }
+  teamLog_(user, 'New comer', id, full, kh + (mgr ? ' · manager ' + mgr : '') + (reqId ? ' · fills ' + reqId : ''));
+  return Object.assign({ id, full, kh, mgr }, teamLists_());
+}
+
+/** A vacancy being recruited, in the Recruitment tab. */
+function teamVacancy_(p, user) {
+  needTeam_(user);
+  const title = String(p.title || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const reqId = String(p.reqId || '').replace(/\s+/g, '').trim().toUpperCase().slice(0, 40);
+  const wh = String(p.wh || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const join = dateOfYmd_(p.join);
+  if (!title) throw new Error('Vacancy title is required. / សូមបញ្ចូលមុខតំណែង។');
+  if (!join) throw new Error('Expected join date is required. / សូមបញ្ចូលថ្ងៃរំពឹងចូលធ្វើការ។');
+  if (!reqId) throw new Error('Request ID is required. / សូមបញ្ចូលលេខសំណើ។');
+  if (!wh) throw new Error('Warehouse is required. / សូមជ្រើសរើសឃ្លាំង។');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const r = recruitTab_();
+    if (r.list.some(v => v.reqId.toUpperCase() === reqId)) throw new Error('DUP: Request ID ' + reqId + ' is already in Recruitment. / លេខសំណើនេះមានរួចហើយ។');
+    const row = r.header.map(h => ({ 'Request ID': reqId, 'Vacancy Title': title, 'Expected Join Date': join, 'Warehouse': wh, 'Status': 'Open',
+      'Added By': user.name || user.email, 'Added At': new Date() })[h] || '');
+    r.sh.appendRow(row);
+    r.sh.getRange(r.sh.getLastRow(), r.col('Request ID') + 1).setNumberFormat('@').setValue(reqId);
+  } finally {
+    lock.releaseLock();
+  }
+  teamLog_(user, 'Vacancy', reqId, title, 'Join ' + ymdOf_(join) + ' · ' + wh);
+  return teamLists_();
+}
+
+/** My info: anyone signed in updates their own English and Khmer name and employee photo. The ID stays as it is. */
+function myInfoSave_(p, user) {
+  const full = p.full === undefined ? undefined : String(p.full || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 100);
+  const kh = p.kh === undefined ? undefined : String(p.kh || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (full !== undefined && (!full || !/^[A-Z .'-]+$/.test(full))) throw new Error('Full name in English letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។');
+  if (kh !== undefined && (!kh || !KH_ONLY.test(kh))) throw new Error('Full name in Khmer letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។');
+  let blob = null;
+  if (p.photo) {
+    const mm = /^data:(image\/(jpeg|png));base64,(.+)$/.exec(String(p.photo));
+    if (!mm) throw new Error('Photo must be a JPG or PNG. / រូបថតត្រូវជា JPG ឬ PNG។');
+    blob = Utilities.newBlob(Utilities.base64Decode(mm[3]), mm[1], 'photo');
+    if (blob.getBytes().length > 3e6) throw new Error('The photo is too big. / រូបធំពេក។');
+  }
+  const changes = [];
+  let id = '', name = '';
+  umRun_(() => {
+    const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
+    const i = myRow_(m, user);
+    if (i < 0) throw new Error('NOTFOUND: Your Gmail is not linked to an Employee ID yet. Ask the admin. / Gmail របស់អ្នកមិនទាន់ភ្ជាប់នឹងលេខកាតទេ។');
+    const e = mRow_(m, m.values[i], i);
+    id = e.id; name = full || e.full;
+    if (full !== undefined && full !== e.full && m.c.full >= 0) { mPut_(m, i, m.c.full, full); changes.push('English name: ' + (e.full || '–') + ' → ' + full); }
+    if (kh !== undefined && kh !== e.kh && m.c.kh >= 0) { mPut_(m, i, m.c.kh, kh); changes.push('Khmer name: ' + (e.kh || '–') + ' → ' + kh); }
+    if (blob) {
+      const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+      blob.setName((e.id || user.email) + ' ' + stamp + (blob.getContentType() === 'image/png' ? '.png' : '.jpg'));
+      const url = 'https://drive.google.com/file/d/' + empPhotoFolder_().createFile(blob).getId() + '/view';
+      mPut_(m, i, 'Employee Photo', url);
+      changes.push('New photo');
+    }
+  });
+  if (changes.length) teamLog_(user, 'My info', id, name, changes.join('; '));
+  return { saved: changes.length, full: full, kh: kh };
+}
+
+/** Run by the user sync trigger: people whose last working day has passed are switched off in every app. */
+function teamAutoOff_() {
+  const m = master_();
+  const lwd = m.col('Last Working Day'), act = m.col('Active');
+  if (lwd < 0 || act < 0) return 0;
+  const today = dateOfYmd_(ymdOf_(new Date())).getTime();
+  let n = 0;
+  m.values.forEach((r, i) => {
+    const d = r[lwd] instanceof Date ? r[lwd] : dateOfYmd_(ymdCell_(r[lwd]));
+    if (!d || d.getTime() >= today) return;
+    if (!(r[act] === true || isYes_(r[act]))) return;
+    mPut_(m, i, 'Active', 'No');
+    if (m.col('Off At') >= 0 && !r[m.col('Off At')]) mPut_(m, i, 'Off At', new Date());
+    n++;
+  });
+  if (n) SpreadsheetApp.flush();
+  return n;
 }
