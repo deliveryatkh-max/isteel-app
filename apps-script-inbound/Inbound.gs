@@ -25,7 +25,7 @@ const WH_COLS = ['Warehouse Code', 'Warehouse Description'];
 const MAIL_COLS = ['List', 'Emails', 'Active'];
 const MAIL_SEED = [['Warehouse', '', 'Yes'], ['Procurement', '', 'Yes'], ['Finance', '', 'Yes']];
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Kg', 't', 'PCS', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier', 'Warehouse'];
+const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Qty', 't', 'UoM', 'Remark', 'No. of Truck', 'PO Number', 'Inbound No.', 'Ref. No', 'ETA', 'Supplier', 'Warehouse'];
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
@@ -320,7 +320,7 @@ function plan_() {
   const v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
   const c = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
-  const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('kg', 'qty'),
+  const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('qty', 'quantity', 'kg'), iUom = c('uom', 'unit'),
     iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
     iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   // Vessel No. (Kim, 17 Nov 2026: column R of the Incoming Plan)
@@ -336,10 +336,14 @@ function plan_() {
   return v.slice(1).map(r => ({
     // "5100013709" or "PO 5100013709" in the sheet counts as PO5100013709 (Kim, 12 Nov 2026)
     po: poOf_(cell(r, iPo)), material: cell(r, iMat), desc: cell(r, iDesc), kg: num_(r[iKg]), pcs: cell(r, iPcs), inbound: cell(r, iIn),
-    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes), batch: cell(r, iBatch),
+    ref: cell(r, iRef), eta: eta(cell(r, iEta)), supplier: cell(r, iSup), plant: cell(r, iPlant), sloc: cell(r, iSloc), site: cell(r, iSite), vessel: cell(r, iVes), batch: cell(r, iBatch), uom: uom_(cell(r, iUom)),
   })).filter(x => x.po && x.material && x.kg > 0 && !seen[lineKey_(x)] && (seen[lineKey_(x)] = 1));
 }
 
+// Plan Qty is in the line's UoM (Kim, 26 Nov 2026: "Kg" column became "Qty", "PCS" became "UoM"); blank = Kg.
+function uom_(v) { const u = String(v || '').trim().toUpperCase(); return !u || /^[\d.,]+$/.test(u) || u === 'KG' || u === 'KGS' ? 'Kg' : u === 'PCS' || u === 'PC' || u === 'EA' ? 'PC' : u === 'T' || u === 'TON' ? 'Ton' : u; }
+/** tonnes for productivity: only Kg / Ton receipts weigh */
+const tonOf_ = (r, k) => (r.uom === 'Ton' ? tot_(r, k) : !r.uom || r.uom === 'Kg' ? tot_(r, k) / 1000 : 0);
 // ---------------------------------------------------------------- Incoming Plan from the app (Supervisor / Admin, Kim 28 Oct 2026)
 function planner_(user) { if (!(user.admin || user.reviewer)) fail_('DENIED', 'Only a Supervisor or Admin can change the Incoming Plan.', 'មានតែ Supervisor ឬ Admin ទេដែលអាចកែផែនការបាន។'); }
 /** the POs of a receipt: rec.pos, or the "PO1, PO2" text of older ones */
@@ -372,7 +376,8 @@ function planWrite_(keep, add) {
   const rows = keep.concat(add.map(l => head.map(h => {
     switch (h.toLowerCase().replace(/\.$/, '')) {
       case 'material': return l.material; case 'description': case 'material description': return l.desc; case 'plant': return l.plant; case 'sloc': return l.sloc;
-      case 'kg': return l.kg; case 't': return Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return Math.ceil(l.kg / 1000 / 40);
+      case 'kg': case 'qty': case 'quantity': return l.kg; case 'uom': case 'unit': return l.uom || 'Kg';
+      case 't': return l.uom && l.uom !== 'Kg' ? '' : Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return l.uom && l.uom !== 'Kg' ? '' : Math.ceil(l.kg / 1000 / 40);
       case 'po number': case 'po': return l.po; case 'inbound no': case 'inbound number': return l.inbound; case 'ref. no': case 'ref no': return l.ref;
       case 'eta': return l.eta; case 'supplier': return l.supplier; case 'warehouse': case 'wh': case 'site': return l.site || ''; default: return '';
     }
@@ -384,6 +389,7 @@ function planWrite_(keep, add) {
   if (iEta >= 0) rows.forEach(r => { const m = String(r[iEta] == null ? '' : r[iEta]).match(/^(\d{4})-(\d\d)-(\d\d)$/); if (m) r[iEta] = m[3] + '-' + MON[+m[2] - 1] + '-' + m[1]; });
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, W).setNumberFormat('@').setValues(rows.map(r => head.map((h, k) => (r[k] == null ? '' : String(r[k])))));
+  planProgress_();
 }
 function planRows_() {
   const sh = sheet_(SH.PLAN, PLAN_COLS);
@@ -399,7 +405,7 @@ function planSave_(lines, user) {
   const add = [], seen = {};
   const us = userSites_(user), mine = !us.all && us.list.length === 1 ? us.list[0] : '';   // one warehouse: filled in for them (Kim, 2 Nov 2026)
   (Array.isArray(lines) ? lines : []).slice(0, 2000).forEach(l => {
-    const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg),
+    const x = { po: poOf_(l.po), material: clip_(l.material, 40), desc: clip_(l.desc, 120), plant: clip_(l.plant, 10), sloc: clip_(l.sloc, 10), kg: num_(l.kg), uom: uom_(l.uom),
       pcs: clip_(l.pcs, 12), inbound: clip_(l.inbound, 40), ref: clip_(l.ref, 40), eta: /^\d{4}-\d\d-\d\d$/.test(String(l.eta || '')) ? String(l.eta) : clip_(l.eta, 20), supplier: clip_(l.supplier, 80),
       site: site_(l.site, user) || mine };
     if (!x.po || !x.material || !(x.kg > 0)) return;
@@ -647,7 +653,7 @@ function start_(p, user) {
     const l = heads[0];
     const rec = {
       id: id, status: STATUS.live, po: pos.join(', '), pos: pos, inbound: join('inbound'), ref: join('ref'), supplier: join('supplier'), eta: l.eta, dn3pl: dn, truck: truck,
-      site: site, warehouse: wh, items: items, uom: 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
+      site: site, warehouse: wh, items: items, uom: heads[0].uom || 'Kg', date: fmt_(now, 'yyyy-MM-dd'), start: fmt_(now, 'HH:mm'), end: '', manpower: '', owner: '', carrier: '', remark: '',
       ph: { front: saveImage_(folder, ph.front, 'front.jpg'), load: saveImage_(folder, ph.load, 'load.jpg'), doc: saveImage_(folder, ph.doc, 'document.jpg') },
       by: user.name, byEmail: user.email, finishedBy: '', folder: folder.getUrl(), updated: now_(),
     };
@@ -758,7 +764,7 @@ function update_(p, user, finish) {
 const spent_ = r => { if (!r.start || !r.end) return ''; const a = r.start.split(':'), b = r.end.split(':'); let m = (+b[0] * 60 + +b[1]) - (+a[0] * 60 + +a[1]); if (m < 0) m += 1440; return m; };
 const tot_ = (r, k) => r.items.reduce((s, i) => s + (Number(i[k]) || 0), 0);
 const isLess_ = i => i.grQty !== '' && i.grQty != null && Number(i.grQty) < Number(i.arrQty);
-function prod_(r) { const m = spent_(r); const t = tot_(r, 'grQty') / 1000; return m && r.manpower && t ? Math.round(t / (m / 60) / r.manpower * 100) / 100 : ''; }
+function prod_(r) { const m = spent_(r); const t = tonOf_(r, 'grQty'); return m && r.manpower && t ? Math.round(t / (m / 60) / r.manpower * 100) / 100 : ''; }
 const showDate_ = s => (s ? s.split('-').reverse().join('.') : '');
 
 function store_(rec, row) {
@@ -766,6 +772,34 @@ function store_(rec, row) {
   const sh = sheet_(SH.REC, REC_COLS);
   sh.getRange(row || sh.getLastRow() + 1, 1, 1, data.length).setNumberFormat('@').setValues([data.map(String)]);
   writeLog_(rec);
+  planProgress_();
+}
+/** Incoming Plan columns Received / Remaining / Status (Kim, 26 Nov 2026), filled after every save.
+ *  Received = GR qty of finished trucks + arrival qty of trucks still unloading; Remaining = Qty − Received;
+ *  Status = Completed (nothing left), Partial (some received) or Open. Rows of the same PO + material (+ batch) share what came in, in sheet order.
+ *  Only columns that exist are written; a problem here never stops a save. */
+function planProgress_() {
+  try {
+    const sh = ss_().getSheetByName(SH.PLAN);
+    if (!sh || sh.getLastRow() < 2) return;
+    const W = sh.getLastColumn(), v = sh.getRange(1, 1, sh.getLastRow(), W).getValues();
+    const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
+    const c = (...n) => { for (const x of n) { const i = head.indexOf(x); if (i >= 0) return i; } return -1; };
+    const iR = c('received'), iL = c('remaining'), iS = c('status');
+    if (iR < 0 && iL < 0 && iS < 0) return;
+    const iPo = c('po number', 'po'), iMat = c('material'), iQ = c('qty', 'quantity', 'kg'), iB = c('batch', 'batch no', 'batch number');
+    const got = recvdMap_(), pool = {};
+    const out = v.slice(1).map(r => {
+      const po = poOf_(r[iPo]), mat = String(r[iMat] == null ? '' : r[iMat]).trim(), q = num_(r[iQ]);
+      if (!po || !mat || !(q > 0)) return ['', '', ''];
+      const k = lineKey_({ po: po, material: mat, batch: iB >= 0 ? String(r[iB] == null ? '' : r[iB]).trim() : '' });
+      if (!(k in pool)) pool[k] = got[k] || 0;
+      const rc = Math.min(q, pool[k]); pool[k] -= rc;
+      const left = Math.round((q - rc) * 1000) / 1000;
+      return [rc, left, left <= 0 ? 'Completed' : rc > 0 ? 'Partial' : 'Open'];
+    });
+    [[iR, 0], [iL, 1], [iS, 2]].forEach(([col, n]) => { if (col >= 0) sh.getRange(2, col + 1, out.length, 1).setValues(out.map(o => [o[n]])); });
+  } catch (e) { console.error('planProgress_ failed: ' + e); }
 }
 /** GR Log: one row per item, in the order of Kim's GOODS RECEIPT LOG. Old rows of the receipt are replaced. */
 function writeLog_(rec) {
@@ -798,6 +832,7 @@ function del_(id, reason, user) {
   const log = sheet_(SH.LOG, LOG_COLS), last = log.getLastRow();
   const ids = last > 1 ? log.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   ids.map((x, n) => (x === f.rec.id ? n + 2 : 0)).filter(Boolean).reverse().forEach(r => log.deleteRow(r));
+  planProgress_();
   return { deleted: f.rec.id };
 }
 
@@ -874,7 +909,7 @@ function telegramArrived_(r) {
   const where = r.warehouse ? '🏭 Entrance ' + esc_(r.warehouse) + (ent.desc ? ' ' + esc_(ent.desc) : '') : r.site ? '🏭 ' + esc_(r.site) : '';
   return telegram_(Object.assign({ text: ['🚛 <b>ចាប់ផ្តើមទំលាក់ ' + esc_(r.truck) + '</b> · ' + esc_(r.start)].concat(where ? [where] : [], [
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.supplier) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
-    '📦 ចំនួន ' + r.items.length + ' មុខ · ទម្ងន់ ' + kg_(tot_(r, 'arrQty')) + ' Kg', '✍️ ' + esc_(r.by)]).join('\n') }, button_(r)));
+    '📦 ចំនួន ' + r.items.length + ' មុខ · ' + kg_(tot_(r, 'arrQty')) + ' ' + esc_(r.uom || 'Kg'), '✍️ ' + esc_(r.by)]).join('\n') }, button_(r)));
 }
 /** Posted for every finished truck (Kim, 3 Nov 2026), as a reply to its arrival post; damage and short lines are added. */
 function telegramDone_(r) {
@@ -884,7 +919,7 @@ function telegramDone_(r) {
     '📄 ' + esc_(r.po) + ' · ' + esc_(r.id) + (r.dn3pl ? ' · DN ' + esc_(r.dn3pl) : ''),
     '📦 បានទទួល ' + kg_(tot_(r, 'grQty')) + ' ' + esc_(r.uom) + (r.dnQty ? ' · DN ' + kg_(r.dnQty) : '') + ' · 👷 ' + esc_(r.manpower)];
   if (posOf_(r).length > 1) posOf_(r).forEach(x => { const its = r.items.filter(i => itemPo_(i, r) === x); lines.push('   • ' + esc_(x) + ': ' + kg_(its.reduce((s, i) => s + (Number(i.grQty) || 0), 0)) + ' ' + esc_(r.uom)); });
-  less.forEach(i => lines.push('⬇ ទទួលខ្វះ៖ ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' Kg'));
+  less.forEach(i => lines.push('⬇ ទទួលខ្វះ៖ ' + esc_(i.desc) + ' ' + kg_(i.grQty) + ' / ' + kg_(i.arrQty) + ' ' + esc_(r.uom || 'Kg')));
   dmg.forEach(i => lines.push('💥 ខូចខាត៖ ' + esc_(i.desc) + ' ' + kg_(i.dmgQty) + ' ' + esc_(dmgUom_(i, r)) + ' (' + esc_(DMG[i.dmgType] || i.dmgType) + ')'));
   lines.push('✍️ ' + esc_(r.finishedBy));
   const reply = r.tg ? { reply_to_message_id: String(r.tg), allow_sending_without_reply: 'true' } : {};
@@ -1100,7 +1135,7 @@ const dmy_ = s => { const m = String(s || '').match(/^(\d{4})-(\d\d)-(\d\d)/); r
 const r2_ = n => Math.round(n * 100) / 100;
 /** Values for the summary report: global keys, plus one object per receipt / supplier / damaged item. */
 function sumValues_(rows, p, user) {
-  const ton = (r, k) => tot_(r, k) / 1000, isDmg = r => r.items.some(i => Number(i.dmgQty) > 0), less = rows.filter(r => r.items.some(isLess_));
+  const ton = (r, k) => tonOf_(r, k), isDmg = r => r.items.some(i => Number(i.dmgQty) > 0), less = rows.filter(r => r.items.some(isLess_));
   const sup = {}, dmgItems = [];
   rows.forEach(r => {
     const o = sup[r.supplier || '-'] || (sup[r.supplier || '-'] = { supplier: r.supplier || '-', trucks: 0, gr: 0, dmgTrucks: 0 });

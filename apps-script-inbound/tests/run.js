@@ -29,6 +29,7 @@ ok(env.props.IB_FOLDER_ID, 'photo folder made');
 // Kim pastes the Incoming Packing List (dates and numbers as Sheets gives them)
 const plan = env.ss.getSheetByName('Incoming Plan');
 const eta = new Date(2026, 9, 18);
+plan.rows[0][5] = 'Kg'; plan.rows[0][7] = 'PCS';   // Kim's older Packing List heading (Kg + PCS) still reads
 plan.rows.push([1, 1100000230, 'INTANU G300AZ30 BT 1200x0.260', 'KMH1', 1020, 32520, 32.52, 7, '', 1, '5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
 plan.rows.push([2, 1100000231, 'INTANU G300AZ30 BR 1200x0.220', 'KMH1', 1020, 23550, 23.55, 5, '', 1, '5100012725', 'Test IN 1800048956', '1072003238-Lot1', eta, 'Regency']);
 plan.rows.push([3, 1200000101, 'ZINC INGOT', 'KMH1', 1020, 25000, 25, 1000, '', 1, '5100012751', 'IN 1', 'ZN-1', eta, 'Zinc Co']);
@@ -43,7 +44,7 @@ ok(/^AUTH/.test(env.post({ action: 'boot', token: '', payload: {} }).error), 'no
 let b = must(call('sok@x.com', 'boot', {}));
 eq(b.plan.length, 3, 'plan lines');
 eq(b.plan[0], { po: '5100012725', material: '1100000230', desc: 'INTANU G300AZ30 BT 1200x0.260', kg: 32520, pcs: '7', inbound: 'Test IN 1800048956',
-  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '', vessel: '', batch: '' }, 'plan line read by heading');
+  ref: '1072003238-Lot1', eta: '2026-10-18', supplier: 'Regency', plant: 'KMH1', sloc: '1020', site: '', vessel: '', batch: '', uom: 'Kg' }, 'plan line read by heading');
 eq(b.plates, ['2A-2233', '3E-2588'], 'plates from Driver & Truck');
 eq(b.carriers, ['FOXS', 'Queen Legacy', 'Srong Sal', 'Chroek Kimheng'], '3PL list from settings');
 ok(must(call('kim@x.com', 'boot', {})).user.admin, 'admin without tick');
@@ -343,4 +344,15 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   ok(/^BAD/.test(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: [] } }).error), 'keeps one row'); }
 { const g = must(call('kim@x.com', 'gsList', { from: '2000-01-01', to: '2999-12-31' })); ok(g.receipts.length > 0 && !g.receipts[0].ph && g.receipts[0].items[0].arrQty !== undefined, 'gsList slim receipts');
   ok(/Pick the dates/.test(call('kim@x.com', 'gsList', {}).error), 'gsList needs dates'); }
+// Qty + UoM headings (Kim, 26 Nov 2026): Kg -> Qty, PCS -> UoM; blank or KG = Kg, PCS = PC
+{ plan.rows[0][5] = 'Qty'; plan.rows[0][7] = 'UoM'; plan.rows.forEach((r, n) => { if (n) r[7] = String(r[2]).indexOf('ZINC') >= 0 ? 'PCS' : 'KG'; });
+  const pl = must(call('sok@x.com', 'boot', {})).plan;
+  const z = pl.find(x => x.material === '1200000101'), c = pl.find(x => x.material === '1100000230');
+  eq([z && z.uom, z && z.kg, c && c.uom], ['PC', 25000, 'Kg'], 'Qty + UoM headings read'); }
+// Received / Remaining / Status columns (Kim, 26 Nov 2026)
+{ const W = plan.rows[0].length; plan.rows[0].push('Received', 'Remaining', 'Status');
+  env.g.planProgress_();
+  const rows = plan.rows.slice(1).map(r => [String(r[1]), Number(r[5]) || 0, r[W], r[W + 1], r[W + 2]]);
+  ok(rows.every(r => r[2] !== undefined && r[2] !== '' && Math.abs(r[2] + r[3] - r[1]) < 0.001), 'Received + Remaining = Qty on every row');
+  ok(rows.every(r => r[4] === (r[3] <= 0 ? 'Completed' : r[2] > 0 ? 'Partial' : 'Open')), 'Status follows Remaining'); }
 console.log('Inbound.gs: ' + pass + ' checks passed');

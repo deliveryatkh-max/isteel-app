@@ -51,7 +51,10 @@
   const fmt = (n, d = 0) => n == null || isNaN(n) ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
   // A receipt (one truck) carries several items: { material, desc, poQty, arrQty, grQty, dmgQty, dmgType, dmgPh[] }.
   const tot = (r, k) => (r.items || []).reduce((s, i) => s + (+i[k] || 0), 0);
-  const tons = r => tot(r, 'grQty') / 1000;
+  // Plan Qty is in the line's UoM (Kim, 26 Nov 2026: Incoming Plan "Kg" became "Qty", "PCS" became "UoM"); blank = Kg.
+  const UL = x => (x && x.uom) || 'Kg';
+  const isW = u => !u || u === 'Kg' || u === 'Ton';   // weighed units count in tonnes / productivity
+  const tons = r => (r.uom === 'Ton' ? tot(r, 'grQty') : isW(r.uom) ? tot(r, 'grQty') / 1000 : 0);
   const isDamaged = r => (r.items || []).some(i => +i.dmgQty > 0);
   const isLessItem = i => i.grQty !== '' && i.grQty != null && +i.grQty < +i.arrQty;
   const isLess = r => !!r.end && (r.items || []).some(isLessItem);
@@ -150,7 +153,7 @@
     return out;
   }
   // the greyed fields copied from the plan
-  function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: 'Kg' }; }
+  function header(p) { return { po: p.po, inbound: p.inbound, ref: p.ref, supplier: p.supplier, eta: p.eta, uom: UL(p) }; }
   // One truck can bring several POs (Kim, 11 Nov 2026): r.pos lists them, each item keeps its PO, r.po = "PO1, PO2" for display.
   function npo(v) { return String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase().replace(/^PO/, ''); }   // as in Kim's Excel, no "PO" (13 Nov 2026)
   const posOf = r => (r.pos && r.pos.length ? r.pos : String(r.po || '').split(/\s*,\s*/)).map(npo).filter(Boolean);
@@ -159,7 +162,7 @@
   const multi = r => posOf(r).length > 1;
   function headerOf(pos) {
     const ls = pos.map(po => PLAN.find(x => x.po === po)).filter(Boolean), j = k => Array.from(new Set(ls.map(l => l[k]).filter(Boolean))).join(', ');
-    return { po: pos.join(', '), pos: pos.slice(), inbound: j('inbound'), ref: j('ref'), supplier: j('supplier'), eta: ls.length ? ls[0].eta : '', uom: 'Kg' };
+    return { po: pos.join(', '), pos: pos.slice(), inbound: j('inbound'), ref: j('ref'), supplier: j('supplier'), eta: ls.length ? ls[0].eta : '', uom: UL(ls[0]) };
   }
   // Batch scan (Kim, 19 Nov 2026, option A): each batch in the Incoming Plan's Batch column is one plan line
   const HAS_BATCH = () => PLAN.some(x => x.batch);
@@ -701,10 +704,11 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const ls = PLAN.filter(x => same(x.batch) && left(x, F.id) > 0 && (!SITE || !x.site || x.site === SITE))
       .filter(x => !F.items.some(i => same(i.batch) && itemPo(i, F) === x.po && i.material === x.material));
     if (!ls.length && F.items.some(i => same(i.batch))) { toast('⚠️ ' + c + t(' បានស្កេនរួច', ' already scanned')); return; }
+    if (ls.length && F.items.length && UL(ls[0]) !== (F.uom || 'Kg')) { toast('⚠️ ' + c + ' · ' + UL(ls[0]) + t(' ខុសឯកតាពី ', ' is a different UoM from ') + (F.uom || 'Kg') + t(' — ទទួលលើឡានផ្សេង', ': receive it on another truck')); return; }
     if (!ls.length) {
       F.badB = (F.badB || []).filter(x => x !== c).concat([c]); if (navigator.vibrate) navigator.vibrate(200);
     } else {
-      ls.slice(0, 10).forEach(l => F.items.push(item(l))); syncPos(F); Object.assign(F, headerOf(F.pos)); if (!F.site && ls[0].site) F.site = ls[0].site;
+      ls.slice(0, 10).forEach(l => F.items.push(item(l))); syncPos(F); Object.assign(F, headerOf(F.pos), { uom: UL(ls[0]) }); if (!F.site && ls[0].site) F.site = ls[0].site;
       toast('✅ ' + c + ' · ' + ls[0].desc + (ls.length > 1 ? ' · ' + ls.length + ' PO' : ''));
     }
     renderForm(F.id); setTimeout(() => { const b = $('#bscan'); if (b) b.focus(); }, 0);
@@ -897,12 +901,12 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const pk = (id, o) => { const b = $('#' + id); if (b && !b.classList.contains('off')) b.onclick = () => { collect(); openPicker(o()); }; };
     const pob = $('#po');
     if (pob && !pob.classList.contains('off')) pob.onclick = () => { collect(); openMulti({ title: t('លេខ PO (ជ្រើសបានច្រើន)', 'PO Number (one or more)'), value: posOf(F),
-      items: (vesPOs(F.vessel).length ? pendingPOs(F.id).filter(x => vesPOs(F.vessel).some(y => y.po === x)) : pendingPOs(F.id)).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' Kg' }; }),
+      items: (vesPOs(F.vessel).length ? pendingPOs(F.id).filter(x => vesPOs(F.vessel).some(y => y.po === x)) : pendingPOs(F.id)).map(x => { const l = PLAN.filter(y => y.po === x); const pl = pendingLines(x, F.id); return { value: x, label: x, sub: l[0].supplier + ' · ETA ' + showEta(l[0].eta) + ' · ' + pl.length + '/' + l.length + t(' មុខមិនទាន់ទទួល', ' lines pending') + ' · ' + fmt(pl.reduce((s, y) => s + left(y, F.id), 0)) + ' ' + UL(pl[0] || l[0]) }; }),
       // then the items list opens at once (Kim, 19 Nov 2026)
       onDone: v => { pickPOs(v); re(); if (v.length && !F.items.length) setTimeout(() => { const b = $('#items'); if (b) b.click(); }, 80); } }); };
     const it = $('#items');
     if (it) it.onclick = () => { collect(); const ps = posOf(F), key = i => itemPo(i, F) + '|' + i.material + '|' + (i.batch || ''); openMulti({ title: t('ទំនិញលើឡាននេះ', 'Items on this truck'), value: F.items.map(key),
-      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: lineKey(x), label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' Kg · ' + x.pcs + ' PCS' })))),
+      items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).map(x => ({ value: lineKey(x), label: x.desc, sub: (ps.length > 1 ? po + ' · ' : '') + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' / ' + fmt(x.kg) + ' ' + UL(x) + (x.pcs ? ' · ' + x.pcs + ' PCS' : '') })))),
       onDone: keys => { const had = {}; F.items.forEach(i => { had[key(i)] = i; }); const at = k => ps.indexOf(k.split('|')[0]);
         F.items = keys.slice().sort((a, b) => at(a) - at(b)).map(k => had[k] || item(lineOf.apply(null, k.split('|')))); re(); } }); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { collect(); F.items.splice(+b.dataset.rm, 1); F.delAsk = null; if (F.id) { F.itemsEdit = true; syncPos(F); } $$('[data-it]').forEach(el => el.removeAttribute('data-it')); re(); }; });
@@ -915,7 +919,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
         sub: ((PLAN.find(y => y.po === x) || {}).supplier || '') + ' · ' + pendingLines(x, F.id).filter(y => notOn(x, y)).length + t(' មុខមិនទាន់ទទួល', ' lines pending') })),
       onDone: ps => { if (!ps.length) return; setTimeout(() => openMulti({ title: t('ទំនិញមិនទាន់ទទួល', 'Pending items'), value: [],
         items: [].concat.apply([], ps.map(po => pendingLines(po, F.id).filter(x => notOn(po, x))
-          .map(x => ({ value: lineKey(x), label: x.desc, sub: po + ' · ' + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' Kg' })))),
+          .map(x => ({ value: lineKey(x), label: x.desc, sub: po + ' · ' + x.material + (x.batch ? ' · ' + x.batch : '') + ' · ' + t('នៅសល់ ', 'left ') + fmt(left(x, F.id)) + ' ' + UL(x) })))),
         onDone: keys => { keys.forEach(k => { const l = lineOf.apply(null, k.split('|')); if (!l) return;
           const it = item(l); it.isNew = true; F.items.push(it); });
           if (keys.length) { F.itemsEdit = true; syncPos(F); } re(); } }), 50); } }); };
@@ -1456,7 +1460,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // Incoming schedule (Kim, 2 Nov 2026): POs still to receive by ETA, for this warehouse
   const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
   function schedule() {
-    return pendingPOs().map(po => { const ls = pendingLines(po), h = poHead(po), kg = ls.reduce((n, x) => n + left(x), 0);
+    return pendingPOs().map(po => { const ls = pendingLines(po), h = poHead(po), kg = ls.filter(x => isW(UL(x))).reduce((n, x) => n + (UL(x) === 'Ton' ? left(x) * 1000 : left(x)), 0);
       const eta = ls.map(x => etaOf(x.eta)).filter(e => /^\d{4}-\d\d-\d\d$/.test(e)).sort()[0] || '';   // earliest line still to come
       return { po, eta, supplier: h.supplier || '', site: h.site || '', kg, trucks: Math.max(1, Math.ceil(kg / 40000)) }; })
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || a.po.localeCompare(b.po));
@@ -1675,13 +1679,13 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <div class="list">${pos.map(po => {
         const h = poHead(po), k = planKg(po), r = poRecvd(po), n = PLAN.filter(x => x.po === po).length, g = ym(po);
         let head = '';
-        if (g !== lastYm) { lastYm = g; const grp = pos.filter(x => ym(x) === g); head = `<div class="daylabel ymlabel">📅 ${esc(ymTxt(g))} · ${grp.length} PO · ${fmt(grp.reduce((s, x) => s + planKg(x), 0) / 1000, 1)} t</div>`; }
+        if (g !== lastYm) { lastYm = g; const grp = pos.filter(x => ym(x) === g); head = `<div class="daylabel ymlabel">📅 ${esc(ymTxt(g))} · ${grp.length} PO · ${fmt(grp.filter(x => isW(UL(PLAN.find(y => y.po === x)))).reduce((s, x) => s + planKg(x), 0) / 1000, 1)} t</div>`; }
         return head + `<a class="item" href="#/plan/${encodeURIComponent(po)}">
           <div class="top"><span class="id">📑 ${esc(po)}${!SITE && h.site ? ` <span class="whtag">🏭 ${esc(h.site)}</span>` : ''}</span>${poStatus(po)}</div>
           <div class="ttl">${esc(h.supplier || '–')}</div>
           <div class="meta">${esc(h.inbound || '')} · ETA ${esc(showEta(h.eta) || '–')} · ${n} ${t('មុខ', 'lines')}</div>
           <div class="prog"><i style="width:${k ? Math.min(100, r / k * 100) : 0}%"></i></div>
-          <div class="meta pmeta"><span>${t('បានទទួល', 'Received')} <b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t</span><b class="pct">${pctTxt(r, k)}</b></div></a>`;
+          <div class="meta pmeta"><span>${t('បានទទួល', 'Received')} ${isW(UL(PLAN.find(x => x.po === po))) ? `<b>${fmt(r / 1000, 1)}</b> / ${fmt(k / 1000, 1)} t` : `<b>${fmt(r)}</b> / ${fmt(k)} ${esc(UL(PLAN.find(x => x.po === po)))}`}</span><b class="pct">${pctTxt(r, k)}</b></div></a>`;
       }).join('') || `<div class="empty">${t('មិនទាន់មាន PO', 'No PO yet')}</div>`}</div>`);
     $('#xfile').onchange = e => { const f = e.target.files[0]; if (f) readExcel(f); };
     const qi = $('#pq'); qi.oninput = () => { PQ = qi.value; const p = qi.selectionStart; renderPlan(); const n = $('#pq'); n.focus(); n.setSelectionRange(p, p); };
@@ -1698,13 +1702,13 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <section class="card"><div class="kvs">
         ${kv(t('លេខ Inbound', 'Inbound Number'), esc(h.inbound || '–'))}${kv('Ref. No.', esc(h.ref || '–'))}
         ${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(h.supplier || '–'))}${kv('ETA', esc(showEta(h.eta) || '–'))}
-        ${kv(t('ផែនការ', 'Planned'), fmt(planKg(po)) + ' Kg')}${kv(t('បានទទួល', 'Received'), fmt(poRecvd(po)) + ' Kg')}
+        ${kv(t('ផែនការ', 'Planned'), fmt(planKg(po)) + ' ' + UL(h))}${kv(t('បានទទួល', 'Received'), fmt(poRecvd(po)) + ' ' + UL(h))}
         ${kv(t('ភាគរយបញ្ចប់', '% Completion'), pctTxt(poRecvd(po), planKg(po)))}
       </div></section>
       <section class="card"><h2>📦 ${t('មុខទំនិញ', 'Lines')} (${lines.length})</h2>
         <table class="tb pl"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ផែនការ', 'Plan')}</th><th class="n">${t('ទទួល', 'Recv.')}</th><th class="n">${t('នៅសល់', 'Left')}</th></tr>
         ${lines.map(x => { const r = recvd(x.po, x.material, undefined, x.batch); return `<tr><td><b>${esc(x.material)}</b><small>${esc(x.desc)}</small></td><td class="n">${fmt(x.kg)}</td><td class="n">${fmt(r)}</td><td class="n${left(x) ? '' : ' okc'}">${left(x) ? fmt(left(x)) : '✅'}</td></tr>`; }).join('')}
-        </table><p class="hint">Kg · ${esc(h.plant || '')} ${esc(h.sloc || '')}</p></section>
+        </table><p class="hint">${esc(UL(h))} · ${esc(h.plant || '')} ${esc(h.sloc || '')}</p></section>
       ${hasTrucks(po) ? `<p class="hint center">🔒 ${t('មានឡានទទួលរួចហើយ មិនអាចលុប PO នេះបានទេ។ ផ្ទុក Excel ម្តងទៀតដើម្បីកែ។', 'Trucks were received on this PO, so it cannot be deleted. Upload the Excel again to update it.')}</p>`
         : `<button class="btn bad" id="delPo" style="width:100%">🗑️ ${t('លុប PO នេះ', 'Delete this PO')}</button>`}`);
     const d = $('#delPo'); if (d) d.onclick = () => {
@@ -1717,9 +1721,10 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // Excel: Kim's "Incoming Packing List Template" (sheet PKL). The heading row is found by its names, so extra
   // title rows or moved columns are fine.
   let UP = null;   // { file, lines, skipped, missing }
-  const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['kg'], pcs: ['pcs'],
+  const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['qty', 'quantity', 'kg'], uom: ['uom', 'unit'], pcs: ['pcs'],
     po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'], site: ['warehouse', 'wh', 'site'] };
   const NEED = ['material', 'kg', 'po'];
+  const uomOf = v => { const u = String(v || '').trim().toUpperCase(); return !u || /^[\d.,]+$/.test(u) || u === 'KG' || u === 'KGS' ? 'Kg' : u === 'PCS' || u === 'PC' || u === 'EA' ? 'PC' : u === 'T' || u === 'TON' ? 'Ton' : u; };
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve();
     return new Promise((ok, no) => { const s = document.createElement('script'); s.src = '../vendor/xlsx.mini.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
@@ -1742,7 +1747,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       const ws = wb.Sheets['PKL'] || wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       const hi = rows.findIndex(r => r.some(c => String(c).trim().toLowerCase() === 'material') && r.some(c => /^po/i.test(String(c).trim())));
-      if (hi < 0) throw new Error(t('រកមិនឃើញជួរក្បាល (Material, Kg, PO Number)', 'Heading row not found (Material, Kg, PO Number)'));
+      if (hi < 0) throw new Error(t('រកមិនឃើញជួរក្បាល (Material, Qty, PO Number)', 'Heading row not found (Material, Qty, PO Number)'));
       const head = rows[hi].map(c => String(c).trim().toLowerCase());
       const ix = {}; Object.keys(COLS).forEach(k => { ix[k] = head.findIndex(h => COLS[k].indexOf(h) >= 0); });
       const missing = Object.keys(COLS).filter(k => ix[k] < 0);
@@ -1752,12 +1757,12 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       rows.slice(hi + 1).forEach((r, i) => {
         if (!r.some(c => String(c).trim())) return;
         const l = { po: String(v(r, 'po')).replace(/\s+/g, '').toUpperCase(), material: String(v(r, 'material')).trim(), desc: String(v(r, 'desc')).trim(),
-          plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, pcs: String(v(r, 'pcs')).trim(),
+          plant: String(v(r, 'plant')).trim(), sloc: String(v(r, 'sloc')).trim(), kg: +String(v(r, 'kg')).replace(/,/g, '') || 0, uom: uomOf(v(r, 'uom')), pcs: String(v(r, 'pcs')).trim(),
           inbound: String(v(r, 'inbound')).trim(), ref: String(v(r, 'ref')).trim(), eta: etaOf(v(r, 'eta')), supplier: String(v(r, 'supplier')).trim(), site: String(v(r, 'site')).trim() || SITE || '' };
         l.po = npo(l.po);
         if (!l.po || !l.material || !l.kg) skipped.push(hi + i + 2); else lines.push(l);
       });
-      if (!lines.length) throw new Error(t('គ្មានជួរដែលមាន PO, Material និង Kg', 'No rows with PO, Material and Kg'));
+      if (!lines.length) throw new Error(t('គ្មានជួរដែលមាន PO, Material និង Qty', 'No rows with PO, Material and Qty'));
       UP = { file: f.name, lines, skipped, missing };
       location.hash = '#/plan-up';
     } catch (e) { toast('⚠️ ' + (e.message || e)); }
@@ -1784,14 +1789,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     view(`
       <div class="head2"><h2>⬆️ ${t('ពិនិត្យមុនរក្សាទុក', 'Check before saving')}</h2><a class="link" href="#/plan">✕</a></div>
       <p class="hint">📄 ${esc(UP.file)} · ${UP.lines.length} ${t('ជួរ', 'rows')} · ${pos.length} PO</p>
-      ${UP.skipped.length ? `<div class="cmp"><div class="warn">⚠️ ${t('រំលងជួរ (ខ្វះ PO / Material / Kg)៖ ', 'Rows skipped (no PO / Material / Kg): ')}${UP.skipped.slice(0, 12).join(', ')}${UP.skipped.length > 12 ? '…' : ''}</div></div>` : ''}
+      ${UP.skipped.length ? `<div class="cmp"><div class="warn">⚠️ ${t('រំលងជួរ (ខ្វះ PO / Material / Qty)៖ ', 'Rows skipped (no PO / Material / Qty): ')}${UP.skipped.slice(0, 12).join(', ')}${UP.skipped.length > 12 ? '…' : ''}</div></div>` : ''}
       ${UP.missing.length ? `<div class="cmp"><div class="warn">ℹ️ ${t('គ្មានជួរឈរ៖ ', 'Columns not in the file: ')}${esc(UP.missing.join(', '))}</div></div>` : ''}
       ${pos.map(po => {
         const ls = UP.lines.filter(l => l.po === po), h = ls[0], old = PLAN.filter(x => x.po === po).length;
         return `<section class="card mt"><div class="top"><h2 style="margin:0">📑 ${esc(po)}</h2>${old ? `<span class="badge diff">♻️ ${t('ជំនួស', 'Replaces')} ${old} ${t('ជួរ', 'lines')}</span>` : `<span class="badge ok">＋ ${t('ថ្មី', 'New')}</span>`}</div>
           <div class="meta">${esc(h.supplier || '–')} · ${esc(h.inbound || '')} · ${esc(h.ref || '')} · ETA ${esc(showEta(h.eta) || '–')}</div>
-          <table class="tb pl mt"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">Kg</th><th class="n">PCS</th></tr>
-          ${ls.map(l => `<tr><td><b>${esc(l.material)}</b><small>${esc(l.desc)}</small></td><td class="n">${fmt(l.kg)}</td><td class="n">${esc(l.pcs)}</td></tr>`).join('')}
+          <table class="tb pl mt"><tr><th>${t('សម្ភារៈ', 'Material')}</th><th class="n">${t('ចំនួន', 'Qty')}</th><th class="n">UoM</th></tr>
+          ${ls.map(l => `<tr><td><b>${esc(l.material)}</b><small>${esc(l.desc)}</small></td><td class="n">${fmt(l.kg)}</td><td class="n">${esc(l.uom || 'Kg')}</td></tr>`).join('')}
           <tr class="totr"><td>${t('សរុប', 'Total')}</td><td class="n">${fmt(ls.reduce((s, l) => s + l.kg, 0))}</td><td></td></tr></table></section>`;
       }).join('')}
       <button class="btn ok big mt" id="saveUp">💾 ${t('រក្សាទុកក្នុងផែនការ', 'Save to Incoming Plan')}</button>`);
@@ -1802,7 +1807,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   let NP = null;
   function renderPlanNew() {
     paintTabs('plan');
-    if (!NP) NP = { po: '', inbound: '', ref: '', eta: '', supplier: '', lines: [{ material: '', desc: '', kg: '', pcs: '' }] };
+    if (!NP) NP = { po: '', inbound: '', ref: '', eta: '', supplier: '', lines: [{ material: '', desc: '', kg: '', uom: 'Kg' }] };
     const f = (k, km, en, ty, req) => `<label class="f">${t(km, en)}${req ? ' <span class="req">*</span>' : ''}</label><input class="in" data-np="${k}" type="${ty || 'text'}" value="${esc(NP[k])}">`;
     view(`
       <div class="head2"><h2>✍️ ${t('បន្ថែម PO', 'Add a PO')}</h2><a class="link" href="#/plan">✕</a></div>
@@ -1810,14 +1815,14 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       ${NP.lines.map((l, i) => `<section class="card mt"><h2><span class="n">${i + 1}</span>${t('មុខទំនិញ', 'Line')}${NP.lines.length > 1 ? `<button class="btn sm ghost" data-rm="${i}" style="margin-left:auto">✕</button>` : ''}</h2>
         <label class="f">${t('សម្ភារៈ', 'Material')} <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="material" value="${esc(l.material)}" inputmode="numeric">
         <label class="f">${t('ការពិពណ៌នា', 'Description')}</label><input class="in" data-ln="${i}" data-k="desc" value="${esc(l.desc)}">
-        <div class="timebox"><div><label class="f">Kg <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="kg" value="${esc(l.kg)}" inputmode="decimal"></div>
-        <div><label class="f">PCS</label><input class="in" data-ln="${i}" data-k="pcs" value="${esc(l.pcs)}" inputmode="numeric"></div></div></section>`).join('')}
+        <div class="timebox"><div><label class="f">${t('ចំនួន', 'Qty')} <span class="req">*</span></label><input class="in" data-ln="${i}" data-k="kg" value="${esc(l.kg)}" inputmode="decimal"></div>
+        <div><label class="f">UoM</label><select class="in" data-ln="${i}" data-k="uom">${UOMS.map(u => `<option${u === (l.uom || 'Kg') ? ' selected' : ''}>${u}</option>`).join('')}</select></div></div></section>`).join('')}
       <button class="btn mt" id="addLn" style="width:100%">＋ ${t('បន្ថែមមុខទំនិញ', 'Add a line')}</button>
       <button class="btn ok big mt" id="saveNp">💾 ${t('រក្សាទុក', 'Save')}</button>`);
     const grab = () => { $$('[data-np]').forEach(el => { NP[el.dataset.np] = el.value.trim(); }); $$('[data-ln]').forEach(el => { NP.lines[+el.dataset.ln][el.dataset.k] = el.value.trim(); }); };
     const mark = () => { $$('[data-np="po"],[data-k="material"],[data-k="kg"]').forEach(el => el.classList.toggle('need', !el.value.trim())); };
     $$('#view input').forEach(el => { el.oninput = mark; }); mark();
-    $('#addLn').onclick = () => { grab(); NP.lines.push({ material: '', desc: '', kg: '', pcs: '' }); renderPlanNew(); };
+    $('#addLn').onclick = () => { grab(); NP.lines.push({ material: '', desc: '', kg: '', uom: 'Kg' }); renderPlanNew(); };
     $$('[data-rm]').forEach(b => { b.onclick = () => { grab(); NP.lines.splice(+b.dataset.rm, 1); renderPlanNew(); }; });
     $('#saveNp').onclick = async () => {
       grab();
@@ -1825,7 +1830,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       const ls = NP.lines.filter(l => l.material && +String(l.kg).replace(/,/g, '') > 0);
       if (!po || !ls.length) { toast('⚠️ ' + t('សូមបំពេញប្រអប់ពណ៌ក្រហម', 'Please fill the red boxes')); return; }
       if (POS.indexOf(po) >= 0) { toast('⚠️ ' + po + t(' មានរួចហើយ', ' already exists')); return; }
-      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), pcs: l.pcs, site: SITE || '' }));
+      const add = ls.map(l => ({ po, inbound: NP.inbound, ref: NP.ref, eta: NP.eta, supplier: NP.supplier, material: l.material, desc: l.desc, plant: 'KMH1', sloc: '', kg: +String(l.kg).replace(/,/g, ''), uom: l.uom || 'Kg', site: SITE || '' }));
       if (!DEMO) { if (!await planCall('planSave', { lines: add }, $('#saveNp'))) return; } else { setPlan(PLAN.concat(add)); save(); } toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + po); NP = null; location.hash = '#/plan/' + encodeURIComponent(po);
     };
   }
