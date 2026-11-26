@@ -1478,7 +1478,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   const REP_COLS = [
     ['id', 'លេខទទួល', 'Receipt No'], ['status', 'ស្ថានភាព', 'Status'], ['date', 'ថ្ងៃ', 'Date'], ['po', 'PO', 'PO'],
     ['inbound', 'លេខ Inbound', 'Inbound No'], ['ref', 'លេខយោង', 'Ref. No'], ['supplier', 'អ្នកផ្គត់ផ្គង់', 'Supplier'], ['eta', 'ETA', 'ETA'],
-    ['dn3pl', '3PL DN', '3PL DN'], ['material', 'សម្ភារៈ', 'Material'], ['desc', 'ការពិពណ៌នា', 'Description'], ['truck', 'ផ្លាកលេខ', 'Truck'],
+    ['dn3pl', '3PL DN', '3PL DN'], ['material', 'សម្ភារៈ', 'Material'], ['desc', 'ការពិពណ៌នា', 'Description'], ['batch', 'Batch', 'Batch'], ['truck', 'ផ្លាកលេខ', 'Truck'],
     ['poQty', 'ចំនួន (PO)', 'PO Qty', 1], ['arrQty', 'ចំនួន (ដល់)', 'Arrival Qty', 1], ['grQty', 'ទទួល', 'Actual GR Qty', 1],
     ['dmgQty', 'ខូចខាត', 'Damaged Qty', 1], ['dmgUom', 'ឯកតាខូច', 'Damage UoM'], ['dmgType', 'ប្រភេទខូច', 'Damage Type'],
     ['less', 'ទទួលខ្វះ', 'Received Less', 1], ['uom', 'ឯកតា', 'UoM'], ['start', 'ចាប់ផ្តើម', 'Start'], ['end', 'បញ្ចប់', 'End'],
@@ -1486,14 +1486,20 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     ['owner', 'ម្ចាស់ឡាន', 'Truck owner'], ['carrier', 'ក្រុមហ៊ុន 3PL', '3PL company'], ['entrance', 'ច្រកចូល', 'Entrance'],
     ['site', 'ឃ្លាំង', 'Warehouse'], ['remark', 'កំណត់សម្គាល់', 'Remark'], ['by', 'កត់ត្រាដោយ', 'Recorded by'], ['finishedBy', 'បញ្ចប់ដោយ', 'Finished by'],
   ];
-  const REP_DEF = ['id', 'status', 'date', 'po', 'supplier', 'truck', 'material', 'desc', 'arrQty', 'grQty', 'dmgQty', 'less', 'uom', 'min', 'owner'];
-  const repCols = () => { const ok = c => REP_COLS.some(x => x[0] === c); let l = (REPC || []).filter(ok);
-    if (!l.length) { try { l = (JSON.parse(get('ib_repcols') || '[]') || []).filter(ok); } catch (e) { l = []; } } return l.length ? l : REP_DEF; };
+  const REP_DEF = ['id', 'status', 'date', 'po', 'supplier', 'truck', 'material', 'desc', 'batch', 'arrQty', 'grQty', 'dmgQty', 'less', 'uom', 'min', 'owner'];
+  // Batch column (Kim, 26 Nov 2026): shown after Description in lists saved before it existed; "noBatch" marks a list where it was unticked.
+  const repCols = () => { const ok = c => REP_COLS.some(x => x[0] === c); let raw = REPC || [];
+    if (!raw.filter(ok).length) { try { raw = JSON.parse(get('ib_repcols') || '[]') || []; } catch (e) { raw = []; } }
+    const l = raw.filter(ok);
+    if (!l.length) return REP_DEF;
+    if (l.indexOf('batch') < 0 && raw.indexOf('noBatch') < 0) { const d = l.indexOf('desc'); l.splice(d >= 0 ? d + 1 : l.length, 0, 'batch'); }
+    return l; };
   const repVal = (k, r, i) => {
     switch (k) {
       case 'id': return r.id; case 'status': return !r.end ? t('កំពុងទម្លាក់', 'Unloading') : t('រួចរាល់', 'Done');
       case 'date': return r.date; case 'po': return itemPo(i, r); case 'inbound': return i.inbound || r.inbound; case 'eta': return r.eta;
       case 'material': case 'desc': case 'poQty': case 'arrQty': return i[k];
+      case 'batch': return i.batch || '';
       case 'grQty': return r.end ? i.grQty : ''; case 'dmgQty': return +i.dmgQty > 0 ? +i.dmgQty : '';
       case 'dmgUom': return +i.dmgQty > 0 ? i.dmgUom || r.uom : ''; case 'dmgType': return +i.dmgQty > 0 ? dmgEn(i.dmgType) : '';
       case 'less': return isLessItem(i) ? +i.arrQty - +i.grQty : '';
@@ -1516,7 +1522,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     recs.forEach(r => (r.items || []).forEach(i => {
       if (RP.st === 'live' && r.end) return; if (RP.st === 'done' && !r.end) return;
       if (RP.st === 'dmg' && !(+i.dmgQty > 0)) return; if (RP.st === 'less' && !isLessItem(i)) return;
-      if (q && ![r.id, itemPo(i, r), i.inbound || r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.remark, i.material, i.desc].join(' ').toLowerCase().includes(q)) return;
+      if (q && ![r.id, itemPo(i, r), i.inbound || r.inbound, r.ref, r.supplier, r.dn3pl, r.truck, r.carrier, r.remark, i.material, i.desc, i.batch].join(' ').toLowerCase().includes(q)) return;
       lines.push([r, i]);
     }));
     const done = recs.filter(r => r.end && lines.some(l => l[0] === r)), tn = done.reduce((s, r) => s + (tons(r) || 0), 0);
@@ -1539,7 +1545,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const owns = [['all', t('ឡានទាំងអស់', 'All trucks')], ['ISI', 'ISI'], ['3PL', '3PL']];
     view(`<div class="fb-wrap">${FB.head('rep', `📊 ${t('របាយការណ៍ទទួលទំនិញ', 'Goods receipt report')}`, `<button class="fb-btn" id="xls" type="button">${FB.xl} Excel</button>`, () => { RP = { q: '', st: 'all', own: 'all', from: '', to: '' }; renderSum(); })}
       ${FB.panel('rep', FB.seg(quick, qOn, 'qd') + FB.range('rFrom', 'rTo', RP.from, RP.to) + FB.show('rGo') + FB.seg(sts, RP.st, 'rs', true) + FB.seg(owns, RP.own, 'ro') +
-        FB.search('rq', t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'), RP.q))}</div>
+        FB.search('rq', t('ស្វែងរក៖ PO, សម្ភារៈ, Batch, ផ្លាកលេខ, DN', 'Search: PO, material, batch, plate, DN'), RP.q))}</div>
       <div class="repk"><span class="key"><b>${done.length}</b> ${t('ឡានរួច', 'trucks done')}</span><span class="key"><b>${fmt(tn, 1)}</b> t</span>
         <span class="key"><b>${avgM == null ? '–' : fmt(avgM)}</b> ${t('នាទី/ឡាន', 'min/truck')}</span><span class="key"><b>${avgP == null ? '–' : fmt(avgP, 1)}</b> ${t('ត/នាក់/ម៉', 't/person/h')}</span>
         <span class="key bad"><b>${recs.filter(isDamaged).length}</b> ${t('ខូចខាត', 'damaged')}</span><span class="key warn"><b>${recs.filter(isLess).length}</b> ${t('ទទួលខ្វះ', 'received less')}</span>
@@ -1597,6 +1603,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       back.querySelector('[data-act="reset"]').onclick = () => { keys = REP_DEF.slice(); draw(); };
       back.querySelector('[data-act="no"]').onclick = () => back.remove();
       back.querySelector('[data-act="ok"]').onclick = async () => {
+        if (keys.indexOf('batch') < 0) keys.push('noBatch');
         back.remove(); REPC = keys.slice(); set('ib_repcols', JSON.stringify(keys)); renderSum();
         if (DEMO) return toast('✅ ' + t('បានរក្សាទុក', 'Saved'));
         try {
