@@ -321,7 +321,7 @@ function plan_() {
   const head = v[0].map(h => String(h).trim().toLowerCase().replace(/\.$/, ''));
   const c = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
   const iPo = c('po number', 'po'), iMat = c('material'), iDesc = c('description', 'material description'), iKg = c('qty', 'quantity', 'kg'), iUom = c('uom', 'unit'),
-    iPcs = c('pcs'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
+    iPcs = c('pcs', 'pc'), iIn = c('inbound no', 'inbound number'), iRef = c('ref. no', 'ref no'), iEta = c('eta'), iSup = c('supplier'),
     iPlant = c('plant'), iSloc = c('sloc'), iSite = c('warehouse', 'wh', 'site');
   // Vessel No. (Kim, 17 Nov 2026: column R of the Incoming Plan)
   let iVes = c('vessel no', 'vessel number', 'vessel'); if (iVes < 0 && head.length > 17 && !head[17]) iVes = 17;
@@ -377,7 +377,7 @@ function planWrite_(keep, add) {
     switch (h.toLowerCase().replace(/\.$/, '')) {
       case 'material': return l.material; case 'description': case 'material description': return l.desc; case 'plant': return l.plant; case 'sloc': return l.sloc;
       case 'kg': case 'qty': case 'quantity': return l.kg; case 'uom': case 'unit': return l.uom || 'Kg';
-      case 't': return l.uom && l.uom !== 'Kg' ? '' : Math.round(l.kg) / 1000; case 'pcs': return l.pcs; case 'no. of truck': return l.uom && l.uom !== 'Kg' ? '' : Math.ceil(l.kg / 1000 / 40);
+      case 't': return l.uom && l.uom !== 'Kg' ? '' : Math.round(l.kg) / 1000; case 'pcs': case 'pc': return l.pcs; case 'no. of truck': return l.uom && l.uom !== 'Kg' ? '' : Math.ceil(l.kg / 1000 / 40);
       case 'po number': case 'po': return l.po; case 'inbound no': case 'inbound number': return l.inbound; case 'ref. no': case 'ref no': return l.ref;
       case 'eta': return l.eta; case 'supplier': return l.supplier; case 'warehouse': case 'wh': case 'site': return l.site || ''; default: return '';
     }
