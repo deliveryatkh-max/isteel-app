@@ -1721,7 +1721,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   // Excel: Kim's "Incoming Packing List Template" (sheet PKL). The heading row is found by its names, so extra
   // title rows or moved columns are fine.
   let UP = null;   // { file, lines, skipped, missing }
-  const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['qty', 'quantity', 'kg'], uom: ['uom', 'unit'], pcs: ['pcs'],
+  const COLS = { material: ['material'], desc: ['description', 'material description'], plant: ['plant'], sloc: ['sloc'], kg: ['qty', 'quantity', 'kg'], uom: ['uom', 'unit'], pcs: ['pcs', 'pc'],
     po: ['po number', 'po'], inbound: ['inbound no.', 'inbound no', 'inbound number'], ref: ['ref. no', 'ref. no.', 'ref no'], eta: ['eta'], supplier: ['supplier'], site: ['warehouse', 'wh', 'site'] };
   const NEED = ['material', 'kg', 'po'];
   const uomOf = v => { const u = String(v || '').trim().toUpperCase(); return !u || /^[\d.,]+$/.test(u) || u === 'KG' || u === 'KGS' ? 'Kg' : u === 'PCS' || u === 'PC' || u === 'EA' ? 'PC' : u === 'T' || u === 'TON' ? 'Ton' : u; };
