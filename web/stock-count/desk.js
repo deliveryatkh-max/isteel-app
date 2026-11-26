@@ -24,13 +24,13 @@
   // ------------------------------------------------------------------ roles
   const PAGES = [
     ['home', '📷', 'ស្កេន', 'Scan'], ['dash', '📊', 'ផ្ទាំងគ្រប់គ្រង', 'Dashboard'], ['stock', '📦', 'បញ្ជីស្តុក', 'Stock list'],
-    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['roles', '👥', 'តួនាទី', 'Roles'],
+    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['binsum', '🗂️', 'សង្ខេបទីតាំង', 'Bin summary'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['roles', '👥', 'តួនាទី', 'Roles'],
   ];
   const ROLES = [
     { id: 'operator', km: 'បុគ្គលិកឃ្លាំង', en: 'Warehouse Operator', pages: ['home', 'stock'], can: [] },
-    { id: 'supervisor', km: 'ប្រធានក្រុមឃ្លាំង', en: 'Warehouse Supervisor', pages: ['home', 'dash', 'stock', 'moves', 'review'], can: ['approve', 'export'] },
-    { id: 'controller', km: 'អ្នកត្រួតពិនិត្យស្តុក', en: 'Inventory Controller', pages: ['home', 'dash', 'stock', 'moves', 'review', 'sap'], can: ['approve', 'export', 'adjust', 'sap'] },
-    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'review', 'sap', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
+    { id: 'supervisor', km: 'ប្រធានក្រុមឃ្លាំង', en: 'Warehouse Supervisor', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review'], can: ['approve', 'export'] },
+    { id: 'controller', km: 'អ្នកត្រួតពិនិត្យស្តុក', en: 'Inventory Controller', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap'], can: ['approve', 'export', 'adjust', 'sap'] },
+    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
   ];
   const RIGHTS = [
     ['scan', 'ស្កេន៖ ចូល / ចេញ / ផ្ទេរ / រាប់', 'Scan: IN / OUT / Transfer / Count'], ['stockv', 'មើលបញ្ជីស្តុក', 'See the stock list'],
@@ -40,7 +40,7 @@
   ];
   let roleId = 'admin';
   try { roleId = localStorage.getItem('sc_demo_role') || 'admin'; } catch (e) { /* private mode */ }
-  const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'sap'], can: ['export', 'sap'] };
+  const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'sap'], can: ['export', 'sap'] };
   const role = () => (!DEMO ? LIVE_ROLE : ROLES.find(r => r.id === roleId) || ROLES[3]);
   const can = what => role().can.indexOf(what) >= 0;
   const has = (r, right) => (right === 'scan' || right === 'stockv' ? true : right === 'dashv' ? r.pages.indexOf('dash') >= 0 : r.can.indexOf(right) >= 0);
@@ -487,6 +487,58 @@
       .then(() => { PT.busy = false; if (S.view === 'sap') sap(); });
   }
 
-  window.SC_PAGES = { dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
+  // ------------------------------------------------------------------ bin movement summary (Kim picked mockup A, 26 Nov 2026)
+  // One row per bin + UoM: Opening (before From) + In - Out = Balance, from the Stock Ledger.
+  const BF = { from: dAgo(0).slice(0, 8) + '01', to: dAgo(0), wh: '', zone: '', grp: '', uom: '', q: '' };
+  function binsum() {
+    wide(); loadLedger('binsum');
+    const mon = dAgo(0).slice(0, 8) + '01';
+    const QD = [['today', T('ថ្ងៃនេះ', 'Today'), dAgo(0), dAgo(0)], ['7', T('៧ ថ្ងៃ', '7 days'), dAgo(6), dAgo(0)], ['month', T('ខែនេះ', 'This month'), mon, dAgo(0)], ['all', T('ទាំងអស់', 'All'), '', '']];
+    const led = D.ledger.map(r => Object.assign({}, r, { wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r), uom: String(r.uom || 'PC').toUpperCase() }));
+    const uq = f => Array.from(new Set(led.map(r => r[f]).filter(Boolean))).sort();
+    const keepR = r => (!BF.wh || r.wh === BF.wh) && (!BF.zone || r.zone === BF.zone) && (!BF.grp || r.grp === BF.grp) && (!BF.uom || r.uom === BF.uom)
+      && hit(BF.q, [r.bin, r.material, r.desc, r.batch]) && (!BF.to || String(r.date) <= BF.to);
+    const by = {};
+    led.filter(keepR).forEach(r => {
+      const k = r.bin + '|' + r.uom, x = by[k] || (by[k] = { bin: r.bin, wh: r.wh, zone: r.zone, uom: r.uom, open: 0, qin: 0, qout: 0, moves: 0, last: '', mats: {} });
+      const qi = Number(r.qtyIn) || 0, qo = Number(r.qtyOut) || 0;
+      if (BF.from && String(r.date) < BF.from) { x.open += qi - qo; return; }
+      x.qin += qi; x.qout += qo; x.moves++; x.mats[r.material] = 1;
+      const w = (r.date || '') + ' ' + (r.time || ''); if (w > x.last) x.last = w;
+    });
+    const rows = Object.keys(by).map(k => by[k]).map(x => Object.assign(x, { open: round3(x.open), qin: round3(x.qin), qout: round3(x.qout), net: round3(x.qin - x.qout), bal: round3(x.open + x.qin - x.qout), nm: Object.keys(x.mats).length }))
+      .filter(x => x.moves || x.bal).sort((a, b) => b.moves - a.moves || a.bin.localeCompare(b.bin));
+    const sumU = f => { const u = {}; rows.forEach(x => { u[x.uom] = (u[x.uom] || 0) + x[f]; });
+      return Object.keys(u).sort().filter(k => u[k] || (f !== 'qin' && f !== 'qout')).map(k => `${f === 'qin' ? '+' : f === 'qout' ? '−' : ''}${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
+    const tIn = rows.reduce((a, x) => a + x.qin, 0), tOut = rows.reduce((a, x) => a + x.qout, 0), tMv = rows.reduce((a, x) => a + x.moves, 0);
+    const BFL = [['bwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh')], ['bzone', T('តំបន់', 'Bin Zone'), 'zone', uq('zone')], ['bgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp')], ['buom', 'UoM', 'uom', uq('uom')]];
+    const qOn = (QD.find(q => q[2] === BF.from && q[3] === BF.to) || [''])[0];
+    const H = [T('ទីតាំង', 'Bin'), T('ឃ្លាំង', 'Warehouse'), T('តំបន់', 'Bin Zone'), T('សម្ភារៈ', 'Materials'), T('ចលនា', 'Moves'), T('ដើមគ្រា', 'Opening'), T('ចូល', 'In'), T('ចេញ', 'Out'), T('សុទ្ធ', 'Net'), T('សមតុល្យ', 'Balance'), 'UoM', T('ចលនាចុងក្រោយ', 'Last move')];
+    view(`
+      <div class="fb-wrap">${FB.head('binsum', '🗂️ ' + T('សង្ខេបចលនាតាមទីតាំង', 'Bin movement summary'), (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '')
+        + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`, () => { Object.assign(BF, { from: mon, to: dAgo(0), wh: '', zone: '', grp: '', uom: '', q: '' }); binsum(); })}
+      ${FB.panel('binsum', FB.seg(QD.map(q => [q[0], q[1]]), qOn, 'bqd') + FB.range('bFrom', 'bTo', BF.from, BF.to) + FB.show('bGo')
+        + BFL.map(f => FB.field(f[1], `<select id="${f[0]}"><option value="">${T('ទាំងអស់', 'All')}</option>${f[3].map(v => `<option value="${esc(v)}"${v === BF[f[2]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
+        + FB.search('bq', T('ស្វែងរក ទីតាំង ឬសម្ភារៈ', 'Search bin or material'), BF.q))}</div>
+      <div class="sumline"><b>${new Set(rows.map(x => x.bin)).size}</b> ${T('ទីតាំង', 'bins')} · <b>${tMv}</b> ${T('ចលនា', 'moves')} · ${T('ចូល', 'In')} <b class="in">+${fmtQty(round3(tIn))}</b> · ${T('ចេញ', 'Out')} <b class="out">−${fmtQty(round3(tOut))}</b></div>
+      <section class="screp"><table class="rep bstbl"><thead><tr>${H.map((h, i) => `<th${i >= 3 && i <= 9 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
+        ${rows.map(x => `<tr class="go" data-bin="${esc(x.bin)}"><td class="mono">${esc(x.bin)}</td><td>${esc(x.wh)}</td><td>${esc(x.zone)}</td><td class="num">${x.nm}</td><td class="num">${x.moves}</td>
+          <td class="num mono">${fmtQty(x.open)}</td><td class="num mono in">${x.qin ? '+' + fmtQty(x.qin) : ''}</td><td class="num mono out">${x.qout ? '−' + fmtQty(x.qout) : ''}</td>
+          <td class="num mono ${x.net < 0 ? 'out' : x.net > 0 ? 'in' : ''}">${x.net > 0 ? '+' : ''}${fmtQty(x.net)}</td><td class="num mono"><b>${fmtQty(x.bal)}</b></td><td>${esc(x.uom)}</td><td>${esc(x.last.trim())}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="12">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th><th></th><th></th><th></th><th class="num">${tMv}</th><th class="num mono">${sumU('open')}</th><th class="num mono">${sumU('qin')}</th><th class="num mono">${sumU('qout')}</th><th class="num mono">${sumU('net')}</th><th class="num mono">${sumU('bal')}</th><th></th><th></th></tr></tfoot></table></section>
+      ${oldNote()}<p class="muted">${T('សមតុល្យ = ដើមគ្រា (មុនថ្ងៃចាប់ផ្តើម) + ចូល − ចេញ។ ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Balance = Opening (before the From date) + In − Out. Tap a row to open the bin.')}</p>`);
+    setTimeout(fitRep, 0);
+    keep('#bq', v => { BF.q = v; binsum(); });
+    BFL.forEach(f => { $('#' + f[0]).onchange = e => { BF[f[2]] = e.target.value; binsum(); }; });
+    $$('[data-bqd]').forEach(bn => { bn.onclick = () => { const q = QD.find(x => x[0] === bn.dataset.bqd); BF.from = q[2]; BF.to = q[3]; binsum(); }; });
+    $('#bGo').onclick = () => { BF.from = $('#bFrom').value; BF.to = $('#bTo').value; binsum(); };
+    $('#bFrom').onchange = $('#bTo').onchange = () => { BF.from = $('#bFrom').value; BF.to = $('#bTo').value; binsum(); };
+    $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
+    if ($('#exp')) $('#exp').onclick = () => download('bin-movement-summary.csv', [['Bin', 'Warehouse', 'Bin Zone', 'Materials', 'Moves', 'Opening', 'In', 'Out', 'Net', 'Balance', 'UoM', 'Last move', 'From', 'To']]
+      .concat(rows.map(x => [x.bin, x.wh, x.zone, x.nm, x.moves, x.open, x.qin, x.qout, x.net, x.bal, x.uom, x.last.trim(), BF.from, BF.to])));
+  }
+
+  window.SC_PAGES = { binsum: binsum, dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
   route();
 })();
