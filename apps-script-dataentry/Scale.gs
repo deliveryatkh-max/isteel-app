@@ -43,6 +43,7 @@ const SC_SETTINGS = [
   ['SCALE_DNC_USERS', '', 'Emails that can see the Debit Note check menu (comma separated). Admins always see it.'],
   ['SCALE_AGAIN_KG', '20', '"Scale again": a change up to this many kg counts as the same weight'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
+  ['SCALE_EDIT24_USERS', 'លាន រដ្ឋា', 'Names or emails (comma separated) that may edit a finished ticket for 24 h after the 2nd weigh: Truck No, company, customer, item, DN, driver, loading place, destination, note. Not the weights.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
   ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
   ['SCALE_REPORT_COLS', '', 'Report columns and their order (set by an Admin on the Report screen). Empty = default.'],
@@ -306,7 +307,7 @@ function scBoot_(user) {
   const dnc = scCanDnc_(user);
   return {
     dnUsed: scDnIndex_(rows),   // every DN already on a ticket, so the scale PC can stop a second use (Kim, 9 Nov 2026)
-    user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer, dnc: dnc },
+    user: { name: user.name, email: user.email, admin: user.admin, reviewer: user.reviewer, dnc: dnc, edit24: scEdit24_(user) },
     prices: dnc && typeof prices_ === 'function' ? prices_() : [],   // vendor prices: only for people who see the Debit Note check
     people: user.admin ? usersCached_().filter(u => u.okScale).map(u => ({ email: u.email, name: u.name, admin: u.admin })) : [],
     trucks: scTrucks_(), drivers: scDrivers_(), customers: scCustomers_(), items: scItems_(), dests: scDests_(),
@@ -374,6 +375,17 @@ function scBillPrices_(p, rows, want, user) {
 function scCanDnc_(user) {
   if (user.admin) return true;
   return String(setting_('SCALE_DNC_USERS') || '').toLowerCase().split(/[\s,;]+/).indexOf(String(user.email || '').toLowerCase()) >= 0;
+}
+
+/** Edit for 24 h after the 2nd weigh (Kim, 26 Nov 2026): the user's name or email is in SCALE_EDIT24_USERS. */
+function scEdit24_(user) {
+  const v = setting_('SCALE_EDIT24_USERS');
+  const list = String(v === '' ? SC_SETTINGS.filter(r => r[0] === 'SCALE_EDIT24_USERS')[0][1] : v).split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+  return [user.name, user.email].some(x => x && list.indexOf(String(x).trim().toLowerCase()) >= 0);
+}
+function scWithin24_(t2) {
+  const d = t2 instanceof Date ? t2 : (t2 ? new Date(String(t2).replace(/^(\d{4}-\d\d-\d\d) /, '$1T')) : null);
+  return !!d && !isNaN(d) && Date.now() - d.getTime() < 24 * 3600000;
 }
 
 function scList_(p) {
@@ -459,7 +471,7 @@ function scSave_(ops, user) {
     });
     if (old) {
       // A finished ticket can be changed by a Reviewer or Admin only; Void needs an Admin.
-      if (old[1] !== 'Open' && !(user.admin || user.reviewer)) fail_('DENIED', 'Ticket ' + old[0] + ' is finished. Only a Reviewer or Admin can change it.',
+      if (old[1] !== 'Open' && !(user.admin || user.reviewer) && !(old[1] === 'Done' && status === 'Done' && scEdit24_(user) && scWithin24_(old[16]))) fail_('DENIED', 'Ticket ' + old[0] + ' is finished. Only a Reviewer or Admin can change it.',
         'ប័ណ្ណ ' + old[0] + ' បានបញ្ចប់ហើយ។ មានតែ Reviewer ឬ Admin ទេដែលអាចកែបាន។');
       if (status === 'Void' && old[1] !== 'Void' && !(user.admin && reason)) fail_('DENIED', 'Only an Admin can cancel a ticket, with a reason.', 'មានតែ Admin ទេដែលអាចលុបប័ណ្ណ ដោយមានមូលហេតុ។');
       const changeW = (i, k) => w(k) !== '' && old[i] !== '' && Number(old[i]) !== w(k);

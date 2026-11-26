@@ -160,6 +160,8 @@
   const me = () => (B && B.user) || {};
   const isAdmin = () => !!me().admin;
   const canEdit = () => !!(me().admin || me().reviewer);
+  // Named weighers (DE Settings SCALE_EDIT24_USERS) may fix a finished ticket for 24 h after the 2nd weigh (Kim, 26 Nov 2026)
+  const canEdit24 = x => !!(me().edit24 && x && x.status === 'Done' && x.t2 && Date.now() - new Date(x.t2) < 24 * 3600000);
   const trucks = () => (B && B.trucks) || [];
   const truckOf = p => trucks().find(x => normP(x.plate) === normP(p)) || null;
   // Empty truck at the 1st weigh (Kim, 12 Nov 2026; labels and Empty + pallets added 14 Nov 2026)
@@ -828,7 +830,7 @@
           ${tr ? ''
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div></div></div>
-        ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')} ${req}</label><div><input class="in${need(F.driver)}" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
+        ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')}</label><div><input class="in" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
         ${sel && !isRet() ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
         ${sel && !isRet() ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
@@ -1009,7 +1011,7 @@
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
     if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');
-    if (!ticketBy(F.cid) && !String(F.driver || '').trim()) miss.push('#fDriver');   // driver required at the 1st weigh (Kim, 24 Nov 2026)
+    // Driver optional again at the 1st weigh (Kim, 26 Nov 2026)
     // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
     if (second && !isRet() && !destsOf(F.dest).length) miss.push('#fDest');   // Destination required for every truck, load or unload (Kim, 9 Nov 2026)
@@ -2323,7 +2325,7 @@
       <div class="head2"><h2 class="mono">${esc(x.no)}</h2>${x.status === 'Void' ? `<span class="badge rejected">${t('បានលុប', 'Cancelled')}</span>` : x.status === 'Open' ? `<span class="badge follow">${t('នៅលើទីតាំង', 'On site')}</span>` : `<span class="badge approved">${t('រួចរាល់', 'Done')}</span>`}</div>
       <div class="btns tbtns">
         ${x.status !== 'Open' || lastAgain(x) ? `<button type="button" class="btn ok" data-print="${esc(x.cid || x.no)}">🖨 ${t('បោះពុម្ព', 'Print')}</button><button type="button" class="btn" data-pdf="${esc(x.cid || x.no)}">📄 PDF</button>` : ''}
-        ${x.cid && ((canEdit() && x.status === 'Done') || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
+        ${x.cid && ((canEdit() && x.status === 'Done') || canEdit24(x) || (isAdmin() && x.status === 'Open')) ? `<button type="button" class="btn" id="tEdit">✏️ ${t('កែព័ត៌មាន', 'Edit details')}</button>` : ''}
         ${isAdmin() && (x.status === 'Done' || x.status === 'Open') && x.cid ? `<button type="button" class="btn danger" id="tVoid">🗑 ${t('លុបប័ណ្ណ', 'Cancel ticket')}</button>` : ''}
         ${x.err && x.cid && LOC[x.cid] ? `<button type="button" class="btn" id="tRetry">↻ ${t('ផ្ញើម្តងទៀត', 'Send again')}</button>` : ''}
       </div>
@@ -2356,7 +2358,7 @@
   function editTicket(x, key) {
     const f = (id, label, v) => `<div class="field"><label class="f">${label}</label><div><input class="in" id="${id}" autocomplete="off" value="${esc(v || '')}"></div></div>`;
     $('#tMore').innerHTML = `<div class="card soft mt"><div class="fgrid">
-      ${x.status === 'Open' && isAdmin() ? f('ePlate', t('លេខឡាន', 'Truck No'), x.plate) : ''}${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
+      ${(x.status === 'Open' && isAdmin()) || x.status === 'Done' ? f('ePlate', t('លេខឡាន', 'Truck No'), x.plate) : ''}${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
       ${f('eDn', 'DN No (, )', (x.dns || []).join(', '))}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eLoad', t('កន្លែងផ្ទុក', 'Loading place'), x.load || '')}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
       ${f('eNote', t('កំណត់ចំណាំ', 'Note'), x.note)}${f('eWhy', t('មូលហេតុនៃការកែ', 'Reason for the change'), '')}</div>
       <div class="hint">${t('ទម្ងន់មិនអាចកែបានទេ។ ការកែទាំងអស់ត្រូវកត់ត្រាក្នុង Scale Log។', 'Weights cannot be changed here. Every change is written to the Scale Log.')}</div>
