@@ -79,6 +79,9 @@
   const steps = n => `<div class="tm-steps"><b class="${n === 1 ? 'on' : ''}">1</b>${t('បំពេញ', 'Details')}<span></span><b class="${n === 2 ? 'on' : ''}">2</b>${t('ពិនិត្យ', 'Check')}</div>`;
   const kv = rows => `<div class="tm-kv">${rows.filter(r => r[1] !== undefined && r[1] !== null && r[1] !== '').map(r => `<span>${esc(r[0])}</span><b>${esc(r[1])}</b>`).join('')}</div>`;
   /** Required boxes that are still empty get a red border, cleared as soon as they are filled (Kim, 28 Oct 2026). */
+  // Placeholder rows in the employee list ("Vacancy …") are never shown as people (Kim, 26 Nov 2026).
+  const isVac = s => /^\s*vacan/i.test(String(s || ''));
+  const people = list => (list || []).filter(e => !isVac(e.full) && !isVac(e.name));
   function markNeed() { $$('[data-need]').forEach(el => el.classList.toggle('need', !String(el.value || '').trim())); }
   function liveNeed() { $$('[data-need]').forEach(el => { el.addEventListener('input', markNeed); el.addEventListener('change', markNeed); }); markNeed(); }
   function busyBtn(btn, on) { if (!btn) return; btn.disabled = on; if (on) { btn.dataset.txt = btn.innerHTML; btn.innerHTML = '<span class="sp"></span>'; } else if (btn.dataset.txt) btn.innerHTML = btn.dataset.txt; }
@@ -184,7 +187,7 @@
       R.q = q.value.trim(); R.err = '';
       if (R.q.length < 2) { R.err = t('សូមវាយយ៉ាងហោចណាស់ ២ តួ។', 'Type at least 2 letters or digits.'); return renderResign(); }
       R.searching = true; renderResign();
-      try { R.hits = (await api('teamFind', { q: R.q })).list; if (R.hits.length === 1) R.emp = R.hits[0]; }
+      try { R.hits = people((await api('teamFind', { q: R.q })).list); if (R.hits.length === 1) R.emp = R.hits[0]; }
       catch (e) { R.err = e.message; }
       R.searching = false; renderResign();
     };
@@ -248,7 +251,7 @@
   function renderNew() {
     if (!signedIn()) return needSignIn(renderNew);
     if (N.step === 2) return renderNewCheck();
-    const mgrs = (D && D.managers) || [];
+    const mgrs = people(D && D.managers);
     if (!N.mgr && !N.mgrPicked && D && D.me && mgrs.some(x => x.name === D.me.full)) N.mgr = D.me.full;
     const open = (D && D.open) || [];
     show(`${backBtn('tmBack')}
@@ -269,7 +272,8 @@
         </div>
         <div class="field">
           <label class="f" for="nMgr">${t('ប្រធានផ្ទាល់', 'Line manager')} ${req}</label>
-          ${!mgrs.length ? `<input class="in" id="nMgr" autocomplete="off" maxlength="100" value="${esc(N.mgr)}">` : `<select class="in" id="nMgr" data-need><option value="">— ${t('ជ្រើសរើស', 'Choose')} —</option>${mgrs.map(x => `<option value="${esc(x.name)}"${N.mgr === x.name ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
+          <input class="in" id="nMgr" autocomplete="off" spellcheck="false" maxlength="100" value="${esc(N.mgr)}"${mgrs.length ? ` placeholder="🔎 ${esc(t('វាយដើម្បីស្វែងរក', 'Type to search'))}" data-need` : ''}>
+          <div class="tm-hits" id="nMgrList" hidden></div>
           <p class="hint">${t('ផ្នែក និងមុខងារ យកតាមរបស់អ្នក។', 'Department and function are copied from yours.')}</p>
         </div>
         ${open.length ? `<div class="field">
@@ -280,13 +284,31 @@
       </section>
       <button type="button" class="btn ok big" id="nNext">${t('បន្ទាប់ ›', 'Next ›')}</button>`, renderNew, 'new');
     liveNeed();
+    // Line manager: type any part of the name, then tap one from the list (Kim, 26 Nov 2026).
+    const mIn = $('#nMgr'), mList = $('#nMgrList');
+    const mShow = () => {
+      if (!mgrs.length) return;
+      const q = mIn.value.trim().toLowerCase();
+      const hits = mgrs.filter(x => x.name.toLowerCase().indexOf(q) >= 0).slice(0, 8);
+      mList.innerHTML = hits.length ? hits.map(x => `<button type="button" class="tm-hit${x.name === mIn.value ? ' on' : ''}" data-n="${esc(x.name)}"><b>${esc(x.name)}</b></button>`).join('')
+        : `<p class="hint">${t('រកមិនឃើញ។', 'Nothing found.')}</p>`;
+      mList.hidden = false;
+    };
+    mIn.addEventListener('focus', mShow);
+    mIn.addEventListener('input', mShow);
+    mIn.addEventListener('blur', () => setTimeout(() => { mList.hidden = true; }, 200));
+    mList.addEventListener('mousedown', e => e.preventDefault());   // keep the box focused while tapping a name
+    mList.addEventListener('click', e => {
+      const b = e.target.closest('[data-n]'); if (!b) return;
+      mIn.value = b.dataset.n; mList.hidden = true; mIn.blur(); markNeed();
+    });
     $('#tmBack').onclick = () => renderTeam();
     $('#nNext').onclick = async () => {
       keepNew();
       N.err = !/^\d{6}$/.test(N.id) ? t('លេខកាតត្រូវមាន ៦ ខ្ទង់។', 'Employee ID must be 6 digits.')
         : !N.full || !EN_ONLY.test(N.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter the full name in English letters.')
         : !N.kh || !KH_ONLY.test(N.kh) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។', 'Enter the full name in Khmer letters.')
-        : !N.mgr && mgrs.length ? t('សូមជ្រើសរើសប្រធានផ្ទាល់។', 'Choose the line manager.') : '';
+        : mgrs.length && !mgrs.some(x => x.name === N.mgr) ? t('សូមជ្រើសរើសប្រធានផ្ទាល់ពីបញ្ជី។', 'Choose the line manager from the list.') : '';
       if (N.err) return renderNew();
       const b = $('#nNext'); busyBtn(b, true);
       try {
@@ -300,7 +322,7 @@
   }
   function keepNew() {
     const v = id => { const el = $('#' + id); return el ? el.value.replace(/\s+/g, ' ').trim() : undefined; };
-    if ($('#nId')) { N.id = v('nId').replace(/\D/g, ''); N.full = v('nFull').toUpperCase(); N.kh = v('nKh'); N.mgr = v('nMgr'); N.mgrPicked = true; N.reqId = v('nReq') || ''; }
+    if ($('#nId')) { N.id = v('nId').replace(/\D/g, ''); N.full = v('nFull').toUpperCase(); N.kh = v('nKh'); N.mgr = v('nMgr'); N.mgrPicked = true; const mm = ((D && D.managers) || []).find(x => x.name.toLowerCase() === N.mgr.toLowerCase()); if (mm) N.mgr = mm.name; N.reqId = v('nReq') || ''; }
   }
   function renderNewCheck() {
     const vac = ((D && D.open) || []).find(x => x.reqId === N.reqId);
