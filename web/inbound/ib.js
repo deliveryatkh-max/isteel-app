@@ -679,9 +679,18 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     return `<section class="card"><h2>📦 ${t('ស្កេនលេខ Batch', 'Scan batch numbers')}</h2>
       <div class="scanrow"><input class="in" id="bscan" placeholder="${esc(t('ស្កេន ឬវាយលេខ Batch…', 'Scan or type the batch no.…'))}" autocapitalize="characters" autocomplete="off" enterkeyhint="done"><button type="button" class="scanb" id="bCam" aria-label="${esc(t('ស្កេន', 'Scan'))}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13 8v8M16 8v8"/></svg></button></div>
       <p class="hint">${t('ស្កេនម្តងមួយ — Batch ដែលត្រូវនឹងផែនការ នឹងបង្ហាញខាងក្រោម', 'One at a time: batches found in the Incoming Plan appear below')}</p>
-      ${(r.badB || []).map((b, n) => `<div class="bbad"><b>⚠️ ${esc(b)}</b><small>${t('មិនមានក្នុងផែនការទំនិញចូល', 'Not in the Incoming Plan')}</small><button type="button" data-bbad="${n}" aria-label="remove">✕</button></div>`).join('')}
+      ${(r.badB || []).map((b, n) => `<div class="bbad"><b>⚠️ ${esc(b)}</b><small>${badWhy(b)}</small><button type="button" data-bbad="${n}" aria-label="remove">✕</button></div>`).join('')}
       ${r.items.length ? `<div class="row2">${grey(t('លេខ PO', 'PO Number'), r.po)}${grey(t('លេខកប៉ាល់', 'Vessel No.'), vesOf(r))}</div>${itemsTable(r, mode)}` : ''}
       <a class="link small" href="#" id="manPo">${t('ឬជ្រើស PO ដោយដៃ', 'or choose the PO by hand')}</a></section>`;
+  }
+  // Why a scanned batch was not taken (Kim, 26 Nov 2026: "why the app say there is no batch?")
+  function badWhy(b) {
+    const same = x => String(x || '').trim().toUpperCase() === b;
+    const ps = PLAN.filter(x => same(x.batch));
+    if (!ps.length) return t('មិនមានក្នុងផែនការទំនិញចូល (ឬ Kg = 0)', 'Not in the Incoming Plan (or its Kg is 0)');
+    if (SITE && ps.every(x => x.site && x.site !== SITE)) return t('ផែនការសម្រាប់ ', 'Planned for ') + esc(ps[0].site);
+    const rc = DATA.filter(r => r.id !== F.id && (r.items || []).some(i => same(i.batch))).map(r => r.id);
+    return t('បានទទួលរួចហើយ', 'Already received') + (rc.length ? ' · ' + esc(rc.join(', ')) : '');
   }
   function addBatch(code) {
     collect();
