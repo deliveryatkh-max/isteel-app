@@ -3534,8 +3534,9 @@ const TEAM_LOG = 'Team Changes';
 const TEAM_LOG_COLS = ['Time', 'By', 'Type', 'Employee ID', 'Name', 'Detail'];
 const RECRUIT_TAB = 'Recruitment';
 const RECRUIT_COLS = ['Request ID', 'Vacancy Title', 'Expected Join Date', 'Warehouse', 'Status', 'Added By', 'Added At', 'Filled By ID', 'Filled At'];
-const TEAM_COLS = ['Last Working Day', 'Resign Reason', 'Employee Photo'];
+const TEAM_COLS = ['Last Working Day', 'Resign Reason', 'Resignation Letter', 'Employee Photo'];
 const EMP_PHOTO_FOLDER = 'Employee Photos';
+const RESIGN_FOLDER = 'Resignation Letters';
 const KH_ONLY = /^[ក-៿᧠-᧿\s]+$/;
 
 const teamCan_ = user => user.role === 'admin' || user.job === 'supervisor';
@@ -3607,6 +3608,27 @@ function empPhotoFolder_() {
   setSetting_('EMP_PHOTO_FOLDER_ID', folder.getId());
   return (empPhotoFolderCache_ = folder);
 }
+let resignFolderCache_ = null;
+function resignFolder_() {
+  if (resignFolderCache_) return resignFolderCache_;
+  const id = getSetting_('RESIGN_FOLDER_ID');
+  if (id) { try { return (resignFolderCache_ = DriveApp.getFolderById(id)); } catch (e) { /* recreate below */ } }
+  const parents = cardFolder_().getParents();
+  const folder = (parents.hasNext() ? parents.next() : DriveApp.getRootFolder()).createFolder(RESIGN_FOLDER);
+  setSetting_('RESIGN_FOLDER_ID', folder.getId());
+  return (resignFolderCache_ = folder);
+}
+/** The resignation letter (photo or PDF from the phone), or null when none was sent. */
+function letterBlob_(dataUrl, id) {
+  if (!dataUrl) return null;
+  const mm = /^data:(image\/(jpeg|png)|application\/pdf);base64,(.+)$/.exec(String(dataUrl));
+  if (!mm) throw new Error('The letter must be a photo (JPG, PNG) or a PDF. / លិខិតត្រូវជារូបថត ឬ PDF។');
+  const ext = mm[1] === 'application/pdf' ? '.pdf' : mm[2] === 'png' ? '.png' : '.jpg';
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+  const blob = Utilities.newBlob(Utilities.base64Decode(mm[3]), mm[1], 'Resignation ' + id + ' ' + stamp + ext);
+  if (blob.getBytes().length > 8e6) throw new Error('The letter file is too big (max 8 MB). / ឯកសារធំពេក។');
+  return blob;
+}
 function photoDataUrl_(url) {
   const id = fileIdFromUrl_(url);
   if (!id) return null;
@@ -3622,15 +3644,28 @@ function teamInit_(p, user) {
   const photoUrl = e && m.col('Employee Photo') >= 0 ? String(m.values[i][m.col('Employee Photo')] || '') : '';
   const out = {
     can: teamCan_(user),
-    me: e ? { id: e.id, full: e.full, kh: e.kh, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), photo: p.noPhoto ? null : photoDataUrl_(photoUrl), hasPhoto: !!photoUrl } : null,
+    me: e ? { id: e.id, full: e.full, kh: e.kh, phone: e.phone, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), photo: p.noPhoto ? null : photoDataUrl_(photoUrl), hasPhoto: !!photoUrl } : null,
   };
   if (out.can) Object.assign(out, teamLists_());
   return out;
+}
+/** The Telegram column that goes with the line manager (OT approvals are sent there). */
+const teamTgCol_ = m => m.header.findIndex(h => { const k = String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); return k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0; });
+/** Line managers already in the employee list (Direct Manager / Approver column), one per name, with their Telegram. */
+function teamManagers_(m) {
+  if (m.c.mgr < 0) return [];
+  const tg = teamTgCol_(m), by = {};
+  m.values.forEach(r => {
+    const name = String(r[m.c.mgr] || '').trim(), t = tg >= 0 ? String(r[tg] || '').trim() : '';
+    if (name && (!by[name] || (!by[name].tg && t))) by[name] = { name, tg: t };
+  });
+  return Object.keys(by).sort((a, b) => a.localeCompare(b)).map(k => by[k]);
 }
 function teamLists_() {
   const r = recruitTab_();
   const uniq = a => a.filter((x, k) => x && a.indexOf(x) === k).sort();
   return {
+    managers: teamManagers_(master_(TEAM_COLS)),
     log: teamLogRead_(20),
     open: r.list.filter(v => v.status === 'Open').map(v => ({ reqId: v.reqId, title: v.title, join: v.join, wh: v.wh })),
     titles: uniq(r.list.map(v => v.title)),
@@ -3661,6 +3696,8 @@ function teamResign_(p, user) {
   const id = idText_(p.id), day = dateOfYmd_(p.lastDay), reason = String(p.reason || '').trim().slice(0, 200);
   if (!id) throw new Error('Choose the employee. / សូមជ្រើសរើសបុគ្គលិក។');
   if (!day) throw new Error('Last working day is required. / សូមបញ្ចូលថ្ងៃធ្វើការចុងក្រោយ។');
+  const letter = letterBlob_(p.letter, id);
+  const letterUrl = letter ? 'https://drive.google.com/file/d/' + resignFolder_().createFile(letter).getId() + '/view' : '';
   let name = '';
   const out = umRun_(() => {
     const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
@@ -3670,13 +3707,14 @@ function teamResign_(p, user) {
     name = e.full || e.kh;
     mPut_(m, i, 'Last Working Day', day);
     mPut_(m, i, 'Resign Reason', reason);
+    if (letterUrl) mPut_(m, i, 'Resignation Letter', letterUrl);
     mPut_(m, i, 'Off Note', 'Resigned, last day ' + ymdOf_(day) + ' (' + (user.name || user.email) + ')');
     const today = dateOfYmd_(ymdOf_(new Date()));
     const offNow = day.getTime() < today.getTime();
     if (offNow) { mPut_(m, i, 'Active', 'No'); mPut_(m, i, 'Off At', new Date()); }
     return { id, name, lastDay: ymdOf_(day), offNow };
   });
-  teamLog_(user, 'Resigned', id, name, 'Last day ' + out.lastDay + (reason ? ' · ' + reason : ''));
+  teamLog_(user, 'Resigned', id, name, 'Last day ' + out.lastDay + (reason ? ' · ' + reason : '') + (letterUrl ? ' · letter attached' : ''));
   return Object.assign(out, { log: teamLogRead_(20) });
 }
 
@@ -3696,8 +3734,15 @@ function teamNew_(p, user) {
     if (rowById_(m, id) >= 0) throw new Error('DUP: Employee ID ' + id + ' is already in the list. / លេខកាត ' + id + ' មានក្នុងបញ្ជីរួចហើយ។');
     const mi = myRow_(m, user);
     const me = mi >= 0 ? mRow_(m, m.values[mi], mi) : null;
-    mgr = String(p.mgr || '').trim().slice(0, 100) || (me ? me.full : '') || user.name || '';
+    // A line manager picked from the list keeps the Telegram that goes with them, so OT requests reach the right person.
+    const want = String(p.mgr || '').trim();
+    const list = want ? teamManagers_(m) : [];
+    const pick = list.find(x => x.name === want);
+    if (want && !pick && list.length) throw new Error('Choose the line manager from the list. / សូមជ្រើសរើសប្រធានផ្ទាល់ពីបញ្ជី។');
+    mgr = pick ? pick.name : want.slice(0, 100) || (me ? me.full : '') || user.name || '';
     const i = mNewRow_(m);
+    const tgc = teamTgCol_(m);
+    if (pick && pick.tg && tgc >= 0) mPut_(m, i, tgc, pick.tg);
     mPut_(m, i, m.c.id, id);
     if (m.c.full >= 0) mPut_(m, i, m.c.full, full);
     if (m.c.kh >= 0) mPut_(m, i, m.c.kh, kh);
@@ -3751,6 +3796,11 @@ function myInfoSave_(p, user) {
   const kh = p.kh === undefined ? undefined : String(p.kh || '').replace(/\s+/g, ' ').trim().slice(0, 100);
   if (full !== undefined && (!full || !/^[A-Z .'-]+$/.test(full))) throw new Error('Full name in English letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។');
   if (kh !== undefined && (!kh || !KH_ONLY.test(kh))) throw new Error('Full name in Khmer letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។');
+  // Staff may fix a wrong ID themselves (Kim, 26 Nov 2026), but never take an ID that is already someone else's.
+  const newId = p.id === undefined ? undefined : idText_(String(p.id).replace(/\D/g, ''));
+  if (newId !== undefined && (!/^\d{6}$/.test(newId) || +newId < EMP_ID_MIN || +newId > EMP_ID_MAX)) throw new Error('Employee ID must be 6 digits (' + EMP_ID_MIN + '–' + EMP_ID_MAX + '). / លេខកាតត្រូវមាន ៦ ខ្ទង់។');
+  const phone = p.phone === undefined ? undefined : String(p.phone).replace(/\D/g, '');
+  if (phone && !/^0?\d{8,10}$/.test(phone)) throw new Error('Phone number looks wrong (9 or 10 digits). / លេខទូរស័ព្ទមិនត្រឹមត្រូវ។');
   let blob = null;
   if (p.photo) {
     const mm = /^data:(image\/(jpeg|png));base64,(.+)$/.exec(String(p.photo));
@@ -3761,11 +3811,20 @@ function myInfoSave_(p, user) {
   const changes = [];
   let id = '', name = '';
   umRun_(() => {
-    const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
+    const m = master_(MASTER_ACCESS.concat(TEAM_COLS, ['Phone']));
     const i = myRow_(m, user);
     if (i < 0) throw new Error('NOTFOUND: Your Gmail is not linked to an Employee ID yet. Ask the admin. / Gmail របស់អ្នកមិនទាន់ភ្ជាប់នឹងលេខកាតទេ។');
     const e = mRow_(m, m.values[i], i);
     id = e.id; name = full || e.full;
+    if (newId !== undefined && newId !== e.id) {
+      const j = rowById_(m, newId);
+      if (j >= 0 && j !== i) throw new Error('DUP: Employee ID ' + newId + ' already belongs to ' + (mRow_(m, m.values[j], j).full || 'someone else') + '. Please tell your supervisor or the admin. / លេខកាតនេះជារបស់អ្នកផ្សេង។');
+      mPut_(m, i, m.c.id, newId); changes.push('Employee ID: ' + (e.id || '–') + ' → ' + newId); id = newId;
+    }
+    if (phone !== undefined && phone !== e.phone && m.col('Phone') >= 0) {
+      m.sh.getRange(i + 2, m.col('Phone') + 1).setNumberFormat('@').setValue(phone);   // text, so the leading 0 stays
+      changes.push('Phone: ' + (e.phone || '–') + ' → ' + (phone || '–'));
+    }
     if (full !== undefined && full !== e.full && m.c.full >= 0) { mPut_(m, i, m.c.full, full); changes.push('English name: ' + (e.full || '–') + ' → ' + full); }
     if (kh !== undefined && kh !== e.kh && m.c.kh >= 0) { mPut_(m, i, m.c.kh, kh); changes.push('Khmer name: ' + (e.kh || '–') + ' → ' + kh); }
     if (blob) {

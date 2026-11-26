@@ -294,3 +294,7 @@ input.in:focus, textarea.in:focus { border-color: var(--accent); box-shadow: 0 0
 .tm-photo .pic { width: 96px; height: 96px; flex: none; border-radius: 50%; overflow: hidden; background: var(--soft); display: flex; align-items: center; justify-content: center; font-size: 44px; }
 .tm-photo .pic img { width: 100%; height: 100%; object-fit: cover; }
 .tm-photo label.btn { cursor: pointer; }
+.tm-letter { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tm-letter img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line, #ddd); }
+.tm-letter .doc { font-size: 36px; }
+.tm-letter b { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }

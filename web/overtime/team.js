@@ -143,7 +143,7 @@
 
   // ---------- Resigned ----------
   const REASONS = [['Personal reason', 'មូលហេតុផ្ទាល់ខ្លួន'], ['New job', 'ការងារថ្មី'], ['Family', 'គ្រួសារ'], ['Health', 'សុខភាព'], ['Study', 'ការសិក្សា'], ['Contract ended', 'ផុតកិច្ចសន្យា'], ['Dismissed', 'បញ្ឈប់ពីការងារ'], ['Other', 'ផ្សេងៗ']];
-  const R = { step: 1, q: '', hits: null, emp: null, lastDay: '', reason: '', err: '', searching: false };
+  const R = { step: 1, q: '', hits: null, emp: null, lastDay: '', reason: '', letter: '', letterName: '', letterBusy: false, err: '', searching: false };
   function renderResign() {
     if (!signedIn()) return needSignIn(renderResign);
     if (R.step === 2) return renderResignCheck();
@@ -169,6 +169,12 @@
           <label class="f" for="rWhy">${t('មូលហេតុ', 'Reason')} <small class="hint">(${t('មិនចាំបាច់', 'optional')})</small></label>
           <select class="in" id="rWhy"><option value="">— ${t('ជ្រើសរើស', 'Choose')} —</option>${REASONS.map(r => `<option value="${esc(r[0])}"${R.reason === r[0] ? ' selected' : ''}>${esc(t(r[1], r[0]))}</option>`).join('')}</select>
         </div>
+        <div class="field">
+          <span class="f">${t('លិខិតលាឈប់', 'Resignation letter')} <small class="hint">(${t('រូបថត ឬ PDF', 'photo or PDF')})</small></span>
+          ${R.letter ? `<div class="tm-letter">${R.letter.indexOf('data:image') === 0 ? `<img src="${R.letter}" alt="">` : '<span class="doc">📄</span>'}<b>${esc(R.letterName)}</b><button type="button" class="btn" id="rLetterX">✕ ${t('ដកចេញ', 'Remove')}</button></div>`
+            : `<label class="btn" for="rLetter">${R.letterBusy ? '<span class="sp"></span>' : '📎'} ${t('ផ្ទុកលិខិតលាឈប់', 'Upload resignation letter')}</label>`}
+          <input type="file" id="rLetter" accept="image/*,application/pdf" hidden>
+        </div>
         ${R.err ? `<p class="msg-err" role="alert">${esc(R.err)}</p>` : ''}
       </section>
       <button type="button" class="btn ok big" id="rNext">${t('បន្ទាប់ ›', 'Next ›')}</button>`, renderResign, 'resign');
@@ -186,6 +192,21 @@
     q.onkeydown = e => { if (e.key === 'Enter') find(); };
     $$('.tm-hit').forEach(b => b.onclick = () => { R.emp = R.hits[+b.dataset.i]; keepResign(); renderResign(); });
     $('#rDay').onchange = keepResign; $('#rWhy').onchange = keepResign;
+    $('#rLetter').onchange = async ev => {
+      const f = ev.target.files[0]; if (!f) return;
+      keepResign(); R.err = '';
+      const pdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      if (!pdf && f.type.indexOf('image/') !== 0) { R.err = t('សូមជ្រើសរូបថត ឬ PDF។', 'Choose a photo or a PDF.'); return renderResign(); }
+      if (pdf && f.size > 5e6) { R.err = t('PDF ធំពេក (អតិបរមា 5 MB)។', 'The PDF is too big (max 5 MB).'); return renderResign(); }
+      R.letterBusy = true; renderResign();
+      try {
+        R.letter = pdf ? await new Promise((ok, bad) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).replace(/^data:[^;]*;/, 'data:application/pdf;')); fr.onerror = bad; fr.readAsDataURL(f); })
+          : await shrink(f, 1600);
+        R.letterName = f.name || (pdf ? 'letter.pdf' : 'letter.jpg');
+      } catch (e) { R.err = t('មិនអាចអានឯកសារបានទេ។', 'Could not read that file.'); }
+      R.letterBusy = false; renderResign();
+    };
+    if ($('#rLetterX')) $('#rLetterX').onclick = () => { keepResign(); R.letter = ''; R.letterName = ''; renderResign(); };
     $('#tmBack').onclick = () => renderTeam();
     $('#rNext').onclick = () => {
       keepResign();
@@ -202,7 +223,7 @@
       <section class="card">
         <h2>${t('ពិនិត្យមុនរក្សាទុក', 'Check before saving')}</h2>
         ${kv([[t('លេខកាត', 'Employee ID'), e.id], [t('ឈ្មោះ', 'Name'), e.full], [t('ឈ្មោះខ្មែរ', 'Khmer name'), e.kh], [t('ផ្នែក', 'Department'), e.dept],
-          [t('ថ្ងៃធ្វើការចុងក្រោយ', 'Last working day'), showDay(R.lastDay)], [t('មូលហេតុ', 'Reason'), why ? t(why[1], why[0]) : '']])}
+          [t('ថ្ងៃធ្វើការចុងក្រោយ', 'Last working day'), showDay(R.lastDay)], [t('មូលហេតុ', 'Reason'), why ? t(why[1], why[0]) : ''], [t('លិខិតលាឈប់', 'Resignation letter'), R.letter ? '📎 ' + R.letterName : t('គ្មាន', 'None')]])}
         <div class="alert warn">${past ? t('ថ្ងៃចុងក្រោយបានកន្លងផុតហើយ៖ គណនីនឹងត្រូវបិទភ្លាមៗក្នុងគ្រប់កម្មវិធី។', 'The last day has passed: access to every app is switched off now.')
           : t('គណនីនឹងត្រូវបិទដោយស្វ័យប្រវត្តិ បន្ទាប់ពីថ្ងៃធ្វើការចុងក្រោយ។', 'Access to every app is switched off by itself after the last working day.')}</div>
         ${R.err ? `<p class="msg-err" role="alert">${esc(R.err)}</p>` : ''}
@@ -213,9 +234,9 @@
     $('#rSave').onclick = async () => {
       const b = $('#rSave'); busyBtn(b, true);
       try {
-        const r = await api('teamResign', { id: e.id, lastDay: R.lastDay, reason: R.reason });
+        const r = await api('teamResign', { id: e.id, lastDay: R.lastDay, reason: R.reason, letter: R.letter });
         keep({ log: r.log });
-        Object.assign(R, { step: 1, q: '', hits: null, emp: null, lastDay: '', reason: '', err: '' });
+        Object.assign(R, { step: 1, q: '', hits: null, emp: null, lastDay: '', reason: '', letter: '', letterName: '', err: '' });
         toast('✅ ' + t('បានរក្សាទុក៖ ' + r.id + ' លាឈប់', 'Saved: ' + r.id + ' resigned'));
         renderTeam();
       } catch (err) { R.err = err.message; busyBtn(b, false); renderResignCheck(); }
@@ -227,7 +248,8 @@
   function renderNew() {
     if (!signedIn()) return needSignIn(renderNew);
     if (N.step === 2) return renderNewCheck();
-    if (!N.mgr && D && D.me) N.mgr = D.me.full || '';
+    const mgrs = (D && D.managers) || [];
+    if (!N.mgr && !N.mgrPicked && D && D.me && mgrs.some(x => x.name === D.me.full)) N.mgr = D.me.full;
     const open = (D && D.open) || [];
     show(`${backBtn('tmBack')}
       ${steps(1)}
@@ -246,8 +268,8 @@
           <input class="in" id="nKh" autocomplete="off" maxlength="100" placeholder="ចាន់ ស្រីនេត" value="${esc(N.kh)}" lang="km" data-need>
         </div>
         <div class="field">
-          <label class="f" for="nMgr">${t('ប្រធានផ្ទាល់', 'Line manager')}</label>
-          <input class="in" id="nMgr" autocomplete="off" maxlength="100" value="${esc(N.mgr)}">
+          <label class="f" for="nMgr">${t('ប្រធានផ្ទាល់', 'Line manager')} ${req}</label>
+          ${!mgrs.length ? `<input class="in" id="nMgr" autocomplete="off" maxlength="100" value="${esc(N.mgr)}">` : `<select class="in" id="nMgr" data-need><option value="">— ${t('ជ្រើសរើស', 'Choose')} —</option>${mgrs.map(x => `<option value="${esc(x.name)}"${N.mgr === x.name ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`}
           <p class="hint">${t('ផ្នែក និងមុខងារ យកតាមរបស់អ្នក។', 'Department and function are copied from yours.')}</p>
         </div>
         ${open.length ? `<div class="field">
@@ -263,7 +285,8 @@
       keepNew();
       N.err = !/^\d{6}$/.test(N.id) ? t('លេខកាតត្រូវមាន ៦ ខ្ទង់។', 'Employee ID must be 6 digits.')
         : !N.full || !EN_ONLY.test(N.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter the full name in English letters.')
-        : !N.kh || !KH_ONLY.test(N.kh) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។', 'Enter the full name in Khmer letters.') : '';
+        : !N.kh || !KH_ONLY.test(N.kh) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។', 'Enter the full name in Khmer letters.')
+        : !N.mgr && mgrs.length ? t('សូមជ្រើសរើសប្រធានផ្ទាល់។', 'Choose the line manager.') : '';
       if (N.err) return renderNew();
       const b = $('#nNext'); busyBtn(b, true);
       try {
@@ -277,7 +300,7 @@
   }
   function keepNew() {
     const v = id => { const el = $('#' + id); return el ? el.value.replace(/\s+/g, ' ').trim() : undefined; };
-    if ($('#nId')) { N.id = v('nId').replace(/\D/g, ''); N.full = v('nFull').toUpperCase(); N.kh = v('nKh'); N.mgr = v('nMgr'); N.reqId = v('nReq') || ''; }
+    if ($('#nId')) { N.id = v('nId').replace(/\D/g, ''); N.full = v('nFull').toUpperCase(); N.kh = v('nKh'); N.mgr = v('nMgr'); N.mgrPicked = true; N.reqId = v('nReq') || ''; }
   }
   function renderNewCheck() {
     const vac = ((D && D.open) || []).find(x => x.reqId === N.reqId);
@@ -296,8 +319,8 @@
       const b = $('#nSave'); busyBtn(b, true);
       try {
         const r = await api('teamNew', { id: N.id, full: N.full, kh: N.kh, mgr: N.mgr, reqId: N.reqId });
-        keep({ log: r.log, open: r.open, titles: r.titles, warehouses: r.warehouses });
-        Object.assign(N, { step: 1, id: '', full: '', kh: '', mgr: '', reqId: '', err: '', ok: '' });
+        keep({ log: r.log, open: r.open, titles: r.titles, warehouses: r.warehouses, managers: r.managers || (D && D.managers) });
+        Object.assign(N, { step: 1, id: '', full: '', kh: '', mgr: '', mgrPicked: false, reqId: '', err: '', ok: '' });
         toast('✅ ' + t('បានបន្ថែម ' + r.id + ' ' + r.kh, 'Added ' + r.id + ' ' + r.full));
         renderTeam();
       } catch (err) { N.err = err.message; busyBtn(b, false); renderNewCheck(); }
@@ -374,7 +397,7 @@
   }
 
   // ---------- My info (everyone) ----------
-  const I = { full: null, kh: null, photo: null, err: '' };
+  const I = { id: null, full: null, kh: null, phone: null, photo: null, err: '' };
   function renderInfo() {
     if (!signedIn()) return needSignIn(renderInfo);
     const me = D && D.me;
@@ -385,7 +408,7 @@
       if (!D || loading) refresh().then(() => { if (scr === 'info') renderInfo(); });
       return;
     }
-    if (I.full === null) { I.full = me.full || ''; I.kh = me.kh || ''; }
+    if (I.full === null) { I.id = me.id || ''; I.full = me.full || ''; I.kh = me.kh || ''; I.phone = me.phone || ''; }
     const pic = I.photo || get(PHOTO);
     show(`${backBtn('tmBack')}
       <section class="card">
@@ -396,9 +419,9 @@
           <input type="file" id="iPic" accept="image/*" hidden>
         </div>
         <div class="field">
-          <label class="f" for="iId">${t('លេខកាត', 'Employee ID')}</label>
-          <input class="in locked" id="iId" value="${esc(me.id)}" readonly aria-readonly="true">
-          <p class="hint">🔒 ${t('លេខកាតខុស? សូមប្រាប់ Supervisor ឬ Admin។', 'Wrong ID? Please tell your supervisor or the admin.')}</p>
+          <label class="f" for="iId">${t('លេខកាត', 'Employee ID')} ${req}</label>
+          <input class="in" id="iId" inputmode="numeric" maxlength="6" autocomplete="off" value="${esc(I.id)}" data-need>
+          <p class="hint">${t('លេខកាតខុស? សូមវាយលេខត្រឹមត្រូវ ហើយចុចរក្សាទុក។', 'Wrong ID? Type the correct one and press Save.')}</p>
         </div>
         <div class="field">
           <label class="f" for="iFull">${t('ឈ្មោះពេញ (អក្សរឡាតាំង)', 'Full name (English)')} ${req}</label>
@@ -408,12 +431,17 @@
           <label class="f" for="iKh">${t('ឈ្មោះពេញ (ខ្មែរ)', 'Full name (Khmer)')} ${req}</label>
           <input class="in" id="iKh" autocomplete="off" maxlength="100" value="${esc(I.kh)}" lang="km" data-need>
         </div>
+        <div class="field">
+          <label class="f" for="iPhone">${t('លេខទូរស័ព្ទ', 'Phone number')}</label>
+          <input class="in" id="iPhone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="${esc(t('ឧ. 012345678', 'e.g. 012345678'))}" value="${esc(I.phone)}">
+        </div>
         ${I.err ? `<p class="msg-err" role="alert">${esc(I.err)}</p>` : ''}
       </section>
       <button type="button" class="btn ok big" id="iSave">${t('រក្សាទុក', 'Save')}</button>`, renderInfo, 'info');
     liveNeed();
-    const keepI = () => { I.full = $('#iFull').value.replace(/\s+/g, ' ').trim().toUpperCase(); I.kh = $('#iKh').value.replace(/\s+/g, ' ').trim(); };
-    $('#tmBack').onclick = () => { Object.assign(I, { full: null, kh: null, photo: null, err: '' }); H.back(); };
+    const keepI = () => { I.id = $('#iId').value.replace(/\D/g, ''); I.phone = $('#iPhone').value.replace(/\D/g, ''); I.full = $('#iFull').value.replace(/\s+/g, ' ').trim().toUpperCase(); I.kh = $('#iKh').value.replace(/\s+/g, ' ').trim(); };
+    $('#tmBack').onclick = () => { Object.assign(I, { id: null, full: null, kh: null, phone: null, photo: null, err: '' }); H.back(); };
+    ['#iId', '#iPhone'].forEach(k => $(k).addEventListener('input', e => { const v = e.target.value.replace(/\D/g, ''); if (v !== e.target.value) e.target.value = v; }));   // numbers only
     $('#iPic').onchange = async e => {
       const f = e.target.files && e.target.files[0];
       if (!f) return;
@@ -423,10 +451,14 @@
     };
     $('#iSave').onclick = async () => {
       keepI();
-      I.err = !I.full || !EN_ONLY.test(I.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter your full name in English letters.')
+      I.err = !/^\d{6}$/.test(I.id) ? t('លេខកាតត្រូវមាន ៦ ខ្ទង់។', 'Employee ID must be 6 digits.')
+        : I.phone && !/^0?\d{8,10}$/.test(I.phone) ? t('លេខទូរស័ព្ទមិនត្រឹមត្រូវ (៩ ឬ ១០ ខ្ទង់)។', 'Phone number looks wrong (9 or 10 digits).')
+        : !I.full || !EN_ONLY.test(I.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter your full name in English letters.')
         : !I.kh || !KH_ONLY.test(I.kh) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។', 'Enter your full name in Khmer letters.') : '';
       if (I.err) return renderInfo();
       const p = {};
+      if (I.id !== me.id) p.id = I.id;
+      if (I.phone !== (me.phone || '')) p.phone = I.phone;
       if (I.full !== me.full) p.full = I.full;
       if (I.kh !== me.kh) p.kh = I.kh;
       if (I.photo) p.photo = I.photo;
@@ -435,7 +467,7 @@
       try {
         await api('myInfoSave', p);
         if (I.photo) set(PHOTO, I.photo);
-        keep({ me: Object.assign({}, me, { full: I.full, kh: I.kh, hasPhoto: me.hasPhoto || !!I.photo }) });
+        keep({ me: Object.assign({}, me, { id: I.id, phone: I.phone, full: I.full, kh: I.kh, hasPhoto: me.hasPhoto || !!I.photo }) });
         Object.assign(I, { full: null, kh: null, photo: null, err: '' });
         toast('✅ ' + t('បានរក្សាទុក', 'Saved'));
         H.back();
