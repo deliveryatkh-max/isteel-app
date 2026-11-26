@@ -3539,6 +3539,8 @@ const EMP_PHOTO_FOLDER = 'Employee Photos';
 const RESIGN_FOLDER = 'Resignation Letters';
 const KH_ONLY = /^[ក-៿᧠-᧿\s]+$/;
 
+/** Placeholder rows in the employee list ("Vacancy …") are not people (Kim, 26 Nov 2026). */
+const isVacancy_ = s => /^\s*vacan/i.test(String(s || ''));
 const teamCan_ = user => user.role === 'admin' || user.job === 'supervisor';
 function needTeam_(user) {
   if (!teamCan_(user)) throw new Error('NOACCESS: Supervisors and admins only. / សម្រាប់តែ Supervisor និង Admin ប៉ុណ្ណោះ។');
@@ -3657,7 +3659,7 @@ function teamManagers_(m) {
   const tg = teamTgCol_(m), by = {};
   m.values.forEach(r => {
     const name = String(r[m.c.mgr] || '').trim(), t = tg >= 0 ? String(r[tg] || '').trim() : '';
-    if (name && (!by[name] || (!by[name].tg && t))) by[name] = { name, tg: t };
+    if (name && !isVacancy_(name) && (!by[name] || (!by[name].tg && t))) by[name] = { name, tg: t };
   });
   return Object.keys(by).sort((a, b) => a.localeCompare(b)).map(k => by[k]);
 }
@@ -3682,7 +3684,7 @@ function teamFind_(p, user) {
   const lwd = m.col('Last Working Day');
   const list = [];
   rowsOf_(m).some(e => {
-    if (!e.id) return false;
+    if (!e.id || isVacancy_(e.full)) return false;
     if ((e.id + ' ' + e.full + ' ' + e.kh).toLowerCase().indexOf(q) < 0) return false;
     list.push({ id: e.id, full: e.full, kh: e.kh, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), lastDay: lwd >= 0 ? ymdCell_(m.values[e.i][lwd]) : '' });
     return list.length >= 20;
