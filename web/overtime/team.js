@@ -397,7 +397,7 @@
   }
 
   // ---------- My info (everyone) ----------
-  const I = { full: null, kh: null, photo: null, err: '' };
+  const I = { id: null, full: null, kh: null, phone: null, photo: null, err: '' };
   function renderInfo() {
     if (!signedIn()) return needSignIn(renderInfo);
     const me = D && D.me;
@@ -408,7 +408,7 @@
       if (!D || loading) refresh().then(() => { if (scr === 'info') renderInfo(); });
       return;
     }
-    if (I.full === null) { I.full = me.full || ''; I.kh = me.kh || ''; }
+    if (I.full === null) { I.id = me.id || ''; I.full = me.full || ''; I.kh = me.kh || ''; I.phone = me.phone || ''; }
     const pic = I.photo || get(PHOTO);
     show(`${backBtn('tmBack')}
       <section class="card">
@@ -419,9 +419,9 @@
           <input type="file" id="iPic" accept="image/*" hidden>
         </div>
         <div class="field">
-          <label class="f" for="iId">${t('លេខកាត', 'Employee ID')}</label>
-          <input class="in locked" id="iId" value="${esc(me.id)}" readonly aria-readonly="true">
-          <p class="hint">🔒 ${t('លេខកាតខុស? សូមប្រាប់ Supervisor ឬ Admin។', 'Wrong ID? Please tell your supervisor or the admin.')}</p>
+          <label class="f" for="iId">${t('លេខកាត', 'Employee ID')} ${req}</label>
+          <input class="in" id="iId" inputmode="numeric" maxlength="6" autocomplete="off" value="${esc(I.id)}" data-need>
+          <p class="hint">${t('លេខកាតខុស? សូមវាយលេខត្រឹមត្រូវ ហើយចុចរក្សាទុក។', 'Wrong ID? Type the correct one and press Save.')}</p>
         </div>
         <div class="field">
           <label class="f" for="iFull">${t('ឈ្មោះពេញ (អក្សរឡាតាំង)', 'Full name (English)')} ${req}</label>
@@ -431,12 +431,17 @@
           <label class="f" for="iKh">${t('ឈ្មោះពេញ (ខ្មែរ)', 'Full name (Khmer)')} ${req}</label>
           <input class="in" id="iKh" autocomplete="off" maxlength="100" value="${esc(I.kh)}" lang="km" data-need>
         </div>
+        <div class="field">
+          <label class="f" for="iPhone">${t('លេខទូរស័ព្ទ', 'Phone number')}</label>
+          <input class="in" id="iPhone" type="tel" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="${esc(t('ឧ. 012345678', 'e.g. 012345678'))}" value="${esc(I.phone)}">
+        </div>
         ${I.err ? `<p class="msg-err" role="alert">${esc(I.err)}</p>` : ''}
       </section>
       <button type="button" class="btn ok big" id="iSave">${t('រក្សាទុក', 'Save')}</button>`, renderInfo, 'info');
     liveNeed();
-    const keepI = () => { I.full = $('#iFull').value.replace(/\s+/g, ' ').trim().toUpperCase(); I.kh = $('#iKh').value.replace(/\s+/g, ' ').trim(); };
-    $('#tmBack').onclick = () => { Object.assign(I, { full: null, kh: null, photo: null, err: '' }); H.back(); };
+    const keepI = () => { I.id = $('#iId').value.replace(/\D/g, ''); I.phone = $('#iPhone').value.replace(/\D/g, ''); I.full = $('#iFull').value.replace(/\s+/g, ' ').trim().toUpperCase(); I.kh = $('#iKh').value.replace(/\s+/g, ' ').trim(); };
+    $('#tmBack').onclick = () => { Object.assign(I, { id: null, full: null, kh: null, phone: null, photo: null, err: '' }); H.back(); };
+    ['#iId', '#iPhone'].forEach(k => $(k).addEventListener('input', e => { const v = e.target.value.replace(/\D/g, ''); if (v !== e.target.value) e.target.value = v; }));   // numbers only
     $('#iPic').onchange = async e => {
       const f = e.target.files && e.target.files[0];
       if (!f) return;
@@ -446,10 +451,14 @@
     };
     $('#iSave').onclick = async () => {
       keepI();
-      I.err = !I.full || !EN_ONLY.test(I.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter your full name in English letters.')
+      I.err = !/^\d{6}$/.test(I.id) ? t('លេខកាតត្រូវមាន ៦ ខ្ទង់។', 'Employee ID must be 6 digits.')
+        : I.phone && !/^0?\d{8,10}$/.test(I.phone) ? t('លេខទូរស័ព្ទមិនត្រឹមត្រូវ (៩ ឬ ១០ ខ្ទង់)។', 'Phone number looks wrong (9 or 10 digits).')
+        : !I.full || !EN_ONLY.test(I.full) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។', 'Enter your full name in English letters.')
         : !I.kh || !KH_ONLY.test(I.kh) ? t('សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។', 'Enter your full name in Khmer letters.') : '';
       if (I.err) return renderInfo();
       const p = {};
+      if (I.id !== me.id) p.id = I.id;
+      if (I.phone !== (me.phone || '')) p.phone = I.phone;
       if (I.full !== me.full) p.full = I.full;
       if (I.kh !== me.kh) p.kh = I.kh;
       if (I.photo) p.photo = I.photo;
@@ -458,7 +467,7 @@
       try {
         await api('myInfoSave', p);
         if (I.photo) set(PHOTO, I.photo);
-        keep({ me: Object.assign({}, me, { full: I.full, kh: I.kh, hasPhoto: me.hasPhoto || !!I.photo }) });
+        keep({ me: Object.assign({}, me, { id: I.id, phone: I.phone, full: I.full, kh: I.kh, hasPhoto: me.hasPhoto || !!I.photo }) });
         Object.assign(I, { full: null, kh: null, photo: null, err: '' });
         toast('✅ ' + t('បានរក្សាទុក', 'Saved'));
         H.back();

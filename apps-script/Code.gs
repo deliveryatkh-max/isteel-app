@@ -3644,7 +3644,7 @@ function teamInit_(p, user) {
   const photoUrl = e && m.col('Employee Photo') >= 0 ? String(m.values[i][m.col('Employee Photo')] || '') : '';
   const out = {
     can: teamCan_(user),
-    me: e ? { id: e.id, full: e.full, kh: e.kh, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), photo: p.noPhoto ? null : photoDataUrl_(photoUrl), hasPhoto: !!photoUrl } : null,
+    me: e ? { id: e.id, full: e.full, kh: e.kh, phone: e.phone, mgr: e.mgr, dept: deptKey_(e.dept, e.fn), photo: p.noPhoto ? null : photoDataUrl_(photoUrl), hasPhoto: !!photoUrl } : null,
   };
   if (out.can) Object.assign(out, teamLists_());
   return out;
@@ -3796,6 +3796,11 @@ function myInfoSave_(p, user) {
   const kh = p.kh === undefined ? undefined : String(p.kh || '').replace(/\s+/g, ' ').trim().slice(0, 100);
   if (full !== undefined && (!full || !/^[A-Z .'-]+$/.test(full))) throw new Error('Full name in English letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរឡាតាំង។');
   if (kh !== undefined && (!kh || !KH_ONLY.test(kh))) throw new Error('Full name in Khmer letters is required. / សូមបញ្ចូលឈ្មោះជាអក្សរខ្មែរ។');
+  // Staff may fix a wrong ID themselves (Kim, 26 Nov 2026), but never take an ID that is already someone else's.
+  const newId = p.id === undefined ? undefined : idText_(String(p.id).replace(/\D/g, ''));
+  if (newId !== undefined && (!/^\d{6}$/.test(newId) || +newId < EMP_ID_MIN || +newId > EMP_ID_MAX)) throw new Error('Employee ID must be 6 digits (' + EMP_ID_MIN + '–' + EMP_ID_MAX + '). / លេខកាតត្រូវមាន ៦ ខ្ទង់។');
+  const phone = p.phone === undefined ? undefined : String(p.phone).replace(/\D/g, '');
+  if (phone && !/^0?\d{8,10}$/.test(phone)) throw new Error('Phone number looks wrong (9 or 10 digits). / លេខទូរស័ព្ទមិនត្រឹមត្រូវ។');
   let blob = null;
   if (p.photo) {
     const mm = /^data:(image\/(jpeg|png));base64,(.+)$/.exec(String(p.photo));
@@ -3806,11 +3811,20 @@ function myInfoSave_(p, user) {
   const changes = [];
   let id = '', name = '';
   umRun_(() => {
-    const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
+    const m = master_(MASTER_ACCESS.concat(TEAM_COLS, ['Phone']));
     const i = myRow_(m, user);
     if (i < 0) throw new Error('NOTFOUND: Your Gmail is not linked to an Employee ID yet. Ask the admin. / Gmail របស់អ្នកមិនទាន់ភ្ជាប់នឹងលេខកាតទេ។');
     const e = mRow_(m, m.values[i], i);
     id = e.id; name = full || e.full;
+    if (newId !== undefined && newId !== e.id) {
+      const j = rowById_(m, newId);
+      if (j >= 0 && j !== i) throw new Error('DUP: Employee ID ' + newId + ' already belongs to ' + (mRow_(m, m.values[j], j).full || 'someone else') + '. Please tell your supervisor or the admin. / លេខកាតនេះជារបស់អ្នកផ្សេង។');
+      mPut_(m, i, m.c.id, newId); changes.push('Employee ID: ' + (e.id || '–') + ' → ' + newId); id = newId;
+    }
+    if (phone !== undefined && phone !== e.phone && m.col('Phone') >= 0) {
+      m.sh.getRange(i + 2, m.col('Phone') + 1).setNumberFormat('@').setValue(phone);   // text, so the leading 0 stays
+      changes.push('Phone: ' + (e.phone || '–') + ' → ' + (phone || '–'));
+    }
     if (full !== undefined && full !== e.full && m.c.full >= 0) { mPut_(m, i, m.c.full, full); changes.push('English name: ' + (e.full || '–') + ' → ' + full); }
     if (kh !== undefined && kh !== e.kh && m.c.kh >= 0) { mPut_(m, i, m.c.kh, kh); changes.push('Khmer name: ' + (e.kh || '–') + ' → ' + kh); }
     if (blob) {
