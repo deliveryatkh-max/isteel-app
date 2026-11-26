@@ -507,7 +507,7 @@
       const w = (r.date || '') + ' ' + (r.time || ''); if (w > x.last) x.last = w;
     });
     const rows = Object.keys(by).map(k => by[k]).map(x => Object.assign(x, { open: round3(x.open), qin: round3(x.qin), qout: round3(x.qout), net: round3(x.qin - x.qout), bal: round3(x.open + x.qin - x.qout), nm: Object.keys(x.mats).length }))
-      .filter(x => x.moves || x.bal).sort((a, b) => b.moves - a.moves || a.bin.localeCompare(b.bin));
+      .filter(x => x.moves)   // only bins that moved in the dates (Kim, 26 Nov).sort((a, b) => b.moves - a.moves || a.bin.localeCompare(b.bin));
     const sumU = f => { const u = {}; rows.forEach(x => { u[x.uom] = (u[x.uom] || 0) + x[f]; });
       return Object.keys(u).sort().filter(k => u[k] || (f !== 'qin' && f !== 'qout')).map(k => `${f === 'qin' ? '+' : f === 'qout' ? '−' : ''}${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
     const tIn = rows.reduce((a, x) => a + x.qin, 0), tOut = rows.reduce((a, x) => a + x.qout, 0), tMv = rows.reduce((a, x) => a + x.moves, 0);
