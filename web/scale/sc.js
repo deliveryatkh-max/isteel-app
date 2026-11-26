@@ -2359,7 +2359,7 @@
     const f = (id, label, v) => `<div class="field"><label class="f">${label}</label><div><input class="in" id="${id}" autocomplete="off" value="${esc(v || '')}"></div></div>`;
     $('#tMore').innerHTML = `<div class="card soft mt"><div class="fgrid">
       ${(x.status === 'Open' && isAdmin()) || x.status === 'Done' ? f('ePlate', t('លេខឡាន', 'Truck No'), x.plate) : ''}${f('eCompany', t('ក្រុមហ៊ុនឡាន', 'Truck company'), x.company)}${f('eCustomer', t('អតិថិជន', 'Customer'), x.customer)}${f('eItem', t('ទំនិញ', 'Item'), x.item)}
-      ${f('eDn', 'DN No (, )', (x.dns || []).join(', '))}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eLoad', t('កន្លែងផ្ទុក', 'Loading place'), x.load || '')}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
+      ${canEdit() || isAdmin() ? f('eDn', 'DN No (, )', (x.dns || []).join(', ')) : `<div class="field"><label class="f">DN No 🔒</label><div><input class="in locked" id="eDn" readonly value="${esc((x.dns || []).join(', '))}"></div></div>`}${f('eDriver', t('អ្នកបើកបរ', 'Driver'), x.driver)}${f('eLoad', t('កន្លែងផ្ទុក', 'Loading place'), x.load || '')}${f('eDest', t('គោលដៅ', 'Destination'), x.dest)}
       ${f('eNote', t('កំណត់ចំណាំ', 'Note'), x.note)}${f('eWhy', t('មូលហេតុនៃការកែ', 'Reason for the change'), '')}</div>
       <div class="hint">${t('ទម្ងន់មិនអាចកែបានទេ។ ការកែទាំងអស់ត្រូវកត់ត្រាក្នុង Scale Log។', 'Weights cannot be changed here. Every change is written to the Scale Log.')}</div>
       <div class="btns mt"><button type="button" class="btn ok" id="eSave">💾 ${t('រក្សាទុក', 'Save')}</button></div></div>`;

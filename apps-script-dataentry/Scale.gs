@@ -490,6 +490,9 @@ function scSave_(ops, user) {
     const gross = both ? Math.max(w1, w2) : '', tare = both ? Math.min(w1, w2) : '', net = both ? gross - tare : '';
     const dns = (Array.isArray(p.dns) ? p.dns : String(p.dns || '').split(/[,\s]+/)).map(s => clip_(s, 30).replace(/[^0-9A-Za-z\-\/]/g, '')).filter(Boolean);
     const uniq = dns.filter((d, i) => dns.indexOf(d) === i).slice(0, 30);
+    // 24 h editors can't change DN numbers (Kim, 26 Nov 2026)
+    if (old && old[1] !== 'Open' && !(user.admin || user.reviewer) && uniq.join(', ') !== String(old[7] || '').split(/[,\s]+/).filter(Boolean).join(', '))
+      fail_('DENIED', 'DN numbers can only be changed by a Reviewer or Admin.', 'លេខ DN អាចកែបានតែដោយ Reviewer ឬ Admin ប៉ុណ្ណោះ។');
     // A DN already on another ticket can't be used again (Kim, 9 Nov 2026)
     if (status !== 'Void') {
       if (!dnIdx) dnIdx = scDnIndex_(rows);
