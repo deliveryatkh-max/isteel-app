@@ -3534,8 +3534,9 @@ const TEAM_LOG = 'Team Changes';
 const TEAM_LOG_COLS = ['Time', 'By', 'Type', 'Employee ID', 'Name', 'Detail'];
 const RECRUIT_TAB = 'Recruitment';
 const RECRUIT_COLS = ['Request ID', 'Vacancy Title', 'Expected Join Date', 'Warehouse', 'Status', 'Added By', 'Added At', 'Filled By ID', 'Filled At'];
-const TEAM_COLS = ['Last Working Day', 'Resign Reason', 'Employee Photo'];
+const TEAM_COLS = ['Last Working Day', 'Resign Reason', 'Resignation Letter', 'Employee Photo'];
 const EMP_PHOTO_FOLDER = 'Employee Photos';
+const RESIGN_FOLDER = 'Resignation Letters';
 const KH_ONLY = /^[ក-៿᧠-᧿\s]+$/;
 
 const teamCan_ = user => user.role === 'admin' || user.job === 'supervisor';
@@ -3607,6 +3608,27 @@ function empPhotoFolder_() {
   setSetting_('EMP_PHOTO_FOLDER_ID', folder.getId());
   return (empPhotoFolderCache_ = folder);
 }
+let resignFolderCache_ = null;
+function resignFolder_() {
+  if (resignFolderCache_) return resignFolderCache_;
+  const id = getSetting_('RESIGN_FOLDER_ID');
+  if (id) { try { return (resignFolderCache_ = DriveApp.getFolderById(id)); } catch (e) { /* recreate below */ } }
+  const parents = cardFolder_().getParents();
+  const folder = (parents.hasNext() ? parents.next() : DriveApp.getRootFolder()).createFolder(RESIGN_FOLDER);
+  setSetting_('RESIGN_FOLDER_ID', folder.getId());
+  return (resignFolderCache_ = folder);
+}
+/** The resignation letter (photo or PDF from the phone), or null when none was sent. */
+function letterBlob_(dataUrl, id) {
+  if (!dataUrl) return null;
+  const mm = /^data:(image\/(jpeg|png)|application\/pdf);base64,(.+)$/.exec(String(dataUrl));
+  if (!mm) throw new Error('The letter must be a photo (JPG, PNG) or a PDF. / លិខិតត្រូវជារូបថត ឬ PDF។');
+  const ext = mm[1] === 'application/pdf' ? '.pdf' : mm[2] === 'png' ? '.png' : '.jpg';
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd-HHmmss');
+  const blob = Utilities.newBlob(Utilities.base64Decode(mm[3]), mm[1], 'Resignation ' + id + ' ' + stamp + ext);
+  if (blob.getBytes().length > 8e6) throw new Error('The letter file is too big (max 8 MB). / ឯកសារធំពេក។');
+  return blob;
+}
 function photoDataUrl_(url) {
   const id = fileIdFromUrl_(url);
   if (!id) return null;
@@ -3627,10 +3649,23 @@ function teamInit_(p, user) {
   if (out.can) Object.assign(out, teamLists_());
   return out;
 }
+/** The Telegram column that goes with the line manager (OT approvals are sent there). */
+const teamTgCol_ = m => m.header.findIndex(h => { const k = String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); return k.indexOf('telegram') >= 0 && k.indexOf('chat') < 0; });
+/** Line managers already in the employee list (Direct Manager / Approver column), one per name, with their Telegram. */
+function teamManagers_(m) {
+  if (m.c.mgr < 0) return [];
+  const tg = teamTgCol_(m), by = {};
+  m.values.forEach(r => {
+    const name = String(r[m.c.mgr] || '').trim(), t = tg >= 0 ? String(r[tg] || '').trim() : '';
+    if (name && (!by[name] || (!by[name].tg && t))) by[name] = { name, tg: t };
+  });
+  return Object.keys(by).sort((a, b) => a.localeCompare(b)).map(k => by[k]);
+}
 function teamLists_() {
   const r = recruitTab_();
   const uniq = a => a.filter((x, k) => x && a.indexOf(x) === k).sort();
   return {
+    managers: teamManagers_(master_(TEAM_COLS)),
     log: teamLogRead_(20),
     open: r.list.filter(v => v.status === 'Open').map(v => ({ reqId: v.reqId, title: v.title, join: v.join, wh: v.wh })),
     titles: uniq(r.list.map(v => v.title)),
@@ -3661,6 +3696,8 @@ function teamResign_(p, user) {
   const id = idText_(p.id), day = dateOfYmd_(p.lastDay), reason = String(p.reason || '').trim().slice(0, 200);
   if (!id) throw new Error('Choose the employee. / សូមជ្រើសរើសបុគ្គលិក។');
   if (!day) throw new Error('Last working day is required. / សូមបញ្ចូលថ្ងៃធ្វើការចុងក្រោយ។');
+  const letter = letterBlob_(p.letter, id);
+  const letterUrl = letter ? 'https://drive.google.com/file/d/' + resignFolder_().createFile(letter).getId() + '/view' : '';
   let name = '';
   const out = umRun_(() => {
     const m = master_(MASTER_ACCESS.concat(TEAM_COLS));
@@ -3670,13 +3707,14 @@ function teamResign_(p, user) {
     name = e.full || e.kh;
     mPut_(m, i, 'Last Working Day', day);
     mPut_(m, i, 'Resign Reason', reason);
+    if (letterUrl) mPut_(m, i, 'Resignation Letter', letterUrl);
     mPut_(m, i, 'Off Note', 'Resigned, last day ' + ymdOf_(day) + ' (' + (user.name || user.email) + ')');
     const today = dateOfYmd_(ymdOf_(new Date()));
     const offNow = day.getTime() < today.getTime();
     if (offNow) { mPut_(m, i, 'Active', 'No'); mPut_(m, i, 'Off At', new Date()); }
     return { id, name, lastDay: ymdOf_(day), offNow };
   });
-  teamLog_(user, 'Resigned', id, name, 'Last day ' + out.lastDay + (reason ? ' · ' + reason : ''));
+  teamLog_(user, 'Resigned', id, name, 'Last day ' + out.lastDay + (reason ? ' · ' + reason : '') + (letterUrl ? ' · letter attached' : ''));
   return Object.assign(out, { log: teamLogRead_(20) });
 }
 
@@ -3696,8 +3734,15 @@ function teamNew_(p, user) {
     if (rowById_(m, id) >= 0) throw new Error('DUP: Employee ID ' + id + ' is already in the list. / លេខកាត ' + id + ' មានក្នុងបញ្ជីរួចហើយ។');
     const mi = myRow_(m, user);
     const me = mi >= 0 ? mRow_(m, m.values[mi], mi) : null;
-    mgr = String(p.mgr || '').trim().slice(0, 100) || (me ? me.full : '') || user.name || '';
+    // A line manager picked from the list keeps the Telegram that goes with them, so OT requests reach the right person.
+    const want = String(p.mgr || '').trim();
+    const list = want ? teamManagers_(m) : [];
+    const pick = list.find(x => x.name === want);
+    if (want && !pick && list.length) throw new Error('Choose the line manager from the list. / សូមជ្រើសរើសប្រធានផ្ទាល់ពីបញ្ជី។');
+    mgr = pick ? pick.name : want.slice(0, 100) || (me ? me.full : '') || user.name || '';
     const i = mNewRow_(m);
+    const tgc = teamTgCol_(m);
+    if (pick && pick.tg && tgc >= 0) mPut_(m, i, tgc, pick.tg);
     mPut_(m, i, m.c.id, id);
     if (m.c.full >= 0) mPut_(m, i, m.c.full, full);
     if (m.c.kh >= 0) mPut_(m, i, m.c.kh, kh);
