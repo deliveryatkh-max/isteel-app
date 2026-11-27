@@ -176,8 +176,8 @@
         { rows: ['grp', 'material'], cols: ['uom'], vals: [{ k: 'book', agg: 'sum' }], filters: {} }, stock);
     }
     const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
-    const rows = all.filter(l => (!F.wh || l.wh === F.wh) && (!F.zone || l.zone === F.zone) && (!F.grp || l.grp === F.grp) && (!F.sloc || l.sloc === F.sloc)
-      && (!F.uom || l.uom === F.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
+    const rows = all.filter(l => inSel(F.wh, l.wh) && inSel(F.zone, l.zone) && inSel(F.grp, l.grp) && inSel(F.sloc, l.sloc)
+      && inSel(F.uom, l.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
       && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp]));
     const list = f => [['', T('ទាំងអស់', 'All')]].concat(uniq(f).map(v => [v, v]));
     const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh')], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone')],
@@ -190,7 +190,7 @@
     view(`
       <div class="fb-wrap">${repHead('stock', '📦 ' + T('បញ្ជីស្តុក', 'Stock list'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
         () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); })}
-      ${FB.panel('stock', FILTERS.map(f => FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`)).join('')
+      ${FB.panel('stock', FILTERS.map((f, i) => (i < 5 ? msel(f[0], f[1], f[3].filter(o => o[0]), F[f[2]]) : FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`))).join('')
         + FB.search('fq', T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch'), F.q))}</div>
       <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'lines')} · <b>${new Set(rows.map(l => l.bin)).size}</b> ${T('ទីតាំង', 'bins')} · ${T('ស្តុក', 'On hand')} <b>${fmtQty(tot(false))}</b> PC · <b>${fmtQty(tot(true))}</b> KG · ${T('បានរាប់', 'Counted')} <b>${nCounted}</b> · ${T('មិនទាន់រាប់', 'Never')} <b>${rows.length - nCounted}</b></div>
       <section class="screp"><table class="rep stocktbl"><thead><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr></thead><tbody>
@@ -201,7 +201,7 @@
     pvWire('stock', stock);
     setTimeout(fitRep, 0);
     keep('#fq', v => { F.q = v; stock(); });
-    FILTERS.forEach(f => { $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
+    FILTERS.forEach((f, i) => { if (i < 5) mselWire(f[0], v => { F[f[2]] = v; stock(); }); else $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
     $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
     if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date', 'Counted Qty', 'Difference', 'Counted By']]
       .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd, l.counted == null ? '' : l.counted, l.diff == null ? '' : l.diff, l.by])));
@@ -226,6 +226,31 @@
     window.SCPivot.mount($('#pvBox'), { id: id, data: data, T: T, def: def, fields: fields.map(f => ({ k: f[0], km: f[1], en: f[2], num: !!f[3] })),
       onExport: grid => download(id + '-pivot.csv', grid) });
   }
+  // Multi-select filter (Kim, 27 Nov: "allow multiple selection"). State is an array; empty = All.
+  const inSel = (sel, v) => !sel || !sel.length || (Array.isArray(sel) ? sel.indexOf(String(v)) >= 0 : sel === String(v));
+  const asArr = v => (Array.isArray(v) ? v : v ? [v] : []);
+  function msel(id, label, opts, sel) {
+    const a = asArr(sel), lab = v => { const o = opts.find(x => x[0] === v); return o ? o[1] : v; };
+    const txt = !a.length ? T('ទាំងអស់', 'All') : a.length <= 2 ? a.map(lab).join(', ') : a.length + ' ' + T('បានជ្រើស', 'selected');
+    return `<div class="fb-field">${label}<div class="msel" id="${id}"><button type="button" class="msel-btn${a.length ? ' on' : ''}">${esc(txt)}</button><div class="msel-pop" hidden>
+      ${opts.length > 8 ? `<input type="search" class="msel-q" placeholder="${T('ស្វែងរក', 'Search')}">` : ''}<div class="msel-acts"><button type="button" data-ms="all">${T('ជ្រើសទាំងអស់', 'Select all')}</button><button type="button" data-ms="none">${T('សម្អាត', 'Clear')}</button></div>
+      <div class="msel-list">${opts.map(o => `<label><input type="checkbox" value="${esc(o[0])}"${a.indexOf(o[0]) >= 0 ? ' checked' : ''}> ${esc(o[1])}</label>`).join('') || `<span class="muted">—</span>`}</div>
+      <button type="button" class="msel-ok">OK</button></div></div></div>`;
+  }
+  let mselOpen = null;
+  function mselWire(id, done) {
+    const box = $('#' + id); if (!box) return;
+    const pop = box.querySelector('.msel-pop'), get = () => Array.from(pop.querySelectorAll('input[type=checkbox]:checked')).map(c => c.value);
+    const start = get().join('|');
+    const close = () => { pop.hidden = true; mselOpen = null; const v = get(); if (v.join('|') !== start) done(v); };
+    box.querySelector('.msel-btn').onclick = e => { e.stopPropagation(); if (mselOpen && mselOpen !== close) mselOpen(); if (pop.hidden) { pop.hidden = false; mselOpen = close; const q = pop.querySelector('.msel-q'); if (q) q.focus(); } else close(); };
+    pop.onclick = e => e.stopPropagation();
+    pop.querySelector('.msel-ok').onclick = close;
+    pop.querySelectorAll('[data-ms]').forEach(b => { b.onclick = () => pop.querySelectorAll('.msel-list label').forEach(l => { if (!l.hidden) l.querySelector('input').checked = b.dataset.ms === 'all'; }); });
+    const q = pop.querySelector('.msel-q');
+    if (q) q.oninput = () => { const t = q.value.toLowerCase(); pop.querySelectorAll('.msel-list label').forEach(l => { l.hidden = t && l.textContent.toLowerCase().indexOf(t) < 0; }); };
+  }
+  document.addEventListener('click', () => { if (mselOpen) mselOpen(); });
   // Search box that keeps the cursor when the table is drawn again.
   function keep(sel, fn) {
     const el = $(sel);
@@ -258,8 +283,9 @@
     const uq = f => Array.from(new Set(all.map(r => r[f]).filter(Boolean))).sort();
     const MF = [['mt', T('ប្រភេទ', 'Type'), types.map(t => [t, tLabel(t)])], ['mwh', T('ឃ្លាំង', 'Warehouse'), uq('wh').map(v => [v, v])], ['mzone', T('តំបន់', 'Bin Zone'), uq('zone').map(v => [v, v])],
       ['mgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), uq('grp').map(v => [v, v])], ['msloc', 'SLoc', uq('sloc').map(v => [v, v])], ['mdir', T('ចូល / ចេញ', 'Direction (In / Out)'), [['in', T('ចូល', 'In')], ['out', T('ចេញ', 'Out')]]]];
-    const rows = all.filter(r => (!F.mt || r.type === F.mt) && (!F.mwh || r.wh === F.mwh) && (!F.mzone || r.zone === F.mzone) && (!F.mgrp || r.grp === F.mgrp) && (!F.msloc || String(r.sloc) === F.msloc)
-      && (!F.mdir || (F.mdir === 'in' ? Number(r.qtyIn) > 0 : Number(r.qtyOut) > 0)) && (!F.mfrom || String(r.date) >= F.mfrom) && (!F.mto || String(r.date) <= F.mto)
+    const dirOk = r => !asArr(F.mdir).length || asArr(F.mdir).some(d => (d === 'in' ? Number(r.qtyIn) > 0 : Number(r.qtyOut) > 0));
+    const rows = all.filter(r => inSel(F.mt, r.type) && inSel(F.mwh, r.wh) && inSel(F.mzone, r.zone) && inSel(F.mgrp, r.grp) && inSel(F.msloc, r.sloc)
+      && dirOk(r) && (!F.mfrom || String(r.date) >= F.mfrom) && (!F.mto || String(r.date) <= F.mto)
       && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user, r.otherBin, r.remark]));
     const sumUom = f => { const pc = rows.filter(r => !SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0), kg = rows.filter(r => SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0);
       return [pc ? fmtQty(round3(pc)) + ' PC' : '', kg ? fmtQty(round3(kg)) + ' KG' : ''].filter(Boolean).join('<br>'); };
@@ -272,7 +298,7 @@
       <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
         () => { MF.forEach(f => { F[f[0]] = ''; }); F.mq = ''; F.mfrom = F.mto = ''; moves(); })}
       ${FB.panel('moves', FB.seg(QD.map(q => [q[0], q[1]]), qOn, 'mqd') + FB.range('mFrom', 'mTo', F.mfrom, F.mto) + FB.show('mGo')
-        + MF.map(f => FB.field(f[1], `<select id="${f[0]}"><option value="">${T('ទាំងអស់', 'All')}</option>${f[2].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[0]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`)).join('')
+        + MF.map(f => msel(f[0], f[1], f[2], F[f[0]])).join('')
         + FB.search('mq', T('ស្វែងរក ទីតាំង សម្ភារៈ Batch ឯកសារយោង', 'Search bin, material, batch, reference, Txn ID'), F.mq))}</div>
       <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'rows')} · ${T('ចូល', 'In')} <b>${nIn}</b> · ${T('ចេញ', 'Out')} <b>${nOut}</b> · <b>${new Set(rows.map(r => r.user).filter(Boolean)).size}</b> ${T('អ្នកប្រើ', 'users')}</div>
       <section class="screp"><table class="rep"><thead><tr>${H.map((h, i) => `<th${i === 13 || i === 14 || i === 16 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
@@ -287,7 +313,7 @@
     pvWire('moves', moves);
     setTimeout(fitRep, 0);
     keep('#mq', v => { F.mq = v; moves(); });
-    MF.forEach(f => { $('#' + f[0]).onchange = e => { F[f[0]] = e.target.value; moves(); }; });
+    MF.forEach(f => mselWire(f[0], v => { F[f[0]] = v; moves(); }));
     $$('[data-mqd]').forEach(bn => { bn.onclick = () => { const q = QD.find(x => x[0] === bn.dataset.mqd); F.mfrom = q[2]; F.mto = q[3]; moves(); }; });
     $('#mGo').onclick = () => { F.mfrom = $('#mFrom').value; F.mto = $('#mTo').value; moves(); };
     $('#mFrom').onchange = $('#mTo').onchange = () => { F.mfrom = $('#mFrom').value; F.mto = $('#mTo').value; moves(); };
@@ -516,7 +542,7 @@
     const QD = [['today', T('ថ្ងៃនេះ', 'Today'), dAgo(0), dAgo(0)], ['7', T('៧ ថ្ងៃ', '7 days'), dAgo(6), dAgo(0)], ['month', T('ខែនេះ', 'This month'), mon, dAgo(0)], ['all', T('ទាំងអស់', 'All'), '', '']];
     const led = D.ledger.map(r => Object.assign({}, r, { wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r), uom: String(r.uom || 'PC').toUpperCase() }));
     const uq = f => Array.from(new Set(led.map(r => r[f]).filter(Boolean))).sort();
-    const keepR = r => (!BF.wh || r.wh === BF.wh) && (!BF.zone || r.zone === BF.zone) && (!BF.grp || r.grp === BF.grp) && (!BF.uom || r.uom === BF.uom)
+    const keepR = r => inSel(BF.wh, r.wh) && inSel(BF.zone, r.zone) && inSel(BF.grp, r.grp) && inSel(BF.uom, r.uom)
       && hit(BF.q, [r.bin, r.material, r.desc, r.batch]) && (!BF.to || String(r.date) <= BF.to);
     const by = {};
     led.filter(keepR).forEach(r => {
@@ -538,7 +564,7 @@
       <div class="fb-wrap">${FB.head('binsum', '🗂️ ' + T('សង្ខេបចលនាតាមទីតាំង', 'Bin movement summary'), (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '')
         + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`, () => { Object.assign(BF, { from: mon, to: dAgo(0), wh: '', zone: '', grp: '', uom: '', q: '' }); binsum(); })}
       ${FB.panel('binsum', FB.seg(QD.map(q => [q[0], q[1]]), qOn, 'bqd') + FB.range('bFrom', 'bTo', BF.from, BF.to) + FB.show('bGo')
-        + BFL.map(f => FB.field(f[1], `<select id="${f[0]}"><option value="">${T('ទាំងអស់', 'All')}</option>${f[3].map(v => `<option value="${esc(v)}"${v === BF[f[2]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
+        + BFL.map(f => msel(f[0], f[1], f[3].map(v => [v, v]), BF[f[2]])).join('')
         + FB.search('bq', T('ស្វែងរក ទីតាំង ឬសម្ភារៈ', 'Search bin or material'), BF.q))}</div>
       <div class="sumline"><b>${new Set(rows.map(x => x.bin)).size}</b> ${T('ទីតាំង', 'bins')} · <b>${tMv}</b> ${T('ចលនា', 'moves')} · ${T('ចូល', 'In')} <b class="in">+${fmtQty(round3(tIn))}</b> · ${T('ចេញ', 'Out')} <b class="out">−${fmtQty(round3(tOut))}</b></div>
       <section class="screp"><table class="rep bstbl"><thead><tr>${H.map((h, i) => `<th${i >= 3 && i <= 9 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
@@ -550,7 +576,7 @@
       ${oldNote()}<p class="muted">${T('សមតុល្យ = ដើមគ្រា (មុនថ្ងៃចាប់ផ្តើម) + ចូល − ចេញ។ ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Balance = Opening (before the From date) + In − Out. Tap a row to open the bin.')}</p>`);
     setTimeout(fitRep, 0);
     keep('#bq', v => { BF.q = v; binsum(); });
-    BFL.forEach(f => { $('#' + f[0]).onchange = e => { BF[f[2]] = e.target.value; binsum(); }; });
+    BFL.forEach(f => mselWire(f[0], v => { BF[f[2]] = v; binsum(); }));
     $$('[data-bqd]').forEach(bn => { bn.onclick = () => { const q = QD.find(x => x[0] === bn.dataset.bqd); BF.from = q[2]; BF.to = q[3]; binsum(); }; });
     $('#bGo').onclick = () => { BF.from = $('#bFrom').value; BF.to = $('#bTo').value; binsum(); };
     $('#bFrom').onchange = $('#bTo').onchange = () => { BF.from = $('#bFrom').value; BF.to = $('#bTo').value; binsum(); };
