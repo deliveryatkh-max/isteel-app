@@ -445,3 +445,14 @@ table.rep select.cell.need { background: var(--bad-bg); border-color: #fca5a5; c
 .hbar { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12.5px; }
 .hbar span { width: 45%; } .hbar i { display: block; height: 10px; border-radius: 4px; background: #f59e0b; max-width: 40%; } .hbar b { font-size: 12px; }
 @media (max-width: 760px) { .vgrid { grid-template-columns: 1fr; } }
+/* Multi-select filter (27 Nov 2026) */
+.msel { position: relative; }
+.msel-btn { height: var(--fh, 36px); min-width: 110px; max-width: 240px; padding: 0 28px 0 10px; font: inherit; font-size: 14px; text-align: left; color: var(--ink); background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E") no-repeat right 10px center; border: 1px solid var(--line); border-radius: var(--fr, 8px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.msel-btn.on { border-color: #2563eb; background-color: #eff6ff; font-weight: 600; }
+.msel-pop { position: absolute; z-index: 50; top: calc(100% + 4px); left: 0; min-width: 220px; max-width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(1,30,65,.18); padding: 8px; }
+.msel-pop .msel-q { width: 100%; margin-bottom: 6px; }
+.msel-acts { display: flex; gap: 6px; margin-bottom: 4px; } .msel-acts button { flex: 1; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg, #f4f6fa); color: var(--ink); cursor: pointer; }
+.msel-list { max-height: 260px; overflow: auto; } .msel-list label { display: flex; align-items: center; gap: 6px; padding: 4px 4px; font-weight: 400; font-size: 13px; cursor: pointer; border-radius: 6px; } .msel-list label:hover { background: var(--bg, #f4f6fa); } .msel-list label[hidden] { display: none; }
+.msel-list input { width: 16px; height: 16px; min-height: 0 !important; margin: 0; }
+.msel-ok { width: 100%; margin-top: 6px; padding: 6px; font: inherit; font-weight: 700; color: #fff; background: #011e41; border: 0; border-radius: 8px; cursor: pointer; }
+@media (max-width: 640px) { .fb-panel > .fb-field .msel-btn { width: 100%; max-width: none; } .msel-pop { min-width: 0; width: 100%; max-width: none; } }
