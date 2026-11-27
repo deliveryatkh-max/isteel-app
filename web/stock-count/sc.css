@@ -459,3 +459,6 @@ table.rep select.cell.need { background: var(--bad-bg); border-color: #fca5a5; c
 /* MB51 compare (27 Nov 2026) */
 .mbfile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; }
 .mbk .stat span { font-size: 12px; }
+.mbsheet { max-width: 1100px; max-height: 88vh; overflow: auto; } .mbsheet h4 { margin: 12px 0 6px; font-size: 14px; } .mbsheet .scroll { overflow-x: auto; }
+.mbsheet table.rep { width: 100%; } table.mbtbl tbody tr.go { cursor: pointer; }
+@media (min-width: 900px) { .mbsheet-bg { align-items: center; } .mbsheet { border-radius: 16px; } }
