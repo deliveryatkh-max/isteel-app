@@ -85,45 +85,98 @@
 
   // ------------------------------------------------------------------ dashboard
   let lastSap = null;
+  // Dashboard option A "command center" (Kim, 27 Nov: "more insight, more interactive, modern"): KPI cards with a trend line,
+  // switchable movement chart (tap a bar → Movements of that day), "Needs attention" list, warehouse donut, top movers, recent moves.
+  const DZ = { wh: '', days: 7, metric: 'tx', wu: 'kg' };
   function dash() {
     wide(); loadLedger('dash');
-    const today = dAgo(0), led = D.ledger, td = led.filter(r => r.date === today);
-    const kg = D.stock.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0), pc = D.stock.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
-    const done = D.counts.filter(c => c.status !== 'Submitted'), okCount = D.counts.filter(c => c.variance === 0).length;
-    const acc = D.counts.length ? Math.round(okCount / D.counts.length * 100) : null;
-    const stat = (v, label, cls, go) => `<div class="stat ${cls || ''}"${go ? ` data-go="${go}"` : ''}><b>${v}</b><span>${label}</span></div>`;
-    const days = [6, 5, 4, 3, 2, 1, 0].map(n => { const d = dAgo(n), rows = led.filter(r => r.date === d); return { d: d.slice(5), i: rows.filter(r => isIn(r.type)).length, o: rows.filter(r => r.type === 'OUT' || r.type === 'TRANSFER OUT').length }; });
-    const max = Math.max(1, ...days.map(x => Math.max(x.i, x.o)));
-    const whs = Array.from(new Set(D.bins.map(b => b.warehouse))).map(w => { const ls = D.stock.filter(l => whOf(l.bin) === w); return { w: w, bins: D.bins.filter(b => b.warehouse === w).length, lines: ls.length,
-      kg: ls.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0), pc: ls.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0) }; });
+    const today = dAgo(0), inWh = bin => !DZ.wh || whOf(bin) === DZ.wh;
+    const revd = new Set(D.ledger.filter(r => r.reverses).map(r => r.reverses));
+    const led = D.ledger.filter(r => r.type !== 'REVERSAL' && !revd.has(r.id) && inWh(r.bin));
+    const stock = D.stock.filter(l => inWh(l.bin)), bins = D.bins.filter(b => !DZ.wh || b.warehouse === DZ.wh);
+    const kgOf = r => SC.isKg(r.uom), qIn = r => Number(r.qtyIn) || 0, qOut = r => Number(r.qtyOut) || 0;
+    const kg = stock.filter(kgOf).reduce((a, l) => a + l.book, 0), pc = stock.filter(l => !kgOf(l)).reduce((a, l) => a + l.book, 0);
+    const N = DZ.days, dayList = Array.from({ length: N }, (_, i) => dAgo(N - 1 - i)), from = dayList[0];
+    const per = led.filter(r => String(r.date) >= from);
+    const outT = r => r.type === 'OUT' || r.type === 'TRANSFER OUT';
+    const val = (rows, dir) => rows.reduce((a, r) => { const ok = dir === 'in' ? isIn(r.type) || (r.type === 'ADJUST' && qIn(r)) : outT(r) || (r.type === 'ADJUST' && qOut(r)); if (!ok) return a;
+      if (DZ.metric === 'tx') return a + 1; if ((DZ.metric === 'kg') !== kgOf(r)) return a; return a + (dir === 'in' ? qIn(r) : qOut(r)); }, 0);
+    const days = dayList.map(d => { const rows = per.filter(r => r.date === d); return { d, i: val(rows, 'in'), o: val(rows, 'out') }; });
+    const max = Math.max(1, ...days.map(x => Math.max(x.i, x.o))), avg = days.reduce((a, x) => a + x.o, 0) / N;
+    // trend: balance at the end of each day, worked back from today's stock with the net moves after that day
+    const trend = isKg => { const net = d => led.filter(r => r.date > d && kgOf(r) === isKg).reduce((a, r) => a + qIn(r) - qOut(r), 0), tot = isKg ? kg : pc;
+      return dayList.map(d => tot - net(d)); };
+    const spark = pts => { const lo = Math.min(...pts), hi = Math.max(...pts), w = 80, h = 26, sx = w / Math.max(1, pts.length - 1);
+      return `<svg class="dz-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts.map((v, i) => (i * sx).toFixed(1) + ',' + (hi === lo ? h / 2 : h - 3 - (v - lo) / (hi - lo) * (h - 6)).toFixed(1)).join(' ')}"/></svg>`; };
+    const chg = pts => { const a = pts[0], b = pts[pts.length - 1]; if (!a) return ''; const p = Math.round((b - a) / Math.abs(a) * 1000) / 10;
+      return `<span class="dz-chg ${p < 0 ? 'dn' : ''}" title="${T('ប្រៀបធៀបនឹង', 'vs')} ${from.slice(5)}">${p > 0 ? '+' : ''}${p}%</span>`; };
+    const tk = trend(true), tp = trend(false);
+    const short = v => (Math.abs(v) >= 10000 ? (Math.round(v / 100) / 10).toLocaleString('en-US') + ' t' : fmtQty(SC.round3(v)) + ' kg');
+    const td = led.filter(r => r.date === today), users = new Set(td.map(r => String(r.user || '').toLowerCase()).filter(Boolean)).size;
+    const binsUsed = new Set(stock.filter(l => l.book > 0).map(l => l.bin)).size, fill = bins.length ? Math.round(binsUsed / bins.length * 100) : 0;
+    // needs attention
+    const dt = lineDates(), old = dAgo(30), stale = new Set();
+    stock.forEach(l => { if (l.book > 0) { const cd = String(l.countDate || dt.cd[lineKey(l)] || '').slice(0, 10); if (!cd || cd < old) stale.add(l.bin); } });
+    const zero = stock.filter(l => !(l.book > 0)).length, empty = bins.filter(b => !stock.some(l => l.bin === b.bin && l.book > 0)).length;
+    const att = [[lastSap ? lastSap.variances : 0, 'o', T('ខុសគ្នាជាមួយ SAP (ឯកសារចុងក្រោយ)', 'SAP variances (last file)'), lastSap ? esc(lastSap.name) + ' · ' + esc(lastSap.at.slice(5)) : '', 'sap'],
+      [pending(), 'o', T('ការរាប់រង់ចាំអនុម័ត', 'Counts waiting for approval'), '', 'review'],
+      [stale.size, 'r', T('ទីតាំងមិនទាន់រាប់ ឬលើស ៣០ ថ្ងៃ', 'Bins never counted or over 30 days'), '', 'stock'],
+      [zero, 'r', T('ជួរស្តុកសូន្យ ឬអវិជ្ជមាន', 'Stock lines at zero or below'), '', 'zero'],
+      [empty, '', T('ទីតាំងទំនេរ សម្រាប់ដាក់ទំនិញ', 'Empty bins ready for putaway'), '', 'binsum']].filter(a => a[0] > 0 && role().pages.indexOf(a[4] === 'zero' ? 'stock' : a[4]) >= 0);
+    // warehouses
+    const whs = Array.from(new Set(D.bins.map(b => b.warehouse))).filter(Boolean).sort().map(w => { const ls = D.stock.filter(l => whOf(l.bin) === w);
+      return { w, bins: D.bins.filter(b => b.warehouse === w).length, lines: ls.length, kg: ls.filter(kgOf).reduce((a, l) => a + l.book, 0), pc: ls.filter(l => !kgOf(l)).reduce((a, l) => a + l.book, 0) }; });
+    const wTot = whs.reduce((a, w) => a + w[DZ.wu], 0) || 1, COL = ['#0b76a0', '#61cbf4', '#084f6a', '#d4e1f5', '#011e41', '#94a3b8'];
+    let off = 0; const donut = whs.map((w, i) => { const p = w[DZ.wu] / wTot * 100, s = `<circle cx="21" cy="21" r="15.9" fill="none" stroke="${COL[i % COL.length]}" stroke-width="6" stroke-dasharray="${p.toFixed(2)} ${(100 - p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 21 21)"/>`; off += p; return s; }).join('');
+    // top movers (OUT in the period)
+    const mv = {}; per.filter(outT).forEach(r => { const k = r.material + '|' + String(r.uom || '').toUpperCase(); (mv[k] = mv[k] || { m: r.material, d: r.desc || '', u: r.uom || '', q: 0, n: 0 }); mv[k].q += qOut(r); mv[k].n++; });
+    const top = Object.values(mv).sort((a, b) => b.n - a.n || b.q - a.q).slice(0, 5), topMax = Math.max(1, ...top.map(x => x.n));
+    const ini = u => { const s = String(u || '').split('@')[0].trim(); const p = s.split(/[\s._-]+/).filter(Boolean); return esc(((p[0] || '')[0] || '') + ((p[1] || '')[0] || '')).toUpperCase() || '?'; };
+    const tcls = t => (isIn(t) ? 'in' : outT(t) ? 'out' : t === 'ADJUST' ? 'adj' : 'tr');
+    const card = (ic, cls, big, small, extra, go) => `<div class="dz-k ${cls}"${go ? ` data-go="${go}"` : ''}><div class="dz-ic">${ic}</div><b>${big}</b><small>${small}</small>${extra || ''}</div>`;
+    const seg = (key, items) => `<span class="dz-seg">${items.map(x => `<button type="button" class="${String(DZ[key]) === String(x[0]) ? 'on' : ''}" data-dz="${key}" data-v="${x[0]}">${x[1]}</button>`).join('')}</span>`;
+    const mLab = { tx: T('ប្រតិបត្តិការ', 'Transactions'), kg: 'Kg', pc: 'Pcs' };
     view(`
-      <h2 class="ptitle">${T('ផ្ទាំងគ្រប់គ្រងស្តុក', 'Stock dashboard')} <small class="muted">${now()}</small></h2>
-      <div class="dash-kpis">
-        ${stat(new Set(D.stock.map(l => l.material)).size, T('សម្ភារៈ (SKU)', 'Active SKUs'), '', 'stock')}
-        ${stat(new Set(D.stock.map(l => l.bin)).size + ' / ' + D.bins.length, T('ទីតាំងមានស្តុក', 'Bins in use'), '', 'stock')}
-        ${stat(fmtQty(kg), T('ស្តុកសរុប Kg', 'Total Kg'))}
-        ${stat(fmtQty(pc), T('ស្តុកសរុប Pcs', 'Total Pcs'))}
-        ${stat(td.filter(r => r.type === 'IN').length, T('ចូលថ្ងៃនេះ', 'IN today'), 'in', 'moves')}
-        ${stat(td.filter(r => r.type === 'OUT').length, T('ចេញថ្ងៃនេះ', 'OUT today'), 'out', 'moves')}
-        ${DEMO ? stat(pending(), T('ការរាប់រង់ចាំអនុម័ត', 'Counts to review'), pending() ? 'warn' : '', 'review') : ''}
-        ${DEMO ? stat(acc == null ? '—' : acc + '%', T('ភាពត្រឹមត្រូវនៃការរាប់', 'Count accuracy')) : ''}
-        ${stat(lastSap ? lastSap.variances : '—', lastSap ? T('ខុសគ្នាជាមួយ SAP', 'SAP variances') + ' · ' + lastSap.at.slice(5) : T('មិនទាន់នាំចូល SAP', 'No SAP import yet'), lastSap && lastSap.variances ? 'warn' : '', role().pages.indexOf('sap') >= 0 ? 'sap' : '')}
+      <div class="dz-top"><h2>📊 ${T('ផ្ទាំងគ្រប់គ្រងស្តុក', 'Stock dashboard')}</h2><span class="muted">${now()}</span><span class="dz-sp"></span>
+        <span class="dz-pills"><button type="button" class="${DZ.wh ? '' : 'on'}" data-dz="wh" data-v="">${T('ឃ្លាំងទាំងអស់', 'All warehouses')}</button>${whs.map(w => `<button type="button" class="${DZ.wh === w.w ? 'on' : ''}" data-dz="wh" data-v="${esc(w.w)}">${esc(w.w)}</button>`).join('')}</span>
+        ${seg('days', [[7, T('៧ ថ្ងៃ', '7 days')], [14, T('១៤ ថ្ងៃ', '14 days')], [30, T('៣០ ថ្ងៃ', '30 days')]])}</div>
+      ${oldNote()}
+      <div class="dz-kpis">
+        ${card('📦', '', new Set(stock.map(l => l.material)).size, T('សម្ភារៈ (SKU)', 'Active SKUs') + ' · ' + stock.length + ' ' + T('ជួរ', 'lines'), '', 'stock')}
+        ${card('🗄️', '', binsUsed + ' / ' + bins.length, T('ទីតាំងមានស្តុក', 'Bins in use') + ' · ' + fill + '%', `<div class="dz-bar"><i style="width:${fill}%"></i></div>`, 'binsum')}
+        ${card('⚖️', '', short(kg), T('ស្តុកសរុប Kg', 'Total Kg'), chg(tk) + spark(tk))}
+        ${card('🔩', '', fmtQty(SC.round3(pc)), T('ស្តុកសរុប Pcs', 'Total Pcs'), chg(tp) + spark(tp))}
+        ${card('⇅', 'io', `<span class="in">${td.filter(r => isIn(r.type)).length} ${T('ចូល', 'IN')}</span> · <span class="out">${td.filter(outT).length} ${T('ចេញ', 'OUT')}</span>`, T('ថ្ងៃនេះ', 'Today') + ' · ' + users + ' ' + T('អ្នកប្រើសកម្ម', 'users active'), '', 'moves')}
+        ${card('⚠', lastSap && lastSap.variances ? 'warn' : '', lastSap ? lastSap.variances : '—', lastSap ? T('ខុសគ្នាជាមួយ SAP', 'SAP variances') + ' · ' + esc(lastSap.at.slice(5)) : T('មិនទាន់នាំចូល SAP', 'No SAP import yet'), '', role().pages.indexOf('sap') >= 0 ? 'sap' : '')}
       </div>
-      <div class="dgrid">
-        <section class="card"><h3>${T('ចលនាស្តុក ៧ ថ្ងៃ (ចំនួនប្រតិបត្តិការ)', 'Movements, last 7 days (transactions)')}</h3>
-          <div class="chart">${days.map(x => `<div class="cday"><div class="cbars"><i class="bi" style="height:${x.i / max * 100}%" title="IN ${x.i}">${x.i ? `<em>${x.i}</em>` : ''}</i><i class="bo" style="height:${x.o / max * 100}%" title="OUT ${x.o}">${x.o ? `<em>${x.o}</em>` : ''}</i></div><span>${x.d}</span></div>`).join('')}</div>
-          <p class="legend"><i class="bi"></i> ${T('ចូល', 'IN')} <i class="bo"></i> ${T('ចេញ', 'OUT')}</p></section>
-        <section class="card scroll"><h3>${T('ស្តុកតាមឃ្លាំង', 'Stock by warehouse')}</h3>
-          <table class="lines hist"><tr><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('ទីតាំង', 'Bins')}</th><th>${T('ប្រភេទស្តុក', 'Lines')}</th><th>Kg</th><th>Pcs</th></tr>
-          ${whs.map(w => `<tr><td><b>${esc(w.w)}</b></td><td class="num">${w.bins}</td><td class="num">${w.lines}</td><td class="num">${fmtQty(w.kg)}</td><td class="num">${fmtQty(w.pc)}</td></tr>`).join('')}</table></section>
-        ${DEMO ? `<section class="card scroll"><h3>${T('ការរាប់ចុងក្រោយ', 'Latest counts')}</h3>
-          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>${T('ស្ថានភាព', 'Status')}</th></tr>
-          ${D.counts.slice(0, 6).map(c => `<tr><td>${esc(c.date.slice(5))}</td><td>${esc(c.bin)}</td><td>${esc(c.material)}</td><td class="num ${c.variance < 0 ? 'out' : c.variance > 0 ? 'in' : ''}">${c.variance > 0 ? '+' : ''}${fmtQty(c.variance)}</td><td>${stBadge(c.status)}</td></tr>`).join('')}</table></section>` : ''}
-        <section class="card scroll"><h3>${T('ប្រតិបត្តិការថ្មីៗ', 'Recent transactions')}</h3>
-          <table class="lines hist"><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('ចំនួន', 'Qty')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
-          ${newest().slice(0, 10).map(r => `<tr><td>${esc(r.date.slice(5))} <small class="muted">${esc(r.time)}</small></td><td>${esc(tLabel(r.type))}</td><td>${esc(r.bin)}</td><td>${esc(r.material)}</td>${qtyCell(r)}<td>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')}</table></section>
+      <div class="dz-row r1">
+        <section class="dz-card"><h3>${T('ចលនាស្តុក', 'Movements')} <span class="muted">${N} ${T('ថ្ងៃ', 'days')}</span><span class="dz-sp"></span>${seg('metric', [['tx', mLab.tx], ['kg', 'Kg'], ['pc', 'Pcs']])}</h3>
+          <div class="dz-chart">${avg ? `<div class="dz-avg" style="bottom:${(20 + avg / max * 160).toFixed(1)}px" title="${T('មធ្យមចេញក្នុងមួយថ្ងៃ', 'Average OUT per day')}: ${fmtQty(SC.round3(avg))}"></div>` : ''}${days.map(x => `<div class="dz-day"><div class="dz-bars">
+            <i class="bi" style="height:${x.i / max * 100}%" data-day="${x.d}" data-dir="in">${x.i ? `<em>${fmtQty(SC.round3(x.i))}</em>` : ''}</i><i class="bo" style="height:${x.o / max * 100}%" data-day="${x.d}" data-dir="out">${x.o ? `<em>${fmtQty(SC.round3(x.o))}</em>` : ''}</i>
+            <span class="dz-tip"><b>${x.d.slice(5)}</b><br>${T('ចូល', 'IN')} ${fmtQty(SC.round3(x.i))} · ${T('ចេញ', 'OUT')} ${fmtQty(SC.round3(x.o))}<br><small>${T('ចុចដើម្បីបើកចលនា', 'Tap to open movements')}</small></span></div><span>${N > 14 ? x.d.slice(8) : x.d.slice(5)}</span></div>`).join('')}</div>
+          <p class="legend"><i class="bi"></i> ${T('ចូល', 'IN')} <i class="bo"></i> ${T('ចេញ', 'OUT')} <span class="dz-avgk"></span> ${T('មធ្យមចេញក្នុងមួយថ្ងៃ', 'average OUT per day')}</p></section>
+        <section class="dz-card"><h3>🔔 ${T('ត្រូវយកចិត្តទុកដាក់', 'Needs attention')}<span class="dz-sp"></span><span class="muted">${T('ចុចដើម្បីបើក', 'tap to open')}</span></h3>
+          ${att.map(a => `<button type="button" class="dz-al" data-att="${a[4]}"><b class="${a[1]}">${fmtQty(a[0])}</b><span>${a[2]}${a[3] ? `<small>${a[3]}</small>` : ''}</span><i>›</i></button>`).join('') || `<p class="dz-good">✅ ${T('គ្មានអ្វីត្រូវធ្វើទេ', 'All good, nothing to do')}</p>`}</section>
+      </div>
+      <div class="dz-row r2">
+        <section class="dz-card"><h3>${T('ស្តុកតាមឃ្លាំង', 'Stock by warehouse')}<span class="dz-sp"></span>${seg('wu', [['kg', 'Kg'], ['pc', 'Pcs']])}</h3>
+          <div class="dz-wh"><svg width="120" height="120" viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--line)" stroke-width="6"/>${donut}<text x="21" y="22.5" text-anchor="middle" font-size="5" font-weight="800" fill="currentColor">${DZ.wu === 'kg' ? short(wTot) : fmtQty(wTot)}</text></svg>
+          <div>${whs.map((w, i) => `<button type="button" class="dz-w${DZ.wh === w.w ? ' on' : ''}" data-dz="wh" data-v="${DZ.wh === w.w ? '' : esc(w.w)}"><span><i style="background:${COL[i % COL.length]}"></i><b>${esc(w.w)}</b> <small class="muted">${w.bins} ${T('ទីតាំង', 'bins')} · ${w.lines} ${T('ជួរ', 'lines')}</small></span>
+            <span><b>${DZ.wu === 'kg' ? short(w.kg) : fmtQty(SC.round3(w.pc))}</b> <small class="muted">${DZ.wu === 'kg' ? fmtQty(SC.round3(w.pc)) + ' pcs' : short(w.kg)}</small></span><span class="dz-bar"><i style="width:${(w[DZ.wu] / wTot * 100).toFixed(1)}%;background:${COL[i % COL.length]}"></i></span></button>`).join('')}</div></div></section>
+        <section class="dz-card"><h3>🔥 ${T('សម្ភារៈចេញច្រើនជាងគេ', 'Top movers')} <span class="muted">${N} ${T('ថ្ងៃ', 'days')}</span></h3>
+          ${top.length ? `<table class="dz-tbl" data-nosort data-nocols><tr><th>${T('សម្ភារៈ', 'Material')}</th><th class="num">${T('ដង', 'Moves')}</th><th class="num">${T('ចេញ', 'OUT')}</th><th></th></tr>
+          ${top.map(x => `<tr class="go" data-mat="${esc(x.m)}"><td><b class="mono">${esc(x.m)}</b><br><small class="muted">${esc(x.d)}</small></td><td class="num">${x.n}</td><td class="num out">−${fmtQty(SC.round3(x.q))} <small>${esc(x.u)}</small></td><td style="width:70px"><span class="dz-bar"><i class="o" style="width:${x.n / topMax * 100}%"></i></span></td></tr>`).join('')}</table>`
+          : `<p class="muted">${T('គ្មានការចេញក្នុងរយៈពេលនេះ', 'No stock out in this period')}</p>`}</section>
+        <section class="dz-card"><h3>${T('ប្រតិបត្តិការថ្មីៗ', 'Recent transactions')}<span class="dz-sp"></span><button type="button" class="dz-link" data-go="moves">${T('មើលទាំងអស់', 'View all')} ›</button></h3>
+          <table class="dz-tbl" data-nosort data-nocols><tr><th>${T('ពេល', 'Time')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th class="num">${T('ចំនួន', 'Qty')}</th><th>${T('អ្នកប្រើ', 'User')}</th></tr>
+          ${newest().filter(r => inWh(r.bin)).slice(0, 8).map(r => `<tr><td>${r.date === today ? '' : esc(String(r.date).slice(5)) + ' '}<small class="muted">${esc(r.time)}</small></td><td><span class="dz-tp ${tcls(r.type)}">${esc(tLabel(r.type))}</span></td><td class="mono">${esc(r.bin)}</td><td class="mono" title="${esc(r.desc || '')}">${esc(r.material)}</td>${qtyCell(r)}<td><span class="dz-av">${ini(r.user)}</span>${esc(String(r.user || '').split('@')[0])}</td></tr>`).join('')}</table></section>
       </div>`);
-    $$('[data-go]').forEach(el => { el.onclick = () => { S.view = el.dataset.go; route(); }; });
+    $$('[data-go]').forEach(el => { el.onclick = () => { if (el.dataset.go) { S.view = el.dataset.go; route(); } }; });
+    $$('[data-dz]').forEach(b => { b.onclick = () => { const k = b.dataset.dz; DZ[k] = k === 'days' ? Number(b.dataset.v) : b.dataset.v; dash(); }; });
+    const toMoves = o => { Object.assign(F, { mfrom: from, mto: today, mt: [], mdir: [], mq: '', mwh: DZ.wh ? [DZ.wh] : [] }, o); S.view = 'moves'; route(); };
+    $$('.dz-bars i[data-day]').forEach(b => { b.onclick = () => toMoves({ mfrom: b.dataset.day, mto: b.dataset.day, mdir: [b.dataset.dir] }); });
+    $$('[data-mat]').forEach(r => { r.onclick = () => toMoves({ mq: r.dataset.mat, mdir: ['out'] }); });
+    $$('[data-att]').forEach(b => { b.onclick = () => { const a = b.dataset.att; if (a === 'zero') { F.qty = 'zero'; S.view = 'stock'; } else S.view = a; route(); }; });
   }
 
   // ------------------------------------------------------------------ stock list
