@@ -708,7 +708,7 @@
   // ------------------------------------------------------------------ MB51 compare (Kim picked the mockup, 27 Nov 2026)
   // Movements › ⇄ MB51: upload the SAP MB51 export; app IN/OUT lines are matched on Reference (= MB51 Reference, Material Document,
   // Purchase order or Order) + Material + Batch. Only the MB51 date range and the SLocs the app knows are compared. Browser only.
-  const MB = { name: '', rows: null, err: '', F: { res: [], mvt: [], wh: [], grp: [], sloc: [], q: '' } };
+  const MB = { name: '', rows: null, err: '', F: { res: [], note: [], mvt: [], wh: [], grp: [], sloc: [], q: '' } };
   const nref = v => String(v == null ? '' : v).trim().toUpperCase().replace(/^0+(?=\d)/, '');
   const ndate = v => {
     if (v instanceof Date && !isNaN(v)) { const d = new Date(v.getTime() + 12 * 3600000); return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}-${('0' + d.getDate()).slice(-2)}`; }
@@ -761,7 +761,7 @@
       if (!ids.length) { out.push(Object.assign(base, { sapQty: null, post: '', doc: '', mvt: '', diff: g.qty, res: 'app' })); return; }
       ids.forEach(i => used.add(i));
       const s = sapInfo(ids), diff = round3(g.qty - s.sapQty);
-      out.push(Object.assign(base, s, { sl: ids.map(i => sap[i]), uom: g.uom || sap[ids[0]].uom, diff: diff, res: diff ? 'qty' : batchOk ? 'ok' : 'batch', batch: batchOk ? g.batch : g.batch + ' ≠ ' + s.sbatch }));
+      out.push(Object.assign(base, s, { sl: ids.map(i => sap[i]), uom: g.uom || sap[ids[0]].uom, diff: diff, res: diff ? 'qty' : 'ok', note: batchOk ? '' : 'batch', sbatch: batchOk ? '' : s.sbatch }));
     });
     const rest = {};
     sap.forEach((r, i) => { if (used.has(i)) return; const k = [nref(r.ref || r.doc), nref(r.mat), nref(r.batch)].join('|'); (rest[k] = rest[k] || []).push(i); });
@@ -769,11 +769,11 @@
       const st = D.stock.find(l => nref(l.material) === nref(L[0].mat) && nref(l.batch) === nref(L[0].batch)) || D.stock.find(l => nref(l.material) === nref(L[0].mat));
       out.push(Object.assign(s, { ar: [], sl: L, when: '', ref: L[0].ref || L[0].doc, material: L[0].mat, batch: L[0].batch, desc: L[0].desc || (st && st.desc) || '', uom: L[0].uom, bin: '', sloc: L[0].sloc, appQty: null, diff: round3(-s.sapQty), res: 'sap' })); });
     out.forEach(x => { x.wh = x.bin ? whOf(x.bin.split(', ')[0]) : ''; x.grp = groupOf({ material: x.material, desc: x.desc }); });
-    const ord = { qty: 0, batch: 1, sap: 2, app: 3, ok: 4 };
+    const ord = { qty: 0, sap: 1, app: 2, ok: 3 };
     out.sort((a, b) => ord[a.res] - ord[b.res] || Math.abs(b.diff || 0) - Math.abs(a.diff || 0));
     return { list: out, from: from, to: to, nApp: app.length, nSap: sap.length, slocs: Array.from(fileSloc).filter(keepSloc).sort(), skipped: MB.rows.length - sap.length };
   }
-  const MBR = { ok: ['ត្រូវគ្នា', 'Matched', 'st-match'], qty: ['ចំនួនខុស', 'Qty different', 'st-var'], batch: ['Batch ខុស', 'Batch different', 'st-var'], sap: ['មានតែក្នុង SAP', 'Only in SAP', 'st-sap'], app: ['មានតែក្នុងកម្មវិធី', 'Only in app', 'st-digital'] };
+  const MBR = { ok: ['ត្រូវគ្នា', 'Matched', 'st-match'], qty: ['ចំនួនខុស', 'Qty different', 'st-var'], sap: ['មានតែក្នុង SAP', 'Only in SAP', 'st-sap'], app: ['មានតែក្នុងកម្មវិធី', 'Only in app', 'st-digital'] };
   // Row detail (Kim, 27 Nov: "click row to see the detail of transaction"): every app movement and every MB51 line behind the row.
   function mbDetail(x) {
     const bg = document.createElement('div');
@@ -781,7 +781,7 @@
     const q = v => `<span class="${v < 0 ? 'out' : v > 0 ? 'in' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtQty(Math.abs(v))}</span>`;
     const appQ = r => (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0);
     bg.innerHTML = `<div class="sheet mbsheet" role="dialog" aria-modal="true" data-nocols><div class="sheet-top"><b>${esc(x.material)} · ${esc(x.desc)}</b><button type="button" class="icon-btn dark" data-close aria-label="Close">✕</button></div>
-      <p class="muted">${T('ឯកសារយោង', 'Reference')} <b>${esc(x.ref || '—')}</b> · Batch <b>${esc(x.batch)}</b> · <span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span>
+      <p class="muted">${T('ឯកសារយោង', 'Reference')} <b>${esc(x.ref || '—')}</b> · Batch <b>${esc(x.batch)}</b> · <span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span>${x.note ? ` <span class="st st-var">${T('Batch ខុស', 'Batch different')} (MB51 ${esc(x.sbatch)})</span>` : ''}
         · ${T('កម្មវិធី', 'App')} <b>${x.appQty == null ? '—' : q(x.appQty)}</b> · MB51 <b>${x.sapQty == null ? '—' : q(x.sapQty)}</b> · ${T('ខុសគ្នា', 'Diff')} <b>${x.diff ? q(x.diff) : '0'}</b> ${esc(x.uom)}</p>
       <h4>📱 ${T('ចលនាក្នុងកម្មវិធី', 'App movements')} (${x.ar.length})</h4>
       ${x.ar.length ? `<div class="scroll"><table class="rep"><thead><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ម៉ោង', 'Time')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>Batch</th><th>SLoc</th><th class="num">${T('ចំនួន', 'Qty')}</th><th>UoM</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th></tr></thead><tbody>
@@ -802,16 +802,16 @@
     const F = MB.F, res = MB.rows ? mbCompare() : null;
     const L = res ? res.list : [];
     const uq = f => Array.from(new Set(L.flatMap(x => String(x[f] || '').split(', ')).filter(Boolean))).sort();
-    const rows = L.filter(x => inSel(F.res, x.res) && (!F.mvt.length || String(x.mvt).split(', ').some(m => F.mvt.indexOf(m) >= 0)) && inSel(F.wh, x.wh) && inSel(F.grp, x.grp) && inSel(F.sloc, x.sloc)
+    const rows = L.filter(x => inSel(F.res, x.res) && inSel(F.note, x.note || '-') && (!F.mvt.length || String(x.mvt).split(', ').some(m => F.mvt.indexOf(m) >= 0)) && inSel(F.wh, x.wh) && inSel(F.grp, x.grp) && inSel(F.sloc, x.sloc)
       && hit(F.q, [x.ref, x.doc, x.material, x.desc, x.batch, x.bin]));
     const cnt = k => L.filter(x => x.res === k).length;
     const sumU = f => { const u = {}; rows.forEach(x => { if (x[f] == null) return; u[x.uom] = (u[x.uom] || 0) + Number(x[f]); }); return Object.keys(u).sort().map(k => `${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
     const sq = v => (v == null ? '—' : `<span class="${v < 0 ? 'out' : v > 0 ? 'in' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtQty(Math.abs(v))}</span>`);
     const FL = [['mbres', T('លទ្ធផល', 'Result'), 'res', Object.keys(MBR).map(k => [k, T(MBR[k][0], MBR[k][1])])], ['mbmvt', T('ប្រភេទចលនា', 'Movement type'), 'mvt', uq('mvt').map(v => [v, v])],
-      ['mbwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh').map(v => [v, v])], ['mbgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp').map(v => [v, v])], ['mbsloc', 'SLoc', 'sloc', uq('sloc').map(v => [v, v])]];
+      ['mbnote', T('កំណត់សម្គាល់', 'Remark'), 'note', [['batch', T('Batch ខុស', 'Batch different')], ['-', T('គ្មាន', 'None')]]], ['mbwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh').map(v => [v, v])], ['mbgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp').map(v => [v, v])], ['mbsloc', 'SLoc', 'sloc', uq('sloc').map(v => [v, v])]];
     view(`
       <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), res && can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
-        () => { Object.assign(F, { res: [], mvt: [], wh: [], grp: [], sloc: [], q: '' }); moves(); })}
+        () => { Object.assign(F, { res: [], note: [], mvt: [], wh: [], grp: [], sloc: [], q: '' }); moves(); })}
       <section class="card mbfile"><label class="btn sm file">⬆ ${T('នាំចូល MB51 (Excel ឬ CSV)', 'Upload MB51 (Excel / CSV)')}<input type="file" id="mbFile" accept=".csv,.txt,.xlsx,.xlsm,.xls" hidden></label>
         ${DEMO ? `<button type="button" class="btn ghost sm" id="mbSample">${T('គំរូ MB51', 'Sample MB51')}</button>` : ''}
         ${MB.err ? `<span class="bad">⚠️ ${esc(MB.err)}</span>` : res ? `<span class="muted">📄 <b>${esc(MB.name)}</b> · ${MB.rows.length} ${T('ជួរ', 'rows')} · ${esc(res.from)} → ${esc(res.to)} · SLoc ${esc(res.slocs.join(', ') || '—')}${res.skipped ? ` · ${res.skipped} ${T('ជួរ SLoc ផ្សេង មិនបានប្រៀបធៀប', 'rows of other SLocs skipped')}` : ''}</span>`
@@ -821,16 +821,16 @@
         <div class="stat"><b>${res.nApp}</b><span>${T('ចលនាក្នុងកម្មវិធី', 'App movements')}</span></div>
         <div class="stat"><b>${res.nSap}</b><span>${T('ជួរ MB51', 'MB51 lines')}</span></div>
         <div class="stat in"><b>${cnt('ok')}</b><span>${T('ត្រូវគ្នា', 'Matched')}</span></div>
-        <div class="stat warn"><b>${cnt('qty') + cnt('batch')}</b><span>${T('ចំនួន ឬ Batch ខុស', 'Qty or batch different')}</span></div>
+        <div class="stat warn"><b>${cnt('qty')}</b><span>${T('ចំនួនខុស', 'Qty different')}</span></div>
         <div class="stat ${cnt('sap') ? 'out' : ''}"><b>${cnt('sap')}</b><span>${T('មានតែក្នុង SAP (មិនបានស្កេន)', 'Only in SAP (not scanned in app)')}</span></div>
         <div class="stat ${cnt('app') ? 'out' : ''}"><b>${cnt('app')}</b><span>${T('មានតែក្នុងកម្មវិធី (មិនទាន់ post)', 'Only in app (not posted in SAP)')}</span></div>
         <div class="stat"><b>${L.length ? Math.round(cnt('ok') / L.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
       </div>
-      <section class="screp"><table class="rep mbtbl"><thead><tr><th>${T('ថ្ងៃក្នុងកម្មវិធី', 'Date app')}</th><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>${T('ទីតាំង', 'Bin')}</th><th>SLoc</th><th class="num">${T('ចំនួនកម្មវិធី', 'App qty')}</th><th class="num">${T('ចំនួន MB51', 'MB51 qty')}</th><th class="num">${T('ខុសគ្នា', 'Diff')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th></tr></thead><tbody>
+      <section class="screp"><table class="rep mbtbl"><thead><tr><th>${T('ថ្ងៃក្នុងកម្មវិធី', 'Date app')}</th><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>${T('ទីតាំង', 'Bin')}</th><th>SLoc</th><th class="num">${T('ចំនួនកម្មវិធី', 'App qty')}</th><th class="num">${T('ចំនួន MB51', 'MB51 qty')}</th><th class="num">${T('ខុសគ្នា', 'Diff')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th></tr></thead><tbody>
         ${rows.map((x, i) => `<tr class="go" data-mbi="${i}"><td>${esc(String(x.when).slice(5, 16))}</td><td>${esc(x.post)}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.doc)}</td><td>${esc(x.mvt)}</td><td class="mono">${esc(x.material)}</td><td>${esc(x.desc)}</td><td class="mono">${esc(x.batch)}</td><td class="mono">${esc(x.bin)}</td><td>${esc(x.sloc)}</td>
-          <td class="num mono">${sq(x.appQty)}</td><td class="num mono">${sq(x.sapQty)}</td><td class="num mono"><b>${x.diff ? sq(x.diff) : ''}</b></td><td>${esc(x.uom)}</td><td><span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span></td></tr>`).join('')
-          || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
-        <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${rows.length})</th>${'<th></th>'.repeat(9)}<th class="num mono">${sumU('appQty')}</th><th class="num mono">${sumU('sapQty')}</th><th class="num mono">${sumU('diff')}</th><th></th><th></th></tr></tfoot></table></section>
+          <td class="num mono">${sq(x.appQty)}</td><td class="num mono">${sq(x.sapQty)}</td><td class="num mono"><b>${x.diff ? sq(x.diff) : ''}</b></td><td>${esc(x.uom)}</td><td><span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span></td><td>${x.note ? `<span class="st st-var" title="MB51: ${esc(x.sbatch)}">${T('Batch ខុស', 'Batch different')}</span> <span class="muted mono">MB51 ${esc(x.sbatch)}</span>` : ''}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="16">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${rows.length})</th>${'<th></th>'.repeat(9)}<th class="num mono">${sumU('appQty')}</th><th class="num mono">${sumU('sapQty')}</th><th class="num mono">${sumU('diff')}</th><th></th><th></th><th></th></tr></tfoot></table></section>
       <p class="muted">${T('ផ្គូផ្គង ឯកសារយោងក្នុងកម្មវិធី (DN / PO / GR) ជាមួយ Reference, Material Document, Purchase order ឬ Order ក្នុង MB51 + សម្ភារៈ + Batch។ ចេញ = ចំនួនអវិជ្ជមាន។ ការផ្ទេររវាងទីតាំង និងការកែតម្រូវ មិនបានប្រៀបធៀបទេ។',
         'App Reference (DN / PO / GR) is matched with MB51 Reference, Material Document, Purchase order or Order, plus Material + Batch. Out = negative qty. Bin transfers and adjustments are not compared (they are not in MB51).')}</p>` : ''}`);
     pvWire('moves', moves);
@@ -851,8 +851,8 @@
     keep('#mbq', v => { F.q = v; moves(); });
     $$('tr[data-mbi]').forEach(tr => { tr.onclick = () => mbDetail(rows[Number(tr.dataset.mbi)]); });
     FL.forEach(f => mselWire(f[0], v => { F[f[2]] = v; moves(); }));
-    if ($('#exp')) $('#exp').onclick = () => download('mb51-compare.csv', [['Date app', 'Posting date', 'Reference', 'Material Document', 'Movement type', 'Material', 'Description', 'Batch', 'Bin', 'SLoc', 'App qty', 'MB51 qty', 'Diff', 'UoM', 'Result', 'MB51 file']]
-      .concat(rows.map(x => [x.when, x.post, x.ref, x.doc, x.mvt, x.material, x.desc, x.batch, x.bin, x.sloc, x.appQty == null ? '' : x.appQty, x.sapQty == null ? '' : x.sapQty, x.diff, x.uom, MBR[x.res][1], MB.name])));
+    if ($('#exp')) $('#exp').onclick = () => download('mb51-compare.csv', [['Date app', 'Posting date', 'Reference', 'Material Document', 'Movement type', 'Material', 'Description', 'Batch', 'Bin', 'SLoc', 'App qty', 'MB51 qty', 'Diff', 'UoM', 'Result', 'Remark', 'MB51 batch', 'MB51 file']]
+      .concat(rows.map(x => [x.when, x.post, x.ref, x.doc, x.mvt, x.material, x.desc, x.batch, x.bin, x.sloc, x.appQty == null ? '' : x.appQty, x.sapQty == null ? '' : x.sapQty, x.diff, x.uom, MBR[x.res][1], x.note ? 'Batch different' : '', x.sbatch || '', MB.name])));
   }
 
   window.SC_PAGES = { varhist: varhist, binsum: binsum, dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
