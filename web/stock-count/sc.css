@@ -462,3 +462,60 @@ table.rep select.cell.need { background: var(--bad-bg); border-color: #fca5a5; c
 .mbsheet { max-width: 1100px; max-height: 88vh; overflow: auto; } .mbsheet h4 { margin: 12px 0 6px; font-size: 14px; } .mbsheet .scroll { overflow-x: auto; }
 .mbsheet table.rep { width: 100%; } table.mbtbl tbody tr.go { cursor: pointer; }
 @media (min-width: 900px) { .mbsheet-bg { align-items: center; } .mbsheet { border-radius: 16px; } }
+/* Kim, 27 Nov: points for improvement */
+.binq { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; margin: 0 0 8px; background: var(--card); color: var(--ink); }
+.undobar { display: flex; align-items: center; gap: 8px; background: #14213d; color: #fff; border-radius: 12px; padding: 8px 10px; margin: 0 0 10px; }
+.undobar span { flex: 1; min-width: 0; }
+.undobar button { border: 1px solid #93c5fd; background: transparent; color: #93c5fd; border-radius: 8px; padding: 6px 10px; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.lfix { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; width: 32px; height: 36px; font-size: 18px; cursor: pointer; flex: none; }
+.lrow.rev .lmid b, .lrow.rev .lqty b { text-decoration: line-through; opacity: .6; }
+.revtag { font-size: 11px; font-weight: 700; color: var(--warn); }
+.fixbox { background: var(--bg); border: 1px dashed var(--warn); border-radius: 12px; padding: 10px; margin: 4px 0 8px; }
+.fixbox input { width: 100%; box-sizing: border-box; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font: inherit; background: var(--card); color: var(--ink); }
+.fixbox input.need { background: var(--bad-bg); border-color: #f3a5a5; }
+.fixacts { display: grid; gap: 6px; }
+.fixacts .btn { margin: 0; text-align: left; }
+.fixacts .red { color: var(--bad); }
+.linkbtn { border: 0; background: none; color: var(--blue); font: inherit; font-weight: 600; padding: 4px 0; cursor: pointer; }
+.shortbox { margin: 4px 0; }
+.shortin { background: var(--warn-bg); border-radius: 10px; padding: 8px; margin-top: 4px; }
+.shortin .row { display: flex; gap: 6px; margin-top: 4px; }
+.shortin input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; background: var(--card); color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.dupwarn { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn); border-radius: 10px; padding: 8px 10px; text-align: left; }
+.chead { display: flex; flex-direction: column; align-items: stretch; width: 100%; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; position: relative; }
+.chead i { position: absolute; right: 2px; top: 0; font-style: normal; color: var(--muted); }
+.chead .cdesc { padding-right: 20px; }
+.cfold .chead { flex-direction: row; gap: 6px; align-items: baseline; border-bottom: 2px solid var(--navy); padding-bottom: 4px; }
+.cfold .chead .cdesc { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.cfold .chead .ccode { border: 0; padding: 0; font-size: 13px; white-space: nowrap; }
+.cfold .chead .ccode .muted { display: none; }
+.cfold .chead i { transform: rotate(-90deg); }
+.seg.cmode { grid-template-columns: 1fr 1fr; margin: 8px 0 0; }
+.seg.cmode button { font-size: 14px; padding: 7px 4px; }
+.seg.cmode button[data-mode="dmg"] b { color: var(--bad); }
+.cdmg { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cdmg.need { background: var(--bad-bg); border-radius: 10px; padding: 6px; }
+.crem { width: 100%; box-sizing: border-box; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; font: inherit; background: var(--card); color: var(--ink); }
+.cbadge { border: 0; background: #dbeafe; color: #1d4ed8; border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 12px; font-weight: 700; vertical-align: middle; cursor: pointer; }
+.cbadge:empty { display: none; }
+.mbchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.mbchip { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.mbchip:disabled { cursor: default; opacity: 1; }
+.mbchip b { margin-right: 2px; }
+.mbchip.in { color: var(--ok); } .mbchip.warn { color: var(--warn); } .mbchip.out { color: var(--bad); }
+.mbchip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+.mbinfo { border-left: 1px solid var(--line); padding-left: 10px; font-size: 12.5px; }
+.mbpast { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 12.5px; background: var(--card); color: var(--ink); max-width: 240px; }
+.mbwhy { background: #eaf2fd; color: #14213d; border: 1px solid #cfe0f7; border-radius: 12px; padding: 10px; margin-top: 12px; }
+.mbwhy-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; }
+.mbwhy-row label { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 2px; }
+.mbwhy-row label.grow { flex: 1; min-width: 200px; }
+.mbwhy select, .mbwhy input { border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; font: inherit; font-size: 13px; background: #fff; color: #14213d; }
+.mbwhy select.need { background: var(--bad-bg); border-color: #fca5a5; }
+table.mbtbl th.tk, table.mbtbl td.tk { width: 28px; text-align: center; padding-left: 4px; padding-right: 4px; }
+table.mbtbl td.tk input { width: 16px; height: 16px; cursor: pointer; }
+.fb-btn.pri:disabled { opacity: .5; cursor: default; }
+.mbfile select.mbpast { width: auto; flex: 0 0 auto; max-width: 240px; }

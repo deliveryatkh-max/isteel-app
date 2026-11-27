@@ -18,14 +18,14 @@
  * Pure rules (countedPcs, countedQty, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
-const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger', PM: 'Product Master', VAR: 'Variance Log', VSN: 'Variance Snapshots' };
+const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger', PM: 'Product Master', VAR: 'Variance Log', VSN: 'Variance Snapshots', GI: 'GI Reconciliation' };
 // Product Master = pipe materials with pieces per bundle and kg per piece (from Kim's Product Master file). It turns a count in
 // bundles / pieces into kg. Filled once from ProductMaster.gs when the tab is empty; after that the tab is edited by hand.
 const PM_COLS = ['Material', 'Description', 'Pipe Size', 'Pcs per Bundle', 'Kg per Pc', 'Source'];
 // Stock Ledger = the digital stock card: one row per posted movement (In, Out, Transfer Out, Transfer In). Rows are never edited
 // or deleted by the app; a correction is a new movement. Book Qty in Stock On Hand is the running balance of each line.
 const LED_COLS = ['Txn ID', 'Date', 'Time', 'Type', 'Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'In', 'Out', 'Balance',
-  'Reference', 'Other Bin', 'Transfer ID', 'Remark', 'User', 'Request ID'];
+  'Reference', 'Other Bin', 'Transfer ID', 'Remark', 'User', 'Request ID', 'Reverses'];
 // Bin Master = bin master data only (bin, warehouse, active). Stock On Hand = what is in each bin (from MB52): book qty per SKU, batch and SLOC.
 const BIN_COLS = ['Bin', 'Warehouse', 'Active', 'Last Count', 'Last Status'];
 const STK_COLS = ['Bin', 'Material', 'Description', 'Batch', 'SLOC', 'UoM', 'Pcs per Bundle', 'Book Qty',
@@ -77,6 +77,9 @@ function route_(action, p, user) {
     case 'varSave': return withLock_(() => varSave_(user, p));
     case 'varList': return varList_(user);
     case 'varUpdate': return withLock_(() => varUpdate_(user, p));
+    case 'reverse': return withLock_(() => reverse_(user, p));
+    case 'giConfirm': return withLock_(() => giConfirm_(user, p));
+    case 'giList': return giList_(user);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -474,7 +477,7 @@ function dash_(lines, bins) {
     transferToday: t.filter(r => r.Type === 'TRANSFER OUT').length, recent: led.slice(-10).reverse().map(ledRow_) };
 }
 const ledRow_ = r => ({ id: r['Txn ID'], date: r.Date, time: r.Time, type: r.Type, bin: r.Bin, material: r.Material, desc: r.Description, batch: r.Batch,
-  sloc: r.SLOC, uom: r.UoM, qtyIn: num_(r.In), qtyOut: num_(r.Out), balance: num_(r.Balance), reference: r.Reference, otherBin: r['Other Bin'], remark: r.Remark, user: r.User });
+  sloc: r.SLOC, uom: r.UoM, qtyIn: num_(r.In), qtyOut: num_(r.Out), balance: num_(r.Balance), reference: r.Reference, otherBin: r['Other Bin'], remark: r.Remark, user: r.User, reverses: r.Reverses || '', tid: r['Transfer ID'] || '' });
 
 // Movements screen: the newest 1,000 ledger rows, oldest first.
 function ledger_(user) {
@@ -511,12 +514,15 @@ function submit_(user, c) {
     const s = stock.find(x => lineKey_(Object.assign({ bin: b.bin }, x)) === lineKey_(Object.assign({ bin: b.bin }, l)));
     if (!s) fail_('NOLINE', 'Material ' + l.material + ' is not in this bin.');
     // Any one of Bundle / Kg / Pcs is enough. The book is compared and changed only when the box in the book unit is filled.
-    if (!comparable(l, s.uom)) { rows.push({ s: s, counted: '', diff: '', status: '', cmp: false }); return; }
+    // Damaged part of the count (Kim, 27 Nov, point 7): already included in Bundle / Kg / Pcs; saved apart as Damaged Qty + Damage Type.
+    const dm = l.damaged && typeof l.damaged === 'object' ? { bundles: l.damaged.bundles == null ? '' : String(l.damaged.bundles), kg: l.damaged.kg == null ? '' : String(l.damaged.kg), pieces: l.damaged.pieces == null ? '' : String(l.damaged.pieces) } : null;
+    const dmg = dm && !(dm.bundles === '' && dm.kg === '' && dm.pieces === '') ? { qty: comparable(dm, s.uom) ? countedQty(dm, s.uom, s.pcsPerBundle) : [dm.bundles && dm.bundles + ' bd', dm.kg && dm.kg + ' kg', dm.pieces && dm.pieces + ' pcs'].filter(Boolean).join(' '), type: clip_(l.damaged.type, 40) || 'Other' } : null;
+    if (!comparable(l, s.uom)) { rows.push({ s: s, counted: '', diff: '', status: '', cmp: false, dmg: dmg }); return; }
     const counted = countedQty(l, s.uom, s.pcsPerBundle);
     const diff = counted - s.book;
     const status = statusOf(diff, st.tol);
     if (status === 'SHORT' || (status === 'OVER' && worst !== 'SHORT')) worst = status;
-    rows.push({ s: s, counted: counted, diff: diff, status: status, cmp: true });
+    rows.push({ s: s, counted: counted, diff: diff, status: status, cmp: true, dmg: dmg });
   });
   // No photo rule for now: Kim's Counts tab has no Diff / Status / Photo columns (13 Nov). A photo is still saved when one is sent.
 
@@ -529,7 +535,8 @@ function submit_(user, c) {
     const l = lines[i];
     const num = v => (v === '' || v == null ? '' : Number(v));
     appendCount_(cnt, { id: id, type: 'Count', now: now, bin: b.bin, s: r.s, bundles: num(l.bundles), kg: num(l.kg), pieces: num(l.pieces),
-      counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: name_(who, user), remark: clip_(l.remark, 200), note: clip_(c.note, 200) });
+      counted: r.counted, diff: r.diff, status: r.status, photo: photo, by: name_(who, user), remark: clip_(l.remark, 200), note: clip_(c.note, 200),
+      dmgQty: r.dmg ? r.dmg.qty : '', dmgType: r.dmg ? r.dmg.type : '' });
     addCounted_(stk, r.s, l, now, name_(who, user));   // latest count replaces the old one in Stock On Hand; Book Qty is not changed by a count
   });
   markBin_(b.bin, fmt_(now, 'yyyy-MM-dd HH:mm'), rows.some(r => r.cmp) ? worst : '');
@@ -570,6 +577,7 @@ function out_(user, c) {
 // A value whose column is not in the sheet is simply not saved. Without a Note column, the note goes into Remark.
 function appendCount_(sh, r) {
   const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  if (r.dmgType) ['Damaged Qty', 'Damage Type'].forEach(h => { if (head.indexOf(h.toLowerCase()) < 0) { sh.getRange(1, head.length + 1).setValue(h); head.push(h.toLowerCase()); } });
   const hasNote = head.indexOf('note') >= 0;
   const v = {
     'count id': r.id, 'type': r.type, 'date': fmt_(r.now, 'yyyy-MM-dd'), 'time': fmt_(r.now, 'HH:mm'), 'bin': r.bin,
@@ -578,6 +586,7 @@ function appendCount_(sh, r) {
     'counted qty bundle': r.bundles, 'bundle': r.bundles, 'counted qty kg': r.kg, 'kg': r.kg, 'counted qty pcs': r.pieces, 'pcs': r.pieces,
     'counted qty': r.counted, 'out qty': r.out, 'diff': r.diff, 'status': r.status, 'photo': r.photo,
     'remark': hasNote ? r.remark : [r.remark, r.note].filter(Boolean).join(' | '), 'note': r.note, 'counted by': r.by,
+    'damaged qty': r.dmgQty, 'damage type': r.dmgType,
   };
   sh.appendRow(head.map(h => (v[h] == null ? '' : v[h])));
 }
@@ -604,6 +613,7 @@ function posted_(requestId) {
 function ledgerAppend_(rows) {
   const sh = sheet_(SH.LED, LED_COLS);
   const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getDisplayValues()[0].map(h => String(h).trim());
+  LED_COLS.filter(c => head.indexOf(c) < 0 && rows.some(r => r[c] != null && r[c] !== '')).forEach(c => { sh.getRange(1, head.length + 1).setValue(c); head.push(c); });
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, head.length).setValues(rows.map(r => head.map(h => (r[h] == null ? '' : r[h]))));
 }
 const ledgerRow_ = (id, now, type, bin, s, qty, balance, extra) => Object.assign({ 'Txn ID': id, Date: fmt_(now, 'yyyy-MM-dd'), Time: fmt_(now, 'HH:mm'), Type: type,
@@ -721,6 +731,76 @@ function editLine_(user, p) {
     if (diff) sh.getRange(row, 8).setValue(bal);
   }
   return { id: id, balance: bal, deleted: del, batch: n.batch, sloc: n.sloc };
+}
+
+// ---------------------------------------------------------------- fix a wrong movement (Kim, 27 Nov, question 2)
+// Reverse = a REVERSAL row that cancels the movement (both legs of a transfer); the old row is never changed or deleted.
+// Users fix only their own movements of today; admins and supervisors any. Undo within 5 minutes needs no reason.
+function reverse_(user, p) {
+  const who = counter_(user), by = name_(who, user);
+  const dup = posted_(p.requestId);
+  if (dup) return dup;
+  const id = clip_(p.id, 60);
+  const all = objs_(SH.LED, LED_COLS);
+  let rows = all.filter(r => r['Txn ID'] === id || (r['Transfer ID'] && r['Transfer ID'] === id));
+  if (rows.length === 1 && rows[0]['Transfer ID']) rows = all.filter(r => r['Transfer ID'] === rows[0]['Transfer ID']);
+  if (!id || !rows.length) fail_('BAD', 'This movement is not in the Stock Ledger.', 'រកមិនឃើញចលនានេះក្នុងបញ្ជីទេ។');
+  if (rows.some(r => !/^(IN|OUT|TRANSFER IN|TRANSFER OUT)$/i.test(r.Type))) fail_('BAD', 'Only Stock IN, OUT and Transfer can be reversed. Use Edit on the stock line.', 'អាចកែបានតែ ចូល ចេញ និងផ្ទេរ។ សូមប្រើ កែ លើបន្ទាត់ស្តុក។');
+  const ids = rows.map(r => r['Txn ID']);
+  if (all.some(r => ids.indexOf(String(r.Reverses || '')) >= 0)) fail_('BAD', 'This movement was already reversed.', 'ចលនានេះបានកែរួចហើយ។');
+  const now = new Date(), boss = !!(who.admin || who.supervisor);
+  if (!boss && rows[0].User !== by) fail_('NOACCESS', 'You can fix only your own movements. Ask a supervisor.', 'អ្នកអាចកែបានតែចលនារបស់ខ្លួនឯង។ សូមស្នើប្រធានក្រុម។');
+  if (!boss && rows[0].Date !== fmt_(now, 'yyyy-MM-dd')) fail_('NOACCESS', 'You can fix only movements of today. Ask a supervisor.', 'អ្នកអាចកែបានតែចលនាថ្ងៃនេះ។ សូមស្នើប្រធានក្រុម។');
+  const mins = (fmt_(now, 'HH:mm').split(':').reduce((a, x) => a * 60 + Number(x), 0)) - (String(rows[0].Time).split(':').reduce((a, x) => a * 60 + Number(x), 0));
+  const undo = (p.undo === true || p.undo === 'true') && rows[0].Date === fmt_(now, 'yyyy-MM-dd') && mins >= 0 && mins <= 5;
+  const reason = clip_(p.reason, 200) || (undo ? 'Undo' : '');
+  if (!reason) fail_('BAD', 'Enter the reason.', 'សូមបញ្ចូលមូលហេតុ។');
+  // Check every line first (no negative stock), then write all rows in one go.
+  const stk = sheet_(SH.STK, STK_COLS), plan = [];
+  rows.forEach(r => {
+    const s = findLine_(stock_(r.Bin), r.Bin, { material: r.Material, batch: r.Batch, sloc: r.SLOC });
+    if (!s) fail_('NOLINE', 'Line ' + r.Material + ' is no longer in bin ' + r.Bin + '.', 'បន្ទាត់ ' + r.Material + ' លែងមានក្នុង ' + r.Bin + '។');
+    const delta = Math.round((num_(r.Out) - num_(r.In)) * 1000) / 1000, bal = Math.round((Number(s.book) + delta) * 1000) / 1000;
+    if (bal < 0) fail_('BAD', 'Not enough stock in ' + r.Bin + ' to reverse this (it was already moved out).', 'ស្តុកក្នុង ' + r.Bin + ' មិនគ្រប់ដើម្បីកែ (បានចេញរួច)។');
+    plan.push({ r: r, s: s, delta: delta, bal: bal });
+  });
+  const rid = txnId_('REV', now);
+  ledgerAppend_(plan.map((x, i) => ledgerRow_(rid + (plan.length > 1 ? '-' + (i + 1) : ''), now, 'REVERSAL', x.r.Bin, x.s, 0, x.bal,
+    { In: x.delta > 0 ? x.delta : '', Out: x.delta < 0 ? -x.delta : '', Reference: x.r.Reference, 'Other Bin': x.r['Other Bin'], Remark: '↶ ' + x.r['Txn ID'] + ' · ' + reason,
+      User: by, 'Request ID': clip_(p.requestId, 80), Reverses: x.r['Txn ID'] })));
+  plan.forEach(x => setBook_(stk, x.s, x.bal));
+  return { id: rid, reversed: ids, balances: plan.map(x => ({ bin: x.r.Bin, material: x.s.material, batch: x.s.batch, sloc: x.s.sloc, balance: x.bal })) };
+}
+
+// ---------------------------------------------------------------- MB51 compare: Confirm GI (Kim, 27 Nov, points 12-13)
+// Ticked compare lines are saved once to GI Reconciliation; the GI Status column reads them back by key (reference|material|batch).
+const GI_COLS = ['GI ID', 'Confirmed At', 'Confirmed By', 'MB51 File', 'Key', 'Posting Date', 'Reference', 'Mat. Doc', 'Mvt', 'Material', 'Description',
+  'Batch', 'Bin', 'SLoc', 'App Qty', 'MB51 Qty', 'Diff', 'UoM', 'Result', 'Remark'];
+function giConfirm_(user, p) {
+  const who = counter_(user), by = name_(who, user);
+  const lines = Array.isArray(p.lines) ? p.lines.slice(0, 3000) : [];
+  if (!lines.length) fail_('BAD', 'Tick at least one line.', 'សូមធីកយ៉ាងហោចណាស់មួយបន្ទាត់។');
+  const have = {}; objs_(SH.GI, GI_COLS).forEach(r => { have[String(r.Key).toUpperCase()] = 1; });
+  const now = new Date(), at = fmt_(now, 'yyyy-MM-dd HH:mm'), gid = txnId_('GI', now), add = [];
+  lines.forEach(l => {
+    const key = clip_(l.key, 160).toUpperCase();
+    if (!key || have[key]) return;
+    have[key] = 1;
+    const n = v => (v === '' || v == null ? '' : num_(v));
+    add.push({ 'GI ID': gid, 'Confirmed At': at, 'Confirmed By': by, 'MB51 File': clip_(p.file, 120), Key: key, 'Posting Date': clip_(l.post, 20), Reference: clip_(l.ref, 60),
+      'Mat. Doc': clip_(l.doc, 40), Mvt: clip_(l.mvt, 10), Material: clip_(l.material, 40), Description: clip_(l.desc, 120), Batch: clip_(l.batch, 40), Bin: clip_(l.bin, 80),
+      SLoc: clip_(l.sloc, 20), 'App Qty': n(l.appQty), 'MB51 Qty': n(l.sapQty), Diff: n(l.diff), UoM: clip_(l.uom, 10), Result: clip_(l.result, 30), Remark: clip_(l.remark, 120) });
+  });
+  if (add.length) {
+    const sh = sheet_(SH.GI, GI_COLS);
+    const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getDisplayValues()[0].map(h => String(h).trim());
+    sh.getRange(sh.getLastRow() + 1, 1, add.length, head.length).setValues(add.map(r => head.map(h => (r[h] == null ? '' : r[h]))));
+  }
+  return { id: gid, added: add.length, skipped: lines.length - add.length, at: at, by: by };
+}
+function giList_(user) {
+  counter_(user);
+  return { rows: objs_(SH.GI, GI_COLS).slice(-20000).map(r => ({ key: r.Key, at: r['Confirmed At'], by: r['Confirmed By'], file: r['MB51 File'] })) };
 }
 
 // Writes the latest count into the Stock On Hand row of this line (Kim, 19 Nov): a new count REPLACES the old
