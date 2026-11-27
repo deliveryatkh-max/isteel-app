@@ -519,3 +519,14 @@ table.mbtbl th.tk, table.mbtbl td.tk { width: 28px; text-align: center; padding-
 table.mbtbl td.tk input { width: 16px; height: 16px; cursor: pointer; }
 .fb-btn.pri:disabled { opacity: .5; cursor: default; }
 .mbfile select.mbpast { width: auto; flex: 0 0 auto; max-width: 240px; }
+/* SAP check Option A (27 Nov): one slim bar + chips */
+.sapf .fb-head h2 { font-size: 13px; font-weight: 400; min-width: 0; flex: 1 1 360px; }
+.sapbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.sapbar .fb-btn { min-height: 34px; height: 34px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; margin: 0; width: auto; }
+.sapbar .fb-pri { background: var(--navy); color: #fff; border-color: var(--navy); }
+.sapbar .sapmapbtn { font-weight: 500; color: var(--muted); }
+.sapbar .sapmapbtn.on { border-color: var(--navy); color: var(--ink); }
+.sapinfo { font-size: 12.5px; }
+.sapmap { margin: 0 0 8px; padding: 10px; }
+.sapchips { align-items: center; }
+.sapby { font-size: 12.5px; margin: 0 4px; }

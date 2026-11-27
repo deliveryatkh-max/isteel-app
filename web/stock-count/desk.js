@@ -466,6 +466,8 @@
     const sc = document.createElement('script'); sc.src = '../vendor/xlsx.mini.min.js'; sc.onload = () => (window.XLSX ? ok(window.XLSX) : no()); sc.onerror = () => { xlsxP = null; no(); }; document.head.appendChild(sc); })));
   function sap() {
     wide();
+    // Filters start closed here (Option A); after that the Filter button remembers open/closed as everywhere else.
+    try { const fk = 'fb_open_' + location.pathname.replace(/[^a-z0-9]+/gi, '_') + 'sapf'; if (localStorage.getItem(fk) === null) localStorage.setItem(fk, '0'); } catch (e) { /* private window */ }
     const ok = R.rows.length && R.map.material >= 0 && R.map.qty >= 0;
     const res = ok ? reconcile() : null;
     // Product filters like the Product menu (Kim, 20 Nov): L1–L4, Size, Grade, Brand, Class + search; the numbers follow the filters.
@@ -488,7 +490,14 @@
     const sumU = f => { const u = {}; shown.forEach(x => { if (x[f] == null) return; const k = String(x.uom || '').toUpperCase(); u[k] = (u[k] || 0) + Number(x[f]); });
       return Object.keys(u).sort().map(k => `${f === 'variance' && u[k] > 0 ? '+' : ''}${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
     const seen = x => { const c = openCase(lv, x.key); return !c ? (x.status === 'match' ? '' : T('ថ្មី', 'New')) : `<span class="st ${Number(c.Times) >= 3 ? 'st-sap' : 'st-var'}">${esc(c.Times)}× · ${esc(String(c['First Seen']).slice(5, 10))}</span>`; };
-    view(`
+    // Option A (Kim, 27 Nov: "this consumes a lot of space"): once a file is read, file + mapping + actions sit in ONE bar and the
+    // numbers become chips; the column mapping hides behind ⚙ and opens by itself only when a needed column is missing.
+    const mapTxt = FIELDS.filter(f => R.map[f[0]] >= 0).map(f => esc(R.headers[R.map[f[0]]])).join(' · ');
+    const mapGrid = () => `<div class="mapgrid">${FIELDS.map(f => `<label>${f[1]}${f[3] ? ' *' : ''}<select data-map="${f[0]}"${f[3] && R.map[f[0]] < 0 ? ' class="need"' : ''}><option value="-1">—</option>${R.headers.map((h, i) => `<option value="${i}"${R.map[f[0]] === i ? ' selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}</div>`;
+    const actChips = res ? PF.map((f, k) => (SFV[f[0]] ? `<button type="button" class="mbchip on" data-sfx="${k}">${T(f[1], f[2])}: ${esc(SFV[f[0]])} ✕</button>` : '')).join('')
+      + (SR && SR !== '-' ? `<button type="button" class="mbchip on" data-sfx="r">${T('មូលហេតុ', 'Reason')}: ${esc(SR)} ✕</button>` : '')
+      + (sq ? `<button type="button" class="mbchip on" data-sfx="q">🔍 ${esc(sq)} ✕</button>` : '') : '';
+    view(!res ? `
       <h2 class="ptitle">${T('នាំចូល SAP និងផ្ទៀងផ្ទាត់', 'SAP import and reconciliation')}</h2>
       <section class="card">
         <div class="fbar"><label class="btn sm file">⬆ ${T('ជ្រើសឯកសារ Excel ឬ CSV ពី SAP', 'Choose SAP Excel or CSV file')}<input type="file" id="sapFile" accept=".csv,.txt,.xlsx,.xlsm,.xls,text/csv" hidden></label>
@@ -501,18 +510,24 @@
           <div class="mapgrid">${FIELDS.map(f => `<label>${f[1]}${f[3] ? ' *' : ''}<select data-map="${f[0]}"${f[3] && R.map[f[0]] < 0 ? ' class="need"' : ''}><option value="-1">—</option>${R.headers.map((h, i) => `<option value="${i}"${R.map[f[0]] === i ? ' selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}</div>`
         : `<p class="muted">${T('នាំចេញ MB52 ឬ EWM ពី SAP ជា Excel ឬ CSV រួចជ្រើសឯកសារនៅទីនេះ (Excel អានសន្លឹកទីមួយ)។ ', 'Export MB52 or EWM stock from SAP to Excel or CSV, then choose the file here (Excel: the first sheet is read) or paste the rows.')}</p>`}
       </section>
-      ${res ? `
-      <div class="dash-kpis">
-        <div class="stat"><b>${list.length}</b><span>${T('ជួរប្រៀបធៀប', 'Lines compared')}</span></div>
-        <div class="stat in"><b>${list.length - vars.length}</b><span>${T('ត្រូវគ្នា', 'Match')}</span></div>
-        <div class="stat ${vars.length ? 'out' : ''}"><b>${vars.length}</b><span>${T('ខុសគ្នា', 'Variances')}</span></div>
-        <div class="stat warn"><b>${vars.filter(x => rsnOf(x)).length} / ${vars.length}</b><span>${T('មានមូលហេតុ', 'Reason given')}</span></div>
-        <div class="stat"><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
-      </div>
-      <div class="fb-wrap sapf">${FB.head('sapf', `<span class="muted">${T('ប្រៀបធៀបតាម', 'Compared by')} <b>${esc(lvName)}</b></span>`,
-        `<button type="button" class="fb-btn pri" id="varSave">💾 ${T('រក្សាទុកខុសគ្នា', 'Save variance')}</button><label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
+` : `
+      <div class="fb-wrap sapf">${FB.head('sapf', `<span class="sapbar"><label class="fb-btn fb-pri file">⬆ ${T('ជ្រើសឯកសារ SAP', 'Choose SAP file')}<input type="file" id="sapFile" accept=".csv,.txt,.xlsx,.xlsm,.xls,text/csv" hidden></label>
+          ${DEMO ? `<button type="button" class="fb-btn" data-sample="mb52">MB52</button><button type="button" class="fb-btn" data-sample="ewm">EWM</button>` : ''}
+          <span class="muted sapinfo">📄 <b>${esc(R.name)}</b> · ${R.rows.length} ${T('ជួរ', 'rows')} · ${esc(R.at)}${res.bad ? ` · <span class="bad">${res.bad} ${T('ជួរមិនអាចអាន', 'rows skipped')}</span>` : ''}</span>
+          <button type="button" class="fb-btn sapmapbtn${R.showMap ? ' on' : ''}" id="mapTog" title="${T('ផ្គូផ្គងជួរឈរ', 'Column mapping')}: ${mapTxt}">⚙ ${FIELDS.filter(f => R.map[f[0]] >= 0).length} ${T('ជួរឈររកឃើញ', 'columns found')} ✓</button></span>`,
+        `<button type="button" class="fb-btn fb-pri" id="varSave">💾 ${T('រក្សាទុកខុសគ្នា', 'Save variance')}</button><label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
         + (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '') + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`,
         () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; SR = ''; sap(); })}
+      ${R.showMap || R.error ? `<section class="card sapmap">${R.error ? `<p class="bad">⚠️ ${esc(R.error)}</p>` : ''}${mapGrid()}
+        <details class="paste"><summary>${T('ឬបិទភ្ជាប់ពី Excel', 'or paste from Excel')}</summary><textarea id="sapPaste" rows="4" placeholder="Material&#9;Batch&#9;Storage Location&#9;Unrestricted"></textarea>
+          <button type="button" class="btn ghost sm" id="usePaste">${T('ប្រើទិន្នន័យនេះ', 'Use this data')}</button></details></section>` : ''}
+      <div class="mbchips sapchips">
+        <button type="button" class="mbchip" disabled><b>${list.length}</b> ${T('ប្រៀបធៀប', 'compared')}</button>
+        <button type="button" class="mbchip in" disabled><b>${list.length - vars.length}</b> ${T('ត្រូវគ្នា', 'match')}</button>
+        <button type="button" class="mbchip out${F.onlyVar ? ' on' : ''}" data-sc="var"><b>${vars.length}</b> ${T('ខុសគ្នា', 'variances')}</button>
+        <button type="button" class="mbchip warn${SR === '-' ? ' on' : ''}" data-sc="rsn"><b>${vars.filter(x => rsnOf(x)).length} / ${vars.length}</b> ${T('មានមូលហេតុ', 'reason')}</button>
+        <button type="button" class="mbchip" disabled><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b> ${T('អត្រាត្រូវគ្នា', 'match rate')}</button>
+        <span class="muted sapby">${T('តាម', 'by')} <b>${esc(lvName)}</b></span>${actChips}</div>
       ${FB.panel('sapf', (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
         : `<p class="muted">${PT.err ? T('តម្រងផលិតផល សម្រាប់អ្នកគ្រប់គ្រង និងប្រធានក្រុម', 'Product filters are for admins and supervisors') : T('កំពុងផ្ទុក…', 'Loading…')}</p>`)
         + FB.field(T('មូលហេតុ', 'Reason'), `<select id="sfr"><option value="">${T('ទាំងអស់', 'All')}</option><option value="-"${SR === '-' ? ' selected' : ''}>${T('មិនទាន់មានមូលហេតុ', 'No reason yet')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === SR ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select>`)
@@ -524,7 +539,7 @@
           <td><input class="cell" data-rmk="${esc(x.key)}" value="${esc(rmkOf(x))}" placeholder="${T('កំណត់សម្គាល់…', 'Remark…')}"></td><td>${seen(x)}</td>`}</tr>`).join('')
           || `<tr><td class="muted" colspan="${res.level.length + 10}">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</tbody>
         <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${shown.length})</th>${'<th></th>'.repeat(res.level.length)}<th class="num mono">${sumU('digital')}</th><th class="num mono">${sumU('sap')}</th><th class="num mono">${sumU('variance')}</th>${'<th></th>'.repeat(6)}</tr></tfoot></table></section>
-      <p class="muted">${T('ខុសគ្នា = កាតស្តុក − SAP។ ទិន្នន័យ SAP មិនដែលសរសេរជាន់លើស្តុកក្នុងកាតស្តុកទេ។ ជួរខុសគ្នាត្រូវពិនិត្យដោយការរាប់។', 'Variance = Digital − SAP. SAP figures never overwrite the digital balance. A variance is checked with a count.')}</p>` : ''}`);
+      <p class="muted">${T('ខុសគ្នា = កាតស្តុក − SAP។ ទិន្នន័យ SAP មិនដែលសរសេរជាន់លើស្តុកក្នុងកាតស្តុកទេ។ ជួរខុសគ្នាត្រូវពិនិត្យដោយការរាប់។', 'Variance = Digital − SAP. SAP figures never overwrite the digital balance. A variance is checked with a count.')}</p>`);
     // Excel files too (Kim, 20 Nov): .xlsx / .xls read from the FIRST sheet, turned into CSV for the same import.
     $('#sapFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader();
       if (/\.(xlsx|xlsm|xls)$/i.test(f.name)) {
@@ -533,7 +548,10 @@
         rd.readAsArrayBuffer(f);
       } else { rd.onload = () => loadSap(f.name, String(rd.result)); rd.readAsText(f); } };
     $$('[data-sample]').forEach(b => { b.onclick = () => loadSap(b.dataset.sample === 'mb52' ? 'MB52_sample.csv' : 'EWM_stock_sample.csv', toCsv(SAMPLE[b.dataset.sample]())); });
-    $('#usePaste').onclick = () => { const t = $('#sapPaste').value; if (t.trim()) loadSap(T('ទិន្នន័យបិទភ្ជាប់', 'Pasted data'), t); };
+    if ($('#mapTog')) $('#mapTog').onclick = () => { R.showMap = !R.showMap; sap(); };
+    $$('[data-sc]').forEach(b => { b.onclick = () => { if (b.dataset.sc === 'var') F.onlyVar = !F.onlyVar; else SR = SR === '-' ? '' : '-'; sap(); }; });
+    $$('[data-sfx]').forEach(b => { b.onclick = () => { const k = b.dataset.sfx; if (k === 'r') SR = ''; else if (k === 'q') sq = ''; else SFV[PF[k][0]] = ''; sap(); }; });
+    if ($('#usePaste')) $('#usePaste').onclick = () => { const t = $('#sapPaste').value; if (t.trim()) loadSap(T('ទិន្នន័យបិទភ្ជាប់', 'Pasted data'), t); };
     $$('[data-map]').forEach(s => { s.onchange = () => { R.map[s.dataset.map] = Number(s.value); sap(); }; });
     if ($('#onlyVar')) $('#onlyVar').onchange = e => { F.onlyVar = e.target.checked; sap(); };
     PF.forEach((f, k) => { if ($('#sf' + k)) $('#sf' + k).onchange = e => { SFV[f[0]] = e.target.value; sap(); }; });
