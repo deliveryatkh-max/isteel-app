@@ -725,11 +725,11 @@
     const H = grid[hr].map(h => String(h).trim()), col = (...res) => { for (const re of res) { const i = H.findIndex(h => re.test(h)); if (i >= 0) return i; } return -1; };
     const c = { mat: col(/^material$/i), batch: col(/^batch$/i), ref: col(/^reference$/i), doc: col(/^material document$/i), po: col(/^purchase order$/i), ord: col(/^order$/i),
       mvt: col(/^movement type$/i, /^mvt/i), date: col(/^posting date$/i), sloc: col(/^storage location$/i, /^sloc$/i), qty: col(/^quantity$/i, /^qty in unit of entry$/i, /quantity|qty/i),
-      uom: col(/^base unit of measure$/i, /^unit of entry$/i, /uom|unit/i), desc: col(/^material description$/i, /desc/i), time: col(/^time of entry$/i) };
+      uom: col(/^base unit of measure$/i, /^unit of entry$/i, /uom|unit/i), desc: col(/^material description$/i, /desc/i), time: col(/^time of entry$/i), user: col(/^user name$/i), text: col(/^movement type text$/i), cust: col(/^name 1$/i), plant: col(/^plant$/i) };
     MB.rows = grid.slice(hr + 1).map((r, i) => {
       const g = k => (c[k] < 0 || r[c[k]] == null ? '' : r[c[k]] instanceof Date ? (k === 'date' ? ndate(r[c[k]]) : r[c[k]].toTimeString().slice(0, 8)) : String(r[c[k]]).trim());
       const q = Number(g('qty').replace(/,/g, '').replace(/^(.*)-$/, '-$1'));   // SAP shows 120- for negative
-      return { i: i, mat: g('mat'), batch: g('batch'), ref: g('ref'), doc: g('doc'), po: g('po'), ord: g('ord'), mvt: g('mvt'), date: ndate(g('date')), sloc: g('sloc'), qty: isFinite(q) ? q : 0, uom: g('uom').toUpperCase(), desc: g('desc'), time: g('time') };
+      return { i: i, mat: g('mat'), batch: g('batch'), ref: g('ref'), doc: g('doc'), po: g('po'), ord: g('ord'), mvt: g('mvt'), date: ndate(g('date')), sloc: g('sloc'), qty: isFinite(q) ? q : 0, uom: g('uom').toUpperCase(), desc: g('desc'), time: g('time'), user: g('user'), text: g('text'), cust: g('cust'), plant: g('plant') };
     }).filter(r => r.mat);
     moves();
   }
@@ -743,7 +743,8 @@
     // App side: one group per Reference + Material + Batch.
     const ag = {};
     app.forEach(r => { const k = [nref(r.reference), nref(r.material), nref(r.batch)].join('|');
-      const g = ag[k] || (ag[k] = { ref: String(r.reference || ''), material: r.material, batch: r.batch, desc: r.desc, uom: String(r.uom || '').toUpperCase(), bins: new Set(), sloc: r.sloc, when: '', qty: 0, n: 0 });
+      const g = ag[k] || (ag[k] = { ref: String(r.reference || ''), material: r.material, batch: r.batch, desc: r.desc, uom: String(r.uom || '').toUpperCase(), bins: new Set(), sloc: r.sloc, when: '', qty: 0, n: 0, ar: [] });
+      g.ar.push(r);
       g.qty = round3(g.qty + (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0)); g.n++; if (r.bin) g.bins.add(r.bin);
       const w = (r.date || '') + ' ' + (r.time || ''); if (!g.when || w < g.when) g.when = w; });
     // SAP side index: every reference-like value of a line + material (+ batch).
@@ -756,23 +757,46 @@
       const g = ag[k], r0 = nref(g.ref), m0 = nref(g.material);
       let ids = r0 ? (ix[[r0, m0, nref(g.batch)].join('|')] || []).filter(i => !used.has(i)) : [], batchOk = true;
       if (!ids.length && r0) { ids = (ixm[r0 + '|' + m0] || []).filter(i => !used.has(i)); batchOk = false; }
-      const base = { when: g.when, ref: g.ref, material: g.material, batch: g.batch, desc: g.desc, uom: g.uom, bin: Array.from(g.bins).join(', '), sloc: g.sloc, appQty: g.qty };
+      const base = { when: g.when, ref: g.ref, material: g.material, batch: g.batch, desc: g.desc, uom: g.uom, bin: Array.from(g.bins).join(', '), sloc: g.sloc, appQty: g.qty, ar: g.ar, sl: [] };
       if (!ids.length) { out.push(Object.assign(base, { sapQty: null, post: '', doc: '', mvt: '', diff: g.qty, res: 'app' })); return; }
       ids.forEach(i => used.add(i));
       const s = sapInfo(ids), diff = round3(g.qty - s.sapQty);
-      out.push(Object.assign(base, s, { uom: g.uom || sap[ids[0]].uom, diff: diff, res: diff ? 'qty' : batchOk ? 'ok' : 'batch', batch: batchOk ? g.batch : g.batch + ' ≠ ' + s.sbatch }));
+      out.push(Object.assign(base, s, { sl: ids.map(i => sap[i]), uom: g.uom || sap[ids[0]].uom, diff: diff, res: diff ? 'qty' : batchOk ? 'ok' : 'batch', batch: batchOk ? g.batch : g.batch + ' ≠ ' + s.sbatch }));
     });
     const rest = {};
     sap.forEach((r, i) => { if (used.has(i)) return; const k = [nref(r.ref || r.doc), nref(r.mat), nref(r.batch)].join('|'); (rest[k] = rest[k] || []).push(i); });
     Object.keys(rest).forEach(k => { const L = rest[k].map(i => sap[i]), s = sapInfo(rest[k]);
       const st = D.stock.find(l => nref(l.material) === nref(L[0].mat) && nref(l.batch) === nref(L[0].batch)) || D.stock.find(l => nref(l.material) === nref(L[0].mat));
-      out.push(Object.assign(s, { when: '', ref: L[0].ref || L[0].doc, material: L[0].mat, batch: L[0].batch, desc: L[0].desc || (st && st.desc) || '', uom: L[0].uom, bin: '', sloc: L[0].sloc, appQty: null, diff: round3(-s.sapQty), res: 'sap' })); });
+      out.push(Object.assign(s, { ar: [], sl: L, when: '', ref: L[0].ref || L[0].doc, material: L[0].mat, batch: L[0].batch, desc: L[0].desc || (st && st.desc) || '', uom: L[0].uom, bin: '', sloc: L[0].sloc, appQty: null, diff: round3(-s.sapQty), res: 'sap' })); });
     out.forEach(x => { x.wh = x.bin ? whOf(x.bin.split(', ')[0]) : ''; x.grp = groupOf({ material: x.material, desc: x.desc }); });
     const ord = { qty: 0, batch: 1, sap: 2, app: 3, ok: 4 };
     out.sort((a, b) => ord[a.res] - ord[b.res] || Math.abs(b.diff || 0) - Math.abs(a.diff || 0));
     return { list: out, from: from, to: to, nApp: app.length, nSap: sap.length, slocs: Array.from(fileSloc).filter(keepSloc).sort(), skipped: MB.rows.length - sap.length };
   }
   const MBR = { ok: ['ត្រូវគ្នា', 'Matched', 'st-match'], qty: ['ចំនួនខុស', 'Qty different', 'st-var'], batch: ['Batch ខុស', 'Batch different', 'st-var'], sap: ['មានតែក្នុង SAP', 'Only in SAP', 'st-sap'], app: ['មានតែក្នុងកម្មវិធី', 'Only in app', 'st-digital'] };
+  // Row detail (Kim, 27 Nov: "click row to see the detail of transaction"): every app movement and every MB51 line behind the row.
+  function mbDetail(x) {
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg mbsheet-bg';
+    const q = v => `<span class="${v < 0 ? 'out' : v > 0 ? 'in' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtQty(Math.abs(v))}</span>`;
+    const appQ = r => (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0);
+    bg.innerHTML = `<div class="sheet mbsheet" role="dialog" aria-modal="true" data-nocols><div class="sheet-top"><b>${esc(x.material)} · ${esc(x.desc)}</b><button type="button" class="icon-btn dark" data-close aria-label="Close">✕</button></div>
+      <p class="muted">${T('ឯកសារយោង', 'Reference')} <b>${esc(x.ref || '—')}</b> · Batch <b>${esc(x.batch)}</b> · <span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span>
+        · ${T('កម្មវិធី', 'App')} <b>${x.appQty == null ? '—' : q(x.appQty)}</b> · MB51 <b>${x.sapQty == null ? '—' : q(x.sapQty)}</b> · ${T('ខុសគ្នា', 'Diff')} <b>${x.diff ? q(x.diff) : '0'}</b> ${esc(x.uom)}</p>
+      <h4>📱 ${T('ចលនាក្នុងកម្មវិធី', 'App movements')} (${x.ar.length})</h4>
+      ${x.ar.length ? `<div class="scroll"><table class="rep"><thead><tr><th>${T('ថ្ងៃ', 'Date')}</th><th>${T('ម៉ោង', 'Time')}</th><th>${T('លេខ', 'Txn ID')}</th><th>${T('ប្រភេទ', 'Type')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>Batch</th><th>SLoc</th><th class="num">${T('ចំនួន', 'Qty')}</th><th>UoM</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>${T('អ្នកប្រើ', 'User')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th></tr></thead><tbody>
+        ${x.ar.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td class="mono">${esc(r.id)}</td><td>${esc(tLabel(r.type))}</td><td class="mono">${esc(r.bin)}</td><td class="mono">${esc(r.batch)}</td><td>${esc(r.sloc)}</td><td class="num mono">${q(appQ(r))}</td><td>${esc(r.uom)}</td><td class="mono">${esc(r.reference)}</td><td>${esc(String(r.user || '').split('@')[0])}</td><td>${esc(r.remark || '')}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="bad">${T('មិនមានក្នុងកម្មវិធី៖ គ្មាននរណាស្កេនចលនានេះទេ។', 'Not in the app: nobody scanned this movement.')}</p>`}
+      <h4>🧾 MB51 (${x.sl.length})</h4>
+      ${x.sl.length ? `<div class="scroll"><table class="rep"><thead><tr><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ម៉ោង', 'Time')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('ប្រភេទ', 'Text')}</th><th>Batch</th><th>Plant</th><th>SLoc</th><th class="num">${T('ចំនួន', 'Qty')}</th><th>UoM</th><th>Reference</th><th>PO / Order</th><th>${T('អតិថិជន / អ្នកផ្គត់ផ្គង់', 'Customer / supplier')}</th><th>${T('អ្នកប្រើ SAP', 'SAP user')}</th></tr></thead><tbody>
+        ${x.sl.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td class="mono">${esc(r.doc)}</td><td>${esc(r.mvt)}</td><td>${esc(r.text)}</td><td class="mono">${esc(r.batch)}</td><td>${esc(r.plant)}</td><td>${esc(r.sloc)}</td><td class="num mono">${q(r.qty)}</td><td>${esc(r.uom)}</td><td class="mono">${esc(r.ref)}</td><td class="mono">${esc(r.po || r.ord)}</td><td>${esc(r.cust)}</td><td>${esc(r.user)}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="bad">${T('មិនមានក្នុង MB51៖ មិនទាន់ post ក្នុង SAP (ឬឯកសារយោងខុស)។', 'Not in MB51: not posted in SAP yet (or the reference is different).')}</p>`}</div>`;
+    const onKey = e => { if (e.key === 'Escape') shut(); };
+    const shut = () => { bg.parentNode && bg.parentNode.removeChild(bg); document.removeEventListener('keydown', onKey); };
+    bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) shut(); };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(bg);
+  }
   function mb51View() {
     loadLedger('moves');
     const F = MB.F, res = MB.rows ? mbCompare() : null;
@@ -803,7 +827,7 @@
         <div class="stat"><b>${L.length ? Math.round(cnt('ok') / L.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
       </div>
       <section class="screp"><table class="rep mbtbl"><thead><tr><th>${T('ថ្ងៃក្នុងកម្មវិធី', 'Date app')}</th><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>${T('ទីតាំង', 'Bin')}</th><th>SLoc</th><th class="num">${T('ចំនួនកម្មវិធី', 'App qty')}</th><th class="num">${T('ចំនួន MB51', 'MB51 qty')}</th><th class="num">${T('ខុសគ្នា', 'Diff')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th></tr></thead><tbody>
-        ${rows.map(x => `<tr><td>${esc(String(x.when).slice(5, 16))}</td><td>${esc(x.post)}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.doc)}</td><td>${esc(x.mvt)}</td><td class="mono">${esc(x.material)}</td><td>${esc(x.desc)}</td><td class="mono">${esc(x.batch)}</td><td class="mono">${esc(x.bin)}</td><td>${esc(x.sloc)}</td>
+        ${rows.map((x, i) => `<tr class="go" data-mbi="${i}"><td>${esc(String(x.when).slice(5, 16))}</td><td>${esc(x.post)}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.doc)}</td><td>${esc(x.mvt)}</td><td class="mono">${esc(x.material)}</td><td>${esc(x.desc)}</td><td class="mono">${esc(x.batch)}</td><td class="mono">${esc(x.bin)}</td><td>${esc(x.sloc)}</td>
           <td class="num mono">${sq(x.appQty)}</td><td class="num mono">${sq(x.sapQty)}</td><td class="num mono"><b>${x.diff ? sq(x.diff) : ''}</b></td><td>${esc(x.uom)}</td><td><span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span></td></tr>`).join('')
           || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
         <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${rows.length})</th>${'<th></th>'.repeat(9)}<th class="num mono">${sumU('appQty')}</th><th class="num mono">${sumU('sapQty')}</th><th class="num mono">${sumU('diff')}</th><th></th><th></th></tr></tfoot></table></section>
@@ -825,6 +849,7 @@
       loadMb51('MB51_sample.xlsx', g); };
     if (!res) return;
     keep('#mbq', v => { F.q = v; moves(); });
+    $$('tr[data-mbi]').forEach(tr => { tr.onclick = () => mbDetail(rows[Number(tr.dataset.mbi)]); });
     FL.forEach(f => mselWire(f[0], v => { F[f[2]] = v; moves(); }));
     if ($('#exp')) $('#exp').onclick = () => download('mb51-compare.csv', [['Date app', 'Posting date', 'Reference', 'Material Document', 'Movement type', 'Material', 'Description', 'Batch', 'Bin', 'SLoc', 'App qty', 'MB51 qty', 'Diff', 'UoM', 'Result', 'MB51 file']]
       .concat(rows.map(x => [x.when, x.post, x.ref, x.doc, x.mvt, x.material, x.desc, x.batch, x.bin, x.sloc, x.appQty == null ? '' : x.appQty, x.sapQty == null ? '' : x.sapQty, x.diff, x.uom, MBR[x.res][1], MB.name])));
