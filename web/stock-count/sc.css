@@ -595,3 +595,4 @@ table.mbtbl td.tk input { width: 16px; height: 16px; cursor: pointer; }
 .dz-link { font: inherit; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 4px 11px; cursor: pointer; width: auto; min-height: 0; margin: 0; }
 @media (max-width: 1100px) { .dz-row.r1, .dz-row.r2 { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .dz-kpis { grid-template-columns: 1fr 1fr; } .dz-k > b { font-size: 19px; } .dz-spark { display: none; } .dz-chart { height: 180px; } .dz-bars em { display: none; } }
+.catnote { background: var(--warn-bg); color: var(--warn); border: 1px dashed #f0c36d; border-radius: 10px; padding: 6px 12px; font-size: 13px; font-weight: 600; margin: 0 0 10px; }

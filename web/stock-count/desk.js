@@ -67,6 +67,13 @@
   const pending = () => D.counts.filter(c => c.status === 'Submitted').length;
   const whOf = bin => { const b = D.bins.find(x => x.bin === bin); return b ? b.warehouse : ''; };
   const isIn = t => t === 'IN' || t === 'TRANSFER IN';
+  // Stock access (Kim, 27 Nov 2026): a person with Stock Categories gets only those lines from the server; SAP / MB51 file
+  // rows of other materials are left out too. The allowed materials = the Product Master list the server sent for them.
+  const myCats = () => (S.user && S.user.cats) || [];
+  let catSet = null, catSrc = null;
+  const catOk = mat => { if (!myCats().length) return true; if (catSrc !== S.products) { catSrc = S.products; catSet = new Set((S.products || []).map(p => String(p.material).trim().toUpperCase())); }
+    return catSet.has(String(mat || '').trim().toUpperCase()); };
+  const catNote = () => (myCats().length ? `<p class="catnote">🔒 ${T('អ្នកឃើញតែ', 'You see only')}: ${esc(myCats().join(' · '))}</p>` : '');
   const tLabel = t => (t === 'ADJUST' ? T('កែតម្រូវ', 'Adjustment') : typeLabel(t));
   const qtyCell = r => `<td class="num ${r.qtyIn ? 'in' : 'out'}">${r.qtyIn ? '+' + fmtQty(r.qtyIn) : '-' + fmtQty(r.qtyOut)}</td>`;
   const wide = () => document.body.classList.add('wide');
@@ -140,7 +147,7 @@
       <div class="dz-top"><h2>📊 ${T('ផ្ទាំងគ្រប់គ្រងស្តុក', 'Stock dashboard')}</h2><span class="muted">${now()}</span><span class="dz-sp"></span>
         <span class="dz-pills"><button type="button" class="${DZ.wh ? '' : 'on'}" data-dz="wh" data-v="">${T('ឃ្លាំងទាំងអស់', 'All warehouses')}</button>${whs.map(w => `<button type="button" class="${DZ.wh === w.w ? 'on' : ''}" data-dz="wh" data-v="${esc(w.w)}">${esc(w.w)}</button>`).join('')}</span>
         ${seg('days', [[7, T('៧ ថ្ងៃ', '7 days')], [14, T('១៤ ថ្ងៃ', '14 days')], [30, T('៣០ ថ្ងៃ', '30 days')]])}</div>
-      ${oldNote()}
+      ${oldNote()}${catNote()}
       <div class="dz-kpis">
         ${card('📦', '', new Set(stock.map(l => l.material)).size, T('សម្ភារៈ (SKU)', 'Active SKUs') + ' · ' + stock.length + ' ' + T('ជួរ', 'lines'), '', 'stock')}
         ${card('🗄️', '', binsUsed + ' / ' + bins.length, T('ទីតាំងមានស្តុក', 'Bins in use') + ' · ' + fill + '%', `<div class="dz-bar"><i style="width:${fill}%"></i></div>`, 'binsum')}
@@ -269,7 +276,7 @@
         ${mrows.map((g, i) => `<tr class="go" data-mi="${i}"><td class="mono">${esc(g.material)}</td><td>${esc(g.desc)}</td><td>${esc(g.size)}</td><td>${esc(g.grp)}</td><td class="num"><u>${g.bins.size}</u></td><td class="num mono">${fmtQty(g.book)}</td><td>${esc(g.uom)}</td>${numCell(g.counted)}${diffCell(g.diff)}<td>${esc(g.cd || '')}</td></tr>`).join('')
           || `<tr><td class="muted" colspan="10">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
         <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th><th></th><th></th><th></th><th class="num">${new Set(rows.map(l => l.bin)).size}</th><th class="num mono">${sumU('book')}</th><th></th><th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table>`;
-    view(`
+    view(`${catNote()}
       <div class="fb-wrap">${repHead('stock', '📦 ' + T('បញ្ជីស្តុក', 'Stock list'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
         () => { FILTERS.forEach(f => { F[f[2]] = f[4] ? [] : ''; }); F.q = ''; stock(); })}
       ${FB.panel('stock', FILTERS.map(f => (f[4] ? msel(f[0], f[1], f[3], F[f[2]]) : FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`))).join('')
@@ -490,6 +497,7 @@
       const o = {}; level.forEach(k => { o[k] = r[m[k]]; });
       const q = numSap(r[m.qty]);
       if (!String(o.material || '').trim() || isNaN(q)) { bad++; return; }
+      if (!catOk(o.material)) return;
       const x = slot(keyOf(o), o); x.sap = round3((x.sap || 0) + q);
       if (!x.uom && m.uom >= 0) x.uom = r[m.uom];
       // Description (Kim, 27 Nov: blank for lines only in SAP): the SAP file's own column, then the stock, then the Product Master.
@@ -872,7 +880,7 @@
     const known = new Set(D.stock.map(l => String(l.sloc)).concat(D.ledger.map(r => String(r.sloc))).filter(Boolean));
     const fileSloc = new Set(MB.rows.map(r => r.sloc).filter(Boolean));
     const keepSloc = s => !known.size || !s || known.has(String(s));
-    const sap = MB.rows.filter(r => keepSloc(r.sloc));
+    const sap = MB.rows.filter(r => keepSloc(r.sloc) && catOk(r.mat));
     const dates = sap.map(r => r.date).filter(Boolean).sort(), from = dates[0] || '', to = dates[dates.length - 1] || '';
     const revd = new Set(D.ledger.map(r => r.reverses).filter(Boolean));   // a reversed movement (question 2) is not compared
     const app = D.ledger.filter(r => (r.type === 'IN' || r.type === 'OUT') && !revd.has(r.id) && (!from || String(r.date) >= from) && (!to || String(r.date) <= to) && (!fileSloc.size || !r.sloc || fileSloc.has(String(r.sloc))));
