@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { t, useLang } from '../i18n';
 import { go, matches, useApp } from '../state';
 import { TripCard } from '../components/TripCard';
+import { SearchScan } from '../components/SearchScan';
 import { Segmented, Spinner } from '../components/ui';
 
 /** Home / Operations: today's numbers and the trips still running. */
@@ -59,7 +60,7 @@ export function OpsPage() {
           <span className="muted font-normal"> · {list.length}</span>
         </h2>
       </div>
-      <input className="in mb-3" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('ស្វែងរក ផ្លាកលេខ ជើងដឹក DN…', 'Search plate, trip, DN…')} />
+      <SearchScan q={q} setQ={setQ} trips={ops ? ops.trips : []} />
       {!ops ? <Spinner /> : list.length ? list.map(x => <TripCard key={x.id} trip={x} />) : <p className="muted text-center py-6">{t('មិនមានជើងដឹក', 'No trips')}</p>}
     </main>
   );

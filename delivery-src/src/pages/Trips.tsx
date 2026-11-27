@@ -4,6 +4,7 @@ import { errText, L, t, useLang, ymdNow, ymdOf } from '../i18n';
 import { go, matches, openTrips, useApp, useRoute } from '../state';
 import type { TripSummary } from '../types';
 import { TripCard } from '../components/TripCard';
+import { SearchScan } from '../components/SearchScan';
 import { Alert, Segmented, Spinner } from '../components/ui';
 
 /** Active trips (live, grouped by step) and Trip History (any dates). */
@@ -30,7 +31,7 @@ function Active() {
   if (!ops) return <Spinner />;
   return (
     <>
-      <input className="in mb-3" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('ស្វែងរក ផ្លាកលេខ ជើងដឹក DN…', 'Search plate, trip, DN…')} />
+      <SearchScan q={q} setQ={setQ} trips={openTrips(ops)} />
       {!groups.length ? <p className="muted text-center py-6">{t('មិនមានជើងដឹកកំពុងដំណើរការ', 'No active trips')}</p> : null}
       {groups.map(g => (
         <section key={g.k}>
