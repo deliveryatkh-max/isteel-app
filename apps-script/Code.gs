@@ -118,6 +118,7 @@ const ACTIONS = {
   umOtSave: umOtSave_,
   umPhoto: umPhoto_,
   umMenus: umMenus_,
+  umStock: umStock_,
   teamInit: teamInit_,
   teamFind: teamFind_,
   teamResign: teamResign_,
@@ -360,9 +361,9 @@ function verifyToken_(token) {
 const DEPT_SHEET = 'Department';
 const EMP_ID_MIN = 100000, EMP_ID_MAX = 190000;   // Kim, 10 Oct 2026
 const MASTER_ACCESS = ['Email', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse', 'Hidden Menus']);
+  ['TEAM', 'Off Note', 'Off At', 'App Name', 'Card Photo', 'Requested At', 'Claimed ID', 'Inbound Warehouse', 'Hidden Menus', 'Stock Categories', 'WH Group', 'Region']);
 const COPY_HEAD = ['Email', 'Name', 'Role', 'Active'].concat(HOME_APPS.map(a => a.col),
-  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse', 'Hidden Menus', 'Phone']);   // Phone: driver's number on the customer tracking page (22 Nov 2026)
+  ['Employee ID', 'Department', 'Function', 'TEAM', 'Off Note', 'Off At', 'Inbound Warehouse', 'Hidden Menus', 'Phone', 'Stock Categories']);   // Phone: driver's number on the customer tracking page (22 Nov 2026)
 // Inbound app warehouses (Kim, 2 Nov 2026). A person's ticks are kept in "Inbound Warehouse", comma-separated; "All" = every warehouse.
 const IB_WAREHOUSES = ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL'];
 const ibWhList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -370,6 +371,9 @@ const ibWhList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Bool
 // ("fuel.report, scale.set"), so today's access stays and a new menu shows until an admin unticks it in 👥 Users › Menus.
 // The list of menus is web/menus.js. Admins always see every menu.
 const menuList_ = v => String(v || '').split(',').map(x => x.trim().toLowerCase()).filter(x => /^[a-z]+\.[a-z]+$/.test(x));
+// Who sees which stock (Kim, 27 Nov 2026): "Stock Categories" = Material Group L4 names the person may see in Stock Count,
+// comma-separated; blank = everything. Set in 👥 Users › 📦 Stock access. "WH Group" and "Region" are typed by Kim (filters there).
+const catList_ = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean).filter((x, k, a) => a.indexOf(x) === k);
 const menuOff_ = (user, key) => user.role !== 'admin' && (user.menusOff || []).indexOf(key) >= 0;
 // Fuel actions that belong to one menu: a person whose menu is hidden can't call them either.
 const ACTION_MENU = { submit: 'fuel.new', review: 'fuel.review', sapPost: 'fuel.report', reportCols: 'fuel.report' };
@@ -467,6 +471,7 @@ function mRow_(m, r, i) {
     appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
     claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')), menusOff: menuList_(g('Hidden Menus')),
     phone: String(g('Phone') == null ? '' : g('Phone')).replace(/\.0+$/, '').trim(),
+    stockCats: catList_(g('Stock Categories')), whGroup: String(g('WH Group') || '').trim(), region: String(g('Region') || '').trim(),
   };
 }
 const displayName_ = e => e.appName || e.kh || e.full;
@@ -523,7 +528,7 @@ function syncUsers_(force) {
     seen[email] = 1;
     if (e.active && /admin/i.test(e.role)) admins++;
     rows.push([email, displayName_(e), e.role || 'user', e.active ? 'Yes' : 'No'].concat(HOME_APPS.map(a => !!e.apps[a.key]),
-      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', '), e.menusOff.join(', '), e.phone]));
+      [e.id, e.dept, e.fn, e.team, e.offNote, e.offAt ? new Date(e.offAt) : '', e.ibWh.join(', '), e.menusOff.join(', '), e.phone, e.stockCats.join(', ')]));
   }));
   if (!admins) return 'Skipped: no active admin in Employee & Approver.';
   const props = PropertiesService.getScriptProperties();
@@ -3154,7 +3159,7 @@ function umUserOf_(e, email) {
     role: UM_ROLES.indexOf(role) >= 0 ? role : 'user', active: e.active, empId: e.id,
     dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
     photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
-    ibWh: e.ibWh, menusOff: e.menusOff,
+    ibWh: e.ibWh, menusOff: e.menusOff, stockCats: e.stockCats, whGroup: e.whGroup, region: e.region, fn: e.fn, deptName: e.dept,
   };
 }
 const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
@@ -3173,9 +3178,27 @@ function umList_(p, user) {
     apps: HOME_APPS.map(a => ({ key: a.key, col: a.col })),
     ibWarehouses: IB_WAREHOUSES.concat(rows.reduce((a, e) => a.concat(e.ibWh), []).filter((x, k, all) => x !== 'All' && IB_WAREHOUSES.indexOf(x) < 0 && all.indexOf(x) === k)),
     depts: deptTable_(),
+    stockGroups: stockGroups_(),
     log: umLogRead_(60),
     v: 2,
   };
+}
+
+/** Material Group L4 names from the master Product tab (📦 Stock access columns), kept 10 minutes. */
+function stockGroups_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('stock_groups');
+  if (hit) return JSON.parse(hit);
+  const sh = mdTab_('Product');
+  if (!sh || sh.getLastRow() < 2) return [];
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const c = head.indexOf('materialgroupl4'), c2 = head.indexOf('materialgroupl2');
+  if (c < 0) return [];
+  const v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues(), seen = {};
+  const out = [];   // [{ n: L4, p: L2 }], by L2 then L4 (the L2 is the column group on the screen)
+  v.forEach(r => { const n = String(r[c]).trim(); if (n && !seen[n]) { seen[n] = 1; out.push({ n: n, p: c2 >= 0 ? String(r[c2]).trim() : '' }); } });
+  out.sort((x, y) => x.p.localeCompare(y.p) || x.n.localeCompare(y.n));
+  cache.put('stock_groups', JSON.stringify(out), 600);
+  return out;
 }
 
 /** Count for the red badge on the 👥 tile: people waiting for an answer. */
@@ -3210,6 +3233,7 @@ function umCheck_(p, isNew) {
     HOME_APPS.forEach(a => { if (p.apps[a.key] !== undefined) out.apps[a.key] = !!p.apps[a.key]; });
   }
   if (p.menusOff !== undefined) out.menusOff = menuList_((Array.isArray(p.menusOff) ? p.menusOff : [p.menusOff]).join(',')).filter((x, k, a) => a.indexOf(x) === k).slice(0, 200);
+  if (p.stockCats !== undefined) out.stockCats = catList_((Array.isArray(p.stockCats) ? p.stockCats : [p.stockCats]).map(x => String(x).replace(/,/g, ' ').slice(0, 60)).join(',')).slice(0, 100);
   if (p.ibWh !== undefined) out.ibWh = (Array.isArray(p.ibWh) ? p.ibWh : ibWhList_(p.ibWh)).map(x => String(x).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
   if (p.removeEmail) out.removeEmail = true;
   return out;
@@ -3311,6 +3335,10 @@ function umWrite_(m, email, v, by, isNew) {
     const hid = v.menusOff.filter(x => cur.menusOff.indexOf(x) < 0), back = cur.menusOff.filter(x => v.menusOff.indexOf(x) < 0);
     log.push('Menus: ' + [hid.length ? 'hidden ' + hid.join(', ') : '', back.length ? 'shown ' + back.join(', ') : ''].filter(Boolean).join('; '));
   }
+  if (v.stockCats !== undefined && v.stockCats.join(', ') !== cur.stockCats.join(', ')) {
+    mPut_(m, i, 'Stock Categories', v.stockCats.join(', '));
+    log.push('Stock access: ' + (cur.stockCats.join(', ') || 'All') + ' → ' + (v.stockCats.join(', ') || 'All'));
+  }
   // Rejecting a request: Active is already No, so the change is stamping Off At (it leaves the Requests list).
   if (v.active !== undefined && (v.active !== cur.active || isNew || (!v.active && !cur.offAt))) {
     mPut_(m, i, 'Active', v.active ? 'Yes' : 'No');
@@ -3410,6 +3438,23 @@ function umMenus_(p, user) {
     const users = [], log = [];
     list.forEach(c => {
       const o = umWrite_(m, c.email, { menusOff: c.v.menusOff }, user.email, false);
+      Array.prototype.push.apply(users, umUsersOfRow_(o.e));
+      Array.prototype.push.apply(log, umLog_(user.name || user.email, c.email, displayName_(o.e), o.log));
+    });
+    return { users, log };
+  });
+}
+
+/** 📦 Stock access screen (Kim, 27 Nov 2026): saves the stock categories of several people. changes = [{ email, stockCats }]. */
+function umStock_(p, user) {
+  needAdmin_(user);
+  const list = (p.changes || []).slice(0, 300).map(c => ({ email: String(c.email || '').trim().toLowerCase(), v: umCheck_({ stockCats: c.stockCats || [] }, false) }))
+    .filter(c => c.email && c.v.stockCats);
+  if (!list.length) throw new Error('Nothing to save.');
+  return umRun_(m => {
+    const users = [], log = [];
+    list.forEach(c => {
+      const o = umWrite_(m, c.email, { stockCats: c.v.stockCats }, user.email, false);
       Array.prototype.push.apply(users, umUsersOfRow_(o.e));
       Array.prototype.push.apply(log, umLog_(user.name || user.email, c.email, displayName_(o.e), o.log));
     });

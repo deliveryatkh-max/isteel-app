@@ -332,6 +332,7 @@
           <button type="button" class="btn ghost shrink" id="goBin">${T('ទៅ', 'Go')}</button>
         </div>
       </section>
+      ${S.user && S.user.cats && S.user.cats.length ? `<p class="catnote">🔒 ${T('អ្នកឃើញតែ', 'You see only')}: ${esc(S.user.cats.join(' · '))}</p>` : ''}
       ${S.dash ? `<div class="kpis"><div><b>${S.dash.bins}</b><span>${T('ទីតាំង', 'Bins')}</span></div><div><b>${S.dash.lines}</b><span>${T('ប្រភេទស្តុក', 'Stock lines')}</span></div>
         <div class="in"><b>${S.dash.inToday}</b><span>${T('ចូលថ្ងៃនេះ', 'IN today')}</span></div><div class="out"><b>${S.dash.outToday}</b><span>${T('ចេញថ្ងៃនេះ', 'OUT today')}</span></div>
         <div><b>${S.dash.transferToday}</b><span>${T('ផ្ទេរថ្ងៃនេះ', 'Transfers today')}</span></div></div>` : ''}
