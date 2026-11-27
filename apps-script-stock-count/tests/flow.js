@@ -193,4 +193,12 @@ gi = call('giConfirm', { file: 'MB51b.xlsx', lines: [{ key: '5011|m1|b1' }, { ke
 const gl = call('giList', {});
 eq([gi.added, gi.skipped, gl.rows.length, gl.rows[0].key, gl.rows[0].file], [1, 1, 3, '5011|M1|B1', 'MB51.xlsx'], 'already confirmed lines are skipped; list reads back');
 fails(() => call('giConfirm', { lines: [] }), 'BAD', 'nothing ticked');
+// ---- stock access (27 Nov): Stock Categories limit what a person sees
+const g231 = vm.runInContext('(pm_()["1100000231"] || {}).group', ctx) || '';
+cache['who_cat@isi'] = JSON.stringify({ Name: 'Cat', admin: false, cats: [g231 || 'NONE'] });
+cache['who_none@isi'] = JSON.stringify({ Name: 'None', admin: false, cats: ['No Such Group'] });
+const bc = call('boot', {}, { email: 'cat@isi' }), bn = call('boot', {}, { email: 'none@isi' }), ba = call('boot', {}, admin);
+eq([bn.stock.length, call('ledger', {}, { email: 'none@isi' }).rows.length, call('bin', { bin: 'BIN-A' }, { email: 'none@isi' }).lines.length, ba.stock.length > 0],
+  [0, 0, 0, true], 'no matching category: nothing shown; blank = everything');
+if (g231) eq([bc.stock.every(l => l.material === '1100000231' || vm.runInContext('(pm_()[' + JSON.stringify(l.material.toUpperCase()) + '] || {}).group', ctx) === g231), bc.stock.length > 0, bc.user.cats[0]], [true, true, g231], 'only own category lines');
 console.log('Stock Count flow tests: ' + pass + ' passed');

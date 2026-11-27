@@ -233,14 +233,23 @@ function counterLookup_(user) {
   const v = sh && sh.getLastRow() > 1 ? sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues() : [[]];
   const head = v[0].map(h => String(h).trim());
   const c = n => head.indexOf(n);
-  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL);
+  const e = c('Email'), n = c('Name'), r = c('Role'), a = c('Active'), tick = c(APP_COL), cat = c('Stock Categories');
   const row = v.slice(1).find(x => e >= 0 && String(x[e]).trim().toLowerCase() === user.email);
   const admin = !!row && r >= 0 && /admin/i.test(String(row[r]));
   const ok = !!row && (a < 0 || yes_(row[a])) && (admin || (tick >= 0 && yes_(row[tick])));
   if (!ok) fail_('NOACCESS', 'Your account is not allowed to count yet. Ask Kim to tick ' + APP_COL + ' in Users.',
     'គណនីរបស់អ្នកមិនទាន់មានសិទ្ធិរាប់ស្តុកទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
   const role = r >= 0 ? String(row[r]).trim() : '';
-  return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin, role: role, supervisor: /supervisor/i.test(role) };
+  // Stock access (Kim, 27 Nov 2026): "Stock Categories" = Material Group L4 names this person may see; blank = all.
+  const cats = cat >= 0 ? String(row[cat] || '').split(',').map(x => x.trim()).filter(Boolean) : [];
+  return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin, role: role, supervisor: /supervisor/i.test(role), cats: cats };
+}
+// null = sees everything; else material → true when its Product Master group (L4) is one of the person's categories.
+function seeFn_(who) {
+  if (!who || !who.cats || !who.cats.length) return null;
+  const set = {}, pm = pm_();
+  who.cats.forEach(x => { set[String(x).trim().toLowerCase()] = 1; });
+  return mat => !!set[String((pm[String(mat || '').trim().toUpperCase()] || {}).group || '').trim().toLowerCase()];
 }
 
 // ---------------------------------------------------------------- data
@@ -420,8 +429,8 @@ function varSave_(user, p) {
   return { snapshot: sid, added: added, updated: updated, closed: closed };
 }
 function varList_(user) {
-  counter_(user);
-  return { cases: objs_(SH.VAR, VAR_COLS).slice(-3000), snaps: objs_(SH.VSN, VSN_COLS).slice(-60) };
+  const see = seeFn_(counter_(user));
+  return { cases: objs_(SH.VAR, VAR_COLS).filter(r => !see || see(r.Material)).slice(-3000), snaps: objs_(SH.VSN, VSN_COLS).slice(-60) };
 }
 function varUpdate_(user, p) {
   const who = counter_(user);
@@ -461,17 +470,18 @@ function boot_(user) {
   const who = counter_(user);
   const st = settings_();
   const hist = history_();
-  const stock = stock_(''), per = {};
+  const see = seeFn_(who);
+  const stock = stock_('').filter(l => !see || see(l.material)), per = {};
   stock.forEach(l => { per[l.bin.toUpperCase()] = (per[l.bin.toUpperCase()] || 0) + 1; });
   const list = bins_().map(b => Object.assign({}, b, { accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: per[b.bin.toUpperCase()] || 0 }));
-  return { user: { email: user.email, name: who.Name || user.email, admin: !!who.admin, supervisor: /supervisor/i.test(String(who.role || '')) }, settings: { tolerance: st.tol },
-    today: todayList(list, st.listSize), bins: list, stock: stock, products: pmList_(), binCount: list.length, dash: dash_(stock.length, list.length) };
+  return { user: { email: user.email, name: who.Name || user.email, admin: !!who.admin, supervisor: /supervisor/i.test(String(who.role || '')), cats: who.cats || [] }, settings: { tolerance: st.tol },
+    today: todayList(list, st.listSize), bins: list, stock: stock, products: pmList_().filter(x => !see || see(x.material)), binCount: list.length, dash: dash_(stock.length, list.length, see) };
 }
 
 // Home numbers: bins, stock lines, movements posted today, and the last 10 movements.
-function dash_(lines, bins) {
+function dash_(lines, bins, see) {
   const today = fmt_(new Date(), 'yyyy-MM-dd');
-  const led = objs_(SH.LED, LED_COLS);
+  const led = objs_(SH.LED, LED_COLS).filter(r => !see || see(r.Material));
   const t = led.filter(r => r.Date === today);
   return { bins: bins, lines: lines, inToday: t.filter(r => r.Type === 'IN').length, outToday: t.filter(r => r.Type === 'OUT').length,
     transferToday: t.filter(r => r.Type === 'TRANSFER OUT').length, recent: led.slice(-10).reverse().map(ledRow_) };
@@ -481,19 +491,19 @@ const ledRow_ = r => ({ id: r['Txn ID'], date: r.Date, time: r.Time, type: r.Typ
 
 // Movements screen: the newest 1,000 ledger rows, oldest first.
 function ledger_(user) {
-  counter_(user);
-  return { rows: objs_(SH.LED, LED_COLS).slice(-1000).map(ledRow_) };
+  const see = seeFn_(counter_(user));
+  return { rows: objs_(SH.LED, LED_COLS).filter(r => !see || see(r.Material)).slice(-1000).map(ledRow_) };
 }
 
 function binInfo_(user, code) {
-  counter_(user);
+  const see = seeFn_(counter_(user));
   const st = settings_();
   const bin = String(code || '').trim();
   const b = bins_().find(x => x.bin.toUpperCase() === bin.toUpperCase());
   if (!b) fail_('NOBIN', 'Bin not found or not active in Bin Master.', 'រកមិនឃើញទីតាំងនេះក្នុងបញ្ជីទេ។');
   const hist = history_();
   return { bin: b.bin, warehouse: b.warehouse, lastCount: b.lastCount, lastStatus: b.lastStatus,
-    accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin) };
+    accuracy: accuracyPct(hist[b.bin] || [], st.win), lines: stock_(b.bin).filter(l => !see || see(l.material)) };
 }
 
 // ---------------------------------------------------------------- save a count (all SKU lines of a bin, one submit)

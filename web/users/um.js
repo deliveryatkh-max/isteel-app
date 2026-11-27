@@ -181,6 +181,97 @@
     };
   }
 
+  // ------------------------------------------------------------------ stock access (Kim, 27 Nov 2026, option A)
+  // People down, product groups (Material Group L4, grouped under L2) across. Ticked = the person sees that group in
+  // Stock Count. Nothing ticked = sees everything. Saved in the master Employee List column "Stock Categories".
+  const SF = { q: '', dept: '', whg: '', region: '', role: '', grp: '', only: true };
+  let SP = {};   // changes not saved yet: email → groups
+  const sCats = u => SP[u.email] || u.stockCats || [];
+  const sChanged = () => D.users.filter(u => SP[u.email] && !sameList(SP[u.email], u.stockCats || []));
+  const sGroups = () => (D.stockGroups || []).map(g => (typeof g === 'string' ? { n: g, p: '' } : g)).filter(g => !SF.grp || g.p === SF.grp);
+  const uniqOf = f => Array.from(new Set(D.users.filter(u => u.active).map(f).filter(Boolean))).sort();
+  function sPeople() {
+    const q = SF.q.trim().toLowerCase();
+    return D.users.filter(u => u.active && (!SF.only || u.role === 'admin' || (u.apps && u.apps.stockcount))
+      && (!SF.dept || (u.deptName || String(u.dept || '').split(' · ')[0]) === SF.dept)
+      && (!SF.whg || (SF.whg === '-' ? !u.whGroup : u.whGroup === SF.whg))
+      && (!SF.region || (SF.region === '-' ? !u.region : u.region === SF.region))
+      && (!SF.role || u.role === SF.role)
+      && (!q || [u.name, u.email, u.empId, u.dept].join(' ').toLowerCase().indexOf(q) >= 0))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
+  }
+  function renderStock() {
+    paintTabs('stock');
+    if (!D.stockGroups) { view(`<div class="card done"><div class="emoji">🔄</div><h2>${t('ត្រូវធ្វើបច្ចុប្បន្នភាព Apps Script', 'Apps Script needs an update')}</h2><p>${t('សូម paste apps-script/Code.gs ថ្មី ហើយ Deploy New version។', 'Re-paste apps-script/Code.gs and deploy a New version.')}</p></div>`); return; }
+    const opt = (list, cur, none) => list.map(v => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(v)}</option>`).join('') + (none ? `<option value="-" ${cur === '-' ? 'selected' : ''}>${t('មិនទាន់កំណត់', 'Not set')}</option>` : '');
+    const l2 = Array.from(new Set((D.stockGroups || []).map(g => g.p || '').filter(Boolean))).sort();
+    view(`<div class="um-head"><h1>📦 ${t('សិទ្ធិមើលស្តុក', 'Stock access')}</h1></div>
+      <p class="mx-hint">${t('ធីក = អ្នកនោះឃើញក្រុមផលិតផលនោះក្នុង ការរាប់ស្តុក។ មិនធីកសោះ = ឃើញទាំងអស់។ ចុចឈ្មោះក្រុម ដើម្បីធីកទាំងជួរ។', 'Ticked = the person sees that product group in Stock Count. Nothing ticked = sees everything. Tap a group name to tick the whole column.')}</p>
+      <div class="fb-wrap">${FB.head('stock', '', '', () => { Object.assign(SF, { q: '', dept: '', whg: '', region: '', role: '', grp: '' }); renderStock(); })}
+      ${FB.panel('stock', FB.field(t('ផ្នែក', 'Department'), `<select id="sDept"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.deptName || String(u.dept || '').split(' · ')[0]), SF.dept)}</select>`) +
+        FB.field('WH Group', `<select id="sWhg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.whGroup), SF.whg, true)}</select>`) +
+        FB.field(t('តំបន់', 'Region'), `<select id="sReg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.region), SF.region, true)}</select>`) +
+        FB.field(t('តួនាទី', 'Role'), `<select id="sRole"><option value="">${t('ទាំងអស់', 'All')}</option>${ROLES.filter(x => D.users.some(u => u.active && u.role === x[0])).map(x => `<option value="${x[0]}" ${SF.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))}</option>`).join('')}</select>`) +
+        FB.field(t('ក្រុមផលិតផល (L2)', 'Product group (L2)'), `<select id="sGrp"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(l2, SF.grp)}</select>`) +
+        FB.field(' ', `<label class="chk"><input type="checkbox" id="sOnly"${SF.only ? ' checked' : ''}> ${t('តែអ្នកមានសិទ្ធិ ការរាប់ស្តុក', 'Only people with Stock Count')}</label>`) +
+        FB.search('sQ', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID…', 'Search name, email, ID…'), SF.q))}</div>
+      <div id="sres"></div><div id="ssave"></div>`);
+    const on = (id, k, f) => { $(id).onchange = e => { SF[k] = f ? f(e.target) : e.target.value; drawStock(); }; };
+    on('#sDept', 'dept'); on('#sWhg', 'whg'); on('#sReg', 'region'); on('#sRole', 'role'); on('#sGrp', 'grp'); on('#sOnly', 'only', el => el.checked);
+    $('#sQ').oninput = e => { SF.q = e.target.value; clearTimeout(renderStock.h); renderStock.h = setTimeout(drawStock, 120); };
+    drawStock();
+  }
+  function drawStock() {
+    const box = $('#sres'); if (!box) return;
+    const gs = sGroups(), list = sPeople();
+    if (!gs.length) { box.innerHTML = `<div class="empty">${t('មិនមានក្រុមផលិតផល (Product Master L4)', 'No product groups (Product Master L4)')}</div>`; return; }
+    if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawStockSave(); return; }
+    const parts = []; gs.forEach(g => { const l = parts[parts.length - 1]; if (l && l.p === g.p) l.n++; else parts.push({ p: g.p, n: 1 }); });
+    const pIdx = {}; parts.forEach((x, i) => { pIdx[x.p] = i; });
+    const sees = u => { const c = sCats(u); return c.length ? `<span class="sx-chip">${c.length} ${t('ក្រុម', c.length === 1 ? 'group' : 'groups')}</span>` : `<span class="sx-chip all">${t('ទាំងអស់', 'All')}</span>`; };
+    box.innerHTML = `<div class="tbl-wrap mx-wrap"><table class="tbl mx" data-nosort data-nocols><thead>
+      <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th><th rowspan="2" class="mx-sees">${t('ឃើញ', 'Sees')}</th>${parts.map((x, i) => `<th colspan="${x.n}" class="mx-app${i % 2 ? ' alt' : ''}">${esc(x.p || '—')}</th>`).join('')}</tr>
+      <tr>${gs.map((g, j) => `<th class="mx-m${pIdx[g.p] % 2 ? ' alt' : ''}${j === 0 || gs[j - 1].p !== g.p ? ' first' : ''}" data-col="${esc(g.n)}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(g.n)}</th>`).join('')}</tr></thead>
+      <tbody>${list.map(u => `<tr><td class="mx-name"><b>${esc(u.name)}</b><small>${esc([u.deptName || u.dept, u.whGroup, u.region].filter(Boolean).join(' · ') || u.email)}</small></td><td class="mx-sees" data-sees="${esc(u.email)}">${sees(u)}</td>
+        ${gs.map(g => { const c = sCats(u).indexOf(g.n) >= 0, was = (u.stockCats || []).indexOf(g.n) >= 0;
+          return `<td class="mx-c${c !== was ? ' chg' : ''}"><input type="checkbox" data-u="${esc(u.email)}" data-g="${esc(g.n)}"${c ? ' checked' : ''} aria-label="${esc(u.name + ' · ' + g.n)}"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+    box.querySelector('tbody').onchange = e => {
+      const cb = e.target; if (!cb.dataset || !cb.dataset.u) return;
+      const u = byEmail(cb.dataset.u); if (!u) return;
+      const c = sCats(u).filter(x => x !== cb.dataset.g);
+      if (cb.checked) c.push(cb.dataset.g);
+      SP[u.email] = c;
+      cb.parentElement.classList.toggle('chg', cb.checked !== ((u.stockCats || []).indexOf(cb.dataset.g) >= 0));
+      const cell = box.querySelector(`[data-sees="${CSS.escape(u.email)}"]`); if (cell) cell.innerHTML = sees(u);
+      drawStockSave();
+    };
+    $$('th[data-col]', box).forEach(th => th.onclick = () => {
+      const g = th.dataset.col, tick = list.some(u => sCats(u).indexOf(g) < 0);   // any unticked → tick all, else untick all
+      list.forEach(u => { const c = sCats(u).filter(x => x !== g); if (tick) c.push(g); SP[u.email] = c; });
+      drawStock();
+    });
+    drawStockSave();
+  }
+  function drawStockSave() {
+    const bar = $('#ssave'); if (!bar) return;
+    const n = sChanged().length;
+    bar.className = n ? 'mx-save' : '';
+    bar.innerHTML = n ? `<span>✏️ ${t(`កែ ${n} នាក់ មិនទាន់រក្សាទុក`, `${n} ${n === 1 ? 'person' : 'people'} changed, not saved`)}</span>
+      <button type="button" class="btn" id="sUndo">↶ ${t('បោះបង់', 'Undo')}</button>
+      <button type="button" class="btn ok" id="sSave">💾 ${t('រក្សាទុក', 'Save')}</button>` : '';
+    if (!n) return;
+    $('#sUndo').onclick = () => { SP = {}; drawStock(); };
+    $('#sSave').onclick = async () => {
+      const b = $('#sSave'); b.disabled = true; b.textContent = '⏳ ' + t('កំពុងរក្សាទុក…', 'Saving…');
+      try {
+        const r = await api('umStock', { changes: sChanged().map(u => ({ email: u.email, stockCats: SP[u.email] })) });
+        merge(r.users); addLog(r.log); SP = {}; save();
+        toast('✓ ' + t('បានរក្សាទុក', 'Saved'));
+        drawStock();
+      } catch (e) { toast(e.message); b.disabled = false; b.textContent = '💾 ' + t('រក្សាទុក', 'Save'); }
+    };
+  }
+
   // ------------------------------------------------------------------ chrome
   function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, 2600); }
   function paintStatic() { $$('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); }); }
@@ -207,6 +298,7 @@
     if (h === 'dept') return renderDept();
     if (h === 'log') return renderLog();
     if (h === 'menus') return renderMenus();
+    if (h === 'stock') return renderStock();
     if (h === 'new') return renderEdit(null);
     if (h.indexOf('u/') === 0) return renderEdit(h.slice(2));
     return renderList();
@@ -682,6 +774,11 @@
           p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.menusOff = c.menusOff.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Menus changed')); });
           return resolve({ users: out, log: logs });
         }
+        if (action === 'umStock') {
+          const out = [], logs = [];
+          p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.stockCats = c.stockCats.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Stock access: ' + (c.stockCats.join(', ') || 'All'))); });
+          return resolve({ users: out, log: logs });
+        }
         if (action === 'umPhoto') return resolve({ dataUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" rx="14" fill="#f4f6f9"/><rect x="18" y="30" width="90" height="120" rx="8" fill="#b9c3cf"/><text x="128" y="60" font-family="sans-serif" font-weight="700" font-size="20" fill="#011e41">ISI STEEL</text><text x="128" y="95" font-family="sans-serif" font-size="13" fill="#546274">NAME: SOK DARA</text><text x="128" y="120" font-family="sans-serif" font-size="13" fill="#546274">ID: 108765</text></svg>') });
         if (action === 'umOt') return resolve({ ok: true, byId: { 125771: { manager: 'Sok Dara', tg: '@sokdara' }, 130452: { manager: 'Kim Sopheakdey', tg: '@pheakdey' } }, managers: [{ name: 'Kim Sopheakdey', tg: '@pheakdey' }, { name: 'Sok Dara', tg: '@sokdara' }] });
         if (action === 'umOtSave') return resolve({ manager: p.manager, tg: p.tg, log: log(p.email, '', 'OT approver → ' + p.manager) });
@@ -697,10 +794,10 @@
       apps: ['fuel', 'transport', 'overtime', 'location', 'meeting', 'incident', 'inbound', 'dashboard'].map(key => ({ key, col: APP_NAMES[key][0] })),
       depts: [{ name: 'Warehouse', active: true, apps: A('10101110') }, { name: 'Transport', active: true, apps: A('11110100') }, { name: 'Security', active: true, apps: A('01100100') }, { name: 'HR', active: false, apps: A('00101100') }],
       users: [
-        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: A('11111111'), offAt: 0, offNote: '' },
-        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'supervisor', active: true, empId: '112308', dept: 'Transport', apps: A('11110001'), offAt: 0, offNote: '' },
+        { email: 'admin.demo@gmail.com', name: 'Demo Admin', role: 'admin', active: true, empId: '101245', dept: 'Warehouse', apps: Object.assign(A('11111111'), { stockcount: true }), offAt: 0, offNote: '', whGroup: 'Central', region: 'Phnom Penh' },
+        { email: 'sokdara.isi@gmail.com', name: 'Sok Dara', role: 'supervisor', active: true, empId: '112308', dept: 'Transport', apps: Object.assign(A('11110001'), { stockcount: true }), offAt: 0, offNote: '', whGroup: 'GVM', region: 'Phnom Penh', stockCats: ['Deformed Bar', 'Wire Rod', 'Wire Roll'] },
         { email: 'vibol.chan@gmail.com', name: 'Chan Vibol', role: 'driver', active: true, empId: '125771', dept: 'Transport', apps: A('11100100'), offAt: 0, offNote: '', menusOff: ['fuel.review', 'fuel.report'] },
-        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'warehouse', active: true, empId: '130452', dept: 'Warehouse', apps: A('10101110'), offAt: 0, offNote: '' },
+        { email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', role: 'warehouse', active: true, empId: '130452', dept: 'Warehouse', apps: Object.assign(A('10101110'), { stockcount: true }), offAt: 0, offNote: '', whGroup: 'Central', region: 'Siem Reap', stockCats: ['Round-GI', 'Square-GI'] },
         { email: 'rithy.phan@gmail.com', name: 'Phan Rithy', role: 'security', active: true, empId: '141903', dept: 'Security', apps: A('01100100'), offAt: 0, offNote: '' },
         { email: 'sophal.keo@gmail.com', name: 'Keo Sophal', role: 'user', active: false, empId: '150617', dept: 'Warehouse', apps: A('10100100'), offAt: now - 2 * day, offNote: 'Left the company' },
         { email: 'chenda.mao@gmail.com', name: 'Mao Chenda', role: 'user', active: false, empId: '163220', dept: 'Transport', apps: A('11110100'), offAt: 0, offNote: '' },
@@ -711,6 +808,7 @@
       emps: [{ id: '100752', name: 'CHEA SOKOM', kh: 'ជា សុគុម', dept: 'Supply Chain · Central Warehouse', emails: ['chea.sokom@gmail.com'] },
         { id: '104836', name: 'THEY SEYHA', kh: 'ថី សីហា', dept: 'Supply Chain · Transport & Fleet', emails: [] },
         { id: '108765', name: 'SOK DARA', kh: 'សុខ ដារ៉ា', dept: 'Supply Chain · Warehouse GVM', emails: [] }],
+      stockGroups: [['Deformed Bar', 'Trading'], ['Wire Rod', 'Trading'], ['Wire Roll', 'Trading'], ['I-Beam', 'Trading'], ['Round-GI', 'Pipe'], ['Square-GI', 'Pipe'], ['Rectangular-GI', 'Pipe'], ['C-Purlin', 'Roofing'], ['Palm Profile', 'Roofing'], ['GI (Galvanized Coil)', 'Coil']].map(x => ({ n: x[0], p: x[1] })),
       v: 2,
       log: [
         { time: now - 3 * 3600e3, by: 'Demo Admin', email: 'sreymom.h@gmail.com', name: 'Heng Sreymom', change: 'ទទួលទំនិញ ✓' },
