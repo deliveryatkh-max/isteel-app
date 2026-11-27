@@ -18,7 +18,7 @@
  * Pure rules (countedPcs, countedQty, statusOf, validateCount, accuracyPct, todayList) live in rules.gs.
  */
 
-const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger', PM: 'Product Master' };
+const SH = { BIN: 'Bin Master', STK: 'Stock On Hand', CNT: 'Counts', SET: 'Settings', LED: 'Stock Ledger', PM: 'Product Master', VAR: 'Variance Log', VSN: 'Variance Snapshots' };
 // Product Master = pipe materials with pieces per bundle and kg per piece (from Kim's Product Master file). It turns a count in
 // bundles / pieces into kg. Filled once from ProductMaster.gs when the tab is empty; after that the tab is edited by hand.
 const PM_COLS = ['Material', 'Description', 'Pipe Size', 'Pcs per Bundle', 'Kg per Pc', 'Source'];
@@ -74,6 +74,9 @@ function route_(action, p, user) {
     case 'card': return card_(user, p);
     case 'editLine': return withLock_(() => editLine_(user, p));
     case 'products': return productTable_(user);
+    case 'varSave': return withLock_(() => varSave_(user, p));
+    case 'varList': return varList_(user);
+    case 'varUpdate': return withLock_(() => varUpdate_(user, p));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -318,7 +321,7 @@ function pmSync_(body) {
   const MAIN = [['Material', ['materialcode', 'material', 'sku']], ['Description', ['materialdescription', 'description']],
     ['Material Group L1', ['materialgroupl1']], ['Material Group L2', ['materialgroupl2']], ['Material Group L3', ['materialgroupl3']],
     ['Material Group L4', ['materialgroupl4', 'group']], ['ABC Class', ['class', 'abcclass']], ['Size', ['size', 'pipesize']], ['Grade', ['grade']],
-    ['Brand', ['brand']], ['UoM', ['uom', 'baseuom']], ['PC/Bundle', ['pcsbundle', 'pcbundle', 'pcsperbundle']], ['Kg/PC', ['kgpc', 'kgperpc', 'weightpc']]];
+    ['Brand', ['brand']], ['UoM', ['uom', 'baseuom', 'uomsap', 'sapuom']], ['PC/Bundle', ['pcsbundle', 'pcbundle', 'pcsperbundle']], ['Kg/PC', ['kgpc', 'kgperpc', 'weightpc']]];
   const used = {};
   MAIN.forEach(c => c[1].forEach(n => { used[n] = 1; }));
   const xhead = (Array.isArray(body.head) && body.head.length ? body.head : Object.keys(rows[0] || {})).map(h => String(h || '').trim())
@@ -354,6 +357,85 @@ function productTable_(user) {
   const head = v[0].map(h => String(h).trim());
   const keep = head.map((h, i) => i).filter(i => head[i]);
   return { head: keep.map(i => head[i]), rows: v.slice(1).filter(r => r.some(x => x !== '')).map(r => keep.map(i => r[i])) };
+}
+// ---------------------------------------------------------------- SAP variance log (Kim, 27 Nov 2026)
+// SAP check "Save variance": one row per variance case (material + batch [+ bin, SLOC]) in Variance Log, kept open until it is
+// resolved by hand or the next saved SAP file matches. Variance Snapshots = one row per saved SAP file (match rate history).
+const VAR_COLS = ['Case ID', 'First Seen', 'Last Seen', 'Times', 'Key', 'Bin', 'Material', 'Batch', 'SLOC', 'Description', 'UoM',
+  'Digital', 'SAP', 'Variance', 'Result', 'Reason', 'Remark', 'Owner', 'Status', 'Action', 'Resolved At', 'Updated By', 'Last Snapshot'];
+const VSN_COLS = ['Snapshot ID', 'Saved At', 'File', 'Snapshot', 'Compared By', 'Lines', 'Match', 'Variances', 'Saved By'];
+const VAR_STATUS = ['Open', 'Investigating', 'Resolved'];
+const isResolved_ = s => /^resolved/i.test(String(s || ''));
+// Writes objects back to a tab by header name (columns Kim adds or moves stay where they are).
+function writeObjs_(name, cols, list) {
+  const sh = sheet_(name, cols);
+  let head = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim()) : [];
+  const miss = cols.filter(c => head.indexOf(c) < 0);
+  if (miss.length) { sh.getRange(1, head.length + 1, 1, miss.length).setValues([miss]).setFontWeight('bold'); head = head.concat(miss); }
+  const last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, head.length).clearContent();
+  if (list.length) sh.getRange(2, 1, list.length, head.length).setNumberFormat('@').setValues(list.map(o => head.map(h => (o[h] == null ? '' : String(o[h])))));
+}
+function varSave_(user, p) {
+  const who = counter_(user), by = name_(who, user);
+  const file = clip_(p.file, 120), snap = clip_(p.at, 40), level = clip_(p.level, 60);
+  if (!file || !snap) fail_('BAD', 'Load a SAP file first.', 'សូមនាំចូលឯកសារ SAP ជាមុនសិន។');
+  const rows = Array.isArray(p.rows) ? p.rows.slice(0, 5000) : [];
+  const matched = {}; (Array.isArray(p.matched) ? p.matched : []).forEach(k => { matched[level + ':' + String(k).toUpperCase()] = 1; });
+  let h = 0; String(file + '|' + snap).split('').forEach(ch => { h = (h * 31 + ch.charCodeAt(0)) >>> 0; });
+  const sid = 'VS-' + h.toString(36).toUpperCase();
+  const now = fmt_(new Date(), 'yyyy-MM-dd HH:mm');
+  const snaps = objs_(SH.VSN, VSN_COLS);
+  const s0 = snaps.find(s => s['Snapshot ID'] === sid);
+  const srow = { 'Snapshot ID': sid, 'Saved At': now, File: file, Snapshot: snap, 'Compared By': level, Lines: String(num_(p.lines)), Match: String(num_(p.match)), Variances: String(rows.length), 'Saved By': by };
+  if (s0) Object.assign(s0, srow); else snaps.push(srow);
+  const cases = objs_(SH.VAR, VAR_COLS);
+  const open = {}; cases.forEach(c => { if (!isResolved_(c.Status)) open[c.Key] = c; });
+  let seq = cases.filter(c => String(c['Case ID']).indexOf('VC-' + fmt_(new Date(), 'yyMMdd')) === 0).length;
+  let added = 0, updated = 0, closed = 0;
+  rows.forEach(r => {
+    const key = level + ':' + String(r.key || '').toUpperCase();
+    const vals = { Bin: clip_(r.bin, 40), Material: clip_(r.material, 40), Batch: clip_(r.batch, 40), SLOC: clip_(r.sloc, 20), Description: clip_(r.desc, 120), UoM: clip_(r.uom, 10),
+      Digital: r.digital == null ? '' : String(num_(r.digital)), SAP: r.sap == null ? '' : String(num_(r.sap)), Variance: String(num_(r.variance)), Result: clip_(r.status, 20), 'Last Seen': snap };
+    if (r.reason != null && String(r.reason).trim()) vals.Reason = clip_(r.reason, 60);
+    if (r.remark != null && String(r.remark).trim()) vals.Remark = clip_(r.remark, 300);
+    let c = open[key];
+    if (c) {
+      if (c['Last Snapshot'] !== sid) c.Times = String((num_(c.Times) || 1) + 1);
+      Object.assign(c, vals, { 'Last Snapshot': sid, 'Updated By': by }); updated++;
+    } else {
+      seq++;
+      c = Object.assign({ 'Case ID': 'VC-' + fmt_(new Date(), 'yyMMdd') + '-' + ('00' + seq).slice(-3), 'First Seen': snap, Times: '1', Key: key, Reason: '', Remark: '', Owner: '',
+        Status: 'Open', Action: '', 'Resolved At': '' }, vals, { 'Last Snapshot': sid, 'Updated By': by });
+      cases.push(c); open[key] = c; added++;
+    }
+  });
+  // An open case that matches in this SAP file is closed by itself.
+  cases.forEach(c => { if (!isResolved_(c.Status) && matched[c.Key]) { c.Status = 'Resolved'; c.Action = c.Action || 'Matched in SAP'; c['Resolved At'] = now; c['Updated By'] = by; closed++; } });
+  writeObjs_(SH.VSN, VSN_COLS, snaps);
+  writeObjs_(SH.VAR, VAR_COLS, cases);
+  return { snapshot: sid, added: added, updated: updated, closed: closed };
+}
+function varList_(user) {
+  counter_(user);
+  return { cases: objs_(SH.VAR, VAR_COLS).slice(-3000), snaps: objs_(SH.VSN, VSN_COLS).slice(-60) };
+}
+function varUpdate_(user, p) {
+  const who = counter_(user);
+  const cases = objs_(SH.VAR, VAR_COLS);
+  const c = cases.find(x => x['Case ID'] === String(p.id || ''));
+  if (!c) fail_('BAD', 'This variance is not in the log.', 'រកមិនឃើញក្នុងបញ្ជីខុសគ្នា។');
+  ['Reason', 'Remark', 'Owner', 'Action'].forEach(k => { const v = p[k.toLowerCase()]; if (v != null) c[k] = clip_(v, k === 'Remark' ? 300 : 60); });
+  if (p.status != null) {
+    const s = VAR_STATUS.find(x => x.toLowerCase() === String(p.status).toLowerCase());
+    if (!s) fail_('BAD', 'Unknown status.');
+    if (s === 'Resolved' && !c.Action) fail_('BAD', 'Choose the action before you resolve it.', 'សូមជ្រើសសកម្មភាព មុនបិទ។');
+    c['Resolved At'] = s === 'Resolved' ? (isResolved_(c.Status) ? c['Resolved At'] : fmt_(new Date(), 'yyyy-MM-dd HH:mm')) : '';
+    c.Status = s;
+  }
+  c['Updated By'] = name_(who, user);
+  writeObjs_(SH.VAR, VAR_COLS, cases);
+  return { case: c };
 }
 // Product Master as { MATERIAL: { ppb, kg, desc, uom } }.
 function pm_() {

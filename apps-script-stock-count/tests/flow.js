@@ -146,4 +146,18 @@ const pt = call('products', {}, admin);
 eq([pt.head[0], pt.rows.length, pt.head.indexOf('CBM/Bundle (m³)') > 0], ['Material', 12, true], 'Product menu gets the whole tab');
 let refused = false; try { call('products', {}, op); } catch (e) { refused = /NOACCESS/.test(e.message); }
 eq(refused, true, 'Product menu refused for a plain user');
+
+// ---- SAP variance log (27 Nov)
+const vrow = (k, v, extra) => Object.assign({ key: k, material: k.split('|')[0], batch: k.split('|')[1], digital: 100, sap: 100 - v, variance: v, uom: 'PC', status: 'var' }, extra || {});
+let vs = call('varSave', { file: 'a.xlsx', at: '2026-11-27 09:00', level: 'material+batch', lines: 3, match: 1, rows: [vrow('M1|B1', 5, { reason: 'Wrong batch', remark: 'r1' }), vrow('M2|B2', -3)] });
+eq([vs.added, vs.updated, vs.closed], [2, 0, 0], 'first save opens two cases');
+vs = call('varSave', { file: 'a.xlsx', at: '2026-11-27 09:00', level: 'material+batch', lines: 3, match: 1, rows: [vrow('M1|B1', 5), vrow('M2|B2', -3, { reason: 'Count error' })] });
+let vl = call('varList', {});
+eq([vs.added, vs.updated, vl.cases.length, vl.snaps.length, vl.cases[0].Times, vl.cases[0].Reason, vl.cases[1].Reason], [0, 2, 2, 1, '1', 'Wrong batch', 'Count error'], 'saving the same file again updates, keeps reasons');
+vs = call('varSave', { file: 'b.xlsx', at: '2026-11-28 09:00', level: 'material+batch', lines: 2, match: 1, rows: [vrow('M1|B1', 4)], matched: ['M2|B2'] });
+vl = call('varList', {});
+eq([vs.updated, vs.closed, vl.cases[0].Times, vl.cases[0].Variance, vl.cases[1].Status, vl.cases[1].Action, vl.snaps.length], [1, 1, '2', '4', 'Resolved', 'Matched in SAP', 2], 'next file: repeat counted, matched case closed');
+fails(() => call('varUpdate', { id: vl.cases[0]['Case ID'], status: 'Resolved' }), 'BAD', 'resolve needs an action');
+const vu = call('varUpdate', { id: vl.cases[0]['Case ID'], status: 'Resolved', action: 'SAP adjustment', owner: 'Dara' });
+eq([vu.case.Status, vu.case.Owner, !!vu.case['Resolved At']], ['Resolved', 'Dara', true], 'resolve by hand');
 console.log('Stock Count flow tests: ' + pass + ' passed');

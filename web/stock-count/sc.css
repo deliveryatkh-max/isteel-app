@@ -433,3 +433,15 @@ table.rep tfoot th.num { text-align: right; }
 @media (min-width: 900px) {
   #view > .fb-wrap { position: sticky; top: var(--barh, 56px); z-index: 6; background: var(--bg); margin: 0 -4px 10px; padding: 6px 4px 8px; box-shadow: 0 8px 12px -12px rgba(1, 30, 65, .35); }
 }
+/* SAP variance (27 Nov 2026): reason / remark cells, Save button, Variance history cards */
+table.rep select.cell, table.rep input.cell { font: inherit; font-size: 12.5px; padding: 1px 6px; height: 24px; min-height: 0; width: auto; min-width: 150px; margin: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); max-width: 230px; }
+table.rep input.cell { width: 190px; } table.rep input.cell.sm { width: 110px; }
+table.rep select.cell.need { background: var(--bad-bg); border-color: #fca5a5; color: var(--bad); }
+.fb-btn.pri { background: #011e41; color: #fff; border-color: #011e41; }
+.fb-btn.pri:disabled { opacity: .6; }
+.vgrid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 12px; }
+.vgrid .card { margin: 0; } .vgrid h3 { margin: 0 0 6px; font-size: 14px; }
+.vgrid .chart { height: 140px; }
+.hbar { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12.5px; }
+.hbar span { width: 45%; } .hbar i { display: block; height: 10px; border-radius: 4px; background: #f59e0b; max-width: 40%; } .hbar b { font-size: 12px; }
+@media (max-width: 760px) { .vgrid { grid-template-columns: 1fr; } }
