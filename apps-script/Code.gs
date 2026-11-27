@@ -127,6 +127,7 @@ const ACTIONS = {
   saver: fuelSaver_,
   sapPost: sapPost_,
   reportCols: reportColsSave_,
+  fbSave: fbSave_,
 };
 
 // ---------- Home menu: which apps each user can open ----------
@@ -700,6 +701,34 @@ function findEmployee_(token, p) {
     apps: row ? HOME_APPS.filter(a => row.apps[a.key]).map(a => a.key) : [],
     mine: emails.indexOf(info.email) >= 0, linked: emails.some(x => x !== info.email),
   };
+}
+
+// ---------- 💬 Comments on the live site (Kim, 27 Nov 2026) ----------
+// Admins tap 💬 in any app, tap a spot and type; one row per comment in the Feedback tab, the screenshot in Drive.
+const FB_TAB = 'Feedback';
+const FB_COLS = ['ID', 'Time', 'By', 'Email', 'App', 'Page', 'Spot (x%, y%)', 'Screen', 'Tapped on', 'Comment', 'Screenshot', 'Status', 'Done note'];
+function fbSave_(p, user) {
+  if (!isAdmin_(user)) throw new Error('Only admins can comment.');
+  const text = String(p.text || '').trim().slice(0, 2000);
+  if (!text) throw new Error('Type the comment.');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.getActive();
+    let sh = ss.getSheetByName(FB_TAB);
+    if (!sh) { sh = ss.insertSheet(FB_TAB); sh.getRange(1, 1, 1, FB_COLS.length).setValues([FB_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff'); sh.setFrozenRows(1); }
+    const id = 'FB-' + String(Math.max(1, sh.getLastRow())).padStart(3, '0');
+    let link = '';
+    const m = String(p.shot || '').match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
+    if (m) {
+      let folder = null; const fid = getSetting_('FEEDBACK_FOLDER_ID');
+      if (fid) { try { folder = DriveApp.getFolderById(fid); } catch (e) { folder = null; } }
+      if (!folder) { const par = photoFolder_().getParents(); folder = (par.hasNext() ? par.next() : DriveApp.getRootFolder()).createFolder('iSteel Feedback'); setSetting_('FEEDBACK_FOLDER_ID', folder.getId()); }
+      link = folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], id + '.jpg')).getUrl();
+    }
+    const cut = (v, n) => String(v == null ? '' : v).slice(0, n);
+    sh.appendRow([id, new Date(), user.name || '', user.email || '', cut(p.app, 40), cut(p.url, 500), cut(p.x, 5) + '%, ' + cut(p.y, 5) + '%', cut(p.screen, 20), cut(p.target, 200), text, link, 'Open', '']);
+    return { id: id };
+  } finally { lock.releaseLock(); }
 }
 
 let cardFolderCache_ = null;
