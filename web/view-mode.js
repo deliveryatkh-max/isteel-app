@@ -255,6 +255,9 @@
     mo.observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
+  // 💬 Comment button for admins (Kim, 27 Nov 2026): feedback.js sits next to this file
+  try { const me = JSON.parse(localStorage.getItem('steel_me') || 'null'); if (me && me.role === 'admin') {
+    const s = document.createElement('script'); s.src = new URL('feedback.js?v=20261127a', document.currentScript ? document.currentScript.src : location.href).href; s.defer = true; document.head.appendChild(s); } } catch (e) { /* private window */ }
   window.addEventListener('load', () => { if (document.getElementById('vmSw')) unfreeze(); });
   window.VIEW_MODE = { get, pick };
 })();

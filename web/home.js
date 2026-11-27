@@ -75,7 +75,7 @@
     const name = (d.user && d.user.name) || email();
     $('#who').textContent = name;
     // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
-    if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '' }));
+    if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '', role: d.user.role || '' }));   // role: 💬 Comment button for admins
     // One 🖼️ Gallery tile (Kim, 1 Nov 2026): the Gallery Manager lives inside it as admin-only tabs,
     // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
     const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
