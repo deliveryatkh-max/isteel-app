@@ -121,6 +121,12 @@ function tripState(rows, doneElsewhere) {
     // End Loading carries the warehouse's total kg (22 Nov 2026): it counts for the first DN started at that warehouse.
     if (r.code === 5 && r.dn) { if (startDns.closed) { startDns.list = []; startDns.closed = false; } startDns.list.push(r.dn); }
     if (r.code === 6) { if (!r.dn && r.kg && startDns.list.length && out.dns[startDns.list[0]]) out.dns[startDns.list[0]].loadKg = (out.dns[startDns.list[0]].loadKg || 0) + Number(r.kg); startDns.closed = true; }
+    // Gate Out from the Scale before 27 Nov 2026 kept its DNs only in the remark ("⚖️ WB-… · DN a, b"): when no
+    // warehouse recorded Start Loading, those DNs still count as on the truck so the driver can scan them.
+    if (r.code === 7 && !r.dn && /^⚖️/.test(String(r.remark || ''))) {
+      const m = String(r.remark).match(/DN ([0-9A-Z, -]+)$/);
+      if (m) m[1].split(',').map(normDn).filter(x => /^[0-9A-Z-]{4,20}$/.test(x)).forEach(x => { if (!out.dns[x]) out.dns[x] = { dn: x, cust: '', leg: 'picked', kg: 0, final: false, time: r.time }; });
+    }
     if (r.dn) {
       const d = out.dns[r.dn] || (out.dns[r.dn] = { dn: r.dn, cust: '', leg: 'picked', kg: 0, final: false, time: r.time });
       if (r.cust) d.cust = r.cust;

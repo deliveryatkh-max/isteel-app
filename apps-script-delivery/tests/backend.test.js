@@ -605,6 +605,24 @@ test('Delivery Plan STATUS shows the latest step while the DN is on the way', ()
   assert.ok(!other || !other[ph.indexOf('STATUS')], 'untouched DN stays blank');
 });
 
+test('Scale Gate Out adds DNs no warehouse recorded, so the driver can scan them', () => {
+  const e = env(); e.run('setup()');
+  const g = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', ticket: 'T7', kg: 9000 }, GUARD));
+  v2Load(e, g.tripId, 'PNP1', ['9000000001'], 1200);
+  step(e, 20);
+  ok(e.call('scaleGate', { kind: 'out', plate: 'TEST-0001', ticket: 'T7', net: 2000, dns: ['9000000001', '9000000002'] }, GUARD));
+  const s = ok(e.call('trip', { tripId: g.tripId }, ADMIN)); const t = s.trip || s;
+  assert.deepStrictEqual((t.dns || []).map(d => d.dn).sort(), ['9000000001', '9000000002']);
+  assert.ok(t.gateOut);
+});
+
+test('old Scale Gate Out rows with DNs only in the remark still put the DNs on the trip', () => {
+  const e = env();
+  const st = e.run("tripState([{ code: 1, time: 1, seq: 1 }, { code: 7, time: 2, seq: 2, remark: '⚖️ WB-1 · Net 20,500 kg · DN 5011992461, 5011992532' }])");
+  assert.deepStrictEqual(Object.keys(st.dns).sort(), ['5011992461', '5011992532']);
+  assert.strictEqual(st.stage, 'on_delivery');
+});
+
 test('Scale Gate In needs a signed-in active user; old trips are untouched', () => {
   const e = env(); e.run('setup()');
   const r = e.call('scaleGate', { kind: 'in', plate: 'TEST-0002' }, 'google:nobody@test.kh');

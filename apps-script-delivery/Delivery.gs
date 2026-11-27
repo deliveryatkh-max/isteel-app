@@ -568,6 +568,15 @@ function findZeroPlates() {
   return msg;
 }
 
+/** Customer of a DN from Delivery Plan, for DNs that came only from the Scale (no customer typed). */
+let PLAN_MEMO_ = null;
+function planCust_(dn) {
+  if (!PLAN_MEMO_) PLAN_MEMO_ = plan_();
+  const pl = PLAN_MEMO_[dn] || {};
+  const id = String(pl.custId || '').trim(), name = String(pl.custName || '').trim();
+  return id && name ? id + '-' + name : name || id;
+}
+
 /** Summary of one trip for lists. */
 function tripSummary_(id, rows, tripsIdx, done) {
   const st = tripState(rows, done);
@@ -579,7 +588,7 @@ function tripSummary_(id, rows, tripsIdx, done) {
     plate: meta.plate || pick('plate'), driver: meta.driver || pick('driver'), round: meta.round || pick('round'),
     gateIn: st.gateIn, gateOut: st.gateOut, stage: st.stage, closed: st.closed, lastTime: st.last ? st.last.time : 0,
     lastCode: st.last ? st.last.code : 0, progress: st.lastProgress, lastLoad: st.lastLoad || 0, wh: st.wh || '',
-    dns: st.dnList.map(d => ({ dn: d.dn, cust: d.cust, leg: d.leg, kg: d.kg, loadKg: d.loadKg || 0 })),
+    dns: st.dnList.map(d => ({ dn: d.dn, cust: d.cust || planCust_(d.dn), leg: d.leg, kg: d.kg, loadKg: d.loadKg || 0 })),
     legacy: !tripsIdx[id],
   };
 }
@@ -780,7 +789,7 @@ function scaleGate_(p, user) {
   }
   if (!onSite.length) return { skipped: 'NO_TRIP' };
   const dns = (p.dns || []).map(normDn).filter(Boolean).slice(0, 30);
-  const r = saveEvent_({ code: 7, tripId: onSite[0], remark: '⚖️ ' + [ticket, p.net ? 'Net ' + kgTxt(p.net) : '', dns.length ? 'DN ' + dns.join(', ') : ''].filter(Boolean).join(' · '),
+  const r = saveEvent_({ code: 7, tripId: onSite[0], dns: dns.map(dn => ({ dn: dn })), remark: '⚖️ ' + [ticket, p.net ? 'Net ' + kgTxt(p.net) : '', dns.length ? 'DN ' + dns.join(', ') : ''].filter(Boolean).join(' · '),
     confirm: ['NO_DN', 'NO_GATE_IN'], ref: ticket ? 'scale_out_' + ticket : '' }, who(7));
   return r.needConfirm ? { skipped: 'CONFIRM', warnings: r.needConfirm } : { tripId: r.tripId };
 }
@@ -932,7 +941,11 @@ function saveEvent_(p, who) {
     const rowsOut = [];
     const base = () => new Array(C.width).fill('');
     const put = (row, f, v) => { if (C[f] != null) row[C[f]] = v; };
-    const targets = (ev.scope === 'trip' && !(code === 5 && dns.length)) || (code === 10 && !dns.length) ? [null] : dns;
+    // Gate Out from the Scale (Kim, 27 Nov 2026): DNs the weigher typed that no warehouse recorded at Start Loading
+    // join the trip on the Gate Out row(s), so the driver can scan them at the customer.
+    const newAtOut = code === 7 ? dns.filter(d => !st.dns[d.dn]) : [];
+    const targets = code === 7 ? (newAtOut.length ? newAtOut : [null])
+      : (ev.scope === 'trip' && !(code === 5 && dns.length)) || (code === 10 && !dns.length) ? [null] : dns;
     targets.forEach(d => {
       const row = base();
       const key = nextKey(tripId, keys);
