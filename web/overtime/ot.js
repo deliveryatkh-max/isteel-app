@@ -831,6 +831,9 @@
     // My info (everyone) and My Team (supervisors and admins): team.js (Kim, 26 Nov 2026)
     if (window.OT_TEAM) OT_TEAM.tiles($('.menu2'), { back: renderMenu, onMenu: () => state.tab === 'menu',
       enter: fn => { stopSignupPoll(); state.tab = 'team'; paintTabs(); redraw = fn; } });
+    // Dashboard, Report and Setting (admins only): admin.js (Kim, 27 Nov 2026)
+    if (window.OT_ADMIN) OT_ADMIN.tiles($('.menu2'), { back: renderMenu, onMenu: () => state.tab === 'menu', onAdmin: () => state.tab === 'admin',
+      enter: fn => { stopSignupPoll(); state.tab = 'admin'; paintTabs(); redraw = fn; } });
   }
 
   // Sign up as OT approver: type your Line Manager ID, open Telegram, press Start. The bot saves the chat ID and
@@ -921,6 +924,7 @@
   // ---------- chrome ----------
   function paintTabs() {
     document.querySelectorAll('.tab[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
+    $('#view').classList.toggle('oa-wide', state.tab === 'admin');   // admin tables use the full width on a PC
     document.querySelectorAll('[data-km]').forEach(el => { el.textContent = t(el.dataset.km, el.dataset.en); });
     $('#sub').textContent = t('ស្នើសុំថែមម៉ោង', 'OT request');
     document.title = t('ថែមម៉ោង', 'Overtime');
