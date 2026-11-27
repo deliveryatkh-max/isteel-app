@@ -24,13 +24,13 @@
   // ------------------------------------------------------------------ roles
   const PAGES = [
     ['home', '📷', 'ស្កេន', 'Scan'], ['dash', '📊', 'ផ្ទាំងគ្រប់គ្រង', 'Dashboard'], ['stock', '📦', 'បញ្ជីស្តុក', 'Stock list'],
-    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['binsum', '🗂️', 'សង្ខេបទីតាំង', 'Bin summary'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['roles', '👥', 'តួនាទី', 'Roles'],
+    ['moves', '🔁', 'ចលនាស្តុក', 'Movements'], ['binsum', '🗂️', 'សង្ខេបទីតាំង', 'Bin summary'], ['review', '✅', 'ពិនិត្យការរាប់', 'Count review'], ['sap', '🧮', 'ផ្ទៀងផ្ទាត់ SAP', 'SAP check'], ['varhist', '📉', 'ប្រវត្តិខុសគ្នា', 'Variance history'], ['roles', '👥', 'តួនាទី', 'Roles'],
   ];
   const ROLES = [
     { id: 'operator', km: 'បុគ្គលិកឃ្លាំង', en: 'Warehouse Operator', pages: ['home', 'stock'], can: [] },
     { id: 'supervisor', km: 'ប្រធានក្រុមឃ្លាំង', en: 'Warehouse Supervisor', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review'], can: ['approve', 'export'] },
-    { id: 'controller', km: 'អ្នកត្រួតពិនិត្យស្តុក', en: 'Inventory Controller', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap'], can: ['approve', 'export', 'adjust', 'sap'] },
-    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
+    { id: 'controller', km: 'អ្នកត្រួតពិនិត្យស្តុក', en: 'Inventory Controller', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap', 'varhist'], can: ['approve', 'export', 'adjust', 'sap'] },
+    { id: 'admin', km: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', en: 'Administrator', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'review', 'sap', 'varhist', 'roles'], can: ['approve', 'export', 'adjust', 'sap', 'users'] },
   ];
   const RIGHTS = [
     ['scan', 'ស្កេន៖ ចូល / ចេញ / ផ្ទេរ / រាប់', 'Scan: IN / OUT / Transfer / Count'], ['stockv', 'មើលបញ្ជីស្តុក', 'See the stock list'],
@@ -40,7 +40,7 @@
   ];
   let roleId = 'admin';
   try { roleId = localStorage.getItem('sc_demo_role') || 'admin'; } catch (e) { /* private mode */ }
-  const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'sap'], can: ['export', 'sap'] };
+  const LIVE_ROLE = { id: 'live', pages: ['home', 'dash', 'stock', 'moves', 'binsum', 'sap', 'varhist'], can: ['export', 'sap'] };
   const role = () => (!DEMO ? LIVE_ROLE : ROLES.find(r => r.id === roleId) || ROLES[3]);
   const can = what => role().can.indexOf(what) >= 0;
   const has = (r, right) => (right === 'scan' || right === 'stockv' ? true : right === 'dashv' ? r.pages.indexOf('dash') >= 0 : r.can.indexOf(right) >= 0);
@@ -354,6 +354,7 @@
     if (rows.length < 2) { R.error = T('ឯកសារគ្មានទិន្នន័យ', 'The file has no data rows'); R.rows = []; return sap(); }
     R.name = name; R.at = now(); R.headers = rows[0].map(h => String(h).trim()); R.rows = rows.slice(1); R.map = {};
     FIELDS.forEach(f => { const i = R.headers.findIndex((h, k) => f[2].test(h) && !/desc/i.test(h) && Object.values(R.map).indexOf(k) < 0); R.map[f[0]] = i; });
+    R.dcol = R.headers.findIndex(h => /desc/i.test(h));
     sap();
   }
   const numSap = v => { const s = String(v == null ? '' : v).trim().replace(/,/g, ''); return s === '' || !isFinite(Number(s)) ? NaN : Number(s); };
@@ -369,7 +370,9 @@
       if (!String(o.material || '').trim() || isNaN(q)) { bad++; return; }
       const x = slot(keyOf(o), o); x.sap = round3((x.sap || 0) + q);
       if (!x.uom && m.uom >= 0) x.uom = r[m.uom];
-      if (!x.desc) { const known = D.stock.find(l => l.material.toUpperCase() === String(o.material).trim().toUpperCase()); x.desc = known ? known.desc : ''; }
+      // Description (Kim, 27 Nov: blank for lines only in SAP): the SAP file's own column, then the stock, then the Product Master.
+      if (!x.desc && R.dcol >= 0) x.desc = String(r[R.dcol] == null ? '' : r[R.dcol]).trim();
+      if (!x.desc) { const mk = String(o.material).trim().toUpperCase(); const known = D.stock.find(l => l.material.toUpperCase() === mk) || (S.products || []).find(q => String(q.material).toUpperCase() === mk); x.desc = known ? known.desc : ''; }
     });
     const list = Object.keys(all).map(k => { const x = all[k]; const v = round3((x.digital || 0) - (x.sap || 0));
       return Object.assign(x, { variance: v, status: x.sap == null ? 'digital' : x.digital == null ? 'sap' : v === 0 ? 'match' : 'var' }); })
@@ -402,12 +405,20 @@
     if (res && PT.head) { const mi = H.indexOf('Material'); PT.rows.forEach(r => { PI[String(r[mi]).toUpperCase()] = r; }); }
     const pAt = (x, name) => { const r = PI[String(x.o.material || '').trim().toUpperCase()], i = H.indexOf(name); return r && i >= 0 ? r[i] : ''; };
     const pfOk = (x, skip) => PF.every(f => f === skip || !SFV[f[0]] || pAt(x, f[0]) === SFV[f[0]]);
-    const list = res ? res.list.filter(x => pfOk(x) && (!sq || [x.o.bin, x.o.material, x.o.batch, x.o.sloc, x.desc].join(' ').toLowerCase().indexOf(sq.toLowerCase()) >= 0)) : [];
+    const lv = res ? res.level.join('+') : '';
+    if (res) loadVar('sap');
+    const rsnOf = x => { const r = RS[x.key]; if (r && r.reason != null) return r.reason; const c = openCase(lv, x.key); return c ? c.Reason || '' : ''; };
+    const rmkOf = x => { const r = RS[x.key]; if (r && r.remark != null) return r.remark; const c = openCase(lv, x.key); return c ? c.Remark || '' : ''; };
+    const list = res ? res.list.filter(x => pfOk(x) && (!SR || (SR === '-' ? !rsnOf(x) && x.status !== 'match' : rsnOf(x) === SR)) && (!sq || [x.o.bin, x.o.material, x.o.batch, x.o.sloc, x.desc].join(' ').toLowerCase().indexOf(sq.toLowerCase()) >= 0)) : [];
     const sopts = f => Array.from(new Set(res.list.filter(x => pfOk(x, f)).map(x => pAt(x, f[0])).filter(Boolean))).sort();
     const vars = list.filter(x => x.status !== 'match');
     if (res) lastSap = { at: R.at, variances: res.list.filter(x => x.status !== 'match').length, name: R.name };
     const shown = res ? (F.onlyVar ? vars : list) : [];
-    const lv = res ? res.level.map(k => FIELDS.find(f => f[0] === k)[1]).join(' + ') : '';
+    const lvName = res ? res.level.map(k => FIELDS.find(f => f[0] === k)[1]).join(' + ') : '';
+    const pct = x => (x.status === 'match' ? '' : x.sap ? (Math.round(x.variance / Math.abs(x.sap) * 1000) / 10) + '%' : x.digital ? '+100%' : '−100%');
+    const sumU = f => { const u = {}; shown.forEach(x => { if (x[f] == null) return; const k = String(x.uom || '').toUpperCase(); u[k] = (u[k] || 0) + Number(x[f]); });
+      return Object.keys(u).sort().map(k => `${f === 'variance' && u[k] > 0 ? '+' : ''}${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
+    const seen = x => { const c = openCase(lv, x.key); return !c ? (x.status === 'match' ? '' : T('ថ្មី', 'New')) : `<span class="st ${Number(c.Times) >= 3 ? 'st-sap' : 'st-var'}">${esc(c.Times)}× · ${esc(String(c['First Seen']).slice(5, 10))}</span>`; };
     view(`
       <h2 class="ptitle">${T('នាំចូល SAP និងផ្ទៀងផ្ទាត់', 'SAP import and reconciliation')}</h2>
       <section class="card">
@@ -426,19 +437,24 @@
         <div class="stat"><b>${list.length}</b><span>${T('ជួរប្រៀបធៀប', 'Lines compared')}</span></div>
         <div class="stat in"><b>${list.length - vars.length}</b><span>${T('ត្រូវគ្នា', 'Match')}</span></div>
         <div class="stat ${vars.length ? 'out' : ''}"><b>${vars.length}</b><span>${T('ខុសគ្នា', 'Variances')}</span></div>
+        <div class="stat warn"><b>${vars.filter(x => rsnOf(x)).length} / ${vars.length}</b><span>${T('មានមូលហេតុ', 'Reason given')}</span></div>
         <div class="stat"><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
       </div>
-      <div class="fb-wrap sapf">${FB.head('sapf', `<span class="muted">${T('ប្រៀបធៀបតាម', 'Compared by')} <b>${esc(lv)}</b></span>`,
-        `<label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
+      <div class="fb-wrap sapf">${FB.head('sapf', `<span class="muted">${T('ប្រៀបធៀបតាម', 'Compared by')} <b>${esc(lvName)}</b></span>`,
+        `<button type="button" class="fb-btn pri" id="varSave">💾 ${T('រក្សាទុកខុសគ្នា', 'Save variance')}</button><label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
         + (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '') + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`,
-        () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; sap(); })}
+        () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; SR = ''; sap(); })}
       ${FB.panel('sapf', (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
         : `<p class="muted">${PT.err ? T('តម្រងផលិតផល សម្រាប់អ្នកគ្រប់គ្រង និងប្រធានក្រុម', 'Product filters are for admins and supervisors') : T('កំពុងផ្ទុក…', 'Loading…')}</p>`)
+        + FB.field(T('មូលហេតុ', 'Reason'), `<select id="sfr"><option value="">${T('ទាំងអស់', 'All')}</option><option value="-"${SR === '-' ? ' selected' : ''}>${T('មិនទាន់មានមូលហេតុ', 'No reason yet')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === SR ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select>`)
         + FB.search('sq', T('ស្វែងរក ទីតាំង សម្ភារៈ Batch', 'Search bin, material, batch'), sq))}</div>
-      <section class="screp"><table class="rep"><thead><tr>${res.level.map(k => `<th>${FIELDS.find(f => f[0] === k)[1]}</th>`).join('')}<th>${T('បរិយាយ', 'Description')}</th><th>${T('កាតស្តុក', 'Digital')}</th><th>SAP</th><th>${T('ខុសគ្នា', 'Variance')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th></tr></thead><tbody>
+      <section class="screp"><table class="rep"><thead><tr>${res.level.map(k => `<th>${FIELDS.find(f => f[0] === k)[1]}</th>`).join('')}<th>${T('បរិយាយ', 'Description')}</th><th>${T('កាតស្តុក', 'Digital')}</th><th>SAP</th><th>${T('ខុសគ្នា', 'Variance')}</th><th class="num">%</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th><th>${T('មូលហេតុ', 'Reason')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th><th>${T('ធ្លាប់ឃើញ', 'Seen before')}</th></tr></thead><tbody>
         ${shown.map(x => `<tr>${res.level.map(k => `<td>${esc(String(x.o[k] == null ? '' : x.o[k]))}</td>`).join('')}<td>${esc(x.desc)}</td><td class="num">${x.digital == null ? '—' : fmtQty(x.digital)}</td><td class="num">${x.sap == null ? '—' : fmtQty(x.sap)}</td>
-          <td class="num ${x.variance < 0 ? 'out' : x.variance > 0 ? 'in' : ''}"><b>${x.variance > 0 ? '+' : ''}${fmtQty(x.variance)}</b></td><td>${esc(x.uom)}</td><td><span class="st st-${x.status}">${T(SL[x.status][0], SL[x.status][1])}</span></td></tr>`).join('')
-          || `<tr><td class="muted" colspan="${res.level.length + 6}">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</tbody></table></section>
+          <td class="num ${x.variance < 0 ? 'out' : x.variance > 0 ? 'in' : ''}"><b>${x.variance > 0 ? '+' : ''}${fmtQty(x.variance)}</b></td><td class="num">${pct(x)}</td><td>${esc(x.uom)}</td><td><span class="st st-${x.status}">${T(SL[x.status][0], SL[x.status][1])}</span></td>
+          ${x.status === 'match' ? '<td></td><td></td><td></td>' : `<td><select class="cell${rsnOf(x) ? '' : ' need'}" data-rsn="${esc(x.key)}"><option value="">${T('ជ្រើសមូលហេតុ', 'Choose reason')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === rsnOf(x) ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select></td>
+          <td><input class="cell" data-rmk="${esc(x.key)}" value="${esc(rmkOf(x))}" placeholder="${T('កំណត់សម្គាល់…', 'Remark…')}"></td><td>${seen(x)}</td>`}</tr>`).join('')
+          || `<tr><td class="muted" colspan="${res.level.length + 10}">${T('គ្មានជួរខុសគ្នា 🎉', 'No variances 🎉')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${shown.length})</th>${'<th></th>'.repeat(res.level.length)}<th class="num mono">${sumU('digital')}</th><th class="num mono">${sumU('sap')}</th><th class="num mono">${sumU('variance')}</th>${'<th></th>'.repeat(6)}</tr></tfoot></table></section>
       <p class="muted">${T('ខុសគ្នា = កាតស្តុក − SAP។ ទិន្នន័យ SAP មិនដែលសរសេរជាន់លើស្តុកក្នុងកាតស្តុកទេ។ ជួរខុសគ្នាត្រូវពិនិត្យដោយការរាប់។', 'Variance = Digital − SAP. SAP figures never overwrite the digital balance. A variance is checked with a count.')}</p>` : ''}`);
     // Excel files too (Kim, 20 Nov): .xlsx / .xls read from the FIRST sheet, turned into CSV for the same import.
     $('#sapFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader();
@@ -454,8 +470,12 @@
     PF.forEach((f, k) => { if ($('#sf' + k)) $('#sf' + k).onchange = e => { SFV[f[0]] = e.target.value; sap(); }; });
     if ($('#sq')) keep('#sq', v => { sq = v; sap(); });
     if (res) setTimeout(fitRep, 0);
-    if ($('#exp')) $('#exp').onclick = () => download('sap-reconciliation.csv', [res.level.map(k => FIELDS.find(f => f[0] === k)[1]).concat(['Description', 'Digital', 'SAP', 'Variance', 'UoM', 'Result', 'SAP file', 'Snapshot'])]
-      .concat(shown.map(x => res.level.map(k => x.o[k]).concat([x.desc, x.digital, x.sap, x.variance, x.uom, SL[x.status][1], R.name, R.at]))));
+    if ($('#sfr')) $('#sfr').onchange = e => { SR = e.target.value; sap(); };
+    $$('[data-rsn]').forEach(el => { el.onchange = () => { (RS[el.dataset.rsn] = RS[el.dataset.rsn] || {}).reason = el.value; el.classList.toggle('need', !el.value); }; });
+    $$('[data-rmk]').forEach(el => { el.onchange = () => { (RS[el.dataset.rmk] = RS[el.dataset.rmk] || {}).remark = el.value; }; });
+    if ($('#varSave')) $('#varSave').onclick = () => saveVariance(res, lv);
+    if ($('#exp')) $('#exp').onclick = () => download('sap-reconciliation.csv', [res.level.map(k => FIELDS.find(f => f[0] === k)[1]).concat(['Description', 'Digital', 'SAP', 'Variance', 'UoM', 'Result', 'Reason', 'Remark', 'SAP file', 'Snapshot'])]
+      .concat(shown.map(x => res.level.map(k => x.o[k]).concat([x.desc, x.digital, x.sap, x.variance, x.uom, SL[x.status][1], rsnOf(x), rmkOf(x), R.name, R.at]))));
   }
 
   // ------------------------------------------------------------------ roles
@@ -473,7 +493,7 @@
   const PT = { head: null, rows: [], at: 0, busy: false, err: '' };
   const PF = [['Material Group L1', 'ក្រុម L1', 'Material Group L1'], ['Material Group L2', 'ក្រុម L2', 'Material Group L2'], ['Material Group L3', 'ក្រុម L3', 'Material Group L3'],
     ['Material Group L4', 'ក្រុម L4', 'Material Group L4'], ['Size', 'ទំហំ', 'Size'], ['Grade', 'Grade', 'Grade'], ['Brand', 'ម៉ាក', 'Brand'], ['ABC Class', 'ថ្នាក់', 'Class']];
-  const SFV = {}; let sq = '';
+  const SFV = {}; let sq = '', SR = '';
   function loadProducts() {
     if (PT.busy || (PT.head && Date.now() - PT.at < 600000)) return;
     if (DEMO) {
@@ -539,6 +559,124 @@
       .concat(rows.map(x => [x.bin, x.wh, x.zone, x.nm, x.moves, x.open, x.qin, x.qout, x.net, x.bal, x.uom, x.last.trim(), BF.from, BF.to])));
   }
 
-  window.SC_PAGES = { binsum: binsum, dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
+  // ------------------------------------------------------------------ SAP variance log (Kim, 27 Nov 2026: Reason + Save variance + Variance history)
+  // One case per variance line (Variance Log tab). Saving the same SAP file again updates it; a case closes when the next saved file matches.
+  const RSN = [['Delivery not posted in SAP', 'ការដឹកចេញមិនទាន់ post ក្នុង SAP'], ['GR not posted in SAP', 'ការទទួលមិនទាន់ post ក្នុង SAP'],
+    ['Not received in app', 'មិនទាន់ទទួលក្នុងកម្មវិធី'], ['Not issued in app', 'មិនទាន់ចេញក្នុងកម្មវិធី'], ['Wrong batch', 'Batch ខុស'], ['Wrong bin / SLoc', 'ទីតាំង / SLoc ខុស'],
+    ['UoM / conversion', 'ខ្នាតខុស (UoM)'], ['Count error', 'រាប់ខុស'], ['Damage / scrap', 'ខូចខាត / សំណល់'], ['Transfer in transit', 'កំពុងផ្ទេរ'], ['Other', 'ផ្សេងៗ']];
+  const ACTS = [['SAP adjustment', 'កែតម្រូវក្នុង SAP'], ['Digital adjustment', 'កែតម្រូវកាតស្តុក'], ['Recount', 'រាប់ឡើងវិញ'], ['Post missing document', 'Post ឯកសារដែលខ្វះ'], ['No action', 'មិនចាំបាច់'], ['Matched in SAP', 'ត្រូវគ្នាក្នុង SAP']];
+  const VST = [['Open', 'បើក'], ['Investigating', 'កំពុងពិនិត្យ'], ['Resolved', 'បានដោះស្រាយ']];
+  const lbl = (L, v) => { const x = L.find(a => a[0] === v); return x ? T(x[1], x[0]) : v; };
+  const VR = { cases: [], snaps: [], at: 0, busy: false, err: '' };
+  if (DEMO) D.vlog = D.vlog || { cases: [], snaps: [] };
+  function loadVar(again, force) {
+    if (DEMO) { VR.cases = D.vlog.cases; VR.snaps = D.vlog.snaps; VR.at = Date.now(); return; }
+    if (VR.busy || (!force && Date.now() - VR.at < 60000)) return;
+    VR.busy = true;
+    SC.api('varList', {}).then(r => { VR.cases = r.cases || []; VR.snaps = r.snaps || []; VR.err = ''; }, e => { VR.err = String(e && e.message || e); })
+      .then(() => { VR.busy = false; VR.at = Date.now(); if (S.view === again) route(); });
+  }
+  const RS = {};   // reason / remark typed on the SAP check, by line key, until saved
+  const openCase = (lv, key) => VR.cases.find(c => c.Key === lv + ':' + key && !/^resolved/i.test(c.Status));
+  const nowStamp = () => { const d = new Date(), p = n => ('0' + n).slice(-2); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  // Demo only: the same rules as varSave_ / varUpdate_ in Code.gs, on the in-memory log.
+  function demoVarSave(p) {
+    const st = D.vlog, by = 'Demo', now = nowStamp(), sid = 'VS-' + p.file + '|' + p.at;
+    const s0 = st.snaps.find(s => s['Snapshot ID'] === sid), srow = { 'Snapshot ID': sid, 'Saved At': now, File: p.file, Snapshot: p.at, 'Compared By': p.level, Lines: String(p.lines), Match: String(p.match), Variances: String(p.rows.length), 'Saved By': by };
+    if (s0) Object.assign(s0, srow); else st.snaps.push(srow);
+    const out = { added: 0, updated: 0, closed: 0 };
+    p.rows.forEach(r => {
+      const key = p.level + ':' + r.key, vals = { Bin: r.bin || '', Material: r.material, Batch: r.batch || '', SLOC: r.sloc || '', Description: r.desc, UoM: r.uom, Digital: r.digital == null ? '' : String(r.digital), SAP: r.sap == null ? '' : String(r.sap), Variance: String(r.variance), Result: r.status, 'Last Seen': p.at };
+      if (r.reason) vals.Reason = r.reason; if (r.remark) vals.Remark = r.remark;
+      let c = st.cases.find(x => x.Key === key && !/^resolved/i.test(x.Status));
+      if (c) { if (c['Last Snapshot'] !== sid) c.Times = String(Number(c.Times || 1) + 1); Object.assign(c, vals, { 'Last Snapshot': sid }); out.updated++; }
+      else { st.cases.push(Object.assign({ 'Case ID': 'VC-' + (st.cases.length + 1), 'First Seen': p.at, Times: '1', Key: key, Reason: '', Remark: '', Owner: '', Status: 'Open', Action: '', 'Resolved At': '' }, vals, { 'Last Snapshot': sid })); out.added++; }
+    });
+    st.cases.forEach(c => { if (!/^resolved/i.test(c.Status) && p.matched.indexOf(c.Key.slice(p.level.length + 1)) >= 0 && c.Key.indexOf(p.level + ':') === 0) { c.Status = 'Resolved'; c.Action = c.Action || 'Matched in SAP'; c['Resolved At'] = now; out.closed++; } });
+    return out;
+  }
+  function demoVarUpdate(p) {
+    const c = D.vlog.cases.find(x => x['Case ID'] === p.id);
+    ['reason', 'remark', 'owner', 'action'].forEach(k => { if (p[k] != null) c[k[0].toUpperCase() + k.slice(1)] = p[k]; });
+    if (p.status) { if (p.status === 'Resolved' && !c.Action) throw new Error('BAD: Choose the action before you resolve it. || សូមជ្រើសសកម្មភាព មុនបិទ។'); c['Resolved At'] = p.status === 'Resolved' ? (c['Resolved At'] || nowStamp()) : ''; c.Status = p.status; }
+    return { case: c };
+  }
+  const errText = e => { const m = String(e && e.message || e).replace(/^[A-Z_]+:\s*/, '').split(' || '); return T(m[1] || m[0], m[0]); };
+  async function saveVariance(res, lv) {
+    const vars = res.list.filter(x => x.status !== 'match');
+    const p = { file: R.name, at: R.at, level: lv, lines: res.list.length, match: res.list.length - vars.length, matched: res.list.filter(x => x.status === 'match').map(x => x.key),
+      rows: vars.map(x => { const c = openCase(lv, x.key) || {}, rs = RS[x.key] || {};
+        return { key: x.key, bin: x.o.bin || '', material: x.o.material, batch: x.o.batch || '', sloc: x.o.sloc || '', desc: x.desc, uom: x.uom, digital: x.digital, sap: x.sap, variance: x.variance, status: x.status,
+          reason: rs.reason != null ? rs.reason : c.Reason || '', remark: rs.remark != null ? rs.remark : c.Remark || '' }; }) };
+    const b = $('#varSave'); if (b) { b.disabled = true; b.textContent = T('កំពុងរក្សាទុក…', 'Saving…'); }
+    try {
+      const r = DEMO ? demoVarSave(p) : await SC.api('varSave', p);
+      Object.keys(RS).forEach(k => { delete RS[k]; });
+      toast(T(`បានរក្សាទុក៖ ថ្មី ${r.added} · កែ ${r.updated} · បិទ ${r.closed}`, `Saved: ${r.added} new · ${r.updated} updated · ${r.closed} closed`));
+      VR.at = 0; loadVar('sap', true);
+    } catch (e) { toast(errText(e)); }
+    if (S.view === 'sap') sap();
+  }
+
+  // Variance history menu (Kim picked mockup 2, 27 Nov): open cases, owner, age, times seen, status and action; match rate per saved file.
+  const VF = { st: 'open', rsn: '', own: '', q: '' };
+  function varhist() {
+    wide(); loadVar('varhist');
+    const all = VR.cases.slice().reverse();
+    const ageOf = c => (/^resolved/i.test(c.Status) ? null : daysAgo(c['First Seen']));
+    const rows = all.filter(c => (VF.st === 'all' || (VF.st === 'open' ? !/^resolved/i.test(c.Status) : /^resolved/i.test(c.Status))) && (!VF.rsn || (VF.rsn === '-' ? !c.Reason : c.Reason === VF.rsn))
+      && (!VF.own || c.Owner === VF.own) && hit(VF.q, [c.Material, c.Batch, c.Bin, c.Description, c.Remark, c['Case ID']]));
+    const open = all.filter(c => !/^resolved/i.test(c.Status));
+    const mon = dAgo(0).slice(0, 7);
+    const snaps = VR.snaps.slice(-8), rate = s => (Number(s.Lines) ? Math.round(Number(s.Match) / Number(s.Lines) * 1000) / 10 : 0);
+    const last = snaps[snaps.length - 1];
+    const rc = {}; all.forEach(c => { if (c.Reason) rc[c.Reason] = (rc[c.Reason] || 0) + 1; });
+    const rTot = Object.keys(rc).reduce((a, k) => a + rc[k], 0), rTop = Object.keys(rc).sort((a, b) => rc[b] - rc[a]).slice(0, 6);
+    const owners = Array.from(new Set(all.map(c => c.Owner).filter(Boolean))).sort();
+    const opt = (L, v) => L.map(o => `<option value="${esc(o[0])}"${o[0] === v ? ' selected' : ''}>${esc(o[1])}</option>`).join('');
+    view(`
+      <div class="fb-wrap">${FB.head('varhist', '📉 ' + T('ប្រវត្តិខុសគ្នា SAP', 'Variance history'), (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '') + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`,
+        () => { Object.assign(VF, { st: 'open', rsn: '', own: '', q: '' }); varhist(); })}
+      ${FB.panel('varhist', FB.field(T('ស្ថានភាព', 'Status'), `<select id="vst">${opt([['open', T('មិនទាន់បិទ', 'Open')], ['done', T('បានដោះស្រាយ', 'Resolved')], ['all', T('ទាំងអស់', 'All')]], VF.st)}</select>`)
+        + FB.field(T('មូលហេតុ', 'Reason'), `<select id="vrsn">${opt([['', T('ទាំងអស់', 'All')], ['-', T('មិនទាន់មានមូលហេតុ', 'No reason yet')]].concat(RSN.map(r => [r[0], T(r[1], r[0])])), VF.rsn)}</select>`)
+        + FB.field(T('អ្នកទទួលខុសត្រូវ', 'Owner'), `<select id="vown">${opt([['', T('ទាំងអស់', 'All')]].concat(owners.map(o => [o, o])), VF.own)}</select>`)
+        + FB.search('vq', T('ស្វែងរក សម្ភារៈ Batch', 'Search material, batch'), VF.q))}</div>
+      ${VR.err ? `<p class="bad">⚠️ ${esc(errText(VR.err))} · ${T('សូម paste Code.gs ថ្មី', 'Re-paste Code.gs')}</p>` : ''}
+      <div class="dash-kpis">
+        <div class="stat"><b>${last ? rate(last) + '%' : '—'}</b><span>${T('អត្រាត្រូវគ្នា ឯកសារចុងក្រោយ', 'Match rate, last SAP file')}</span></div>
+        <div class="stat ${open.length ? 'out' : ''}"><b>${open.length}</b><span>${T('មិនទាន់បិទ', 'Open variances')}</span></div>
+        <div class="stat warn"><b>${open.filter(c => daysAgo(c['First Seen']) > 7).length}</b><span>${T('បើកលើស ៧ ថ្ងៃ', 'Open more than 7 days')}</span></div>
+        <div class="stat"><b>${open.filter(c => Number(c.Times) >= 3).length}</b><span>${T('កើតឡើងដដែល (៣ ដង+)', 'Repeat items (3+ files)')}</span></div>
+        <div class="stat in"><b>${all.filter(c => /^resolved/i.test(c.Status) && String(c['Resolved At']).slice(0, 7) === mon).length}</b><span>${T('បានដោះស្រាយខែនេះ', 'Resolved this month')}</span></div>
+      </div>
+      <div class="vgrid"><section class="card"><h3>${T('អត្រាត្រូវគ្នា តាមឯកសារ SAP', 'Match rate per saved SAP file')}</h3>
+        ${snaps.length ? `<div class="chart">${snaps.map(s => `<div class="cday"><div class="cbars"><i class="bi" style="height:${rate(s)}%;width:60%;max-width:40px;background:#2563eb"><em>${rate(s)}%</em></i></div><span>${esc(String(s.Snapshot).slice(5, 10))}</span></div>`).join('')}</div>` : `<p class="muted">${T('មិនទាន់មានការរក្សាទុក', 'Nothing saved yet. Use 💾 Save variance on the SAP check.')}</p>`}</section>
+        <section class="card"><h3>${T('មូលហេតុច្រើនបំផុត', 'Top reasons')}</h3>${rTop.map(k => `<div class="hbar"><span>${esc(lbl(RSN, k))}</span><i style="width:${Math.round(rc[k] / rTot * 100)}%"></i><b>${Math.round(rc[k] / rTot * 100)}%</b></div>`).join('') || `<p class="muted">—</p>`}</section></div>
+      <section class="screp"><table class="rep vtbl"><thead><tr><th>${T('លើកដំបូង', 'First seen')}</th><th>${T('ទីតាំង', 'Bin')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>Batch</th><th>${T('បរិយាយ', 'Description')}</th><th class="num">${T('ខុសគ្នា', 'Variance')}</th><th>UoM</th><th>${T('មូលហេតុ', 'Reason')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th><th>${T('អ្នកទទួលខុសត្រូវ', 'Owner')}</th><th class="num">${T('រយៈពេល', 'Age')}</th><th class="num">${T('ចំនួនដង', 'Times')}</th><th>${T('ស្ថានភាព', 'Status')}</th><th>${T('សកម្មភាព', 'Action')}</th></tr></thead><tbody>
+        ${rows.map(c => { const v = Number(c.Variance) || 0, age = ageOf(c), id = esc(c['Case ID']);
+          return `<tr><td>${esc(String(c['First Seen']).slice(0, 10))}</td><td class="mono">${esc(c.Bin)}</td><td class="mono">${esc(c.Material)}</td><td class="mono">${esc(c.Batch)}</td><td>${esc(c.Description)}</td>
+          <td class="num mono ${v < 0 ? 'out' : v > 0 ? 'in' : ''}"><b>${v > 0 ? '+' : ''}${fmtQty(v)}</b></td><td>${esc(c.UoM)}</td>
+          <td><select class="cell${c.Reason ? '' : ' need'}" data-vid="${id}" data-f="reason"><option value="">${T('ជ្រើសមូលហេតុ', 'Choose reason')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === c.Reason ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select></td>
+          <td><input class="cell" data-vid="${id}" data-f="remark" value="${esc(c.Remark)}" placeholder="${T('កំណត់សម្គាល់…', 'Remark…')}"></td>
+          <td><input class="cell sm" data-vid="${id}" data-f="owner" value="${esc(c.Owner)}" placeholder="${T('ឈ្មោះ', 'Name')}"></td>
+          <td class="num ${age > 7 ? 'out' : ''}">${age == null ? '—' : age + ' ' + T('ថ្ងៃ', 'd')}</td><td class="num">${esc(c.Times)}</td>
+          <td><select class="cell st-${String(c.Status).toLowerCase()}" data-vid="${id}" data-f="status">${VST.map(s => `<option value="${s[0]}"${s[0] === c.Status ? ' selected' : ''}>${esc(T(s[1], s[0]))}</option>`).join('')}</select></td>
+          <td><select class="cell" data-vid="${id}" data-f="action"><option value="">—</option>${ACTS.map(a => `<option value="${esc(a[0])}"${a[0] === c.Action ? ' selected' : ''}>${esc(T(a[1], a[0]))}</option>`).join('')}</select></td></tr>`; }).join('')
+          || `<tr><td class="muted" colspan="14">${VR.busy ? T('កំពុងផ្ទុក…', 'Loading…') : T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody></table></section>
+      <p class="muted">${T('ខុសគ្នានីមួយៗ នៅបើករហូតដល់ជ្រើសសកម្មភាព ហើយដាក់ "បានដោះស្រាយ"។ វាបិទដោយខ្លួនឯង ពេលឯកសារ SAP បន្ទាប់ត្រូវគ្នា។',
+        'A variance stays open until you pick the action and set it to Resolved. It closes by itself when the next saved SAP file matches.')}</p>`);
+    setTimeout(fitRep, 0);
+    keep('#vq', v => { VF.q = v; varhist(); });
+    [['vst', 'st'], ['vrsn', 'rsn'], ['vown', 'own']].forEach(f => { $('#' + f[0]).onchange = e => { VF[f[1]] = e.target.value; varhist(); }; });
+    $$('[data-vid]').forEach(el => { el.onchange = async () => {
+      const p = { id: el.dataset.vid }; p[el.dataset.f] = el.value;
+      try { const r = DEMO ? demoVarUpdate(p) : await SC.api('varUpdate', p); const i = VR.cases.findIndex(c => c['Case ID'] === p.id); if (i >= 0) VR.cases[i] = Object.assign(VR.cases[i], r.case); toast(T('បានរក្សាទុក', 'Saved')); }
+      catch (e) { toast(errText(e)); }
+      varhist(); }; });
+    if ($('#exp')) $('#exp').onclick = () => download('variance-history.csv', [['Case ID', 'First Seen', 'Last Seen', 'Bin', 'Material', 'Batch', 'Description', 'Digital', 'SAP', 'Variance', 'UoM', 'Reason', 'Remark', 'Owner', 'Times', 'Status', 'Action', 'Resolved At']]
+      .concat(rows.map(c => [c['Case ID'], c['First Seen'], c['Last Seen'], c.Bin, c.Material, c.Batch, c.Description, c.Digital, c.SAP, c.Variance, c.UoM, c.Reason, c.Remark, c.Owner, c.Times, c.Status, c.Action, c['Resolved At']])));
+  }
+
+  window.SC_PAGES = { varhist: varhist, binsum: binsum, dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
   route();
 })();
