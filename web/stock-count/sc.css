@@ -456,3 +456,6 @@ table.rep select.cell.need { background: var(--bad-bg); border-color: #fca5a5; c
 .msel-list input { width: 16px; height: 16px; min-height: 0 !important; margin: 0; }
 .msel-ok { width: 100%; margin-top: 6px; padding: 6px; font: inherit; font-weight: 700; color: #fff; background: #011e41; border: 0; border-radius: 8px; cursor: pointer; }
 @media (max-width: 640px) { .fb-panel > .fb-field .msel-btn { width: 100%; max-width: none; } .msel-pop { min-width: 0; width: 100%; max-width: none; } }
+/* MB51 compare (27 Nov 2026) */
+.mbfile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; }
+.mbk .stat span { font-size: 12px; }
