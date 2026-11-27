@@ -180,12 +180,15 @@
     }
     // Kim, 27 Nov (points 8-9): Bin filter; no bin picked = one row per material (all bins added up). Filters Material + Size; UoM and Stock Date filters removed.
     const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
-    const rows = all.filter(l => inSel(F.wh, l.wh) && inSel(F.bin, l.bin) && inSel(F.zone, l.zone) && inSel(F.grp, l.grp) && inSel(F.mat, l.material) && inSel(F.size, l.size) && inSel(F.sloc, l.sloc)
-      && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.cd, F.cd, true)
-      && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp, l.size]));
+    const SP = { wh: l => inSel(F.wh, l.wh), bin: l => inSel(F.bin, l.bin), zone: l => inSel(F.zone, l.zone), grp: l => inSel(F.grp, l.grp), mat: l => inSel(F.mat, l.material),
+      size: l => inSel(F.size, l.size), sloc: l => inSel(F.sloc, l.sloc), qty: l => !F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0), cd: l => dateOk(l.cd, F.cd, true),
+      q: l => hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp, l.size]) };
+    const rows = all.filter(l => Object.keys(SP).every(k => SP[k](l)));
     const byBin = asArr(F.bin).length > 0;
-    const list = f => uniq(f).map(v => [v, v]);
-    const mats = Array.from(new Map(all.map(l => [l.material, l.material + ' · ' + (l.desc || '')])).entries()).sort((x, y) => x[0].localeCompare(y[0]));
+    const opt = linked(all, SP);
+    const list = f => withSel(opt(f, l => l[f]), F[f]).map(v => [v, v]);
+    const descOf = {}; all.forEach(l => { descOf[l.material] = l.desc || ''; });
+    const mats = withSel(opt('mat', l => l.material), F.mat).map(m => [m, m + ' · ' + (descOf[m] || '')]);
     const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh'), 1], ['fbin', T('ទីតាំង', 'Bin'), 'bin', list('bin'), 1], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone'), 1],
       ['fgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', list('grp'), 1], ['fmat', T('សម្ភារៈ', 'Material'), 'mat', mats, 1], ['fsize', T('ទំហំ', 'Size'), 'size', list('size'), 1], ['fsloc', 'SLoc', 'sloc', list('sloc'), 1],
       ['fqty', T('ស្តុក', 'Stock'), 'qty', QTY_OPT], ['fcd', T('ថ្ងៃរាប់', 'Count Date'), 'cd', CD_OPT]];
@@ -255,6 +258,14 @@
     window.SCPivot.mount($('#pvBox'), { id: id, data: data, T: T, def: def, fields: fields.map(f => ({ k: f[0], km: f[1], en: f[2], num: !!f[3] })),
       onExport: grid => download(id + '-pivot.csv', grid) });
   }
+  // Linked filters (Kim, 27 Nov: "each filters should be dependently connected"), like Excel: a list shows only the values
+  // that fit every OTHER filter; values already ticked stay in the list. preds = { key: row => bool }; val = row => value(s).
+  const linked = (list, preds) => (key, val) => {
+    const ks = Object.keys(preds).filter(k => k !== key), seen = new Set();
+    list.forEach(r => { if (ks.every(k => preds[k](r))) { const v = val(r); (Array.isArray(v) ? v : String(v == null ? '' : v).split(', ')).forEach(x => { if (x !== '') seen.add(String(x)); }); } });
+    return seen;
+  };
+  const withSel = (set, sel) => { asArr(sel).forEach(x => set.add(String(x))); return Array.from(set).sort(); };
   // Multi-select filter (Kim, 27 Nov: "allow multiple selection"). State is an array; empty = All.
   const inSel = (sel, v) => !sel || !sel.length || (Array.isArray(sel) ? sel.indexOf(String(v)) >= 0 : sel === String(v));
   const asArr = v => (Array.isArray(v) ? v : v ? [v] : []);
@@ -310,13 +321,15 @@
     const bdOf = (q, r) => { const u = ppbOf(r); if (!(u.ppb > 1)) return ''; const pcs = SC.isKg(r.uom) ? (u.kg ? q / u.kg : null) : q; if (pcs == null) return '';
       const bd = Math.floor(pcs / u.ppb), rem = Math.round(pcs - bd * u.ppb); return `${fmtQty(bd)} ${T('បាច់', 'bd')}${rem ? ' + ' + fmtQty(rem) : ''}`; };
     const all = newest().map(r => Object.assign({}, r, { wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r) }));
-    const uq = f => Array.from(new Set(all.map(r => r[f]).filter(Boolean))).sort();
-    const MF = [['mt', T('ប្រភេទ', 'Type'), types.map(t => [t, tLabel(t)])], ['mwh', T('ឃ្លាំង', 'Warehouse'), uq('wh').map(v => [v, v])], ['mzone', T('តំបន់', 'Bin Zone'), uq('zone').map(v => [v, v])],
-      ['mgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), uq('grp').map(v => [v, v])], ['msloc', 'SLoc', uq('sloc').map(v => [v, v])], ['mdir', T('ចូល / ចេញ', 'Direction (In / Out)'), [['in', T('ចូល', 'In')], ['out', T('ចេញ', 'Out')]]]];
     const dirOk = r => !asArr(F.mdir).length || asArr(F.mdir).some(d => (d === 'in' ? Number(r.qtyIn) > 0 : Number(r.qtyOut) > 0));
-    const rows = all.filter(r => inSel(F.mt, r.type) && inSel(F.mwh, r.wh) && inSel(F.mzone, r.zone) && inSel(F.mgrp, r.grp) && inSel(F.msloc, r.sloc)
-      && dirOk(r) && (!F.mfrom || String(r.date) >= F.mfrom) && (!F.mto || String(r.date) <= F.mto)
-      && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user, r.otherBin, r.remark]));
+    const MP = { mt: r => inSel(F.mt, r.type), mwh: r => inSel(F.mwh, r.wh), mzone: r => inSel(F.mzone, r.zone), mgrp: r => inSel(F.mgrp, r.grp), msloc: r => inSel(F.msloc, r.sloc), mdir: dirOk,
+      x: r => (!F.mfrom || String(r.date) >= F.mfrom) && (!F.mto || String(r.date) <= F.mto) && hit(F.mq, [r.id, r.bin, r.material, r.desc, r.batch, r.reference, r.user, r.otherBin, r.remark]) };
+    const mopt = linked(all, MP), mk = { mwh: 'wh', mzone: 'zone', mgrp: 'grp', msloc: 'sloc' };
+    const uq = f => { const key = Object.keys(mk).find(k => mk[k] === f); return withSel(mopt(key, r => r[f]), F[key]); };
+    const tSet = mopt('mt', r => r.type);
+    const MF = [['mt', T('ប្រភេទ', 'Type'), types.concat(['REVERSAL']).filter(t => tSet.has(t) || asArr(F.mt).indexOf(t) >= 0).map(t => [t, tLabel(t)])], ['mwh', T('ឃ្លាំង', 'Warehouse'), uq('wh').map(v => [v, v])], ['mzone', T('តំបន់', 'Bin Zone'), uq('zone').map(v => [v, v])],
+      ['mgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), uq('grp').map(v => [v, v])], ['msloc', 'SLoc', uq('sloc').map(v => [v, v])], ['mdir', T('ចូល / ចេញ', 'Direction (In / Out)'), [['in', T('ចូល', 'In')], ['out', T('ចេញ', 'Out')]]]];
+    const rows = all.filter(r => Object.keys(MP).every(k => MP[k](r)));
     const sumUom = f => { const pc = rows.filter(r => !SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0), kg = rows.filter(r => SC.isKg(r.uom)).reduce((a, r) => a + (Number(r[f]) || 0), 0);
       return [pc ? fmtQty(round3(pc)) + ' PC' : '', kg ? fmtQty(round3(kg)) + ' KG' : ''].filter(Boolean).join('<br>'); };
     const nIn = rows.filter(r => Number(r.qtyIn) > 0).length, nOut = rows.filter(r => Number(r.qtyOut) > 0).length;
@@ -571,7 +584,9 @@
     const mon = dAgo(0).slice(0, 8) + '01';
     const QD = [['today', T('ថ្ងៃនេះ', 'Today'), dAgo(0), dAgo(0)], ['7', T('៧ ថ្ងៃ', '7 days'), dAgo(6), dAgo(0)], ['month', T('ខែនេះ', 'This month'), mon, dAgo(0)], ['all', T('ទាំងអស់', 'All'), '', '']];
     const led = D.ledger.map(r => Object.assign({}, r, { wh: whOf(r.bin), zone: zoneOf(r.bin), grp: groupOf(r), uom: String(r.uom || 'PC').toUpperCase() }));
-    const uq = f => Array.from(new Set(led.map(r => r[f]).filter(Boolean))).sort();
+    const BP = { wh: r => inSel(BF.wh, r.wh), zone: r => inSel(BF.zone, r.zone), grp: r => inSel(BF.grp, r.grp), uom: r => inSel(BF.uom, r.uom),
+      x: r => hit(BF.q, [r.bin, r.material, r.desc, r.batch]) && (!BF.to || String(r.date) <= BF.to) && (!BF.from || String(r.date) >= BF.from) };
+    const bopt = linked(led, BP), uq = f => withSel(bopt(f, r => r[f]), BF[f]);
     const keepR = r => inSel(BF.wh, r.wh) && inSel(BF.zone, r.zone) && inSel(BF.grp, r.grp) && inSel(BF.uom, r.uom)
       && hit(BF.q, [r.bin, r.material, r.desc, r.batch]) && (!BF.to || String(r.date) <= BF.to);
     const by = {};
@@ -889,16 +904,21 @@
     const F = MB.F, res = MB.rows ? mbCompare() : null;
     const L = res ? res.list : [];
     const giOf = x => GI.map[String(x.key).toUpperCase()] || null;
-    const uq = f => Array.from(new Set(L.flatMap(x => String(x[f] || '').split(', ')).filter(Boolean))).sort();
     const split = (v, sel) => !sel.length || String(v || '').split(', ').some(m => sel.indexOf(m) >= 0);
+    const XP = { res: x => inSel(F.res, x.res), note: x => inSel(F.note, x.note || '-'), gi: x => inSel(F.gi, giOf(x) ? 'gi' : '-'), doc: x => split(x.doc, F.doc), ref: x => inSel(F.ref, x.ref),
+      user: x => split(x.users, F.user), mvt: x => split(x.mvt, F.mvt), wh: x => inSel(F.wh, x.wh), grp: x => inSel(F.grp, x.grp), sloc: x => inSel(F.sloc, x.sloc),
+      q: x => hit(F.q, [x.ref, x.doc, x.material, x.desc, x.batch, x.bin]) };
+    const xopt = linked(L, XP), fkey = { users: 'user' };
+    const uq = f => withSel(xopt(fkey[f] || f, x => x[f]), F[fkey[f] || f]);
+    const st = (key, val, opts) => { const set = xopt(key, val); return opts.filter(o => set.has(o[0]) || asArr(F[key]).indexOf(o[0]) >= 0); };
     const rows = L.filter(x => inSel(F.res, x.res) && inSel(F.note, x.note || '-') && inSel(F.gi, giOf(x) ? 'gi' : '-') && split(x.doc, F.doc) && inSel(F.ref, x.ref) && split(x.users, F.user) && (!F.mvt.length || String(x.mvt).split(', ').some(m => F.mvt.indexOf(m) >= 0)) && inSel(F.wh, x.wh) && inSel(F.grp, x.grp) && inSel(F.sloc, x.sloc)
       && hit(F.q, [x.ref, x.doc, x.material, x.desc, x.batch, x.bin]));
     const cnt = k => L.filter(x => x.res === k).length;
     const sumU = f => { const u = {}; rows.forEach(x => { if (x[f] == null) return; u[x.uom] = (u[x.uom] || 0) + Number(x[f]); }); return Object.keys(u).sort().map(k => `${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
     const sq = v => (v == null ? '—' : `<span class="${v < 0 ? 'out' : v > 0 ? 'in' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtQty(Math.abs(v))}</span>`);
-    const FL = [['mbres', T('លទ្ធផល', 'Result'), 'res', Object.keys(MBR).map(k => [k, T(MBR[k][0], MBR[k][1])])], ['mbgi', 'GI Status', 'gi', [['gi', T('បាន GI', 'GI confirmed')], ['-', T('មិនទាន់ GI', 'Not yet GI')]]],
+    const FL = [['mbres', T('លទ្ធផល', 'Result'), 'res', st('res', x => x.res, Object.keys(MBR).map(k => [k, T(MBR[k][0], MBR[k][1])]))], ['mbgi', 'GI Status', 'gi', st('gi', x => (giOf(x) ? 'gi' : '-'), [['gi', T('បាន GI', 'GI confirmed')], ['-', T('មិនទាន់ GI', 'Not yet GI')]])],
       ['mbdoc', 'Mat. doc', 'doc', uq('doc').map(v => [v, v])], ['mbref', T('ឯកសារយោង', 'Reference'), 'ref', uq('ref').map(v => [v, v])], ['mbuser', T('អ្នកប្រើ', 'User'), 'user', uq('users').map(v => [v, v])], ['mbmvt', T('ប្រភេទចលនា', 'Movement type'), 'mvt', uq('mvt').map(v => [v, v])],
-      ['mbnote', T('កំណត់សម្គាល់', 'Remark'), 'note', [['batch', T('Batch ខុស', 'Batch different')], ['-', T('គ្មាន', 'None')]]], ['mbwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh').map(v => [v, v])], ['mbgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp').map(v => [v, v])], ['mbsloc', 'SLoc', 'sloc', uq('sloc').map(v => [v, v])]];
+      ['mbnote', T('កំណត់សម្គាល់', 'Remark'), 'note', st('note', x => x.note || '-', [['batch', T('Batch ខុស', 'Batch different')], ['-', T('គ្មាន', 'None')]])], ['mbwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh').map(v => [v, v])], ['mbgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp').map(v => [v, v])], ['mbsloc', 'SLoc', 'sloc', uq('sloc').map(v => [v, v])]];
     view(`
       <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), (res ? `<button type="button" class="fb-btn pri" id="giBtn"${MB.tick.size ? '' : ' disabled'}>✔ Confirm GI (${MB.tick.size})</button>` : '') + (res && can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : ''),
         () => { Object.assign(F, { res: [], note: [], gi: [], doc: [], ref: [], user: [], mvt: [], wh: [], grp: [], sloc: [], q: '' }); moves(); })}
