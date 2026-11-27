@@ -451,7 +451,7 @@
     const b = S.bin;
     // Admins get a ⋮ menu on each line: stock card, edit, delete (Kim, 19 Nov, option 2).
     const isAdmin = DEMO || !!(S.user && S.user.admin);
-    const rows = (b.lines || []).map((l, i) => `<div class="lwrap"><button type="button" class="item" data-line="${i}">
+    const rows = (b.lines || []).map((l, i) => `<div class="lwrap" data-q="${esc([l.material, l.desc, l.batch].join(' ').toUpperCase())}"><button type="button" class="item" data-line="${i}">
         <span><span class="sku"><b>${esc(l.material)}</b> · ${esc(l.desc)}</span><br><span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></span>
         <span class="acc">${fmtQty(l.book)}<small>${esc(l.uom)}</small></span></button>${isAdmin ? `<button type="button" class="kebab" data-menu="${i}" aria-label="${T('ជម្រើស', 'Options')}">⋮</button>` : ''}</div>`).join('');
     view(`
@@ -462,7 +462,9 @@
         <button type="button" class="btn blue" id="actTr">${typeLabel('TRANSFER')}</button>
         <button type="button" class="btn" id="actCount">${T('រាប់ស្តុក', 'Stock Count')}</button>
       </div>
+      ${undoBar()}
       <h2>${T('ស្តុកក្នុងទីតាំងនេះ (ចុចដើម្បីមើលកាតស្តុក)', 'Stock in this bin (tap a line for its stock card)')}</h2>
+      ${(b.lines || []).length > 5 ? `<input type="search" id="binQ" class="binq" autocomplete="off" placeholder="🔍 ${T('ស្វែងរក សម្ភារៈ បរិយាយ ឬ Batch', 'Search material, description or batch')}">` : ''}
       ${rows || `<p class="muted">${T('ទីតាំងនេះទទេ។ ប្រើ ចូលស្តុក ដើម្បីដាក់ទំនិញ។', 'This bin is empty. Use Stock IN to put material here.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
     $('#actIn').onclick = () => openMove('IN');
@@ -471,6 +473,10 @@
     $('#actCount').onclick = () => { S.mode = 'count'; S.view = 'count'; S.photo = ''; route(); };
     document.querySelectorAll('[data-line]').forEach(el => { el.onclick = () => openCard(Number(el.dataset.line)); });
     document.querySelectorAll('[data-menu]').forEach(el => { el.onclick = e => { e.stopPropagation(); lineMenu(el, Number(el.dataset.menu)); }; });
+    // Search the lines of a big bin (Kim, 27 Nov, point 3): any part of code, description or batch; every word must match.
+    if ($('#binQ')) $('#binQ').oninput = e => { const w = e.target.value.trim().toUpperCase().split(/\s+/).filter(Boolean);
+      document.querySelectorAll('.lwrap[data-q]').forEach(el => { el.hidden = !w.every(x => el.dataset.q.indexOf(x) >= 0); }); };
+    undoWire();
     $('#back').onclick = () => { S.view = 'home'; S.bin = null; route(); };
   }
 
@@ -481,7 +487,7 @@
   const fmtQty = n => (n == null || n === '' ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }));
   const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + '-' + Math.random().toString(36).slice(2, 10));
   const typeLabel = t => ({ IN: T('ចូលស្តុក', 'Stock IN'), OUT: T('ចេញស្តុក', 'Stock OUT'), TRANSFER: T('ផ្ទេរ', 'Transfer'),
-    'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in'), ADJUST: T('កែតម្រូវ', 'Adjustment') }[t] || t);
+    'TRANSFER OUT': T('ផ្ទេរចេញ', 'Transfer out'), 'TRANSFER IN': T('ផ្ទេរចូល', 'Transfer in'), ADJUST: T('កែតម្រូវ', 'Adjustment'), REVERSAL: T('បញ្ច្រាស', 'Reversal') }[t] || t);
   const sameLine = (a, b) => [a.material, a.batch, a.sloc].join('|').toUpperCase() === [b.material, b.batch, b.sloc].join('|').toUpperCase();
   const round3 = n => Math.round(n * 1000) / 1000;
   // Keypad like a calculator (Kim, 20 Nov): + − × ÷ with normal order (× ÷ before + −).
@@ -571,6 +577,56 @@
     })();
   }
 
+  // Fix a wrong movement (Kim, 27 Nov, question 2). Undo for 5 minutes after a save; later from ⋮ on the stock card.
+  // The server adds a REVERSAL row (the old row is kept) and puts the balance back.
+  const UNDO_MS = 5 * 60000;
+  const undoLeft = () => (S.lastMove ? UNDO_MS - (Date.now() - S.lastMove.at) : 0);
+  function undoBar() {
+    const left = undoLeft();
+    if (left <= 0) return '';
+    return `<div class="undobar"><span>✓ ${esc(S.lastMove.text)}</span><button type="button" id="undoBtn">↶ ${T('មិនធ្វើវិញ', 'Undo')} ${Math.floor(left / 60000)}:${('0' + Math.floor(left / 1000) % 60).slice(-2)}</button></div>`;
+  }
+  function undoWire() {
+    const b = $('#undoBtn'); if (!b) return;
+    b.onclick = async () => {
+      b.disabled = true;
+      const out = await doReverse(S.lastMove.id, { undo: true });
+      if (out) { toast(T('បានមិនធ្វើវិញ', 'Undone')); S.view = S.bin ? 'bin' : 'home'; S.result = null; route(); } else b.disabled = false;
+    };
+  }
+  async function doReverse(id, o) {
+    const pl = { requestId: newId(), id: id, undo: !!o.undo, reason: o.reason || '' };
+    let out;
+    try { out = DEMO ? demoReverse(pl) : await api('reverse', pl); }
+    catch (e) { if (e.code === 'AUTH') { S.signedOut = true; route(); return null; } toast(e.code === 'NET' ? T('គ្មានអ៊ីនធឺណិត', 'No internet. Try again when online.') : e.message); return null; }
+    (out.balances || []).forEach(x => {
+      [S.stock || [], S.bin && S.bin.bin.toUpperCase() === String(x.bin).toUpperCase() ? S.bin.lines || [] : []].forEach(L => {
+        const l = L.find(y => (!y.bin || String(y.bin).toUpperCase() === String(x.bin).toUpperCase()) && sameLine(y, x)); if (l) l.book = x.balance; });
+    });
+    if (S.lastMove && (S.lastMove.id === id || (out.reversed || []).indexOf(S.lastMove.id) >= 0)) S.lastMove = null;
+    refreshQuiet();
+    return out;
+  }
+  function demoReverse(pl) {
+    if (DEMO_LEDGER.some(r => r.requestId === pl.requestId)) return { duplicate: true };
+    const i = DEMO_LEDGER.findIndex(r => r.id === pl.id);
+    if (i < 0) throw new Error(T('រកមិនឃើញចលនានេះ', 'This movement is not in the Stock Ledger.'));
+    const r0 = DEMO_LEDGER[i], rows = [r0];
+    if (/^TRANSFER/.test(r0.type)) { const j = r0.type === 'TRANSFER OUT' ? i + 1 : i - 1; if (DEMO_LEDGER[j] && /^TRANSFER/.test(DEMO_LEDGER[j].type)) rows.push(DEMO_LEDGER[j]); }
+    if (!/^(IN|OUT|TRANSFER IN|TRANSFER OUT)$/.test(r0.type)) throw new Error(T('អាចកែបានតែ ចូល ចេញ និងផ្ទេរ', 'Only Stock IN, OUT and Transfer can be reversed.'));
+    if (DEMO_LEDGER.some(r => rows.some(x => r.reverses === x.id))) throw new Error(T('ចលនានេះបានកែរួចហើយ', 'This movement was already reversed.'));
+    const plan = rows.map(r => { const s = demoLine(r.bin, r), delta = round3((Number(r.qtyOut) || 0) - (Number(r.qtyIn) || 0)), bal = round3((s ? s.book : 0) + delta);
+      if (!s || bal < 0) throw new Error(T('ស្តុកមិនគ្រប់ដើម្បីកែ', 'Not enough stock to reverse this (it was already moved out).')); return { r: r, s: s, delta: delta, bal: bal }; });
+    let id = '';
+    plan.forEach(x => { x.s.book = x.bal; id = demoLog('REVERSAL', x.r.bin, x.s, x.delta > 0 ? x.delta : 0, x.delta < 0 ? -x.delta : 0, x.bal, { requestId: pl.requestId, reference: x.r.reference, remark: '↶ ' + x.r.id + ' · ' + (pl.reason || 'Undo') }, x.r.otherBin, 'REV');
+      DEMO_LEDGER[DEMO_LEDGER.length - 1].reverses = x.r.id; });
+    S.bins = demoBinList();
+    return { id: id, reversed: rows.map(r => r.id), balances: plan.map(x => ({ bin: x.r.bin, material: x.s.material, batch: x.s.batch, sloc: x.s.sloc, balance: x.bal })) };
+  }
+  // Possible duplicate (same bin, material, batch, type, qty and reference within 10 minutes on this phone).
+  const recentGet = () => { try { return JSON.parse(localStorage.getItem('sc_recent_moves') || '[]').filter(x => Date.now() - x.t < 600000); } catch (e) { return []; } };
+  const recentAdd = x => { try { localStorage.setItem('sc_recent_moves', JSON.stringify(recentGet().concat([Object.assign({ t: Date.now() }, x)]).slice(-30))); } catch (e) { /* private mode */ } };
+  const sigOf = x => [x.bin, x.material, x.batch, x.type, x.qty, x.reference || ''].join('|').toUpperCase();
   function lineMenu(btn, i) {
     const old = document.querySelector('.lmenu'); if (old) { old.remove(); if (old.dataset.i === String(i)) return; }
     const m = document.createElement('div');
@@ -664,14 +720,16 @@
     const u = units.find(x => x[0] === S.cardUom) || units[0], cv = v => round3((Number(v) || 0) * u[1]);
     const uomSel = units.length > 1 ? `<select id="cUom">${units.map(x => `<option value="${esc(x[0])}" ${x[0] === u[0] ? 'selected' : ''}>${esc(x[2])}</option>`).join('')}</select>` : '';
     // Timeline list (Kim picked mockup 1, 14 Nov): one row per movement, no sideways scrolling.
-    const icon = t => (t === 'OUT' ? ['i-out', '⬆'] : t === 'TRANSFER OUT' || t === 'TRANSFER IN' ? ['i-tr', '⇄'] : t === 'ADJUST' ? ['i-tr', '✎'] : ['i-in', '⬇']);
-    const rows = (c.rows || []).map(r => { const ic = icon(r.type), out = Number(r.qtyOut) || 0; return `<div class="lrow">
+    const icon = t => (t === 'OUT' ? ['i-out', '⬆'] : t === 'TRANSFER OUT' || t === 'TRANSFER IN' ? ['i-tr', '⇄'] : t === 'ADJUST' ? ['i-tr', '✎'] : t === 'REVERSAL' ? ['i-tr', '↶'] : ['i-in', '⬇']);
+    const revd = new Set((c.rows || []).map(r => r.reverses).filter(Boolean)), boss = DEMO || !!(S.user && (S.user.admin || S.user.supervisor));
+    const fixable = r => /^(IN|OUT|TRANSFER IN|TRANSFER OUT)$/.test(r.type) && !revd.has(r.id) && (boss || r.date === dAgo(0));
+    const rows = (c.rows || []).map((r, ri) => { const ic = icon(r.type), out = Number(r.qtyOut) || 0; return `<div class="lrow${revd.has(r.id) ? ' rev' : ''}">
       <div class="ic ${ic[0]}" aria-hidden="true">${ic[1]}</div>
       <div class="lmid"><b>${esc(typeLabel(r.type))}</b>
         <div>${esc(r.reference || r.id || '')}${r.otherBin ? ` ${r.type === 'TRANSFER IN' ? '←' : '→'} ${esc(r.otherBin)}` : ''}${r.user ? ' · ' + esc(String(r.user).split('@')[0]) : ''}</div>
-        <div>${esc((r.date || '').slice(5))} ${esc(r.time || '')}</div></div>
+        <div>${esc((r.date || '').slice(5))} ${esc(r.time || '')}${revd.has(r.id) ? ` <span class="revtag">↶ ${T('បានបញ្ច្រាស', 'reversed')}</span>` : ''}</div></div>
       <div class="lqty"><b class="${out ? 'out' : 'in'}">${out ? '-' + fmtQty(cv(out)) : '+' + fmtQty(cv(r.qtyIn))}</b>
-        <div>${T('នៅសល់', 'left')} ${fmtQty(cv(r.balance))}</div></div></div>`; }).join('');
+        <div>${T('នៅសល់', 'left')} ${fmtQty(cv(r.balance))}</div></div>${fixable(r) ? `<button type="button" class="lfix" data-fix="${ri}" aria-label="${T('កែ', 'Fix')}">⋮</button>` : ''}</div>`; }).join('');
     view(`
       <section class="card hero">
         <div class="muted">${esc(b.bin)} · ${esc(b.warehouse || '')}</div>
@@ -692,10 +750,39 @@
         : `<p class="muted">${T('មិនទាន់មានចលនា។', 'No movements yet.')}</p>`}
       <button type="button" class="btn ghost big" id="back">${T('ត្រឡប់', 'Back')}</button>`);
     document.querySelectorAll('[data-move]').forEach(el => { el.onclick = () => openMove(el.dataset.move, S.lineIdx); });
+    document.querySelectorAll('[data-fix]').forEach(el => { el.onclick = () => fixBox(el, c.rows[Number(el.dataset.fix)]); });
     const us = $('#cUom'); if (us) us.onchange = () => { S.cardUom = us.value; route(); };
     $('#back').onclick = () => { S.view = 'bin'; route(); };
   }
 
+  // ⋮ on a movement: change qty, wrong bin, wrong material / batch, or reverse. Each one reverses first (reason required),
+  // then opens the form again with the reference filled in, so the right movement is one tap away.
+  function fixBox(btn, r) {
+    const old = document.querySelector('.fixbox'); if (old) { const same = old.dataset.id === r.id; old.parentNode.removeChild(old); if (same) return; }
+    const box = document.createElement('div');
+    box.className = 'fixbox'; box.dataset.id = r.id;
+    const tr = /^TRANSFER/.test(r.type);
+    box.innerHTML = `<b>${T('កែចលនានេះ', 'Fix this movement')}</b> <span class="muted">${esc(r.id)}</span>
+      <input type="text" id="fixWhy" class="need" maxlength="150" placeholder="${T('មូលហេតុ (ត្រូវការ)', 'Reason (required)')}">
+      <div class="fixacts">${tr ? '' : `<button type="button" class="btn ghost" data-fa="qty">✏️ ${T('ប្តូរចំនួន', 'Change qty')}</button><button type="button" class="btn ghost" data-fa="bin">🔁 ${T('ទីតាំងខុស', 'Wrong bin, move it')}</button><button type="button" class="btn ghost" data-fa="mat">📦 ${T('សម្ភារៈ ឬ Batch ខុស', 'Wrong material or batch')}</button>`}
+      <button type="button" class="btn ghost red" data-fa="rev">↶ ${T('បញ្ច្រាស (លុបចោល)', 'Reverse (cancel it)')}</button></div>`;
+    btn.closest('.lrow').insertAdjacentElement('afterend', box);
+    const why = box.querySelector('#fixWhy');
+    why.oninput = () => why.classList.toggle('need', !why.value.trim());
+    box.querySelectorAll('[data-fa]').forEach(b => { b.onclick = async () => {
+      const reason = why.value.trim(); if (!reason) { why.focus(); return; }
+      const a = b.dataset.fa, label = { qty: 'Change qty', bin: 'Wrong bin', mat: 'Wrong material/batch', rev: 'Reverse' }[a];
+      box.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      const out = await doReverse(r.id, { reason: label + ': ' + reason });
+      if (!out) { box.querySelectorAll('button').forEach(x => { x.disabled = false; }); return; }
+      toast(T('បានបញ្ច្រាស', 'Reversed') + ' ' + r.id);
+      const type = r.type === 'IN' ? 'IN' : 'OUT';
+      if (a === 'qty') { openMove(type, S.lineIdx); S.move.pre = { ref: r.reference || '' }; route(); }
+      else if (a === 'mat') { openMove(type, -1); S.move.pre = { ref: r.reference || '' }; route(); }
+      else if (a === 'bin') { toast(T('ស្កេនទីតាំងត្រឹមត្រូវ ហើយធ្វើម្តងទៀត', 'Now scan the right bin and do it again.')); S.view = 'home'; S.bin = null; route(); }
+      else openCard(S.lineIdx);
+    }; });
+  }
   // In / Out / Transfer form. One request id per opened form, so a double tap or a re-send is never posted twice.
   function openMove(type, lineIdx) {
     S.move = { type: type, requestId: newId(), from: S.view, line: lineIdx == null ? ((S.bin.lines || []).length === 1 ? 0 : -1) : lineIdx };
@@ -724,14 +811,18 @@
     const bd = Math.floor(pcs / u.ppb), rem = Math.round(pcs - bd * u.ppb);
     return `${fmtQty(bd)} ${T('បាច់', 'bd')}${rem ? ` + ${fmtQty(rem)} ${T('រាយ', 'pcs')}` : ''}`;
   }
+  // Short bundles (Kim, 27 Nov, question 1): a bundle with fewer pcs than the Product Master default is counted with its real pcs.
+  const shortTxt = (L, ppb) => (L && L.length ? `${T('បាច់ខ្វះ', 'Short bundle')}: ${L.map(v => v + '/' + ppb).join(', ')} pcs` : '');
   function moveQty(u) {
     const bd = $('#mBd').value, kg = $('#mKgIn').value, pc = $('#mPc').value;
     const useBd = !$('#mBd').disabled && bd !== '', useKg = !$('#mKgIn').disabled && kg !== '', usePc = !$('#mPc').disabled && pc !== '';
     if (!useBd && !useKg && !usePc) return { qty: '', text: '' };
-    const pcs = (useBd ? Number(bd) * (u.ppb || 1) : 0) + (usePc ? Number(pc) : 0), kgN = useKg ? Number(kg) : 0;
+    const sh = useBd && S.move && S.move.short ? S.move.short : [], nS = sh.length, sumS = sh.reduce((a, v) => a + v, 0);
+    if (nS > Number(bd || 0)) return { qty: '', text: '', bad: T('បាច់ខ្វះច្រើនជាងចំនួនបាច់', 'More short bundles than bundles') };
+    const pcs = (useBd ? (Number(bd) - nS) * (u.ppb || 1) + sumS : 0) + (usePc ? Number(pc) : 0), kgN = useKg ? Number(kg) : 0;
     const qty = isKg(u.uom) ? round3(kgN + pcs * (u.kg || 0)) : pcs + (u.kg ? Math.round(kgN / u.kg) : 0);
     const parts = [];
-    if (useBd && Number(bd)) parts.push(`${fmtQty(Number(bd))} ${T('បាច់', 'bundle')} × ${fmtQty(u.ppb || 1)}`);
+    if (useBd && Number(bd)) parts.push(nS ? `${fmtQty(Number(bd) - nS)} × ${fmtQty(u.ppb || 1)} + ${sh.join(' + ')}` : `${fmtQty(Number(bd))} ${T('បាច់', 'bundle')} × ${fmtQty(u.ppb || 1)}`);
     if (useKg && kgN) parts.push(isKg(u.uom) ? `${fmtQty(kgN)} KG` : `${fmtQty(kgN)} KG ÷ ${fmtQty(u.kg)}`);
     if (usePc && Number(pc)) parts.push(`${fmtQty(Number(pc))} ${T('រាយ', 'pcs')}${isKg(u.uom) ? ' × ' + fmtQty(u.kg) : ''}`);
     return { qty: String(qty), text: `${parts.join(' + ')} = <b>${fmtQty(qty)} ${esc(u.uom)}</b>` };
@@ -767,6 +858,8 @@
         <div class="kdisp" id="mDisp"><button type="button" class="calcb" id="mCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
         <div class="kpad" id="mPad">${padHtml()}</div>
         <div class="tot" id="mTot"></div>
+        <div class="shortbox" id="mShortBox" hidden><button type="button" class="linkbtn" id="mShortBtn">✂️ ${T('បាច់ខ្វះ?', 'Short bundle?')}</button>
+          <div class="shortin" id="mShortIn" hidden><span class="muted" id="mShortStd"></span><div class="row"><input id="mSp" type="number" inputmode="numeric" min="1" placeholder="${T('ចំនួនរាយក្នុងបាច់នេះ', 'pcs in this bundle')}"><button type="button" class="btn ghost shrink" id="mSadd">+ ${T('បន្ថែម', 'add')}</button></div><div class="chips" id="mSl"></div></div></div>
         ${isTr ? `<label for="mTo">${T('ប្តូរទៅទីតាំង៖', 'Move to location:')}</label>
           <div class="row"><input id="mTo" type="text" autocapitalize="characters" autocomplete="off" class="need"><button type="button" class="btn ghost shrink" id="mToScan" title="Scan">📷</button></div>` : ''}
         ${isTr || HIDE_REF ? '' : `<label for="mRef">${isIn ? T('លេខឯកសារយោង (GR / PO)', 'Reference document (GR / PO)') : T('លេខ DN / ឯកសារយោង', 'Delivery note / reference')}</label>
@@ -829,7 +922,11 @@
       $('#mPad [data-k="."]').disabled = act !== 'mKgIn';
       $('#mTot').innerHTML = u && q.text ? `${T('សរុប', 'Total')}: ${q.text}` : u ? `<span class="muted">${T('ឯកតា SAP', 'SAP unit')}: ${esc(u.uom)}${u.ppb > 1 ? ` · 1 ${T('បាច់', 'bundle')} = ${fmtQty(u.ppb)} ${T('រាយ', 'pcs')}` : ''}</span>` : '';
       $('#mInfo').textContent = l ? '' : isIn && m.pick ? `${T('បាច់ថ្មីក្នុងទីតាំងនេះ', 'New batch in this bin')}${guessSloc(m.pick) ? ' · SLOC ' + guessSloc(m.pick) : ''}` : '';
-      let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
+      $('#mShortBox').hidden = !u || !(u.ppb > 1) || $('#mBd').disabled;
+      if (u && u.ppb > 1) { $('#mShortStd').textContent = `${T('ស្តង់ដារ', 'Standard')} ${fmtQty(u.ppb)} ${T('រាយ/បាច់', 'pcs/bundle')}`;
+        $('#mSl').innerHTML = (m.short || []).map((v, j) => `<button type="button" class="chip" data-srm="${j}">${v} pcs ✕</button>`).join('');
+        $('#mSl').querySelectorAll('[data-srm]').forEach(x => { x.onclick = () => { m.short.splice(Number(x.dataset.srm), 1); refresh(); }; }); }
+      let bad = !u ? T('សូមជ្រើសរើសសម្ភារៈ', 'Choose the material') : q.bad ? q.bad : isIn && !$('#mBatch').value.trim() ? T('សូមបញ្ចូល ឬស្កេនលេខបាច់', 'Enter or scan the batch number') : moveBad(m.type, q.qty, u.book, u.uom);
       if (!bad && isTr) { const to = $('#mTo').value.trim().toUpperCase(); bad = !to ? T('ស្កេន ឬវាយទីតាំងទៅ', 'Scan or type the destination bin') : to === b.bin.toUpperCase() ? T('ទីតាំងទៅត្រូវខុសពីទីតាំងដើម', 'Destination must be a different bin') : ''; }
       if (!bad && !isTr && !HIDE_REF && !ref) bad = T('សូមបញ្ចូលលេខឯកសារយោង', 'Enter the reference document');
       const empty = q.qty === '';
@@ -906,8 +1003,20 @@
     if ($('#mRefScan')) $('#mRefScan').onclick = () => scanSheet(T('ស្កេនបាកូដឯកសារ', 'Scan the document barcode'), text => { $('#mRef').value = text; refresh(); }, isIn ? 'GR-2611-0042' : 'DN-2611-0188');
     if ($('#mToScan')) $('#mToScan').onclick = () => scanSheet(T('ស្កេនទីតាំងទៅ', 'Scan the destination bin'), text => { $('#mTo').value = text; refresh(); }, (DEMO_BINS.find(x => x.bin !== b.bin) || {}).bin);
     histBox($('#mRef'), isIn ? 'ref_in' : 'ref_out', refresh); histBox($('#mBatch'), 'batch', () => { m.batchUser = true; refresh(); }); histBox($('#mTo'), 'bin', refresh);
+    $('#mShortBtn').onclick = () => { $('#mShortIn').hidden = !$('#mShortIn').hidden; if (!$('#mShortIn').hidden) $('#mSp').focus(); };
+    $('#mSadd').onclick = () => { const u = unit(), v = Math.round(Number($('#mSp').value)); if (!u || !(v > 0) || v >= u.ppb) { toast(T('ចំនួនរាយត្រូវតិចជាងស្តង់ដារ', 'Pcs must be less than the standard')); return; }
+      m.short = (m.short || []).concat([v]); $('#mSp').value = ''; refresh(); };
+    $('#mSp').onkeydown = e => { if (e.key === 'Enter') $('#mSadd').click(); };
+    if (m.pre) { if ($('#mRef') && m.pre.ref) $('#mRef').value = m.pre.ref; if ($('#mTo') && m.pre.toBin) $('#mTo').value = m.pre.toBin; }
     $('#back').onclick = () => { S.view = m.from === 'card' ? 'card' : 'bin'; route(); };
     $('#mSave').onclick = () => {
+      // Possible duplicate (question 2): warn once, the second tap saves.
+      const l0 = line(), src0 = l0 || (m.pick ? { material: m.pick.material, batch: $('#mBatch').value.trim() } : null);
+      if (src0 && !m.dupOk) { const sig = sigOf({ bin: b.bin, material: src0.material, batch: src0.batch, type: m.type, qty: m.qty, reference: $('#mRef') ? $('#mRef').value.trim() : ($('#mTo') ? $('#mTo').value.trim() : '') });
+        const hitR = recentGet().filter(x => x.sig === sig).pop();
+        if (hitR) { m.dupOk = true; const mins = Math.max(1, Math.round((Date.now() - hitR.t) / 60000));
+          $('#mAfter').innerHTML = `<div class="dupwarn">⚠️ <b>${T('អាចជាការស្ទួន', 'Possible duplicate')}</b><br>${T(`អ្នកបាន${typeLabel(m.type)} ${fmtQty(m.qty)} ${esc(m.unit.uom)} នេះ ${mins} នាទីមុន។`, `You already did ${typeLabel(m.type)} ${fmtQty(m.qty)} ${esc(m.unit.uom)} of this line ${mins} min ago.`)}</div>`;
+          $('#mSave').textContent = T('រក្សាទុកទោះយ៉ាងណា', 'Save anyway'); return; } }
       if ($('#mRef')) histAdd(isIn ? 'ref_in' : 'ref_out', $('#mRef').value); if ($('#mBatch')) histAdd('batch', $('#mBatch').value); if ($('#mTo')) histAdd('bin', $('#mTo').value);
       const l = line(); saveMove(l, isIn && !l, l ? null : { material: m.pick.material, batch: $('#mBatch').value.trim(), sloc: guessSloc(m.pick), desc: m.pick.desc, uom: m.unit.uom }); };
     refresh();
@@ -917,7 +1026,7 @@
     const b = S.bin, m = S.move, isTr = m.type === 'TRANSFER', qty = Number(m.qty);
     const src = l || fresh;
     const pl = { requestId: m.requestId, type: m.type, bin: b.bin, material: src.material, batch: src.batch, sloc: src.sloc, qty: qty,
-      reference: $('#mRef') ? $('#mRef').value.trim() : '', remark: '' };
+      reference: $('#mRef') ? $('#mRef').value.trim() : '', remark: $('#mBd').value && m.short && m.short.length ? shortTxt(m.short, (m.unit || {}).ppb) : '' };
     if (isNew) { pl.desc = src.desc; pl.uom = src.uom; }
     if ($('#mBd').value || $('#mPc').value) { pl.bundles = Number($('#mBd').value) || 0; pl.pieces = Number($('#mPc').value) || 0; }
     if (isTr) pl.toBin = $('#mTo').value.trim();
@@ -929,8 +1038,10 @@
       if (e.code === 'NET') { saveQueue(queue().concat([{ action: action, payload: pl }])); offline = true; out = {}; }
       else { if (e.code === 'AUTH') { S.signedOut = true; route(); return; } toast(e.message); btn.disabled = false; btn.textContent = T('បញ្ជាក់', 'Confirm') + ' ' + typeLabel(m.type); return; }
     }
+    recentAdd({ sig: sigOf({ bin: b.bin, material: src.material, batch: src.batch, type: m.type, qty: m.qty, reference: pl.reference || pl.toBin || '' }) });
     // Keep the phone's copy in step, then refresh quietly from the server.
     if (!offline) {
+      if (out.id && !out.duplicate) S.lastMove = { id: out.id, at: Date.now(), text: `${typeLabel(m.type)} ${fmtQty(qty)} ${out.uom || (l ? l.uom : src.uom) || ''}` };
       if (l) l.book = out.balance;
       const s = S.stock.find(x => String(x.bin).toUpperCase() === b.bin.toUpperCase() && sameLine(x, src));
       if (s) s.book = out.balance;
@@ -992,13 +1103,18 @@
     const isCount = mode === 'count';
     const rows = (b.lines || []).map((l, i) => isCount
       ? `<div class="cline" data-line="${i}">
-        <div class="cdesc">${esc(l.desc)}</div>
-        <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></div>
-        <div class="seg">
+        <button type="button" class="chead" data-fold><span class="cdesc">${esc(l.desc)}</span><span class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)}</span></span><i aria-hidden="true">▾</i></button>
+        <div class="seg cmode"><button type="button" data-i="${i}" data-mode="good" class="on">✅ ${T('ល្អ', 'Good')}</button><button type="button" data-i="${i}" data-mode="dmg">⚠️ ${T('ខូច', 'Damaged')} <b></b></button></div>
+        <div class="seg cbox">
           <button type="button" data-i="${i}" data-box="bundles"><span>${T('បាច់', 'Bundle')}</span> <b></b></button>
           <button type="button" data-i="${i}" data-box="kg"><span>Kg</span> <b></b></button>
           <button type="button" data-i="${i}" data-box="pieces"><span>${T('រាយ', 'Pcs')}</span> <b></b></button></div>
         <input type="hidden" data-i="${i}" data-f="bundles"><input type="hidden" data-i="${i}" data-f="kg"><input type="hidden" data-i="${i}" data-f="pieces">
+        <input type="hidden" data-i="${i}" data-f="dbundles"><input type="hidden" data-i="${i}" data-f="dkg"><input type="hidden" data-i="${i}" data-f="dpieces">
+        <div class="cdmg" data-dm="${i}" hidden><span class="muted">${T('ប្រភេទខូច', 'Damage type')}</span>${DMG.map(d => `<button type="button" class="chip" data-i="${i}" data-dt="${esc(d[0])}">${esc(T(d[1], d[0]))}</button>`).join('')}</div>
+        <div class="cextra">${Number(l.pcsPerBundle) > 1 ? `<div class="shortbox"><button type="button" class="linkbtn" data-short="${i}">✂️ ${T('បាច់ខ្វះ?', 'Short bundle?')}</button>
+          <div class="shortin" data-sb="${i}" hidden><span class="muted">${T('ស្តង់ដារ', 'Standard')} ${fmtQty(l.pcsPerBundle)} ${T('រាយ/បាច់', 'pcs/bundle')}</span><div class="row"><input type="number" inputmode="numeric" min="1" data-sp="${i}" placeholder="${T('ចំនួនរាយក្នុងបាច់នេះ', 'pcs in this bundle')}"><button type="button" class="btn ghost shrink" data-sadd="${i}">+ ${T('បន្ថែម', 'add')}</button></div><div class="chips" data-sl="${i}"></div></div></div>` : ''}
+          <input type="text" class="crem" data-rem="${i}" maxlength="150" placeholder="📝 ${T('កំណត់សម្គាល់ (ស្រេចចិត្ត)', 'Remark (optional)')}"></div>
       </div>`
       : `<tr>
         <td>${esc(l.material)}<br><small class="muted">${esc(l.desc)}</small><br><small class="muted">${esc(l.batch)} · ${esc(l.sloc)}</small></td>
@@ -1006,10 +1122,10 @@
         <td class="in"><input type="number" inputmode="numeric" min="0" placeholder=" " data-i="${i}" data-f="outQty"></td><td class="diff" data-i="${i}">—</td>
       </tr>`).join('');
     view(`
-      ${isCount ? `<section class="card hero mhero vm-keep"><div class="mh-l"><div class="bin">${esc(b.bin)}</div><div class="mh-item" id="cHeroItem"></div></div>
+      ${isCount ? `<section class="card hero mhero vm-keep"><div class="mh-l"><div class="bin">${esc(b.bin)} <button type="button" class="cbadge" id="cBadge" title="${T('ទៅបន្ទាត់មិនទាន់រាប់', 'Go to the next line not counted')}"></button></div><div class="mh-item" id="cHeroItem"></div></div>
         <div class="mh-r"><span class="tbadge cnt">${T('រាប់ស្តុក', 'Count')}</span><div class="mh-sum" id="cSum"></div></div></section>`
         : `<section class="card hero"><div class="bin">${esc(b.bin)}</div><div class="muted">${T('ចេញស្តុកពីទីតាំង', 'Stock out from this bin')}</div></section>`}
-      ${isCount ? `<section class="card">${rows}
+      ${isCount ? `<section class="card${foldGet() ? ' cfold' : ''}" id="cLines">${rows}
         <div id="cPad"><div class="kdisp" id="cDisp"><button type="button" class="calcb" id="cCalc" aria-label="${T('ម៉ាស៊ីនគិតលេខ', 'Calculator')}">🧮</button><span></span></div>
         <div class="kpad">${padHtml()}</div></div></section>`
         : `<section class="card" style="overflow-x:auto"><table class="lines"><tr><th>${T('កូដ', 'Material')}</th><th>${T('ក្នុងស្តុក', 'On hand')}</th><th>${T('ចំនួនចេញ', 'Out Qty')}</th><th>${T('នៅសល់', 'After')}</th></tr>${rows}</table></section>`}
@@ -1026,15 +1142,24 @@
       (b.lines || []).forEach((l, i) => {
         const cell = document.querySelector(`.diff[data-i="${i}"]`);
         if (isCount) {
-          const c = { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value };
+          const c = comb(i), dm = cMode[i] === 'dmg';
           const empty = c.bundles === '' && c.kg === '' && c.pieces === '';   // all three red until one has a value
           ['bundles', 'kg', 'pieces'].forEach(f => {
-            const bn = document.querySelector(`.seg [data-i="${i}"][data-box="${f}"]`);
-            bn.querySelector('b').textContent = c[f];
+            const bn = document.querySelector(`.cbox [data-i="${i}"][data-box="${f}"]`);
+            bn.querySelector('b').textContent = fv(i, (dm ? 'd' : '') + f);
             bn.classList.toggle('need', empty);
             bn.classList.toggle('on', !!cAct && cAct.i === i && cAct.f === f);
           });
-          if (!lineOk(c)) { ok = false; return; }
+          document.querySelectorAll(`.cmode [data-i="${i}"]`).forEach(bn => { bn.classList.toggle('on', bn.dataset.mode === (dm ? 'dmg' : 'good')); });
+          const dq = hasD(i), dmb = document.querySelector(`.cmode [data-i="${i}"][data-mode="dmg"] b`);
+          dmb.textContent = dq ? ['dbundles', 'dkg', 'dpieces'].map(f => fv(i, f)).filter(v => v !== '').join(' / ') : '';
+          const dbox = document.querySelector(`[data-dm="${i}"]`);
+          dbox.hidden = !dm && !dq; dbox.classList.toggle('need', dq && !dType[i]);
+          dbox.querySelectorAll('[data-dt]').forEach(x => { x.classList.toggle('on', x.dataset.dt === dType[i]); });
+          const sl = document.querySelector(`[data-sl="${i}"]`);
+          if (sl) { sl.innerHTML = (shortB[i] || []).map((v, j) => `<button type="button" class="chip" data-srm="${i}:${j}">${v} pcs ✕</button>`).join('');
+            sl.querySelectorAll('[data-srm]').forEach(x => { x.onclick = () => { const a = x.dataset.srm.split(':'); shortB[a[0]].splice(Number(a[1]), 1); refresh(); }; }); }
+          if (!lineOk(c) || (dq && !dType[i]) || (shortB[i] || []).length > Number(fv(i, 'bundles') || 0)) { ok = false; return; }
           if (comparable(c, l.uom)) statuses.push(statusOf(countedQty(c, l.uom, l.pcsPerBundle) - l.book, 0));   // status only for the photo rule
         } else {
           const v = document.querySelector(`[data-i="${i}"][data-f="outQty"]`).value;
@@ -1044,16 +1169,19 @@
         }
       });
       if (isCount && cAct) {
-        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), v = el ? el.value : '';
+        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${fk()}"]`), v = el ? el.value : '';
         // Header like Stock IN / OUT (Kim, 20 Nov): the line being counted, on hand and counted in bundles.
         const hl = b.lines[cAct.i], hu = { uom: hl.uom, ppb: Number(hl.pcsPerBundle) || 1, kg: Number(hl.kgPerPc) || 0 };
-        const hc = { bundles: document.querySelector(`[data-i="${cAct.i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${cAct.i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${cAct.i}"][data-f="pieces"]`).value };
+        const hc = comb(cAct.i);
+        // Badge (point 4): line n of all lines in this bin, and how many are counted.
+        const nDone = (b.lines || []).filter((x, j) => { const cj = comb(j); return !(cj.bundles === '' && cj.kg === '' && cj.pieces === ''); }).length;
+        $('#cBadge').innerHTML = `${cAct.i + 1} / ${(b.lines || []).length}${nDone ? ` · ✓${nDone}` : ''}`;
         const hq = lineOk(hc) && comparable(hc, hl.uom) ? countedQty(hc, hl.uom, hl.pcsPerBundle) : null, hd = hq == null ? null : round3(hq - hl.book);
         $('#cHeroItem').innerHTML = `<b>${esc(hl.material)}</b><span>${esc(hl.desc || '')}</span>${hl.batch ? `<span>Batch: ${esc(hl.batch)}</span>` : ''}`;
         $('#cSum').innerHTML = `<span>${T('ស្តុក', 'On hand')}</span><b>${bdTxt(hl.book, hu) || fmtQty(hl.book) + ' ' + esc(hl.uom)}</b>${bdTxt(hl.book, hu) ? `<small>${fmtQty(hl.book)} ${esc(hl.uom)}</small>` : ''}`
           + (hq != null ? `<small class="mh-after">${T('រាប់បាន', 'Counted')}: ${bdTxt(hq, hu) || fmtQty(hq) + ' ' + esc(hl.uom)}</small><small class="${hd < 0 ? 'out' : hd > 0 ? 'in' : ''}">${T('ខុសគ្នា', 'Diff')}: ${hd > 0 ? '+' : ''}${fmtQty(hd)} ${esc(hl.uom)}</small>` : '');
-        $('#cDisp span').textContent = padShow(cEx[cAct.i + ':' + cAct.f], v);
-        $('#cDisp').classList.toggle('expr', /[+−×÷]/.test(cEx[cAct.i + ':' + cAct.f] || ''));
+        $('#cDisp span').textContent = padShow(cEx[cAct.i + ':' + fk()], v);
+        $('#cDisp').classList.toggle('expr', /[+−×÷]/.test(cEx[cAct.i + ':' + fk()] || ''));
         $('#cDisp').classList.toggle('empty', !v);
         $('#cPad [data-k="."]').disabled = cAct.f !== 'kg';
       }
@@ -1066,20 +1194,47 @@
       $('#submit').disabled = !ok || (needPhoto && !S.photo) || (!isCount && !anyOut());
     };
     // Form 5 on the count screen (Kim, 19 Nov): tap Bundle / Kg / Pcs of a line, the keypad moves under that line.
-    const cEx = {};
+    const cEx = {}, cMode = {}, dType = {}, shortB = {};
     let cAct = isCount && (b.lines || []).length ? { i: 0, f: isKg((b.lines[0] || {}).uom) ? 'kg' : 'pieces' } : null;
-    const cMove = () => { const ln = document.querySelector(`.cline[data-line="${cAct.i}"]`); if (ln && $('#cPad').parentNode !== ln) ln.appendChild($('#cPad')); };
+    const fv = (i, f) => { const el = document.querySelector(`[data-i="${i}"][data-f="${f}"]`); return el ? el.value : ''; };
+    const fk = () => (cMode[cAct.i] === 'dmg' ? 'd' : '') + cAct.f;   // the hidden box the keypad writes to
+    const hasD = i => ['dbundles', 'dkg', 'dpieces'].some(f => fv(i, f) !== '');
+    // Total counted = good + damaged; short bundles count with their real pcs (question 1).
+    const comb = i => {
+      const sh = shortB[i] || [], add = (a, d) => (a === '' && d === '' ? '' : String(round3((Number(a) || 0) + (Number(d) || 0))));
+      let gb = fv(i, 'bundles'), gp = fv(i, 'pieces');
+      if (sh.length) { gb = String((Number(gb) || 0) - sh.length); gp = String((Number(gp) || 0) + sh.reduce((a, v) => a + v, 0)); }
+      return { bundles: add(gb, fv(i, 'dbundles')), kg: add(fv(i, 'kg'), fv(i, 'dkg')), pieces: add(gp, fv(i, 'dpieces')) };
+    };
+    countInfo = i => ({ c: comb(i), dmg: hasD(i) ? { bundles: fv(i, 'dbundles'), kg: fv(i, 'dkg'), pieces: fv(i, 'dpieces'), type: dType[i] || '' } : null, short: shortB[i] || [] });
+    const cMove = () => { const ln = document.querySelector(`.cline[data-line="${cAct.i}"]`); if (ln && $('#cPad').parentNode !== ln) ln.insertBefore($('#cPad'), ln.querySelector('.cextra')); };
     if (isCount && cAct) {
-      document.querySelectorAll('.cline .seg [data-box]').forEach(bn => { bn.onclick = () => { cAct = { i: Number(bn.dataset.i), f: bn.dataset.box }; cMove(); refresh(); }; });
+      document.querySelectorAll('.cline .cbox [data-box]').forEach(bn => { bn.onclick = () => { cAct = { i: Number(bn.dataset.i), f: bn.dataset.box }; cMove(); refresh(); }; });
+      // Good | Damaged (point 7): the same Bundle / Kg / Pcs boxes, kept apart; damaged is part of the total counted.
+      document.querySelectorAll('.cmode [data-mode]').forEach(bn => { bn.onclick = () => { const i = Number(bn.dataset.i); cMode[i] = bn.dataset.mode; cAct = { i: i, f: cAct.i === i ? cAct.f : (isKg(b.lines[i].uom) ? 'kg' : 'pieces') }; cMove(); refresh(); }; });
+      document.querySelectorAll('[data-dt]').forEach(bn => { bn.onclick = () => { dType[bn.dataset.i] = bn.dataset.dt; refresh(); }; });
+      document.querySelectorAll('[data-fold]').forEach(bn => { bn.onclick = () => { const f = !foldGet(); foldSet(f); $('#cLines').classList.toggle('cfold', f); }; });
+      document.querySelectorAll('[data-short]').forEach(bn => { bn.onclick = () => { const x = document.querySelector(`[data-sb="${bn.dataset.short}"]`); x.hidden = !x.hidden; }; });
+      document.querySelectorAll('[data-sadd]').forEach(bn => { bn.onclick = () => {
+        const i = Number(bn.dataset.sadd), inp = document.querySelector(`[data-sp="${i}"]`), v = Math.round(Number(inp.value)), ppb = Number(b.lines[i].pcsPerBundle) || 1;
+        if (!(v > 0) || v >= ppb) { toast(T('ចំនួនរាយត្រូវតិចជាងស្តង់ដារ', 'Pcs must be less than the standard')); return; }
+        shortB[i] = (shortB[i] || []).concat([v]); inp.value = ''; refresh(); }; });
+      document.querySelectorAll('[data-sp]').forEach(inp => { inp.onkeydown = e => { if (e.key === 'Enter') document.querySelector(`[data-sadd="${inp.dataset.sp}"]`).click(); }; });
+      $('#cBadge').onclick = () => {
+        const n = (b.lines || []).length, empty = j => { const c = comb(j); return c.bundles === '' && c.kg === '' && c.pieces === ''; };
+        for (let k = 1; k <= n; k++) { const j = (cAct.i + k) % n; if (empty(j)) { cAct = { i: j, f: isKg(b.lines[j].uom) ? 'kg' : 'pieces' }; cMove(); refresh();
+          const ln = document.querySelector(`.cline[data-line="${j}"]`); if (ln && ln.scrollIntoView) ln.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; } }
+        toast(T('រាប់គ្រប់បន្ទាត់ហើយ', 'Every line is counted'));
+      };
       $('#cPad .kpad').onclick = e => {
         const k = e.target.closest('[data-k]'); if (!k || k.disabled) return;
-        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`), kk = cAct.i + ':' + cAct.f;
+        const el = document.querySelector(`[data-i="${cAct.i}"][data-f="${fk()}"]`), kk = cAct.i + ':' + fk();
         cEx[kk] = padPress(cEx[kk] != null ? cEx[kk] : el.value, k.dataset.k, cAct.f === 'kg');
         el.value = padEval(cEx[kk]); refresh();
       };
       $('#cCalc').onclick = () => {
-        const bn = document.querySelector(`.seg [data-i="${cAct.i}"][data-box="${cAct.f}"] span`);
-        openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { document.querySelector(`[data-i="${cAct.i}"][data-f="${cAct.f}"]`).value = cAct.f === 'kg' ? String(v) : String(Math.round(v)); cEx[cAct.i + ':' + cAct.f] = null; refresh(); });
+        const bn = document.querySelector(`.cbox [data-i="${cAct.i}"][data-box="${cAct.f}"] span`);
+        openCalc(bn ? bn.textContent : T('ចំនួន', 'Quantity'), v => { document.querySelector(`[data-i="${cAct.i}"][data-f="${fk()}"]`).value = cAct.f === 'kg' ? String(v) : String(Math.round(v)); cEx[cAct.i + ':' + fk()] = null; refresh(); });
       };
       cMove();
     } else if ($('#cPad')) $('#cPad').hidden = true;
@@ -1097,10 +1252,19 @@
     refresh();
   }
 
+  // Damage types for the count (point 7).
+  const DMG = [['Bent', 'កោង'], ['Rust', 'ច្រេះ'], ['Broken / cut', 'បាក់ / កាត់'], ['Wet', 'សើម'], ['Other', 'ផ្សេងៗ']];
+  const foldGet = () => { try { return localStorage.getItem('sc_cfold') === '1'; } catch (e) { return false; } };
+  const foldSet = v => { try { localStorage.setItem('sc_cfold', v ? '1' : '0'); } catch (e) { /* private mode */ } };
+  let countInfo = null;   // set by the count screen: total (good + damaged), damaged part and short bundles of a line
   function readLines(isCount) {
     return (S.bin.lines || []).map((l, i) => {
       const base = { material: l.material, batch: l.batch, sloc: l.sloc };
-      if (isCount) return Object.assign(base, { bundles: document.querySelector(`[data-i="${i}"][data-f="bundles"]`).value, kg: document.querySelector(`[data-i="${i}"][data-f="kg"]`).value, pieces: document.querySelector(`[data-i="${i}"][data-f="pieces"]`).value, remark: '' });
+      if (isCount) {
+        const x = countInfo(i), rem = (document.querySelector(`[data-rem="${i}"]`) || {}).value || '';
+        const dTxt = x.dmg ? `${T('ខូច', 'Damaged')}: ${[x.dmg.bundles && x.dmg.bundles + ' bd', x.dmg.kg && x.dmg.kg + ' kg', x.dmg.pieces && x.dmg.pieces + ' pcs'].filter(Boolean).join(' ')} (${x.dmg.type})` : '';
+        return Object.assign(base, x.c, { remark: [rem.trim(), x.short.length ? shortTxt(x.short, l.pcsPerBundle) : '', dTxt].filter(Boolean).join(' · '), damaged: x.dmg });
+      }
       return Object.assign(base, { outQty: Number((document.querySelector(`[data-i="${i}"][data-f="outQty"]`) || { value: 0 }).value) || 0 });
     });
   }
@@ -1179,9 +1343,11 @@
       </section>
       <table class="lines" ${(r.lines || []).length ? '' : 'hidden'}>${r.kind === 'out' ? `<tr><th>Material</th><th>Out</th><th>After</th></tr>` : `<tr><th>Material</th><th>Book</th><th>Counted</th><th>Diff</th></tr>`}${rows}</table>
       <div style="height:12px"></div>
+      ${r.kind === 'move' ? undoBar() : ''}
       ${r.kind === 'move' && S.bin ? `<button type="button" class="btn big" id="toBin">${T('ត្រឡប់ទៅទីតាំង', 'Back to the bin')} ${esc(S.bin.bin)}</button>` : ''}
       <button type="button" class="btn big ${r.kind === 'move' ? 'ghost' : 'ok'}" id="next">${T('ត្រឡប់ទៅបញ្ជី', 'Back to list')}</button>`);
     if ($('#toBin')) $('#toBin').onclick = () => { S.view = 'bin'; S.result = null; route(); };
+    undoWire();
     $('#next').onclick = () => { S.view = 'home'; S.bin = null; S.result = null; route(); };
   }
 

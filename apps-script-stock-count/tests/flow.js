@@ -160,4 +160,37 @@ eq([vs.updated, vs.closed, vl.cases[0].Times, vl.cases[0].Variance, vl.cases[1].
 fails(() => call('varUpdate', { id: vl.cases[0]['Case ID'], status: 'Resolved' }), 'BAD', 'resolve needs an action');
 const vu = call('varUpdate', { id: vl.cases[0]['Case ID'], status: 'Resolved', action: 'SAP adjustment', owner: 'Dara' });
 eq([vu.case.Status, vu.case.Owner, !!vu.case['Resolved At']], ['Resolved', 'Dara', true], 'resolve by hand');
+
+// ---- fix a wrong movement (27 Nov, question 2): reverse = REVERSAL row, old row kept; own + today; no double reverse
+const pBal = book('BIN-A', 'PIPE-25');
+const mv = call('move', Object.assign({ requestId: 'q1', type: 'OUT', qty: 10, reference: 'DN-77' }, pipe));
+eq(book('BIN-A', 'PIPE-25'), pBal - 10, 'out before undo');
+fails(() => call('reverse', { requestId: 'q2', id: mv.id }), 'BAD', 'reverse needs a reason when not an undo');
+let rv = call('reverse', { requestId: 'q3', id: mv.id, undo: true });
+const rl = ledger()[ledger().length - 1], lh2 = sheets['Stock Ledger'].grid[0];
+eq([book('BIN-A', 'PIPE-25'), rl[lh2.indexOf('Type')], rl[lh2.indexOf('In')], rl[lh2.indexOf('Reverses')], rv.reversed], [pBal, 'REVERSAL', 10, mv.id, [mv.id]], 'undo puts the stock back with a REVERSAL row');
+fails(() => call('reverse', { requestId: 'q4', id: mv.id, reason: 'again' }), 'BAD', 'cannot reverse twice');
+eq(call('reverse', { requestId: 'q3', id: mv.id, undo: true }).duplicate, true, 'same request answered, not posted again');
+fails(() => call('reverse', { requestId: 'q5', id: rv.id, reason: 'x' }), 'BAD', 'a reversal cannot be reversed');
+const mv2 = call('move', Object.assign({ requestId: 'q6', type: 'IN', qty: 3, reference: 'GR-77' }, pipe), admin);
+fails(() => call('reverse', { requestId: 'q7', id: mv2.id, reason: 'wrong qty' }), 'NOACCESS', 'a user cannot fix someone else\'s movement');
+rv = call('reverse', { requestId: 'q8', id: mv2.id, reason: 'wrong qty' }, admin);
+eq(book('BIN-A', 'PIPE-25'), pBal, 'admin reverses an IN');
+const tr2 = call('transfer', Object.assign({ requestId: 'q9', qty: 5, toBin: 'BIN-B' }, pipe));
+const bB = book('BIN-B', 'PIPE-25');
+rv = call('reverse', { requestId: 'q10', id: tr2.id, reason: 'wrong bin' });
+eq([book('BIN-A', 'PIPE-25'), book('BIN-B', 'PIPE-25'), rv.reversed.length], [pBal, bB - 5, 2], 'transfer reversed on both bins');
+
+// ---- damaged stock in a count (27 Nov, point 7): saved as Damaged Qty + Damage Type columns in Counts
+call('submit', { count: { bin: 'BIN-A', lines: [{ material: '1400000021', batch: 'L9', sloc: '2010', bundles: '', kg: '', pieces: 300, remark: 'rack 2', damaged: { bundles: '', kg: '', pieces: 6, type: 'Bent' } }] } });
+const cg = sheets['Counts'].grid, ch = cg[0].map(h => String(h).toLowerCase()), cl = cg[cg.length - 1];
+eq([cl[ch.indexOf('damaged qty')], cl[ch.indexOf('damage type')], cl[ch.indexOf('remark')], pr[12]], [6, 'Bent', 'rack 2', 0], 'damaged qty, type and remark saved; total includes damaged');
+
+// ---- Confirm GI (27 Nov, points 12-13)
+let gi = call('giConfirm', { file: 'MB51.xlsx', lines: [{ key: '5011|M1|B1', ref: '5011', material: 'M1', batch: 'B1', appQty: -5, sapQty: -5, diff: 0, result: 'Matched' }, { key: '5012|M2|B2', ref: '5012' }] });
+eq([gi.added, gi.skipped], [2, 0], 'two lines confirmed');
+gi = call('giConfirm', { file: 'MB51b.xlsx', lines: [{ key: '5011|m1|b1' }, { key: '5013|M3|B3' }] });
+const gl = call('giList', {});
+eq([gi.added, gi.skipped, gl.rows.length, gl.rows[0].key, gl.rows[0].file], [1, 1, 3, '5011|M1|B1', 'MB51.xlsx'], 'already confirmed lines are skipped; list reads back');
+fails(() => call('giConfirm', { lines: [] }), 'BAD', 'nothing ticked');
 console.log('Stock Count flow tests: ' + pass + ' passed');

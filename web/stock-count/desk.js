@@ -127,11 +127,14 @@
   }
 
   // ------------------------------------------------------------------ stock list
-  const F = { q: '', wh: '', mq: '', mt: '', mfrom: dAgo(0).slice(0, 8) + '01', mto: dAgo(0), mwh: '', mzone: '', mgrp: '', msloc: '', mdir: '', onlyVar: true, zone: '', grp: '', sloc: '', uom: '', qty: '', sd: '', cd: '' };
+  const F = { q: '', wh: '', mq: '', mt: '', mfrom: dAgo(0).slice(0, 8) + '01', mto: dAgo(0), mwh: '', mzone: '', mgrp: '', msloc: '', mdir: '', onlyVar: true, zone: '', grp: '', sloc: '', uom: '', qty: '', sd: '', cd: '', bin: [], mat: [], size: [] };
   const hit = (q, vals) => !q || vals.join(' ').toLowerCase().indexOf(q.toLowerCase()) >= 0;
   // Stock list filters (Kim picked list mockup 1, 20 Nov): Warehouse, Bin Zone, Material Group, SLoc, UoM, Stock,
   // Stock Date (last IN of the line, from the ledger) and Count Date (last count, Stock On Hand). Chips show what is on.
   const zoneOf = bin => String(bin || '').split('-')[1] || '';
+  // Size from the Product Master "Size" column, else read from the description (e.g. 12mm, 350x175).
+  const sizeOf = l => { const p = (S.products || []).find(x => String(x.material).toUpperCase() === String(l.material).toUpperCase());
+    return (p && p.size) || (String(l.desc || '').match(/\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?)*\s?mm|\d+x\d+(?:x\d+(?:\.\d+)?)*/i) || [''])[0]; };
   const groupOf = l => {
     if (l.group) return l.group;
     const p = (S.products || []).find(x => String(x.material).toUpperCase() === String(l.material).toUpperCase());
@@ -161,7 +164,7 @@
   function stock() {
     wide(); loadLedger('stock');
     const dt = lineDates();
-    const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '',
+    const all = D.stock.map(l => Object.assign({}, l, { wh: whOf(l.bin), zone: zoneOf(l.bin), grp: groupOf(l), size: sizeOf(l), sd: dt.sd[lineKey(l)] || '', cd: l.countDate || dt.cd[lineKey(l)] || '',
       counted: l.counted != null && l.counted !== '' ? l.counted : (dt.cr[lineKey(l)] || {}).counted, diff: l.diff != null && l.diff !== '' ? l.diff : (dt.cr[lineKey(l)] || {}).variance,
       by: l.countedBy || String((dt.cr[lineKey(l)] || {}).by || '').split('@')[0] }));
     if (pvMode('stock')) {
@@ -175,36 +178,61 @@
         ['by', 'រាប់ដោយ', 'Counted by'], ['book', 'ស្តុក', 'On hand', 1], ['kg', 'ទម្ងន់ Kg', 'Weight Kg', 1], ['counted', 'ចំនួនរាប់បាន', 'Counted Qty', 1], ['diff', 'ខុសគ្នា', 'Difference', 1]],
         { rows: ['grp', 'material'], cols: ['uom'], vals: [{ k: 'book', agg: 'sum' }], filters: {} }, stock);
     }
+    // Kim, 27 Nov (points 8-9): Bin filter; no bin picked = one row per material (all bins added up). Filters Material + Size; UoM and Stock Date filters removed.
     const uniq = f => Array.from(new Set(all.map(l => l[f]).filter(Boolean))).sort();
-    const rows = all.filter(l => inSel(F.wh, l.wh) && inSel(F.zone, l.zone) && inSel(F.grp, l.grp) && inSel(F.sloc, l.sloc)
-      && inSel(F.uom, l.uom) && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.sd, F.sd, false) && dateOk(l.cd, F.cd, true)
-      && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp]));
-    const list = f => [['', T('ទាំងអស់', 'All')]].concat(uniq(f).map(v => [v, v]));
-    const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh')], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone')],
-      ['fgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', list('grp')], ['fsloc', 'SLoc', 'sloc', list('sloc')], ['fuom', 'UoM', 'uom', list('uom')],
-      ['fqty', T('ស្តុក', 'Stock'), 'qty', QTY_OPT], ['fsd', T('ថ្ងៃចូលស្តុក', 'Stock Date'), 'sd', SD_OPT], ['fcd', T('ថ្ងៃរាប់', 'Count Date'), 'cd', CD_OPT]];
+    const rows = all.filter(l => inSel(F.wh, l.wh) && inSel(F.bin, l.bin) && inSel(F.zone, l.zone) && inSel(F.grp, l.grp) && inSel(F.mat, l.material) && inSel(F.size, l.size) && inSel(F.sloc, l.sloc)
+      && (!F.qty || (F.qty === 'pos' ? l.book > 0 : l.book === 0)) && dateOk(l.cd, F.cd, true)
+      && hit(F.q, [l.bin, l.material, l.desc, l.batch, l.sloc, l.grp, l.size]));
+    const byBin = asArr(F.bin).length > 0;
+    const list = f => uniq(f).map(v => [v, v]);
+    const mats = Array.from(new Map(all.map(l => [l.material, l.material + ' · ' + (l.desc || '')])).entries()).sort((x, y) => x[0].localeCompare(y[0]));
+    const FILTERS = [['fwh', T('ឃ្លាំង', 'Warehouse'), 'wh', list('wh'), 1], ['fbin', T('ទីតាំង', 'Bin'), 'bin', list('bin'), 1], ['fzone', T('តំបន់', 'Bin Zone'), 'zone', list('zone'), 1],
+      ['fgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', list('grp'), 1], ['fmat', T('សម្ភារៈ', 'Material'), 'mat', mats, 1], ['fsize', T('ទំហំ', 'Size'), 'size', list('size'), 1], ['fsloc', 'SLoc', 'sloc', list('sloc'), 1],
+      ['fqty', T('ស្តុក', 'Stock'), 'qty', QTY_OPT], ['fcd', T('ថ្ងៃរាប់', 'Count Date'), 'cd', CD_OPT]];
     const tot = kg => rows.filter(l => kg === SC.isKg(l.uom)).reduce((a, l) => a + l.book, 0);
-    const sumU = f => { const pc = rows.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0), kg = rows.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0);
+    const sumOf = (L, f) => { const pc = L.filter(l => !SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0), kg = L.filter(l => SC.isKg(l.uom)).reduce((a, l) => a + (Number(l[f]) || 0), 0);
       return [pc ? fmtQty(SC.round3(pc)) + ' PC' : '', kg ? fmtQty(SC.round3(kg)) + ' KG' : ''].filter(Boolean).join('<br>') || '0'; };
+    const sumU = f => sumOf(rows, f);
     const nCounted = rows.filter(l => l.cd).length;
+    // Totals by material (and unit) when no bin is picked.
+    const grp = {};
+    if (!byBin) rows.forEach(l => { const k = l.material + '|' + l.uom; const g = grp[k] || (grp[k] = { material: l.material, desc: l.desc, size: l.size, grp: l.grp, uom: l.uom, bins: new Set(), book: 0, counted: null, diff: null, cd: '' });
+      g.bins.add(l.bin); g.book = SC.round3(g.book + (Number(l.book) || 0));
+      if (l.counted != null && l.counted !== '') g.counted = SC.round3((g.counted || 0) + Number(l.counted));
+      if (l.diff != null && l.diff !== '') g.diff = SC.round3((g.diff || 0) + Number(l.diff));
+      if (l.cd && l.cd > g.cd) g.cd = l.cd; });
+    const mrows = Object.values(grp).sort((x, y) => String(x.grp).localeCompare(String(y.grp)) || x.material.localeCompare(y.material));
+    const numCell = v => `<td class="num mono">${v == null || v === '' ? '' : fmtQty(v)}</td>`;
+    const diffCell = v => `<td class="num mono ${Number(v) < 0 ? 'out' : Number(v) > 0 ? 'in' : ''}">${v == null || v === '' ? '' : (Number(v) > 0 ? '+' : '') + fmtQty(v)}</td>`;
+    const table = byBin
+      ? `<table class="rep stocktbl"><thead><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>${T('ទំហំ', 'Size')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr></thead><tbody>
+        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td class="mono">${esc(l.bin)}</td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td class="mono">${esc(l.material)}</td><td>${esc(l.desc)}</td><td>${esc(l.size)}</td><td class="mono">${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num mono">${fmtQty(l.book)}</td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td>${l.cd ? esc(l.cd) : `<span class="pill never">${T('មិនទាន់រាប់', 'Never')}</span>`}</td>${numCell(l.counted)}${diffCell(l.diff)}<td>${esc(l.by || '')}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="16">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th>${'<th></th>'.repeat(8)}<th class="num mono">${sumU('book')}</th>${'<th></th>'.repeat(3)}<th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table>`
+      : `<table class="rep stockmat"><thead><tr><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>${T('ទំហំ', 'Size')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th class="num">${T('ទីតាំង', 'Bins')}</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('ថ្ងៃរាប់ចុងក្រោយ', 'Last count')}</th></tr></thead><tbody>
+        ${mrows.map((g, i) => `<tr class="go" data-mi="${i}"><td class="mono">${esc(g.material)}</td><td>${esc(g.desc)}</td><td>${esc(g.size)}</td><td>${esc(g.grp)}</td><td class="num"><u>${g.bins.size}</u></td><td class="num mono">${fmtQty(g.book)}</td><td>${esc(g.uom)}</td>${numCell(g.counted)}${diffCell(g.diff)}<td>${esc(g.cd || '')}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="10">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th><th></th><th></th><th></th><th class="num">${new Set(rows.map(l => l.bin)).size}</th><th class="num mono">${sumU('book')}</th><th></th><th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table>`;
     view(`
       <div class="fb-wrap">${repHead('stock', '📦 ' + T('បញ្ជីស្តុក', 'Stock list'), can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
-        () => { FILTERS.forEach(f => { F[f[2]] = ''; }); F.q = ''; stock(); })}
-      ${FB.panel('stock', FILTERS.map((f, i) => (i < 5 ? msel(f[0], f[1], f[3].filter(o => o[0]), F[f[2]]) : FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`))).join('')
+        () => { FILTERS.forEach(f => { F[f[2]] = f[4] ? [] : ''; }); F.q = ''; stock(); })}
+      ${FB.panel('stock', FILTERS.map(f => (f[4] ? msel(f[0], f[1], f[3], F[f[2]]) : FB.field(f[1], `<select id="${f[0]}">${f[3].map(o => `<option value="${esc(o[0])}"${o[0] === F[f[2]] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`))).join('')
         + FB.search('fq', T('ស្វែងរក ទីតាំង សម្ភារៈ ឬ Batch', 'Search bin, material or batch'), F.q))}</div>
-      <div class="sumline"><b>${rows.length}</b> ${T('ជួរ', 'lines')} · <b>${new Set(rows.map(l => l.bin)).size}</b> ${T('ទីតាំង', 'bins')} · ${T('ស្តុក', 'On hand')} <b>${fmtQty(tot(false))}</b> PC · <b>${fmtQty(tot(true))}</b> KG · ${T('បានរាប់', 'Counted')} <b>${nCounted}</b> · ${T('មិនទាន់រាប់', 'Never')} <b>${rows.length - nCounted}</b></div>
-      <section class="screp"><table class="rep stocktbl"><thead><tr><th>${T('ទីតាំង', 'Bin')}</th><th>${T('ឃ្លាំង', 'Warehouse')}</th><th>${T('តំបន់', 'Zone')}</th><th>${T('ក្រុមសម្ភារៈ', 'Material Group')}</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>SLoc</th><th>${T('ស្តុក', 'On hand')}</th><th>UoM</th><th>${T('ថ្ងៃចូលស្តុក', 'Stock Date')}</th><th>${T('ថ្ងៃរាប់', 'Count Date')}</th><th>${T('ចំនួនរាប់បាន', 'Counted Qty')}</th><th>${T('ខុសគ្នា', 'Difference')}</th><th>${T('រាប់ដោយ', 'Counted by')}</th></tr></thead><tbody>
-        ${rows.map(l => `<tr class="go" data-bin="${esc(l.bin)}"><td class="mono">${esc(l.bin)}</td><td>${esc(l.wh)}</td><td>${esc(l.zone)}</td><td>${esc(l.grp)}</td><td class="mono">${esc(l.material)}</td><td>${esc(l.desc)}</td><td class="mono">${esc(l.batch)}</td><td>${esc(l.sloc)}</td><td class="num mono">${fmtQty(l.book)}</td><td>${esc(l.uom)}</td><td>${esc(l.sd || '—')}</td><td>${l.cd ? esc(l.cd) : `<span class="pill never">${T('មិនទាន់រាប់', 'Never')}</span>`}</td><td class="num mono">${l.counted == null || l.counted === '' ? '' : fmtQty(l.counted)}</td><td class="num mono ${Number(l.diff) < 0 ? 'out' : Number(l.diff) > 0 ? 'in' : ''}">${l.diff == null || l.diff === '' ? '' : (Number(l.diff) > 0 ? '+' : '') + fmtQty(l.diff)}</td><td>${esc(l.by || '')}</td></tr>`).join('')
-          || `<tr><td class="muted" colspan="15">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
-        <tfoot><tr class="gtot"><th>${T('សរុបរួម', 'Grand total')}</th>${'<th></th>'.repeat(7)}<th class="num mono">${sumU('book')}</th>${'<th></th>'.repeat(3)}<th class="num mono">${sumU('counted')}</th><th class="num mono">${sumU('diff')}</th><th></th></tr></tfoot></table></section>
-      ${oldNote()}<p class="muted">${T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.')}</p>`);
+      <div class="sumline">${byBin ? '' : `<b>${mrows.length}</b> ${T('សម្ភារៈ', 'materials')} · `}<b>${rows.length}</b> ${T('ជួរ', 'lines')} · <b>${new Set(rows.map(l => l.bin)).size}</b> ${T('ទីតាំង', 'bins')} · ${T('ស្តុក', 'On hand')} <b>${fmtQty(tot(false))}</b> PC · <b>${fmtQty(tot(true))}</b> KG · ${T('បានរាប់', 'Counted')} <b>${nCounted}</b> · ${T('មិនទាន់រាប់', 'Never')} <b>${rows.length - nCounted}</b>
+        · <span class="muted">${byBin ? T('តាមទីតាំង', 'By bin') : T('សរុបតាមសម្ភារៈ (ជ្រើសទីតាំង ដើម្បីមើលតាមទីតាំង)', 'Totals by material (pick a bin to see each bin)')}</span></div>
+      <section class="screp">${table}</section>
+      ${oldNote()}<p class="muted">${byBin ? T('ចុចលើជួរ ដើម្បីបើកទីតាំង។', 'Tap a row to open the bin.') : T('ចុចលើជួរ ដើម្បីមើលទីតាំងដែលមានសម្ភារៈនេះ។', 'Tap a row to see the bins that hold this material.')}</p>`);
     pvWire('stock', stock);
     setTimeout(fitRep, 0);
     keep('#fq', v => { F.q = v; stock(); });
-    FILTERS.forEach((f, i) => { if (i < 5) mselWire(f[0], v => { F[f[2]] = v; stock(); }); else $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
-    $$('tr.go').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
-    if ($('#exp')) $('#exp').onclick = () => download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date', 'Counted Qty', 'Difference', 'Counted By']]
-      .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd, l.counted == null ? '' : l.counted, l.diff == null ? '' : l.diff, l.by])));
+    FILTERS.forEach(f => { if (f[4]) mselWire(f[0], v => { F[f[2]] = v; stock(); }); else $('#' + f[0]).onchange = e => { F[f[2]] = e.target.value; stock(); }; });
+    $$('tr.go[data-bin]').forEach(tr => { tr.onclick = () => openBin(tr.dataset.bin); });
+    $$('tr.go[data-mi]').forEach(tr => { tr.onclick = () => { const g = mrows[Number(tr.dataset.mi)]; F.mat = [g.material]; F.bin = Array.from(g.bins).sort(); stock(); }; });
+    if ($('#exp')) $('#exp').onclick = () => (byBin
+      ? download('stock-on-hand.csv', [['Bin', 'Warehouse', 'Zone', 'Material Group', 'Material', 'Description', 'Size', 'Batch', 'SLoc', 'On hand', 'UoM', 'Stock Date', 'Count Date', 'Counted Qty', 'Difference', 'Counted By']]
+        .concat(rows.map(l => [l.bin, l.wh, l.zone, l.grp, l.material, l.desc, l.size, l.batch, l.sloc, l.book, l.uom, l.sd, l.cd, l.counted == null ? '' : l.counted, l.diff == null ? '' : l.diff, l.by])))
+      : download('stock-by-material.csv', [['Material', 'Description', 'Size', 'Material Group', 'Bins', 'On hand', 'UoM', 'Counted Qty', 'Difference', 'Last count']]
+        .concat(mrows.map(g => [g.material, g.desc, g.size, g.grp, g.bins.size, g.book, g.uom, g.counted == null ? '' : g.counted, g.diff == null ? '' : g.diff, g.cd]))));
   }
   // Table | Pivot switch on Stock list and Movements (Kim, 20 Nov: drag and drop like an Excel pivot table).
   const pvMode = id => { try { return localStorage.getItem('sc_view_' + id) === 'pivot'; } catch (e) { return false; } };
@@ -708,7 +736,26 @@
   // ------------------------------------------------------------------ MB51 compare (Kim picked the mockup, 27 Nov 2026)
   // Movements › ⇄ MB51: upload the SAP MB51 export; app IN/OUT lines are matched on Reference (= MB51 Reference, Material Document,
   // Purchase order or Order) + Material + Batch. Only the MB51 date range and the SLocs the app knows are compared. Browser only.
-  const MB = { name: '', rows: null, err: '', F: { res: [], note: [], mvt: [], wh: [], grp: [], sloc: [], q: '' } };
+  const MB = { name: '', rows: null, err: '', tick: new Set(), F: { res: [], note: [], gi: [], doc: [], ref: [], user: [], mvt: [], wh: [], grp: [], sloc: [], q: '' } };
+  // Confirm GI (Kim, 27 Nov, points 12-13): ticked lines saved to GI Reconciliation; GI Status read back by key.
+  const GI = { map: {}, at: 0, busy: false, err: '' };
+  if (DEMO) D.gi = D.gi || {};
+  function loadGi(again, force) {
+    if (DEMO) { GI.map = D.gi; GI.at = Date.now(); return; }
+    if (GI.busy || (!force && Date.now() - GI.at < 60000)) return;
+    GI.busy = true;
+    SC.api('giList', {}).then(r => { const m = {}; (r.rows || []).forEach(x => { m[String(x.key).toUpperCase()] = x; }); GI.map = m; GI.err = ''; }, e => { GI.err = errText(e); })
+      .then(() => { GI.busy = false; GI.at = Date.now(); if (S.view === again) route(); });
+  }
+  // Past MB51 files (point 14): the last 5 uploads kept in this browser (IndexedDB), to open again without the file.
+  const IDB = fn => new Promise((ok, no) => { try { const rq = indexedDB.open('sc_mb51', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('files', { keyPath: 'name' });
+    rq.onsuccess = () => { const tx = rq.result.transaction('files', 'readwrite'); const r = fn(tx.objectStore('files')); tx.oncomplete = () => ok(r && r.result); tx.onerror = () => no(tx.error); }; rq.onerror = () => no(rq.error); } catch (e) { no(e); } });
+  let MB_PAST = [];
+  const mbPastLoad = () => IDB(st => st.getAll()).then(list => { MB_PAST = (list || []).map(f => ({ name: f.name, at: f.at, n: (f.rows || []).length })).sort((a, b) => b.at.localeCompare(a.at)); }).catch(() => {});
+  const mbPastSave = () => IDB(st => { st.put({ name: MB.name, at: nowStamp(), rows: MB.rows }); }).then(() => IDB(st => st.getAll())).then(list => {
+    const old = (list || []).sort((a, b) => b.at.localeCompare(a.at)).slice(5);
+    return old.length ? IDB(st => { old.forEach(f => st.delete(f.name)); }) : null; }).then(mbPastLoad).catch(() => {});
+  mbPastLoad();
   const nref = v => String(v == null ? '' : v).trim().toUpperCase().replace(/^0+(?=\d)/, '');
   const ndate = v => {
     if (v instanceof Date && !isNaN(v)) { const d = new Date(v.getTime() + 12 * 3600000); return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}-${('0' + d.getDate()).slice(-2)}`; }
@@ -731,6 +778,8 @@
       const q = Number(g('qty').replace(/,/g, '').replace(/^(.*)-$/, '-$1'));   // SAP shows 120- for negative
       return { i: i, mat: g('mat'), batch: g('batch'), ref: g('ref'), doc: g('doc'), po: g('po'), ord: g('ord'), mvt: g('mvt'), date: ndate(g('date')), sloc: g('sloc'), qty: isFinite(q) ? q : 0, uom: g('uom').toUpperCase(), desc: g('desc'), time: g('time'), user: g('user'), text: g('text'), cust: g('cust'), plant: g('plant') };
     }).filter(r => r.mat);
+    MB.tick = new Set();
+    mbPastSave();
     moves();
   }
   function mbCompare() {
@@ -739,7 +788,8 @@
     const keepSloc = s => !known.size || !s || known.has(String(s));
     const sap = MB.rows.filter(r => keepSloc(r.sloc));
     const dates = sap.map(r => r.date).filter(Boolean).sort(), from = dates[0] || '', to = dates[dates.length - 1] || '';
-    const app = D.ledger.filter(r => (r.type === 'IN' || r.type === 'OUT') && (!from || String(r.date) >= from) && (!to || String(r.date) <= to) && (!fileSloc.size || !r.sloc || fileSloc.has(String(r.sloc))));
+    const revd = new Set(D.ledger.map(r => r.reverses).filter(Boolean));   // a reversed movement (question 2) is not compared
+    const app = D.ledger.filter(r => (r.type === 'IN' || r.type === 'OUT') && !revd.has(r.id) && (!from || String(r.date) >= from) && (!to || String(r.date) <= to) && (!fileSloc.size || !r.sloc || fileSloc.has(String(r.sloc))));
     // App side: one group per Reference + Material + Batch.
     const ag = {};
     app.forEach(r => { const k = [nref(r.reference), nref(r.material), nref(r.batch)].join('|');
@@ -757,7 +807,7 @@
       const g = ag[k], r0 = nref(g.ref), m0 = nref(g.material);
       let ids = r0 ? (ix[[r0, m0, nref(g.batch)].join('|')] || []).filter(i => !used.has(i)) : [], batchOk = true;
       if (!ids.length && r0) { ids = (ixm[r0 + '|' + m0] || []).filter(i => !used.has(i)); batchOk = false; }
-      const base = { when: g.when, ref: g.ref, material: g.material, batch: g.batch, desc: g.desc, uom: g.uom, bin: Array.from(g.bins).join(', '), sloc: g.sloc, appQty: g.qty, ar: g.ar, sl: [] };
+      const base = { key: k, when: g.when, ref: g.ref, material: g.material, batch: g.batch, desc: g.desc, uom: g.uom, bin: Array.from(g.bins).join(', '), sloc: g.sloc, appQty: g.qty, ar: g.ar, sl: [] };
       if (!ids.length) { out.push(Object.assign(base, { sapQty: null, post: '', doc: '', mvt: '', diff: g.qty, res: 'app' })); return; }
       ids.forEach(i => used.add(i));
       const s = sapInfo(ids), diff = round3(g.qty - s.sapQty);
@@ -767,8 +817,9 @@
     sap.forEach((r, i) => { if (used.has(i)) return; const k = [nref(r.ref || r.doc), nref(r.mat), nref(r.batch)].join('|'); (rest[k] = rest[k] || []).push(i); });
     Object.keys(rest).forEach(k => { const L = rest[k].map(i => sap[i]), s = sapInfo(rest[k]);
       const st = D.stock.find(l => nref(l.material) === nref(L[0].mat) && nref(l.batch) === nref(L[0].batch)) || D.stock.find(l => nref(l.material) === nref(L[0].mat));
-      out.push(Object.assign(s, { ar: [], sl: L, when: '', ref: L[0].ref || L[0].doc, material: L[0].mat, batch: L[0].batch, desc: L[0].desc || (st && st.desc) || '', uom: L[0].uom, bin: '', sloc: L[0].sloc, appQty: null, diff: round3(-s.sapQty), res: 'sap' })); });
-    out.forEach(x => { x.wh = x.bin ? whOf(x.bin.split(', ')[0]) : ''; x.grp = groupOf({ material: x.material, desc: x.desc }); });
+      out.push(Object.assign(s, { key: k, ar: [], sl: L, when: '', ref: L[0].ref || L[0].doc, material: L[0].mat, batch: L[0].batch, desc: L[0].desc || (st && st.desc) || '', uom: L[0].uom, bin: '', sloc: L[0].sloc, appQty: null, diff: round3(-s.sapQty), res: 'sap' })); });
+    out.forEach(x => { x.wh = x.bin ? whOf(x.bin.split(', ')[0]) : ''; x.grp = groupOf({ material: x.material, desc: x.desc });
+      x.users = Array.from(new Set(x.ar.map(r => String(r.user || '').split('@')[0]).concat(x.sl.map(r => r.user)).filter(Boolean))).join(', '); });
     const ord = { qty: 0, sap: 1, app: 2, ok: 3 };
     out.sort((a, b) => ord[a.res] - ord[b.res] || Math.abs(b.diff || 0) - Math.abs(a.diff || 0));
     return { list: out, from: from, to: to, nApp: app.length, nSap: sap.length, slocs: Array.from(fileSloc).filter(keepSloc).sort(), skipped: MB.rows.length - sap.length };
@@ -790,47 +841,81 @@
       <h4>🧾 MB51 (${x.sl.length})</h4>
       ${x.sl.length ? `<div class="scroll"><table class="rep"><thead><tr><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ម៉ោង', 'Time')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('ប្រភេទ', 'Text')}</th><th>Batch</th><th>Plant</th><th>SLoc</th><th class="num">${T('ចំនួន', 'Qty')}</th><th>UoM</th><th>Reference</th><th>PO / Order</th><th>${T('អតិថិជន / អ្នកផ្គត់ផ្គង់', 'Customer / supplier')}</th><th>${T('អ្នកប្រើ SAP', 'SAP user')}</th></tr></thead><tbody>
         ${x.sl.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.time)}</td><td class="mono">${esc(r.doc)}</td><td>${esc(r.mvt)}</td><td>${esc(r.text)}</td><td class="mono">${esc(r.batch)}</td><td>${esc(r.plant)}</td><td>${esc(r.sloc)}</td><td class="num mono">${q(r.qty)}</td><td>${esc(r.uom)}</td><td class="mono">${esc(r.ref)}</td><td class="mono">${esc(r.po || r.ord)}</td><td>${esc(r.cust)}</td><td>${esc(r.user)}</td></tr>`).join('')}</tbody></table></div>`
-        : `<p class="bad">${T('មិនមានក្នុង MB51៖ មិនទាន់ post ក្នុង SAP (ឬឯកសារយោងខុស)។', 'Not in MB51: not posted in SAP yet (or the reference is different).')}</p>`}</div>`;
+        : `<p class="bad">${T('មិនមានក្នុង MB51៖ មិនទាន់ post ក្នុង SAP (ឬឯកសារយោងខុស)។', 'Not in MB51: not posted in SAP yet (or the reference is different).')}</p>`}
+      ${x.res !== 'ok' || x.note ? (c => `<div class="mbwhy"><b>${T('មូលហេតុខុសគ្នា', 'Reason for variance')}</b>${c ? ` <span class="muted">· ${esc(c['Case ID'])} · ${esc(lbl(VST, c.Status))}</span>` : ''}
+        <div class="mbwhy-row"><label>${T('មូលហេតុ', 'Reason')}<select id="mbRsn"><option value="">—</option>${RSN.map(r => `<option value="${esc(r[0])}"${c && c.Reason === r[0] ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select></label>
+        <label class="grow">${T('កំណត់សម្គាល់', 'Remark')}<input id="mbRmk" type="text" maxlength="300" value="${esc(c ? c.Remark : '')}"></label></div>
+        <button type="button" class="btn sm" id="mbWhySave">💾 ${T('រក្សាទុកការខុសគ្នា', 'Save variance')}</button> <span class="muted">${T('ទៅ 📉 ប្រវត្តិខុសគ្នា', 'Goes to 📉 Variance history')}</span></div>`)(openCase('mb51', x.key)) : ''}</div>`;
     const onKey = e => { if (e.key === 'Escape') shut(); };
     const shut = () => { bg.parentNode && bg.parentNode.removeChild(bg); document.removeEventListener('keydown', onKey); };
     bg.onclick = e => { if (e.target === bg || e.target.closest('[data-close]')) shut(); };
     document.addEventListener('keydown', onKey);
     document.body.appendChild(bg);
+    const sv = bg.querySelector('#mbWhySave');
+    if (sv) sv.onclick = async () => {
+      const reason = bg.querySelector('#mbRsn').value, remark = bg.querySelector('#mbRmk').value.trim();
+      if (!reason) { bg.querySelector('#mbRsn').classList.add('need'); return; }
+      const res = mbCompare(), at = res.from + ' → ' + res.to;
+      const p = { file: MB.name, at: at, level: 'mb51', lines: res.list.length, match: res.list.filter(y => y.res === 'ok').length, matched: [],
+        rows: [{ key: x.key, bin: x.bin, material: x.material, batch: x.batch, sloc: x.sloc, desc: x.desc, uom: x.uom, digital: x.appQty, sap: x.sapQty, variance: x.diff, status: MBR[x.res][1], reason: reason, remark: remark }] };
+      sv.disabled = true; sv.textContent = T('កំពុងរក្សាទុក…', 'Saving…');
+      try { DEMO ? demoVarSave(p) : await SC.api('varSave', p); toast(T('បានរក្សាទុក', 'Saved')); VR.at = 0; loadVar('moves', true); shut(); if (S.view === 'moves') moves(); }
+      catch (e) { toast(errText(e)); sv.disabled = false; sv.textContent = '💾 ' + T('រក្សាទុកការខុសគ្នា', 'Save variance'); }
+    };
+  }
+  // Point 14: last GI confirmation, app lines still not in SAP and the oldest of them.
+  function mbInfo(L, giOf) {
+    const g = Object.values(GI.map).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
+    const n = g ? Object.values(GI.map).filter(x => x.at === g.at).length : 0;
+    const app = L.filter(x => x.res === 'app' && !giOf(x)), old = app.map(x => x.when).filter(Boolean).sort()[0];
+    return `<span class="mbinfo">${g ? `🕘 ${T('GI ចុងក្រោយ', 'Last GI confirmed')} <b>${esc(String(g.at).slice(5))}</b> ${T('ដោយ', 'by')} ${esc(g.by || '')} (${n})` : `🕘 ${T('មិនទាន់មាន GI', 'No GI confirmed yet')}`}
+      · ${T('មិនទាន់ក្នុង SAP', 'App not in SAP yet')} <b class="${app.length ? 'out' : ''}">${app.length}</b>${old ? ` · ${T('ចាស់បំផុត', 'oldest')} <b>${esc(String(old).slice(5, 16))}</b>` : ''}</span>`;
+  }
+  async function giConfirm(list) {
+    const p = { file: MB.name, lines: list.map(x => ({ key: x.key, post: x.post, ref: x.ref, doc: x.doc, mvt: x.mvt, material: x.material, desc: x.desc, batch: x.batch, bin: x.bin, sloc: x.sloc,
+      appQty: x.appQty, sapQty: x.sapQty, diff: x.diff, uom: x.uom, result: MBR[x.res][1], remark: x.note ? 'Batch different' : '' })) };
+    const b = $('#giBtn'); if (b) { b.disabled = true; b.textContent = T('កំពុងរក្សាទុក…', 'Saving…'); }
+    try {
+      const r = DEMO ? (() => { const at = nowStamp(); let n = 0; p.lines.forEach(l => { const k = l.key.toUpperCase(); if (!D.gi[k]) { D.gi[k] = { key: k, at: at, by: 'Demo', file: p.file }; n++; } }); return { added: n }; })()
+        : await SC.api('giConfirm', p);
+      if (!DEMO) { const at = r.at || nowStamp(); p.lines.forEach(l => { const k = l.key.toUpperCase(); if (!GI.map[k]) GI.map[k] = { key: k, at: at, by: r.by || '', file: p.file }; }); }
+      MB.tick = new Set();
+      toast(T(`បានបញ្ជាក់ GI ${r.added} ជួរ`, `GI confirmed: ${r.added} lines`));
+    } catch (e) { toast(errText(e)); }
+    moves();
   }
   function mb51View() {
-    loadLedger('moves');
+    loadLedger('moves'); loadGi('moves'); loadVar('moves');
     const F = MB.F, res = MB.rows ? mbCompare() : null;
     const L = res ? res.list : [];
+    const giOf = x => GI.map[String(x.key).toUpperCase()] || null;
     const uq = f => Array.from(new Set(L.flatMap(x => String(x[f] || '').split(', ')).filter(Boolean))).sort();
-    const rows = L.filter(x => inSel(F.res, x.res) && inSel(F.note, x.note || '-') && (!F.mvt.length || String(x.mvt).split(', ').some(m => F.mvt.indexOf(m) >= 0)) && inSel(F.wh, x.wh) && inSel(F.grp, x.grp) && inSel(F.sloc, x.sloc)
+    const split = (v, sel) => !sel.length || String(v || '').split(', ').some(m => sel.indexOf(m) >= 0);
+    const rows = L.filter(x => inSel(F.res, x.res) && inSel(F.note, x.note || '-') && inSel(F.gi, giOf(x) ? 'gi' : '-') && split(x.doc, F.doc) && inSel(F.ref, x.ref) && split(x.users, F.user) && (!F.mvt.length || String(x.mvt).split(', ').some(m => F.mvt.indexOf(m) >= 0)) && inSel(F.wh, x.wh) && inSel(F.grp, x.grp) && inSel(F.sloc, x.sloc)
       && hit(F.q, [x.ref, x.doc, x.material, x.desc, x.batch, x.bin]));
     const cnt = k => L.filter(x => x.res === k).length;
     const sumU = f => { const u = {}; rows.forEach(x => { if (x[f] == null) return; u[x.uom] = (u[x.uom] || 0) + Number(x[f]); }); return Object.keys(u).sort().map(k => `${fmtQty(round3(u[k]))} ${esc(k)}`).join('<br>') || '0'; };
     const sq = v => (v == null ? '—' : `<span class="${v < 0 ? 'out' : v > 0 ? 'in' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtQty(Math.abs(v))}</span>`);
-    const FL = [['mbres', T('លទ្ធផល', 'Result'), 'res', Object.keys(MBR).map(k => [k, T(MBR[k][0], MBR[k][1])])], ['mbmvt', T('ប្រភេទចលនា', 'Movement type'), 'mvt', uq('mvt').map(v => [v, v])],
+    const FL = [['mbres', T('លទ្ធផល', 'Result'), 'res', Object.keys(MBR).map(k => [k, T(MBR[k][0], MBR[k][1])])], ['mbgi', 'GI Status', 'gi', [['gi', T('បាន GI', 'GI confirmed')], ['-', T('មិនទាន់ GI', 'Not yet GI')]]],
+      ['mbdoc', 'Mat. doc', 'doc', uq('doc').map(v => [v, v])], ['mbref', T('ឯកសារយោង', 'Reference'), 'ref', uq('ref').map(v => [v, v])], ['mbuser', T('អ្នកប្រើ', 'User'), 'user', uq('users').map(v => [v, v])], ['mbmvt', T('ប្រភេទចលនា', 'Movement type'), 'mvt', uq('mvt').map(v => [v, v])],
       ['mbnote', T('កំណត់សម្គាល់', 'Remark'), 'note', [['batch', T('Batch ខុស', 'Batch different')], ['-', T('គ្មាន', 'None')]]], ['mbwh', T('ឃ្លាំង', 'Warehouse'), 'wh', uq('wh').map(v => [v, v])], ['mbgrp', T('ក្រុមសម្ភារៈ', 'Material Group'), 'grp', uq('grp').map(v => [v, v])], ['mbsloc', 'SLoc', 'sloc', uq('sloc').map(v => [v, v])]];
     view(`
-      <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), res && can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '',
-        () => { Object.assign(F, { res: [], note: [], mvt: [], wh: [], grp: [], sloc: [], q: '' }); moves(); })}
+      <div class="fb-wrap">${repHead('moves', '🔄 ' + T('ចលនាស្តុក (សៀវភៅប្រតិបត្តិការ)', 'Movements (stock ledger)'), (res ? `<button type="button" class="fb-btn pri" id="giBtn"${MB.tick.size ? '' : ' disabled'}>✔ Confirm GI (${MB.tick.size})</button>` : '') + (res && can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : ''),
+        () => { Object.assign(F, { res: [], note: [], gi: [], doc: [], ref: [], user: [], mvt: [], wh: [], grp: [], sloc: [], q: '' }); moves(); })}
       <section class="card mbfile"><label class="btn sm file">⬆ ${T('នាំចូល MB51 (Excel ឬ CSV)', 'Upload MB51 (Excel / CSV)')}<input type="file" id="mbFile" accept=".csv,.txt,.xlsx,.xlsm,.xls" hidden></label>
         ${DEMO ? `<button type="button" class="btn ghost sm" id="mbSample">${T('គំរូ MB51', 'Sample MB51')}</button>` : ''}
-        ${MB.err ? `<span class="bad">⚠️ ${esc(MB.err)}</span>` : res ? `<span class="muted">📄 <b>${esc(MB.name)}</b> · ${MB.rows.length} ${T('ជួរ', 'rows')} · ${esc(res.from)} → ${esc(res.to)} · SLoc ${esc(res.slocs.join(', ') || '—')}${res.skipped ? ` · ${res.skipped} ${T('ជួរ SLoc ផ្សេង មិនបានប្រៀបធៀប', 'rows of other SLocs skipped')}` : ''}</span>`
+        ${MB_PAST.length ? `<select id="mbPast" class="mbpast"><option value="">📂 ${T('ឯកសារមុនៗ', 'Past files')}</option>${MB_PAST.map(f => `<option value="${esc(f.name)}">${esc(f.name)} · ${esc(f.at.slice(5))} · ${f.n}</option>`).join('')}</select>` : ''}
+        ${MB.err ? `<span class="bad">⚠️ ${esc(MB.err)}</span>` : res ? `<span class="muted">📄 <b>${esc(MB.name)}</b> · ${MB.rows.length} ${T('ជួរ', 'rows')} · ${esc(res.from)} → ${esc(res.to)} · SLoc ${esc(res.slocs.join(', ') || '—')}${res.skipped ? ` · ${res.skipped} ${T('ជួរ SLoc ផ្សេង មិនបានប្រៀបធៀប', 'rows of other SLocs skipped')}` : ''}</span>${mbInfo(L, giOf)}`
           : `<span class="muted">${T('នាំចេញ MB51 ពី SAP ជា Excel រួចជ្រើសនៅទីនេះ (សន្លឹកទីមួយ)។ ផ្គូផ្គងតាម ឯកសារយោង + សម្ភារៈ + Batch។', 'Export MB51 from SAP to Excel and choose it here (first sheet). Lines are matched on Reference + Material + Batch.')}</span>`}</section>
       ${res ? `${FB.panel('moves', FL.map(f => msel(f[0], f[1], f[3], F[f[2]])).join('') + FB.search('mbq', T('ស្វែងរក ឯកសារយោង សម្ភារៈ Batch', 'Search reference, material, batch'), F.q))}
-      <div class="dash-kpis mbk">
-        <div class="stat"><b>${res.nApp}</b><span>${T('ចលនាក្នុងកម្មវិធី', 'App movements')}</span></div>
-        <div class="stat"><b>${res.nSap}</b><span>${T('ជួរ MB51', 'MB51 lines')}</span></div>
-        <div class="stat in"><b>${cnt('ok')}</b><span>${T('ត្រូវគ្នា', 'Matched')}</span></div>
-        <div class="stat warn"><b>${cnt('qty')}</b><span>${T('ចំនួនខុស', 'Qty different')}</span></div>
-        <div class="stat ${cnt('sap') ? 'out' : ''}"><b>${cnt('sap')}</b><span>${T('មានតែក្នុង SAP (មិនបានស្កេន)', 'Only in SAP (not scanned in app)')}</span></div>
-        <div class="stat ${cnt('app') ? 'out' : ''}"><b>${cnt('app')}</b><span>${T('មានតែក្នុងកម្មវិធី (មិនទាន់ post)', 'Only in app (not posted in SAP)')}</span></div>
-        <div class="stat"><b>${L.length ? Math.round(cnt('ok') / L.length * 100) : 0}%</b><span>${T('អត្រាត្រូវគ្នា', 'Match rate')}</span></div>
-      </div>
-      <section class="screp"><table class="rep mbtbl"><thead><tr><th>${T('ថ្ងៃក្នុងកម្មវិធី', 'Date app')}</th><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>${T('ទីតាំង', 'Bin')}</th><th>SLoc</th><th class="num">${T('ចំនួនកម្មវិធី', 'App qty')}</th><th class="num">${T('ចំនួន MB51', 'MB51 qty')}</th><th class="num">${T('ខុសគ្នា', 'Diff')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th></tr></thead><tbody>
-        ${rows.map((x, i) => `<tr class="go" data-mbi="${i}"><td>${esc(String(x.when).slice(5, 16))}</td><td>${esc(x.post)}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.doc)}</td><td>${esc(x.mvt)}</td><td class="mono">${esc(x.material)}</td><td>${esc(x.desc)}</td><td class="mono">${esc(x.batch)}</td><td class="mono">${esc(x.bin)}</td><td>${esc(x.sloc)}</td>
-          <td class="num mono">${sq(x.appQty)}</td><td class="num mono">${sq(x.sapQty)}</td><td class="num mono"><b>${x.diff ? sq(x.diff) : ''}</b></td><td>${esc(x.uom)}</td><td><span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span></td><td>${x.note ? `<span class="st st-var" title="MB51: ${esc(x.sbatch)}">${T('Batch ខុស', 'Batch different')}</span> <span class="muted mono">MB51 ${esc(x.sbatch)}</span>` : ''}</td></tr>`).join('')
-          || `<tr><td class="muted" colspan="16">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
-        <tfoot><tr class="gtot"><th>${T('សរុប', 'Subtotal')} (${rows.length})</th>${'<th></th>'.repeat(9)}<th class="num mono">${sumU('appQty')}</th><th class="num mono">${sumU('sapQty')}</th><th class="num mono">${sumU('diff')}</th><th></th><th></th><th></th></tr></tfoot></table></section>
+      <div class="mbchips">${[['', T('កម្មវិធី', 'App'), res.nApp, ''], ['', 'MB51', res.nSap, ''], ['ok', T('ត្រូវគ្នា', 'Matched'), cnt('ok'), 'in'], ['qty', T('ចំនួនខុស', 'Qty different'), cnt('qty'), 'warn'],
+        ['sap', T('មានតែក្នុង SAP', 'Only in SAP'), cnt('sap'), cnt('sap') ? 'out' : ''], ['app', T('មានតែក្នុងកម្មវិធី', 'Only in app'), cnt('app'), cnt('app') ? 'out' : ''], ['', T('ត្រូវគ្នា', 'match'), (L.length ? Math.round(cnt('ok') / L.length * 100) : 0) + '%', ''],
+        ['gi', T('បាន GI', 'GI confirmed'), L.filter(giOf).length, 'in']].map(c => `<button type="button" class="mbchip ${c[3]}${c[0] && (c[0] === 'gi' ? F.gi.length === 1 && F.gi[0] === 'gi' : F.res.length === 1 && F.res[0] === c[0]) ? ' on' : ''}"${c[0] ? ` data-chip="${c[0]}"` : ' disabled'}><b>${c[2]}</b> ${c[1]}</button>`).join('')}</div>
+      <section class="screp"><table class="rep mbtbl"><thead><tr><th class="tk"><input type="checkbox" id="mbAll" aria-label="${T('ធីកទាំងអស់', 'Tick all')}"${rows.some(x => !giOf(x)) && rows.filter(x => !giOf(x)).every(x => MB.tick.has(x.key)) ? ' checked' : ''}></th><th>${T('ថ្ងៃក្នុងកម្មវិធី', 'Date app')}</th><th>${T('ថ្ងៃ Post', 'Posting date')}</th><th>${T('ឯកសារយោង', 'Reference')}</th><th>Mat. doc</th><th>Mvt</th><th>${T('សម្ភារៈ', 'Material')}</th><th>${T('បរិយាយ', 'Description')}</th><th>Batch</th><th>${T('ទីតាំង', 'Bin')}</th><th>SLoc</th><th class="num">${T('ចំនួនកម្មវិធី', 'App qty')}</th><th class="num">${T('ចំនួន MB51', 'MB51 qty')}</th><th class="num">${T('ខុសគ្នា', 'Diff')}</th><th>UoM</th><th>${T('លទ្ធផល', 'Result')}</th><th>GI Status</th><th>${T('កំណត់សម្គាល់', 'Remark')}</th></tr></thead><tbody>
+        ${rows.map((x, i) => `<tr class="go" data-mbi="${i}"><td class="tk">${giOf(x) ? '<span class="muted">✓</span>' : `<input type="checkbox" data-tk="${i}"${MB.tick.has(x.key) ? ' checked' : ''}>`}</td><td>${esc(String(x.when).slice(5, 16))}</td><td>${esc(x.post)}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.doc)}</td><td>${esc(x.mvt)}</td><td class="mono">${esc(x.material)}</td><td>${esc(x.desc)}</td><td class="mono">${esc(x.batch)}</td><td class="mono">${esc(x.bin)}</td><td>${esc(x.sloc)}</td>
+          <td class="num mono">${sq(x.appQty)}</td><td class="num mono">${sq(x.sapQty)}</td><td class="num mono"><b>${x.diff ? sq(x.diff) : ''}</b></td><td>${esc(x.uom)}</td><td><span class="st ${MBR[x.res][2]}">${T(MBR[x.res][0], MBR[x.res][1])}</span></td><td>${giOf(x) ? `<span class="st st-match" title="${esc(giOf(x).at + ' · ' + giOf(x).by)}">GI ✓ ${esc(String(giOf(x).at).slice(5, 10))}</span>` : ''}</td><td>${(c => (c && c.Reason ? `<span class="st st-sap" title="${esc(c.Remark || '')}">${esc(lbl(RSN, c.Reason))}</span> ` : ''))(openCase('mb51', x.key))}${x.note ? `<span class="st st-var" title="MB51: ${esc(x.sbatch)}">${T('Batch ខុស', 'Batch different')}</span> <span class="muted mono">MB51 ${esc(x.sbatch)}</span>` : ''}</td></tr>`).join('')
+          || `<tr><td class="muted" colspan="18">${T('រកមិនឃើញ', 'Nothing found')}</td></tr>`}</tbody>
+        <tfoot><tr class="gtot"><th></th><th>${T('សរុប', 'Subtotal')} (${rows.length})${MB.tick.size ? ` · ☑ ${MB.tick.size}` : ''}</th>${'<th></th>'.repeat(9)}<th class="num mono">${sumU('appQty')}</th><th class="num mono">${sumU('sapQty')}</th><th class="num mono">${sumU('diff')}</th><th></th><th></th><th></th><th></th></tr></tfoot></table></section>
       <p class="muted">${T('ផ្គូផ្គង ឯកសារយោងក្នុងកម្មវិធី (DN / PO / GR) ជាមួយ Reference, Material Document, Purchase order ឬ Order ក្នុង MB51 + សម្ភារៈ + Batch។ ចេញ = ចំនួនអវិជ្ជមាន។ ការផ្ទេររវាងទីតាំង និងការកែតម្រូវ មិនបានប្រៀបធៀបទេ។',
         'App Reference (DN / PO / GR) is matched with MB51 Reference, Material Document, Purchase order or Order, plus Material + Batch. Out = negative qty. Bin transfers and adjustments are not compared (they are not in MB51).')}</p>` : ''}`);
     pvWire('moves', moves);
@@ -841,6 +926,8 @@
           loadMb51(f.name, X.utils.sheet_to_json(sh, { header: 1, raw: true, defval: '' })); }, () => toast(T('មិនអាចអាន Excel បានទេ', 'Could not read the Excel file')));
         rd.readAsArrayBuffer(f);
       } else { rd.onload = () => loadMb51(f.name, parseCsv(String(rd.result).replace(/^﻿/, ''))); rd.readAsText(f); } };
+    if ($('#mbPast')) $('#mbPast').onchange = e => { const n = e.target.value; if (!n) return;
+      IDB(st => st.get(n)).then(f => { if (!f) return; MB.name = f.name; MB.rows = f.rows; MB.err = ''; MB.tick = new Set(); moves(); }).catch(() => toast(T('មិនអាចបើកបានទេ', 'Could not open it'))); };
     if ($('#mbSample')) $('#mbSample').onclick = () => {
       const g = [['Material Document', 'Material', 'Batch', 'Posting Date', 'Storage location', 'Movement type', 'Quantity', 'Base Unit of Measure', 'Material Description', 'Reference', 'Purchase order']];
       D.ledger.filter(r => r.type === 'IN' || r.type === 'OUT').forEach((r, i) => { if (i % 7 === 3) return; const q = (Number(r.qtyIn) || 0) - (Number(r.qtyOut) || 0) + (i % 9 === 4 ? -5 : 0);
@@ -849,10 +936,15 @@
       loadMb51('MB51_sample.xlsx', g); };
     if (!res) return;
     keep('#mbq', v => { F.q = v; moves(); });
-    $$('tr[data-mbi]').forEach(tr => { tr.onclick = () => mbDetail(rows[Number(tr.dataset.mbi)]); });
+    $$('tr[data-mbi]').forEach(tr => { tr.onclick = e => { if (e.target.closest('.tk')) return; mbDetail(rows[Number(tr.dataset.mbi)]); }; });
+    $$('[data-tk]').forEach(cb => { cb.onchange = () => { const x = rows[Number(cb.dataset.tk)]; if (cb.checked) MB.tick.add(x.key); else MB.tick.delete(x.key); moves(); }; });
+    $('#mbAll').onchange = e => { rows.forEach(x => { if (giOf(x)) return; if (e.target.checked) MB.tick.add(x.key); else MB.tick.delete(x.key); }); moves(); };
+    $('#giBtn').onclick = () => giConfirm(L.filter(x => MB.tick.has(x.key) && !giOf(x)));
+    $$('[data-chip]').forEach(b => { b.onclick = () => { const c = b.dataset.chip, on = b.classList.contains('on');
+      if (c === 'gi') F.gi = on ? [] : ['gi']; else F.res = on ? [] : [c]; moves(); }; });
     FL.forEach(f => mselWire(f[0], v => { F[f[2]] = v; moves(); }));
-    if ($('#exp')) $('#exp').onclick = () => download('mb51-compare.csv', [['Date app', 'Posting date', 'Reference', 'Material Document', 'Movement type', 'Material', 'Description', 'Batch', 'Bin', 'SLoc', 'App qty', 'MB51 qty', 'Diff', 'UoM', 'Result', 'Remark', 'MB51 batch', 'MB51 file']]
-      .concat(rows.map(x => [x.when, x.post, x.ref, x.doc, x.mvt, x.material, x.desc, x.batch, x.bin, x.sloc, x.appQty == null ? '' : x.appQty, x.sapQty == null ? '' : x.sapQty, x.diff, x.uom, MBR[x.res][1], x.note ? 'Batch different' : '', x.sbatch || '', MB.name])));
+    if ($('#exp')) $('#exp').onclick = () => download('mb51-compare.csv', [['Date app', 'Posting date', 'Reference', 'Material Document', 'Movement type', 'Material', 'Description', 'Batch', 'Bin', 'SLoc', 'App qty', 'MB51 qty', 'Diff', 'UoM', 'Result', 'GI Status', 'GI confirmed at', 'Remark', 'MB51 batch', 'MB51 file']]
+      .concat(rows.map(x => [x.when, x.post, x.ref, x.doc, x.mvt, x.material, x.desc, x.batch, x.bin, x.sloc, x.appQty == null ? '' : x.appQty, x.sapQty == null ? '' : x.sapQty, x.diff, x.uom, MBR[x.res][1], giOf(x) ? 'GI' : '', giOf(x) ? giOf(x).at + ' ' + giOf(x).by : '', x.note ? 'Batch different' : '', x.sbatch || '', MB.name])));
   }
 
   window.SC_PAGES = { varhist: varhist, binsum: binsum, dash: dash, stock: stock, moves: moves, review: review, sap: sap, roles: roles };   // Product menu removed (Kim, 22 Nov: heavy data, not needed)
