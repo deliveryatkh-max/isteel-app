@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { t, useLang } from '../i18n';
-import { Modal } from './ui';
 
 /** Short beep and buzz when a barcode is read. */
 export function beep() {
@@ -19,7 +18,7 @@ export function beep() {
  * Camera that reads the barcode printed on the Delivery Note.
  * Uses the phone's own barcode reader when it has one (Android Chrome), otherwise ZXing (loaded only when needed).
  */
-export function ScanView(p: { onCode: (code: string) => void; tall?: boolean }) {
+export function ScanView(p: { onCode: (code: string) => void; tall?: boolean; full?: boolean }) {
   useLang();
   const video = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState('');
@@ -79,12 +78,12 @@ export function ScanView(p: { onCode: (code: string) => void; tall?: boolean }) 
   }, []);
   const flip = async () => { if (!torchRef.current || torch === null) return; try { await torchRef.current(!torch); setTorch(!torch); } catch { setTorch(null); } };
   return (
-    <div>
+    <div className={p.full ? 'h-full flex flex-col' : ''}>
       {err ? <p className="text-bad font-semibold">{err}</p> : null}
-      <div className={'relative rounded-2xl overflow-hidden bg-black ' + (p.tall ? 'h-[58vh] max-h-[520px]' : 'aspect-[4/3]')}>
+      <div className={'relative overflow-hidden bg-black ' + (p.full ? 'flex-1 min-h-0' : 'rounded-2xl ' + (p.tall ? 'h-[58vh] max-h-[520px]' : 'aspect-[4/3]'))}>
         <video ref={video} className="w-full h-full object-cover" muted playsInline />
-        <div className="absolute inset-x-[9%] top-[32%] bottom-[32%] border-[2.5px] border-white rounded-xl" style={{ boxShadow: '0 0 0 999px rgba(0,0,0,.35)' }} />
-        <div className="absolute inset-x-[12%] top-1/2 h-0.5 bg-red-500 shadow-[0_0_8px_#ef4444]" />
+        <div className={'absolute border-[3px] border-white rounded-xl ' + (p.full ? 'inset-x-[4%] top-[25%] bottom-[25%]' : 'inset-x-[5%] top-[22%] bottom-[22%]')} style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,.35)' }} />
+        <div className="absolute inset-x-[7%] top-1/2 h-0.5 bg-red-500 shadow-[0_0_8px_#ef4444]" />
         <div className="absolute top-2.5 inset-x-0 text-center text-white text-[14px] font-semibold drop-shadow">📷 {t('តម្រង់ទៅបាកូដ DN', 'Point at the DN barcode')}</div>
         {torch !== null ? (
           <button type="button" onClick={flip} className="absolute bottom-3 right-3 rounded-xl px-3 py-2 text-white text-[14px] border-0 cursor-pointer" style={{ background: torch ? '#f2a900' : 'rgba(255,255,255,.18)' }}>🔦 {t('ពិល', 'Torch')}</button>
@@ -98,9 +97,14 @@ export function ScanView(p: { onCode: (code: string) => void; tall?: boolean }) 
 export function Scanner(p: { onCode: (code: string) => void; onClose: () => void }) {
   useLang();
   return (
-    <Modal title={t('ស្កេនបាកូដ DN', 'Scan DN barcode')} onClose={p.onClose}>
-      <ScanView onCode={p.onCode} />
-      <p className="muted text-sm mt-2">{t('ដាក់បាកូដលើ Delivery Note ឲ្យនៅក្នុងប្រអប់។', 'Hold the Delivery Note barcode inside the box.')}</p>
-    </Modal>
+    // Full screen (Kim, 27 Nov 2026): the camera fills the phone, with a big box for the barcode.
+    <div role="dialog" aria-modal="true" aria-label={t('ស្កេនបាកូដ DN', 'Scan DN barcode')} className="fixed inset-0 z-50 bg-black text-white flex flex-col">
+      <div className="flex items-center justify-between gap-2 px-4 py-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        <h2 className="m-0 text-[18px] font-bold">{t('ស្កេនបាកូដ DN', 'Scan DN barcode')}</h2>
+        <button type="button" className="rounded-xl border-0 px-4 py-2 text-[18px] text-white cursor-pointer" style={{ background: 'rgba(255,255,255,.18)' }} onClick={p.onClose} aria-label={t('បិទ', 'Close')}>✕</button>
+      </div>
+      <div className="flex-1 min-h-0"><ScanView onCode={p.onCode} full /></div>
+      <p className="m-0 text-center text-[14px] px-4 py-3 opacity-85" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>{t('ដាក់បាកូដលើ Delivery Note ឲ្យនៅក្នុងប្រអប់។', 'Hold the Delivery Note barcode inside the box.')}</p>
+    </div>
   );
 }
