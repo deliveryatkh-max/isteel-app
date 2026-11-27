@@ -61,6 +61,7 @@ const SETTING_ROWS = [
   ['ALLOW_OVERNIGHT', 'Yes', 'Yes = End time earlier than Start means the next morning (e.g. 10:00 PM – 12:30 AM).'],
   ['SITE_LATLONG', '', 'Site GPS as "lat, long" (e.g. 11.5564, 104.9282). Blank = no location check.'],
   ['SITE_RADIUS_M', '100', 'How close to the site (metres) the phone must be when SITE_LATLONG is set.'],
+  ['REMIND_AFTER_H', '', 'Remind the line manager on Telegram once when a request is still Pending after this many hours. Blank = off.'],
 ];
 
 // Header → field. Headers are compared without case, spaces or punctuation ("From:" = "from").
@@ -201,6 +202,7 @@ function settings_() {
     maxFuture: num('MAX_DAYS_IN_FUTURE'),
     overnight: !/^(no|n|false|0)$/i.test(out.ALLOW_OVERNIGHT || 'Yes'),
     site: ll ? { lat: +ll[1], lng: +ll[2], radius: num('SITE_RADIUS_M') || 100 } : null,
+    remindH: num('REMIND_AFTER_H'),
   };
 }
 
@@ -1348,7 +1350,45 @@ function resendFollowUps_() {
     }
   });
 }
-function retryFollowUps() { resendFollowUps_(); }
+function retryFollowUps() {
+  resendFollowUps_();
+  try { remindPending_(); } catch (e) { console.error('remind failed: ' + safeErr_(e)); }
+}
+
+// Admin Setting REMIND_AFTER_H (Kim, 27 Nov 2026): one Telegram reminder per request, sent as a reply to the
+// original approval message, when it is still Pending that many hours after it was sent. Only requests from the
+// last 7 days are reminded, so turning it on never sends reminders for old requests. Blank = off.
+function remindPending_() {
+  const h = settings_().remindH;
+  if (!h || h <= 0) return;
+  const ds = dataSheet_();
+  if (ds.map.record == null || ds.map.tgRef == null) return;
+  const last = ds.sh.getLastRow();
+  if (last < 2) return;
+  const col = f => ds.sh.getRange(2, ds.map[f] + 1, last - 1, 1).getValues();
+  const st = col('status'), rq = col('reqId'), rec = col('record'), ref = col('tgRef');
+  const props = PropertiesService.getScriptProperties();
+  let done = {};
+  try { done = JSON.parse(props.getProperty('OT_REMINDED') || '{}'); } catch (e) { done = {}; }
+  const keep = {}, now = Date.now(), due = now - h * 3600000, oldest = now - 7 * 86400000;
+  let sent = 0;
+  for (let i = 0; i < st.length; i++) {
+    const reqId = String(rq[i][0] || '');
+    if (String(st[i][0]) !== STATUS.PENDING || !reqId) continue;
+    if (done[reqId]) { keep[reqId] = 1; continue; }
+    const t = rec[i][0] instanceof Date ? rec[i][0].getTime() : 0;
+    const m = String(ref[i][0] || '').match(/^(-?\d+):(\d+)$/);
+    if (!t || t > due || t < oldest || !m || sent >= 20) continue;
+    try {
+      tg_('sendMessage', { chat_id: m[1], reply_to_message_id: +m[2], allow_sending_without_reply: true,
+        text: '⏰ Reminder: OT request ' + reqId + ' is still waiting for your decision. Please press Approve or Reject on the message above.' });
+      log_(reqId, 'REMINDED', 'system', 'Still Pending after ' + h + ' h');
+    } catch (err) { log_(reqId, 'REMIND_FAILED', 'system', safeErr_(err)); }
+    keep[reqId] = 1;
+    sent++;
+  }
+  props.setProperty('OT_REMINDED', JSON.stringify(keep));
+}
 
 // ---------------------------------------------------------------- audit log
 function log_(reqId, event, by, detail, key) {

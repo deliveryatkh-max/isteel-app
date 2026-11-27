@@ -125,6 +125,10 @@ const ACTIONS = {
   teamNew: teamNew_,
   teamVacancy: teamVacancy_,
   myInfoSave: myInfoSave_,
+  otAdmin: otAdmin_,
+  otFix: otFix_,
+  otSettings: otSettings_,
+  otSettingsSave: otSettingsSave_,
   saver: fuelSaver_,
   sapPost: sapPost_,
   reportCols: reportColsSave_,
@@ -3932,4 +3936,413 @@ function teamAutoOff_() {
   });
   if (n) SpreadsheetApp.flush();
   return n;
+}
+
+// ---- OT admin menus: Dashboard, Report, Setting (Kim, 27 Nov 2026) ----
+// Admins only. Reads and writes the OT app's own sheet (SSK_OT_DATA) and the master Working Shift tab. Rows are never
+// deleted; every change is written to "OT Log" (events ADMIN_FIX and SETTING). OT.gs keeps department and shift lists
+// for 2 minutes, so a change shows on the request form within 2 minutes.
+const OTA_FIELDS = {
+  date: ['date', 'otdate'], id: ['idno', 'employeeid', 'id'], name: ['name', 'employeename'], kh: ['khmername'],
+  from: ['from', 'start', 'starttime'], to: ['to', 'end', 'endtime'], hours: ['othr', 'othours', 'hours'],
+  reason: ['reasonofot', 'reason', 'otreason'], record: ['datetimerecord', 'submitted'], reqId: ['requestid'],
+  status: ['status'], approver: ['approver'], reviewed: ['reviewedby'], decided: ['decisiontime'],
+  rejectReason: ['rejectionreason'], note: ['note'], dept: ['department'], shift: ['shift'],
+};
+const OTA_RULES = {
+  DATE_TIME_MODE: 'Auto = date is today, Start = end of the shift picked, End = time sent. Manual = staff type them.',
+  MAX_HOURS_PER_REQUEST: 'Largest OT hours one request may have. Blank = no limit.',
+  MAX_DAYS_IN_PAST: 'How many days back an OT date may be (today counts as 0). Blank = 7.',
+  MAX_DAYS_IN_FUTURE: 'How many days ahead an OT date may be. Blank = no limit.',
+  ALLOW_OVERNIGHT: 'Yes = End time earlier than Start means the next morning.',
+  SITE_LATLONG: 'Site GPS as "lat, long". Blank = no location check.',
+  SITE_RADIUS_M: 'How close to the site (metres) the phone must be when SITE_LATLONG is set.',
+  REMIND_AFTER_H: 'Remind the line manager on Telegram once when a request is still Pending after this many hours. Blank = off.',
+};
+const otaKey_ = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9º]/g, '');
+function otSS_() { return SpreadsheetApp.openById(getSetting_('OT_SHEET_ID') || OT_SHEET_DEFAULT); }
+function otaMap_(head, fields) {
+  const keys = head.map(otaKey_), map = {};
+  Object.keys(fields).forEach(f => { for (const a of fields[f]) { const i = keys.indexOf(a); if (i >= 0) { map[f] = i; return; } } });
+  return map;
+}
+function otaTab_(ss, name) { const sh = ss.getSheetByName(name); if (!sh) throw new Error('The "' + name + '" tab is missing in the OT sheet.'); return sh; }
+function otaLog_(ss, reqId, event, user, detail) {
+  try {
+    let sh = ss.getSheetByName('OT Log');
+    if (!sh) { sh = ss.insertSheet('OT Log'); sh.getRange(1, 1, 1, 6).setValues([['Time', 'Request ID', 'Event', 'By', 'Detail', 'Key']]).setFontWeight('bold'); sh.setFrozenRows(1); }
+    sh.appendRow([new Date(), reqId || '', event, user.name || user.email, String(detail || '').slice(0, 1000), '']);
+  } catch (e) { console.error('OT log failed: ' + e); }
+}
+const otaYmd_ = d => d instanceof Date && !isNaN(d) ? Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd') : '';
+
+/** Every OT request (compact rows), plus the public holidays and OT rates the payroll split needs. */
+function otAdmin_(p, user) {
+  needAdmin_(user);
+  const ss = otSS_();
+  const sh = otaTab_(ss, 'OT Data');
+  const rng = sh.getDataRange(), v = rng.getValues(), d = rng.getDisplayValues();
+  const m = otaMap_(v[0] || [], OTA_FIELDS);
+  const ms = x => x instanceof Date && !isNaN(x) ? x.getTime() : 0;
+  const rows = [];
+  for (let r = 1; r < v.length; r++) {
+    const g = f => m[f] == null ? '' : v[r][m[f]], gd = f => m[f] == null ? '' : d[r][m[f]];
+    const date = otaYmd_(g('date')), id = otId_(g('id'));
+    if (!date && !id) continue;
+    rows.push([r + 1, date, id, String(g('name') || '').trim(), String(g('kh') || '').trim(), gd('from'), gd('to'), +g('hours') || 0,
+      String(g('reason') || '').trim(), String(g('status') || '').trim(), String(g('approver') || g('reviewed') || '').trim(), ms(g('decided')), ms(g('record')),
+      String(g('reqId') || ''), String(g('dept') || '').trim(), String(g('shift') || '').trim(), String(g('rejectReason') || '').trim()]);
+  }
+  const set = otaSettingTab_(ss);
+  return {
+    cols: ['row', 'date', 'id', 'name', 'kh', 'from', 'to', 'hours', 'reason', 'status', 'approver', 'decided', 'record', 'reqId', 'dept', 'shift', 'rejectReason'],
+    rows, holidays: otaHolidays_(set).list.map(h => ({ date: h.date, en: h.en })), rates: otaRates_(set), now: Date.now(),
+  };
+}
+
+/** Admin fix of one request: status and/or hours, with a reason. The old values go in Note and in OT Log. */
+function otFix_(p, user) {
+  needAdmin_(user);
+  const why = String(p.why || '').trim();
+  if (why.length < 3) throw new Error('Please type the reason for the change. / សូមសរសេរមូលហេតុនៃការកែ។');
+  const ok = ['Pending', 'Approved', 'Rejected', 'Requires Follow-up'];
+  if (p.status && ok.indexOf(p.status) < 0) throw new Error('Unknown status.');
+  const hours = p.hours === '' || p.hours == null ? null : +p.hours;
+  if (hours != null && (isNaN(hours) || hours <= 0 || hours > 24)) throw new Error('Hours must be between 0 and 24. / ម៉ោងត្រូវនៅចន្លោះ 0 ដល់ 24។');
+  const ss = otSS_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = otaTab_(ss, 'OT Data');
+    const w = sh.getLastColumn();
+    const m = otaMap_(sh.getRange(1, 1, 1, w).getValues()[0], OTA_FIELDS);
+    const row = +p.row;
+    if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('Request not found. Please refresh. / រកមិនឃើញសំណើ។');
+    const v = sh.getRange(row, 1, 1, w).getValues()[0];
+    // The row must still be the same request the admin looked at (rows may have moved since).
+    if (String(v[m.reqId] || '') !== String(p.reqId || '') || otId_(v[m.id]) !== otId_(p.id)) throw new Error('This request changed in the sheet. Please refresh. / សំណើបានផ្លាស់ប្តូរ សូម Refresh។');
+    const before = [], after = [];
+    if (p.status && m.status != null && String(v[m.status] || '') !== p.status) {
+      before.push('Status ' + (v[m.status] || 'Recorded')); after.push('Status ' + p.status);
+      sh.getRange(row, m.status + 1).setValue(p.status);
+      if ((p.status === 'Approved' || p.status === 'Rejected')) {
+        if (m.reviewed != null) sh.getRange(row, m.reviewed + 1).setValue('Admin: ' + (user.name || user.email));
+        if (m.decided != null) sh.getRange(row, m.decided + 1).setValue(new Date()).setNumberFormat('d-mmm-yy h:mm am/pm');
+      }
+    }
+    if (hours != null && m.hours != null && +v[m.hours] !== hours) {
+      before.push('OT hr ' + v[m.hours]); after.push('OT hr ' + hours);
+      sh.getRange(row, m.hours + 1).setValue(hours);
+    }
+    if (!after.length) throw new Error('Nothing changed. / មិនមានអ្វីផ្លាស់ប្តូរ។');
+    const line = 'Admin fix ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd-MMM-yy') + ' by ' + (user.name || user.email) + ': ' + before.join(', ') + ' → ' + after.join(', ') + ' (' + why + ')';
+    if (m.note != null) { const old = String(v[m.note] || ''); sh.getRange(row, m.note + 1).setValue((old ? old + ' | ' : '') + line); }
+    otaLog_(ss, v[m.reqId] || '', 'ADMIN_FIX', user, line);
+    return { ok: true, line };
+  } finally { lock.releaseLock(); }
+}
+
+// ---- Setting tab (holidays K–N, OT rates P–Q); columns are found by header, nothing else on the tab is touched ----
+function otaSettingTab_(ss) {
+  const sh = ss.getSheetByName('Setting');
+  if (!sh) return { sh: null, v: [], head: [] };
+  const v = sh.getDataRange().getValues();
+  return { sh, v, head: (v[0] || []).map(otaKey_) };
+}
+function otaHolidays_(set) {
+  const out = { list: [], c: null };
+  const hc = set.head.indexOf('publicholiday');
+  if (hc < 0) return out;
+  let dc = -1;
+  for (let c = hc - 1; c >= 0; c--) if (set.head[c] === 'date') { dc = c; break; }
+  if (dc < 0) return out;
+  const nc = dc > 0 && /^(no|nº|n)$/.test(set.head[dc - 1]) ? dc - 1 : -1;
+  let kc = set.head.findIndex((h, i) => i > hc && i <= hc + 2 && h.indexOf('khmer') >= 0);
+  if (kc < 0 && !set.head[hc + 1]) kc = hc + 1;
+  out.c = { no: nc, date: dc, en: hc, kh: kc };
+  let last = 1;
+  for (let r = 1; r < set.v.length; r++) {
+    const dt = set.v[r][dc], en = String(set.v[r][hc] || '').trim(), kh = kc >= 0 ? String(set.v[r][kc] || '').trim() : '';
+    if (!(dt instanceof Date) && !en && !kh) continue;
+    last = r + 1;
+    out.list.push({ row: r + 1, date: otaYmd_(dt), en, kh });
+  }
+  out.last = last;
+  return out;
+}
+function otaRates_(set) {
+  const tc = set.head.indexOf('ottype'), rc = set.head.findIndex((h, i) => i > tc && h.indexOf('rate') === 0);
+  if (tc < 0 || rc < 0) return [];
+  const out = [];
+  for (let r = 1; r < set.v.length; r++) {
+    const ty = String(set.v[r][tc] || '').trim();
+    if (ty) out.push({ type: ty, rate: String(set.v[r][rc] || '').trim() });
+  }
+  return out;
+}
+
+/** Everything the Setting screen shows: rules, reasons, departments, approvers, holidays, shifts and the change history. */
+function otSettings_(p, user) {
+  needAdmin_(user);
+  const ss = otSS_();
+  // Rules
+  const rules = {};
+  Object.keys(OTA_RULES).forEach(k => { rules[k] = ''; });
+  const rs = ss.getSheetByName('OT App Settings');
+  if (rs && rs.getLastRow() > 1) rs.getRange(2, 1, rs.getLastRow() - 1, 2).getDisplayValues().forEach(r => { const k = String(r[0]).trim(); if (k in rules) rules[k] = String(r[1]).trim(); });
+  // Reasons
+  const rn = ss.getSheetByName('OT Reason');
+  const reasons = rn && rn.getLastRow() > 1 ? rn.getRange(2, 1, rn.getLastRow() - 1, 1).getDisplayValues().map(r => String(r[0]).trim()).filter(Boolean) : [];
+  // Departments
+  const depts = [];
+  const ds = ss.getSheetByName('OT Departments');
+  if (ds && ds.getLastRow() > 1) {
+    const v = ds.getDataRange().getDisplayValues(), h = v[0].map(otaKey_);
+    const c = n => h.indexOf(n);
+    for (let r = 1; r < v.length; r++) {
+      const name = String(v[r][c('department')] || '').trim();
+      if (!name) continue;
+      depts.push({ row: r + 1, name, fn: c('function') >= 0 ? v[r][c('function')] : '', id: v[r][c('departmentid')] || '',
+        print: c('printqr') >= 0 ? v[r][c('printqr')] : '', active: !(c('active') >= 0 && /^(no|n|false|0)$/i.test(String(v[r][c('active')]).trim())) });
+    }
+  }
+  // Approvers: every line manager in the employee list, and whether their Telegram is linked in "OT Approvers"
+  const linked = [];
+  const as = ss.getSheetByName('OT Approvers');
+  if (as && as.getLastRow() > 1) as.getRange(2, 1, as.getLastRow() - 1, 6).getValues().forEach(r => {
+    if (String(r[2] || '').trim() && !/^(no|n|false|0)$/i.test(String(r[5] || 'Yes'))) linked.push({ user: String(r[0] || '').replace(/^@/, '').toLowerCase(), name: String(r[1] || '').trim().toLowerCase(), tgName: String(r[3] || ''), at: r[4] instanceof Date ? r[4].getTime() : 0 });
+  });
+  const approvers = [];
+  try {
+    const o = otEmpSheet_(), seen = {};
+    for (let r = 1; r < o.values.length; r++) {
+      const mgr = String(o.values[r][o.c.mgr] || '').trim(), tg = o.c.tg >= 0 ? String(o.values[r][o.c.tg] || '').trim() : '';
+      if (!mgr || isVacancy_(mgr)) continue;
+      const k = mgr.toLowerCase();
+      if (seen[k]) { seen[k].staff++; continue; }
+      const u = tg.replace(/^https?:\/\/t\.me\//i, '').replace(/^@/, '').toLowerCase();
+      const hit = linked.find(a => (u && a.user === u) || a.name === k);
+      seen[k] = { name: mgr, tg, staff: 1, linked: !!hit, tgName: hit ? hit.tgName : '', at: hit ? hit.at : 0 };
+      approvers.push(seen[k]);
+    }
+  } catch (e) { /* employee list unreadable: show none */ }
+  approvers.sort((a, b) => (a.linked - b.linked) || a.name.localeCompare(b.name));
+  // Holidays and shifts
+  const set = otaSettingTab_(ss);
+  const holidays = otaHolidays_(set).list.filter(h => h.date || h.en);
+  const shifts = [];
+  const ws = mdTab_('Working Shift') || ss.getSheetByName('Working Shift');
+  if (ws && ws.getLastRow() > 1) {
+    const v = ws.getDataRange().getDisplayValues(), h = v[0].map(otaKey_);
+    const c = (...n) => h.findIndex(k => n.indexOf(k) >= 0);
+    const cn = c('shiftid', 'shift', 'shiftname', 'name'), cf = c('fromtime', 'from', 'start'), ct = c('totime', 'to', 'end'), cb = c('break');
+    for (let r = 1; r < v.length; r++) if (String(v[r][cn] || '').trim()) shifts.push({ row: r + 1, name: v[r][cn], from: cf >= 0 ? v[r][cf] : '', to: ct >= 0 ? v[r][ct] : '', brk: cb >= 0 ? v[r][cb] : '' });
+  }
+  // History: the last admin changes
+  const log = [];
+  const ls = ss.getSheetByName('OT Log');
+  if (ls && ls.getLastRow() > 1) {
+    const n = Math.min(400, ls.getLastRow() - 1);
+    ls.getRange(ls.getLastRow() - n + 1, 1, n, 5).getValues().reverse().some(r => {
+      if (/^(SETTING|ADMIN_FIX)$/.test(String(r[2]))) log.push({ time: r[0] instanceof Date ? r[0].getTime() : 0, reqId: String(r[1] || ''), event: String(r[2]), by: String(r[3] || ''), detail: String(r[4] || '') });
+      return log.length >= 40;
+    });
+  }
+  return { rules, help: OTA_RULES, reasons, depts, approvers, holidays, shifts, log, formUrl: 'https://isteel-app.pages.dev/overtime/' };
+}
+
+/** One change from the Setting screen. kind: rules | reason | dept | holiday | holidays | shift. */
+function otSettingsSave_(p, user) {
+  needAdmin_(user);
+  const ss = otSS_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let detail = '';
+  try {
+    const kind = String(p.kind || '');
+    if (kind === 'rules') detail = otaSaveRules_(ss, p.values || {});
+    else if (kind === 'reason') detail = otaSaveReason_(ss, p);
+    else if (kind === 'dept') detail = otaSaveDept_(ss, p);
+    else if (kind === 'holiday' || kind === 'holidays') detail = otaSaveHolidays_(ss, kind === 'holiday' ? [p] : (p.rows || []), kind === 'holidays');
+    else if (kind === 'shift') detail = otaSaveShift_(ss, p);
+    else throw new Error('Unknown setting.');
+    if (detail) otaLog_(ss, '', 'SETTING', user, detail);
+  } finally { lock.releaseLock(); }
+  const out = otSettings_(p, user);
+  out.saved = detail;
+  return out;
+}
+
+function otaSaveRules_(ss, values) {
+  let sh = ss.getSheetByName('OT App Settings');
+  if (!sh) { sh = ss.insertSheet('OT App Settings'); sh.getRange(1, 1, 1, 3).setValues([['Setting', 'Value', 'What it does']]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  const last = Math.max(1, sh.getLastRow());
+  const keys = sh.getRange(1, 1, last, 2).getDisplayValues();
+  const changed = [];
+  Object.keys(values).forEach(k => {
+    if (!(k in OTA_RULES)) return;
+    let val = String(values[k] == null ? '' : values[k]).trim();
+    if (k === 'DATE_TIME_MODE') val = /^manual/i.test(val) ? 'Manual' : 'Auto';
+    else if (k === 'ALLOW_OVERNIGHT') val = /^(no|n|false|0)$/i.test(val) ? 'No' : 'Yes';
+    else if (k === 'SITE_LATLONG') { if (val && !/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(val)) throw new Error('Site GPS must look like 11.5564, 104.9282.'); }
+    else if (val !== '' && (isNaN(+val) || +val < 0)) throw new Error(k + ' must be a number. / ត្រូវតែជាលេខ។');
+    const i = keys.findIndex(r => String(r[0]).trim() === k);
+    if (i >= 0) {
+      if (String(keys[i][1]).trim() === val) return;
+      sh.getRange(i + 1, 2).setNumberFormat('@').setValue(val);
+      changed.push(k + ': ' + (keys[i][1] || '(blank)') + ' → ' + (val || '(blank)'));
+    } else {
+      sh.appendRow([k, val, OTA_RULES[k]]);
+      keys.push([k, val]);
+      changed.push(k + ': → ' + (val || '(blank)'));
+    }
+  });
+  return changed.length ? 'Rules: ' + changed.join('; ') : '';
+}
+
+function otaSaveReason_(ss, p) {
+  const sh = otaTab_(ss, 'OT Reason');
+  const last = sh.getLastRow();
+  const list = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => String(r[0]).trim()).filter(Boolean) : [];
+  const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const key = s => clean(s).replace(/[.…\s]+$/, '').toLowerCase();
+  const from = clean(p.from), to = clean(p.to);
+  let next = list.slice(), detail;
+  if (p.op === 'add') {
+    if (to.length < 3) throw new Error('Reason is too short. / មូលហេតុខ្លីពេក។');
+    if (list.some(x => key(x) === key(to))) throw new Error('This reason is already in the list. / មានរួចហើយ។');
+    next.push(to); detail = 'Reason added: ' + to;
+  } else if (p.op === 'rename') {
+    const i = list.indexOf(from);
+    if (i < 0) throw new Error('Reason not found. Please refresh.');
+    if (to.length < 3) throw new Error('Reason is too short. / មូលហេតុខ្លីពេក។');
+    next[i] = to; detail = 'Reason renamed: ' + from + ' → ' + to;
+  } else if (p.op === 'remove') {
+    if (list.indexOf(from) < 0) throw new Error('Reason not found. Please refresh.');
+    next = list.filter(x => x !== from); detail = 'Reason removed: ' + from;
+  } else throw new Error('Unknown action.');
+  next.sort((a, b) => a.localeCompare(b));
+  // Column A only, from row 2: the reasons are rewritten in A–Z order and a freed bottom cell is cleared.
+  const n = Math.max(list.length, next.length);
+  if (n) {
+    if (sh.getMaxRows() < n + 1) sh.insertRowsAfter(sh.getMaxRows(), n + 1 - sh.getMaxRows());
+    sh.getRange(2, 1, n, 1).setValues(Array.from({ length: n }, (_, i) => [next[i] || '']));
+  }
+  return detail;
+}
+
+function otaSaveDept_(ss, p) {
+  const sh = otaTab_(ss, 'OT Departments');
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(otaKey_);
+  const col = n => { let i = head.indexOf(otaKey_(n)); if (i < 0) { i = head.length; head.push(otaKey_(n)); sh.getRange(1, i + 1).setValue(n).setFontWeight('bold'); } return i + 1; };
+  const formUrl = 'https://isteel-app.pages.dev/overtime/';
+  if (p.op === 'add') {
+    const name = String(p.name || '').replace(/\s+/g, ' ').trim();
+    if (name.length < 2) throw new Error('Type the department name. / សូមវាយឈ្មោះផ្នែក។');
+    const v = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues() : [];
+    const cn = col('Department') - 1, ci = col('Department ID') - 1;
+    if (v.some(r => String(r[cn]).trim().toLowerCase() === name.toLowerCase())) throw new Error('This department is already in the list. / មានរួចហើយ។');
+    const used = {}; v.forEach(r => { used[String(r[ci]).trim().toUpperCase()] = 1; });
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let id;
+    do { id = 'D-'; for (let k = 0; k < 6; k++) id += abc[Math.floor(Math.random() * abc.length)]; } while (used[id]);
+    const row = sh.getLastRow() + 1;
+    if (sh.getMaxRows() < row) sh.insertRowsAfter(sh.getMaxRows(), row - sh.getMaxRows());
+    const link = formUrl + '?d=' + id;
+    sh.getRange(row, col('Department')).setValue(name);
+    if (p.fn && head.indexOf('function') >= 0) sh.getRange(row, col('Function')).setValue(String(p.fn).trim());
+    sh.getRange(row, col('Department ID')).setValue(id);
+    sh.getRange(row, col('QR Link')).setValue(link);
+    sh.getRange(row, col('Print QR')).setValue(formUrl + 'qr.html?d=' + id + '&n=' + encodeURIComponent(name));
+    sh.getRange(row, col('QR Code')).setFormula('=IMAGE("https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=' + encodeURIComponent(link) + '")');
+    if (head.indexOf('active') >= 0) sh.getRange(row, col('Active')).setValue('Yes');
+    sh.setRowHeight(row, 130);
+    return 'Department added: ' + name + ' (' + id + ')';
+  }
+  if (p.op === 'active') {
+    const row = +p.row;
+    if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('Department not found. Please refresh.');
+    const name = String(sh.getRange(row, col('Department')).getDisplayValue()).trim();
+    if (name !== String(p.name || '').trim()) throw new Error('The department list changed. Please refresh.');
+    sh.getRange(row, col('Active')).setValue(p.on ? 'Yes' : 'No');
+    return 'Department ' + name + ': ' + (p.on ? 'QR turned on' : 'QR turned off');
+  }
+  throw new Error('Unknown action.');
+}
+
+/** Holidays: edit one, add one, clear one, or upload many (same date = update). Only the holiday columns are written. */
+function otaSaveHolidays_(ss, items, upload) {
+  const set = otaSettingTab_(ss);
+  if (!set.sh) throw new Error('The "Setting" tab is missing in the OT sheet.');
+  const h = otaHolidays_(set);
+  if (!h.c) throw new Error('The "Setting" tab needs Date and Public Holiday headers.');
+  const tz = Session.getScriptTimeZone();
+  const toDate = ymd => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '')); if (!m) throw new Error('Bad date: ' + ymd); return new Date(+m[1], +m[2] - 1, +m[3]); };
+  const put = (row, it) => {
+    set.sh.getRange(row, h.c.date + 1).setValue(toDate(it.date)).setNumberFormat('dd-mmm-yy');
+    set.sh.getRange(row, h.c.en + 1).setValue(String(it.en || '').trim());
+    if (h.c.kh >= 0 && it.kh != null) set.sh.getRange(row, h.c.kh + 1).setValue(String(it.kh || '').trim());
+  };
+  let next = h.last + 1, added = 0, updated = 0, removed = 0;
+  const lines = [];
+  items.forEach(it => {
+    const date = String(it.date || '').trim();
+    if (it.remove) {
+      const x = h.list.find(o => o.row === +it.row && o.date === date);
+      if (!x) throw new Error('Holiday not found. Please refresh.');
+      [h.c.no, h.c.date, h.c.en, h.c.kh].filter(c => c >= 0).forEach(c => set.sh.getRange(x.row, c + 1).clearContent());
+      removed++; lines.push('removed ' + date + ' ' + x.en);
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !String(it.en || it.kh || '').trim()) throw new Error('Each holiday needs a date and a name. / ថ្ងៃឈប់នីមួយៗត្រូវមានថ្ងៃខែ និងឈ្មោះ។');
+    const same = it.row ? h.list.find(o => o.row === +it.row) : h.list.find(o => o.date === date);
+    if (same) {
+      if (!upload && it.row && same.date !== String(it.was || same.date)) throw new Error('The holiday list changed. Please refresh.');
+      put(same.row, it); same.date = date; updated++; lines.push('updated ' + date + ' ' + (it.en || it.kh));
+    } else {
+      if (set.sh.getMaxRows() < next) set.sh.insertRowsAfter(set.sh.getMaxRows(), next - set.sh.getMaxRows());
+      put(next, it); h.list.push({ row: next, date }); next++; added++; lines.push('added ' + date + ' ' + (it.en || it.kh));
+    }
+  });
+  // Keep the block in date order and numbered (only the holiday columns move).
+  const c0 = Math.min.apply(null, [h.c.no, h.c.date, h.c.en, h.c.kh].filter(c => c >= 0)), c1 = Math.max(h.c.date, h.c.en, h.c.kh);
+  const lastRow = Math.max(next - 1, h.last);
+  if (lastRow >= 2 && c1 - c0 <= 4) {
+    const blk = set.sh.getRange(2, c0 + 1, lastRow - 1, c1 - c0 + 1);
+    const vals = blk.getValues().filter(r => r[h.c.date - c0] instanceof Date || String(r[h.c.en - c0] || '').trim());
+    vals.sort((a, b) => (a[h.c.date - c0] instanceof Date ? a[h.c.date - c0].getTime() : 9e15) - (b[h.c.date - c0] instanceof Date ? b[h.c.date - c0].getTime() : 9e15));
+    if (h.c.no >= 0) vals.forEach((r, i) => { r[h.c.no - c0] = i + 1; });
+    const width = c1 - c0 + 1;
+    while (vals.length < lastRow - 1) vals.push(new Array(width).fill(''));
+    blk.setValues(vals);
+    set.sh.getRange(2, h.c.date + 1, lastRow - 1, 1).setNumberFormat('dd-mmm-yy');
+  }
+  const head = upload ? 'Holidays uploaded: ' + added + ' added, ' + updated + ' updated' : 'Holiday ' + (removed ? 'removed' : added ? 'added' : 'updated');
+  return head + (lines.length <= 5 ? ' (' + lines.join('; ') + ')' : '');
+}
+
+function otaSaveShift_(ss, p) {
+  const sh = mdTab_('Working Shift') || otaTab_(ss, 'Working Shift');
+  const v = sh.getDataRange().getDisplayValues(), h = v[0].map(otaKey_);
+  const c = (...n) => h.findIndex(k => n.indexOf(k) >= 0);
+  const cn = c('shiftid', 'shift', 'shiftname', 'name'), cf = c('fromtime', 'from', 'start'), ct = c('totime', 'to', 'end'), cb = c('break');
+  if (cn < 0 || cf < 0 || ct < 0) throw new Error('Working Shift needs Shift ID, From Time and To Time headers.');
+  const name = String(p.name || '').replace(/\s+/g, ' ').trim();
+  const time = s => { const m = /^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/.exec(String(s || '').trim()); if (!m) throw new Error('Time must look like 7:00 AM. / ម៉ោងត្រូវសរសេរដូចជា 7:00 AM។'); let hh = +m[1]; if (m[3]) hh = (hh % 12) + (/p/i.test(m[3]) ? 12 : 0); if (hh > 23 || +m[2] > 59) throw new Error('Bad time: ' + s); return ((hh % 12) || 12) + ':' + m[2] + (hh < 12 ? ' AM' : ' PM'); };
+  if (!name) throw new Error('Type the shift name. / សូមវាយឈ្មោះវេន។');
+  const from = time(p.from), to = time(p.to), brk = String(p.brk || '').trim();
+  let row = +p.row || 0, was = '';
+  if (row) {
+    if (!(row >= 2 && row <= v.length) || String(v[row - 1][cn]).trim() !== String(p.was || '').trim()) throw new Error('The shift list changed. Please refresh.');
+    was = v[row - 1][cn] + ' ' + v[row - 1][cf] + '–' + v[row - 1][ct];
+  } else {
+    if (v.some((r, i) => i && String(r[cn]).trim().toLowerCase() === name.toLowerCase())) throw new Error('This shift is already in the list. / មានរួចហើយ។');
+    row = sh.getLastRow() + 1;
+    if (sh.getMaxRows() < row) sh.insertRowsAfter(sh.getMaxRows(), row - sh.getMaxRows());
+  }
+  sh.getRange(row, cn + 1).setValue(name);
+  sh.getRange(row, cf + 1).setValue(from);
+  sh.getRange(row, ct + 1).setValue(to);
+  if (cb >= 0) sh.getRange(row, cb + 1).setValue(brk);
+  return was ? 'Shift changed: ' + was + ' → ' + name + ' ' + from + '–' + to : 'Shift added: ' + name + ' ' + from + '–' + to;
 }
