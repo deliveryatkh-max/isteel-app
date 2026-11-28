@@ -603,3 +603,5 @@ table.mbtbl td.tk input { width: 16px; height: 16px; cursor: pointer; }
 .cqr { position: absolute; top: 10px; right: 10px; width: 56px; height: 56px; padding: 3px; border: 1px solid var(--line, #dde3ea); border-radius: 8px; background: #fff; cursor: pointer; transition: width .15s, height .15s; z-index: 2; }
 .cqr svg { display: block; width: 100%; height: 100%; }
 .cqr.big { width: 200px; height: 200px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+label.sapby { display: inline-flex; align-items: center; gap: 4px; flex-direction: row; }
+label.sapby select { width: auto; min-height: 0; height: 28px; margin: 0; padding: 0 6px; font-size: 12.5px; font-weight: 700; display: inline-block; border: 1px solid var(--line, #dde3ea); border-radius: 8px; background: var(--card, #fff); color: var(--text, #0f172a); }
