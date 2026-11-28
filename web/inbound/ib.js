@@ -734,7 +734,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       const g = Math.round((p.total - d) * 1000) / 1000;
       const tag = g === 0 ? `<span class="dnok">✓ ${t('ដូចអ្វីដែលបានវាយ', 'Same as typed')}</span>`
         : `<span class="dnbad">⚠️ ${t('បានវាយ ', 'Typed ')}${fmt(d)} · ${t('ខុសគ្នា ', 'differs ')}${g > 0 ? '−' : '+'}${fmt(Math.abs(g))}</span>`;
-      const note = !p.written ? t('(បូកពីជួរ)', '(added up from the lines)') : p.sum && p.sum !== p.total ? t('(ជួរបូកបាន ', '(lines add up to ') + fmt(p.sum) + ')' : '';
+      const note = p.sure === false ? '❓ ' + t('AI មិនប្រាកដ', 'AI not sure') + ' ' : !p.written ? t('(បូកពីជួរ)', '(added up from the lines)') : p.sum && p.sum !== p.total ? t('(ជួរបូកបាន ', '(lines add up to ') + fmt(p.sum) + ')' : '';
       return `<b>${fmt(p.total)} ${esc(r.uom)}</b> ${tag} <small class="il">${note} ${t('អានដោយ AI · សូមមើលរូប', 'read by AI · check the photo')}</small> <button type="button" class="btn sm" id="dnChk">↻ ${t('អានម្តងទៀត', 'Re-read')}</button>`;
     }
     if (DNB[r.id]) return `<span class="spinner"></span> ${t('កំពុងអានរូប DN…', 'Reading the DN photo…')}`;
