@@ -476,7 +476,7 @@
     if (!DEMO) {
       // Kim, 28 Nov 2026: poster sign-in screen (picture set in 👥 Users › 🖼) with Google + Employee ID / password.
       $('#view').innerHTML = '';
-      ID_LOGIN.poster($('#view'), { url: CFG.API_URL, done: tok => { state.token = tok; storeSet(TOKEN_KEY, tok); start(); },
+      ID_LOGIN.poster($('#view'), { url: CFG.API_URL, done: tok => { state.token = tok; storeSet(TOKEN_KEY, tok); storeSet('isteel_out', null); start(); },
         html: (expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : '') + '<div id="loginErr"></div>' });
       $('#gsiButton').innerHTML = '<div class="spinner"></div>';
     } else $('#view').innerHTML = `
@@ -511,10 +511,11 @@
     loadGsi().then(() => {
       google.accounts.id.initialize({
         client_id: CFG.GOOGLE_CLIENT_ID,
-        auto_select: true,
+        auto_select: !storeGet('isteel_out'),   // not right after ⎋ Log out
         callback: resp => {
           state.token = resp.credential;
           storeSet(TOKEN_KEY, resp.credential);
+          storeSet('isteel_out', null);
           start();
         },
       });

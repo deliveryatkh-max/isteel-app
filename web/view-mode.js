@@ -9,6 +9,7 @@
  */
 (function () {
   const KEY = 'isteel_view';
+  const ROOT = new URL('./', document.currentScript ? document.currentScript.src : location.href).href;   // the home menu
   const get = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
   const put = v => { try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) { /* private window */ } };
   const mode = get();
@@ -166,6 +167,62 @@
   }
 
   const T = (km, en) => (window.LANG ? LANG.t(km, en) : km);
+
+  // ---------- Who is signed in + Log out (Kim, 28 Nov 2026, option B) ----------
+  // Name: saved by the home menu (steel_me.name), else the Google sign-in, else the Employee ID / email.
+  function who() {
+    let tok = '', me = null, p = {};
+    try { tok = localStorage.getItem('fr_id_token') || ''; me = JSON.parse(localStorage.getItem('steel_me') || 'null'); } catch (e) { /* private window */ }
+    if (!tok) return null;
+    try {
+      const b = atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'));
+      p = JSON.parse(new TextDecoder().decode(Uint8Array.from(b, c => c.charCodeAt(0))));
+    } catch (e) { /* not readable: name only */ }
+    const email = String(p.email || '');
+    if (p.exp && p.exp * 1000 < Date.now()) return null;
+    const name = (me && me.name) || p.name || (/@id\.isteel$/.test(email) ? 'ID ' + email.split('@')[0] : email.split('@')[0]);
+    return name ? { name: name, email: email } : null;
+  }
+  const initials = n => { const w = String(n).replace(/^ID /, '').trim().split(/\s+/); const a = w.map(x => x[0]).filter(c => /[A-Za-z0-9]/.test(c)); return (a.length ? a.slice(0, 2).join('') : '👤').toUpperCase(); };
+  const escT = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function logOut() {
+    if (!confirm(T('ចាកចេញ?', 'Log out?'))) return;
+    try {
+      ['fr_id_token', 'steel_me'].forEach(k => localStorage.removeItem(k));
+      Object.keys(localStorage).forEach(k => { if (k.indexOf('home_c_') === 0) localStorage.removeItem(k); });
+      localStorage.setItem('isteel_out', '1');   // the sign-in screen won't pick the Google account again by itself
+    } catch (e) { /* private window */ }
+    try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) { /* no Google here */ }
+    (inFrame ? window.top : window).location.href = ROOT;
+  }
+  function meCss() {
+    if (document.getElementById('vmMeCss')) return;
+    const st = document.createElement('style');
+    st.id = 'vmMeCss';
+    st.textContent = '.vm-av{flex:none;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#61cbf4,#1d6fb8);color:#fff;display:grid;place-items:center;font:800 12px system-ui,sans-serif}' +
+      'nav.tabs .vm-me{display:none}' +
+      '@media (min-width:900px){nav.tabs:not([hidden]) .vm-me{display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px 6px 0;border-top:1px solid rgba(255,255,255,.15);color:#fff}' +
+      'nav.tabs .vm-me b{flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      'nav.tabs .vm-me button{flex:none;width:38px;height:38px;padding:0;margin:0;border-radius:10px;display:grid;place-items:center;background:rgba(229,57,53,.18);color:#ff8a80;font-size:18px;border:1px solid rgba(229,57,53,.45);cursor:pointer}' +
+      'nav.tabs .vm-me button:hover{background:rgba(229,57,53,.32)}}' +
+      '.set-me{display:flex;align-items:center;gap:10px;padding:8px 8px 10px;margin-bottom:4px;border-bottom:1px solid #e3e9f0}.set-me b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}' +
+      '.set-out{display:flex;align-items:center;gap:10px;margin-top:4px;padding:8px;border-top:1px solid #e3e9f0;border-radius:0 0 10px 10px;color:#c62828;font-weight:700;cursor:pointer}.set-out:hover{background:#fdecea}' +
+      '.set-out i{flex:none;width:34px;height:34px;border-radius:18px;background:#fdecea;display:grid;place-items:center;font-style:normal;font-size:16px}' +
+      ':root[data-theme="dark"] .set-me,:root[data-theme="dark"] .set-out{border-color:#213852}:root[data-theme="dark"] .set-out{color:#ff8a80}:root[data-theme="dark"] .set-out i,:root[data-theme="dark"] .set-out:hover{background:#3a1a1f}';
+    document.head.appendChild(st);
+  }
+  /** Bottom of the computer side menu: name + ⎋. */
+  function sideMe() {
+    const nav = document.querySelector('nav.tabs');
+    if (!nav) return;
+    const u = who();
+    let el = nav.querySelector('.vm-me');
+    if (!u) { if (el) el.remove(); return; }
+    meCss();
+    const html = '<span class="vm-av">' + escT(initials(u.name)) + '</span><b title="' + escT(u.email) + '">' + escT(u.name) + '</b><button type="button" title="' + escT(T('ចាកចេញ', 'Log out')) + '" aria-label="' + escT(T('ចាកចេញ', 'Log out')) + '">⎋</button>';
+    if (!el) { el = document.createElement('div'); el.className = 'vm-me'; nav.appendChild(el); }
+    if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; el.querySelector('button').onclick = e => { e.preventDefault(); e.stopPropagation(); logOut(); }; }
+  }
   /** The ⚙️ button: the app's own language and dark buttons move into its menu, so they keep working as before. */
   function buildMenu(lang, sw) {
     const theme = document.getElementById('themeBtn');
@@ -203,11 +260,24 @@
     row(lang, 'ភាសា', 'Language');
     row(sw, 'ទូរស័ព្ទ · កុំព្យូទ័រ', 'Phone · Computer');
     row(theme, 'ងងឹត · ភ្លឺ', 'Dark · Light');
+    meCss();
+    const meRow = document.createElement('div'), outRow = document.createElement('div');
+    meRow.className = 'set-me'; outRow.className = 'set-out'; outRow.setAttribute('role', 'menuitem');
+    menu.insertBefore(meRow, menu.firstChild); menu.appendChild(outRow);
+    outRow.onclick = e => { e.stopPropagation(); logOut(); };
+    const paintMe = () => {
+      const u = who();
+      meRow.hidden = outRow.hidden = !u;
+      if (!u) return;
+      meRow.innerHTML = '<span class="vm-av">' + escT(initials(u.name)) + '</span><b title="' + escT(u.email) + '">' + escT(u.name) + '</b>';
+      outRow.innerHTML = '<i>⎋</i>' + escT(T('ចាកចេញ', 'Log out'));
+    };
     const paint = () => { labels.forEach(l => { l.textContent = T(l.dataset.km, l.dataset.en); }); btn.title = T('ការកំណត់', 'Settings'); btn.setAttribute('aria-label', btn.title); };
     paint();
     if (window.LANG && LANG.onChange) LANG.onChange(paint);
     const open = v => {
       if (v) {   // fixed under the button, so a rounded bar that clips its content can't hide the menu
+        paintMe();
         const b = btn.getBoundingClientRect();
         menu.style.top = Math.round(b.bottom + 8) + 'px';
         menu.style.right = Math.max(8, Math.round(document.documentElement.clientWidth - b.right)) + 'px';
@@ -251,7 +321,14 @@
   // Apps that draw their bar later (Delivery is React) get the switch as soon as the language button appears.
   function watch() {
     addButton();
-    const mo = new MutationObserver(() => { if (!document.getElementById('vmSw')) addButton(); else if (!document.getElementById('vmNav')) addNav(); });
+    sideMe();
+    const mo = new MutationObserver(() => {
+      if (!document.getElementById('vmSw')) addButton(); else if (!document.getElementById('vmNav')) addNav();
+      const nav = document.querySelector('nav.tabs');
+      if (nav && !nav.querySelector('.vm-me') && who()) sideMe();
+    });
+    if (window.LANG && LANG.onChange) LANG.onChange(sideMe);
+    window.addEventListener('storage', e => { if (e.key === 'fr_id_token' || e.key === 'steel_me') sideMe(); });
     mo.observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
@@ -259,5 +336,5 @@
   try { const me = JSON.parse(localStorage.getItem('steel_me') || 'null'); if (me && me.role === 'admin') {
     const s = document.createElement('script'); s.src = new URL('feedback.js?v=20261127a', document.currentScript ? document.currentScript.src : location.href).href; s.defer = true; document.head.appendChild(s); } } catch (e) { /* private window */ }
   window.addEventListener('load', () => { if (document.getElementById('vmSw')) unfreeze(); });
-  window.VIEW_MODE = { get, pick };
+  window.VIEW_MODE = { get, pick, who, logOut, sideMe };
 })();

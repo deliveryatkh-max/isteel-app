@@ -75,7 +75,7 @@
     const name = (d.user && d.user.name) || email();
     $('#who').textContent = name;
     // The OT form starts on the signed-in person's own Employee ID (Kim, 2026-10-11).
-    if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '', role: d.user.role || '' }));   // role: 💬 Comment button for admins
+    if (d.user && 'employeeId' in d.user) set('steel_me', JSON.stringify({ id: d.user.employeeId || '', role: d.user.role || '', name: d.user.name || '' }));   // role: 💬 Comment button for admins
     // One 🖼️ Gallery tile (Kim, 1 Nov 2026): the Gallery Manager lives inside it as admin-only tabs,
     // so admins always get the tile (even with the Gallery switched off for everyone) and no separate manager tile.
     const admin = (d.user && d.user.role === 'admin') || d.apps.indexOf('adsmgr') >= 0;
@@ -175,7 +175,7 @@
     if (!CFG.GOOGLE_CLIENT_ID) { $('#gsiButton').innerHTML = '<div class="alert bad">GOOGLE_CLIENT_ID is missing in config.js</div>'; return; }
     loadGsi().then(() => {
       google.accounts.id.initialize({
-        client_id: CFG.GOOGLE_CLIENT_ID, auto_select: true,
+        client_id: CFG.GOOGLE_CLIENT_ID, auto_select: !get('isteel_out'),   // not right after ⎋ Log out
         callback: resp => { set(TOKEN_KEY, resp.credential); load(); },
       });
       $('#gsiButton').innerHTML = '';
@@ -218,6 +218,7 @@
     quiet = quiet === true;
     if (!CFG.API_URL) { renderMenu({ user: { name: 'Demo' }, apps: APPS.map(a => a.key) }); return; }
     if (!tokenValid()) { renderLogin(); return; }
+    set('isteel_out', null);
     const key = CACHE_KEY + email();
     let cached = null;
     try { cached = JSON.parse(get(key) || 'null'); } catch (e) { /* ignore */ }
