@@ -18,17 +18,14 @@ small.inl { display: inline; }
 /* Required and still empty: red border + light red fill (Kim, 2026-10-28). */
 .in.need { border-color: var(--bad) !important; background: var(--bad-soft); }
 
-.um-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 12px; }
+.um-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 8px; }
 .um-head h1 { margin: 0; font-size: 20px; line-height: 1.3; }
 .um-head .add { min-height: 42px; padding: 6px 14px; flex: none; }
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-.stats > * { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; box-shadow: var(--shadow); text-decoration: none; color: var(--text); }
-.stats b { display: block; font-size: 24px; line-height: 1.15; }
-.stats .warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
-.stats .warn small { color: var(--warn); }
-.reqbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 12px 14px; border-radius: 14px; background: var(--warn-soft); color: var(--warn); text-decoration: none; }
-.reqbar b { flex: 1; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 2px 8px; }
+.stats > * { display: inline-flex; align-items: center; gap: 5px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 13px; text-decoration: none; color: var(--text); }
+.stats b { font-size: 15px; }
+.stats .warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); font-weight: 700; }
 
 .filters { margin-bottom: 12px; }
 .filters .q, #lq { margin-bottom: 10px; }
@@ -165,7 +162,6 @@ small.inl { display: inline; }
 /* Computer: wider page; the navy side menu comes from ../sidenav.css. */
 @media (min-width: 900px) {
   main { max-width: none; padding: 22px 28px 40px; }
-  .stats { grid-template-columns: repeat(3, minmax(0, 220px)); }
   .frow { max-width: 680px; }
   .dsel { max-width: 260px; }
   .filters .chips { flex-wrap: wrap; margin: 0; padding: 0; overflow: visible; }

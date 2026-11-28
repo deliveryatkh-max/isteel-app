@@ -439,10 +439,9 @@
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
         <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
         <a class="btn add" href="#/bg" title="${t('រូបផ្ទាំងចូល', 'Sign-in picture')}">🖼</a><a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
-      <div class="stats"><div><b>${us.filter(u => u.active).length}</b><small>${t('សកម្ម', 'Active')}</small></div>
-        <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
-        <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
-      ${waiting ? `<a class="reqbar" href="#/req">📨 <b>${t('សំណើថ្មី', 'New requests')} ${waiting}</b><span>${t('មើល', 'Open')} ›</span></a>` : ''}
+      <div class="stats"><span><b>${us.filter(u => u.active).length}</b> ${t('សកម្ម', 'Active')}</span>
+        <span><b>${us.filter(u => !u.active && u.offAt).length}</b> ${t('បិទ', 'Off')}</span>
+        ${waiting ? `<a href="#/req" class="warn">📨 <b>${waiting}</b> ${t('សំណើថ្មី', 'New requests')} ›</a>` : `<a href="#/req">📨 <b>0</b> ${t('សំណើ', 'Requests')}</a>`}</div>
       <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; sel.clear(); renderList(); })}
       ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
         FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q) +
