@@ -378,11 +378,12 @@
     document.body.classList.remove('freeze'); $('#view').style.height = '';
     const h = location.hash.replace(/^#\/?/, '');
     const top = h.split('/')[0] || 'home';
-    $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 't' && a.dataset.r === 'list')));
+    $$('.tab[data-r]').forEach(a => a.classList.toggle('on', top === a.dataset.r || (top === 't' && a.dataset.r === 'list') || (top === 'miss' && a.dataset.r === 'tat')));
     if (!B) { $('#view').innerHTML = '<div class="spinner"></div>'; screen = route; return; }
     if (top === 'list') return renderList();
     if (top === 'rep') return renderReport();
     if (top === 'tat') return renderTat();
+    if (top === 'miss') return renderMiss();
     if (top === 'dnc') return renderDnc();
     if (top === 't') return renderTicket(decodeURIComponent(h.slice(2).split('?')[0]));
     if (top === 'set') return isAdmin() ? renderSettings(h.split('/')[1] || 'trucks') : (location.hash = '#/');
@@ -451,7 +452,7 @@
   }
 
   // ---------------------------------------------------------------- weigh screen
-  const EMPTY_F = () => ({ cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], dnkg: {}, driver: '', dest: '', note: '', vessel: '', load: get('sc_load') || LOAD_DEF });
+  const EMPTY_F = () => ({ missed1: '', goodsKg: '', cid: '', plate: '', company: '', customer: '', item: '', type: 'Out', dns: [], dnkg: {}, driver: '', dest: '', note: '', vessel: '', load: get('sc_load') || LOAD_DEF });
   const LOAD_DEF = 'ISI Steel';   // loading place when this PC has none set (Kim, 8 Nov 2026)
   // Loading place (Kim, 6 Nov 2026: trucks load somewhere else too, not only KMH1): this PC's own place by default.
   const places = () => { const s = []; [get('sc_load'), LOAD_DEF].concat((B && B.dests) || [], tickets().map(x => x.load)).forEach(v => { if (v && s.indexOf(v) < 0) s.push(v); }); return s.map(v => ({ v })); };
@@ -819,8 +820,9 @@
       <div class="fgrid toprow">
       <div class="field"><span class="f lc-blue">🔄 ${t('ឡានមកដើម្បី', 'The truck comes to')}</span>
         <div class="chips jobchips">${[['Out', '⬆️ ឡើងទំនិញ', '⬆️ Load'], ['In', '⬇️ ទំលាក់ទំនិញ', '⬇️ Unload'], ['Scrap', '♻️ យកសំណល់ដែក', '♻️ Pickup Scrap']].map(o => `<label class="chip${(F.type || 'Out') === o[0] ? ' on' : ''}"><input type="radio" name="fJob" value="${o[0]}"${(F.type || 'Out') === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>
-      ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${req}</span>
-        <div class="chips jobchips${F.empty1 ? '' : ' need'}" id="emptyBox">${EMPTY_OPTS.map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div></div>` : ''}
+      ${!sel ? `<div class="field"><span class="f lc-green">🚛 ${t('ឡានទទេ?', 'Empty truck?')} ${F.missed1 ? '' : req}</span>
+        <div class="chips jobchips${F.empty1 || F.missed1 ? '' : ' need'}" id="emptyBox"${F.missed1 ? ' hidden' : ''}>${EMPTY_OPTS.map(o => `<label class="chip${F.empty1 === o[0] ? ' on' : ''}"><input type="radio" name="fEmpty1" value="${o[0]}"${F.empty1 === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div>
+        <label class="chip misschip${F.missed1 ? ' on' : ''}"><input type="checkbox" id="fMissed"${F.missed1 ? ' checked' : ''}> ⚠️ ${t('ភ្លេចថ្លឹងលើកទី១ (ឡានចេញឥឡូវ)', 'Forgot 1st weigh (truck is leaving now)')}</label></div>` : ''}
       ${sel ? `<div class="field"><span class="f lc-teal">⛺ ${t('តង់', 'Canvas')} ${req}</span>
         <div class="chips jobchips${F.tarp ? '' : ' need'}" id="tarpBox">${[['Yes', '✅ គ្របតង់', '✅ Covered'], ['No', '❌ មិនគ្របតង់', '❌ Not covered']].map(o => `<label class="chip${F.tarp === o[0] ? ' on' : ''}"><input type="radio" name="fTarp" value="${o[0]}"${F.tarp === o[0] ? ' checked' : ''}> ${t(o[1], o[2])}</label>`).join('')}</div>
         <label class="chip retchip${isRet() ? ' on' : ''}"><input type="checkbox" id="fRet"${isRet() ? ' checked' : ''}> 🔙 ${t(RET, 'Truck goes back, no goods')}</label></div>` : ''}
@@ -844,10 +846,11 @@
         ${`<div class="field span2"><label class="f lc-grey">📝 ${t('កំណត់ចំណាំ', 'Note')}</label><input class="in" id="fNote" autocomplete="off" value="${esc(F.note)}"></div>`}
       </div>
       ${sel ? againRows(sel) : ''}
+      ${!sel && F.missed1 ? missHtml() : ''}
       <div id="warnBox"></div>
       <div class="btns">
         ${sel ? `<button type="button" class="btn big againbtn" id="agBtn">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</button><button type="button" class="btn ok big" id="w2Btn">⚖️ ${t('ថ្លឹងបញ្ចប់ + រក្សាទុក', 'Finish weigh + Save')}</button>`
-              : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
+              : `<button type="button" class="btn ok big" id="w1Btn">⚖️ ${F.missed1 ? t('ថ្លឹងចេញ (ភ្លេចលើកទី១)', 'Weigh out (forgot 1st)') : t('ថ្លឹងលើកទី១', 'Weigh 1st')}</button>`}
       </div>
       ${canType() ? `<div class="manual">${MANUAL ? `<div class="alert bad">✍ ${t('ទម្ងន់វាយដោយដៃ', 'Typed weight')}: <b>${kg(MANUAL.kg)} kg</b> · ${esc(MANUAL.reason)} <button type="button" class="link" id="manOff">${t('បោះបង់', 'Cancel')}</button></div>`
         : `<button type="button" class="link" id="manOn">✍ ${manAll() ? t('វាយទម្ងន់ដោយដៃ', 'Type a weight') : t('វាយទម្ងន់ដោយដៃ (Admin)', 'Type a weight (Admin)')}</button>`}<div id="manBox"></div></div>` : ''}
@@ -862,6 +865,8 @@
     // Tarpaulin covered or not, ticked at the 2nd weigh (Kim, 8 Nov 2026)
     document.querySelectorAll('input[name="fTarp"]').forEach(r => { r.onchange = () => { upd('tarp', r.value); paintForm(); }; });
     if ($('#fRet')) $('#fRet').onchange = e => { if (e.target.checked) { F.item = RET; F.dest = ''; F.dns = []; F.dnkg = {}; } else F.item = ''; keepForm(); paintForm(); };
+    if ($('#fMissed')) $('#fMissed').onchange = e => { upd('missed1', e.target.checked ? 'Yes' : ''); paintForm(); };
+    if ($('#fGoods')) $('#fGoods').oninput = e => { F.goodsKg = e.target.value.replace(/[^0-9]/g, ''); keepForm(); e.target.classList.toggle('need', !(Number(F.goodsKg) > 0)); };
     document.querySelectorAll('input[name="fEmpty1"]').forEach(r => { r.onchange = () => { upd('empty1', r.value); paintForm(); }; });   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
     // The truck number is fixed after the 1st weigh (Kim, 9 Nov 2026)
     if (!sel) picker($('#fPlate'), {
@@ -1010,7 +1015,8 @@
   function formOk(second) {
     const miss = [];
     if (!F.plate) miss.push('#fPlate');
-    if (!ticketBy(F.cid) && !F.empty1) miss.push('#emptyBox');
+    if (!ticketBy(F.cid) && !F.empty1 && !F.missed1) miss.push('#emptyBox');
+    if (!ticketBy(F.cid) && F.missed1 && F.type === 'In' && !(Number(F.goodsKg) > 0)) miss.push('#fGoods');
     // Driver optional again at the 1st weigh (Kim, 26 Nov 2026)
     // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
@@ -1036,20 +1042,52 @@
   const canType = () => isAdmin() || manAll();
   const fromForm = () => ({ plate: F.plate, company: F.company, customer: F.customer, item: F.item, type: F.type, dns: F.type === 'In' ? [] : F.dns.slice(), dnkg: F.dns.reduce((o, d) => { const v = dnKgOf(F, d); if (v) o[d] = v; return o; }, {}), driver: F.driver, dest: F.dest, note: F.type === 'In' && F.vessel && F.vessel !== NO_VES && !ticketBy(F.cid) ? 'Vessel No: ' + F.vessel : F.note, load: F.type === 'In' ? '' : F.load || get('sc_load') || LOAD_DEF, tarp: F.tarp || '', empty1: F.empty1 || '' });
 
+  // Missed 1st weigh (Kim, 28 Nov 2026)
+  const emptyOf = plate => { const l = B && B.lastTare ? Number(B.lastTare[normP(plate)]) : 0; if (l > 0) return { kg: l, from: t('ការថ្លឹងឡានទទេចុងក្រោយ', 'last empty weigh') };
+    const tr = truckOf(plate); return tr && Number(tr.empty) > 0 ? { kg: Number(tr.empty), from: t('ទម្ងន់ឡានក្នុងបញ្ជីឡាន', 'truck list weight') } : null; };
+  function missW1(now) {
+    if (F.type === 'In') { const g = Number(F.goodsKg); return g > 0 ? { kg: Math.round(now + g), src: 'Estimate', note: 'Forgot 1st weigh: gross = empty ' + now + ' + goods on paper ' + g + ' kg' } : null; }
+    const e = emptyOf(F.plate); return e ? { kg: Math.round(e.kg), src: 'Master', note: 'Forgot 1st weigh: tare from ' + (B && B.lastTare && B.lastTare[normP(F.plate)] ? 'last empty weigh' : 'truck list') } : null;
+  }
+  function missHtml() {
+    const e = F.type !== 'In' ? emptyOf(F.plate) : null;
+    return `<div class="alert warn missbox">⚠️ <b>${t('ភ្លេចថ្លឹងលើកទី១', 'Forgot 1st weigh')}</b> · ${t('ត្រូវការ Admin អនុម័ត (Telegram)', 'needs Admin approval (Telegram)')}<br>
+      ${F.type === 'In' ? `${t('ឡានទំលាក់ទំនិញរួច៖ វាយទម្ងន់ទំនិញលើក្រដាស', 'Unloaded truck: type the goods kg on the paper')} <span class="req">*</span>
+        <input class="in mono${Number(F.goodsKg) > 0 ? '' : ' need'}" id="fGoods" inputmode="numeric" autocomplete="off" value="${esc(F.goodsKg || '')}" placeholder="kg" style="max-width:160px;margin-top:6px">
+        <div class="hint">${t('សរុប = ទម្ងន់ឡានទទេឥឡូវ + ទម្ងន់ទំនិញ (ប៉ាន់ស្មាន)', 'Gross = empty truck now + goods kg (estimate)')}</div>`
+      : e ? `${t('ទម្ងន់ឡានទទេ', 'Tare')}: <b>${kg(e.kg)} kg</b> (${e.from})` : `<b>${t('គ្មានទម្ងន់ឡានទទេសម្រាប់ឡាននេះទេ', 'No empty weight for this truck')}</b>`}</div>`;
+  }
+  const apprTxt = x => (x.appr === 'Approved' ? '✅ ' + t('បានអនុម័ត', 'Approved') : x.appr === 'Rejected' ? '❌ ' + t('បានបដិសេធ', 'Rejected') : '⏳ ' + t('រង់ចាំអនុម័ត', 'Waiting for approval')) + (x.apprBy ? ' · ' + x.apprBy : '');
+  async function decide(x, a) {
+    try { const r = await api('scApprove', { no: x.no, a }); x.appr = r.appr; x.apprBy = r.by; if (LOC[x.cid]) { LOC[x.cid].appr = r.appr; LOC[x.cid].apprBy = r.by; saveLoc(); } toast(apprTxt(x)); }
+    catch (e) { toast(e.message); }
+    screen();
+  }
+
   function weigh1() {
     if (!formOk(false)) return;
     const w = cur();
     if (!w.ok) { toast(whyNot(w)); return; }
     if (openTickets().some(x => normP(x.plate) === normP(F.plate))) { toast(t('ឡាននេះកំពុងរង់ចាំថ្លឹងលើកទី២ហើយ។ សូមរើសពីបញ្ជីខាងស្តាំ។', 'This truck is already waiting for its 2nd weigh. Pick it from the list on the right.')); return; }
     const known = tickets().map(x => x.no);
+    // Forgot the 1st weigh (Kim, 28 Nov 2026): the truck is on the scale on its way out. Its 1st weight comes from the
+    // last empty weigh (load) or from the goods kg on the paper (unload); the 2nd weigh opens at once; an Admin approves.
+    const ms = F.missed1 ? missW1(w.kg) : null;
+    if (F.missed1 && !ms) { toast(t('គ្មានទម្ងន់ឡានទទេសម្រាប់ឡាននេះទេ។ សូមឲ្យ Admin វាយទម្ងន់។', 'No empty weight for this truck. Ask an Admin to type the weight.')); return; }
     const tk = Object.assign(fromForm(), { cid: uid(), no: CORE.nextNo(S().SCALE_PREFIX || 'WB', new Date(), known), status: 'Open',
-      w1: w.kg, t1: iso(new Date()), s1: w.src, w2: '', t2: '', s2: '', warn: '', op: me().name || '', reason: w.src === 'Manual' ? MANUAL.reason : '' });
+      w1: ms ? ms.kg : w.kg, t1: iso(new Date()), s1: ms ? ms.src : w.src, w2: '', t2: '', s2: '', warn: '', op: me().name || '', reason: w.src === 'Manual' ? MANUAL.reason : '' },
+      ms ? { missed1: 'Yes', appr: 'Pending', empty1: F.type === 'In' ? 'No' : 'Yes', note: [F.note, ms.note].filter(Boolean).join(' · ') } : {});
     keepPhoto(tk.cid, 1, tk.plate + ' · 1st ' + kg(tk.w1) + ' kg');   // webcam photo (Kim, 10 Nov 2026)
     putTicket(tk);
     if (tk.type === 'In') { const v = (VESSELS || []).find(x => x.vessel === F.vessel);
       sendArrive({ no: tk.no, plate: tk.plate, company: tk.company, vessel: F.vessel === NO_VES ? '' : F.vessel, pos: v ? v.pos.map(o => o.po) : [], kg: tk.w1, time: new Date().toTimeString().slice(0, 5) }); }
     if (tk.type === 'Out') sendGate({ id: tk.no + '_in', kind: 'in', plate: tk.plate, driver: tk.driver || '', company: tk.company || '', ticket: tk.no, kg: tk.w1 });
     MANUAL = null; LASTDONE = '';
+    if (ms) {   // straight to the 2nd weigh of this ticket: the truck is still on the scale
+      F = { cid: tk.cid, plate: tk.plate, company: tk.company || '', customer: tk.customer || '', item: tk.item || '', type: tk.type || '', dns: [], dnkg: {}, driver: tk.driver || '', dest: '', note: tk.note || '', load: tk.load || '', tarp: '', empty1: tk.empty1 };
+      keepForm(); toast('⚠️ ' + tk.no + ' · ' + t('បំពេញ ហើយចុច ថ្លឹងបញ្ចប់', 'Fill in, then Finish weigh'));
+      paintForm(); paintLists(); paintLcd(); window.scrollTo(0, 0); return;
+    }
     F = EMPTY_F(); keepForm();
     toast('✅ ' + tk.no + ' · ' + t('លើកទី១', '1st') + ' ' + kg(tk.w1) + ' kg');
     paintForm(); paintLists(); paintLcd();
@@ -1875,12 +1913,47 @@
   const avgOf = l => (l.length ? Math.round(l.reduce((a, b) => a + b, 0) / l.length) : null);
   const medOf = l => { const s = l.slice().sort((a, b) => a - b); return s.length ? Math.round((s[Math.floor((s.length - 1) / 2)] + s[Math.ceil((s.length - 1) / 2)]) / 2) : null; };
   const tatPass = (fl, jb) => (!TAT.fl || TAT.fl === fl) && (!TAT.jb || TAT.jb === jb);
+  // Who forgets the 1st weigh most (Kim, 28 Nov 2026): missed tickets at the scale + loading refused by the warehouse.
+  const MISS = { from: '', to: '', rows: null };
+  function renderMiss() {
+    screen = renderMiss;
+    document.body.classList.add('wide');
+    if (!MISS.from) { MISS.from = monthStart(); MISS.to = today(); }
+    $('#view').innerHTML = `<section class="card"><div class="fwrap">
+      ${fHead('miss', `⚠️ ${t('អ្នកបើកបរភ្លេចថ្លឹងលើកទី១', 'Drivers who forgot the 1st weigh')}`, `<a class="btn" href="#/tat">⏱️ ${t('រយៈពេល', 'Turnaround')}</a>`)}
+      ${fPanel('miss', `${fRange('mFrom', 'mTo', MISS.from, MISS.to)}${fShow('mGo')}`)}</div>
+      <p class="hint">${t('រាប់ទាំងពីរ៖ ប័ណ្ណ "ភ្លេចថ្លឹងលើកទី១" នៅជញ្ជីង និងឃ្លាំងបដិសេធមិនឲ្យឡើងទំនិញ', 'Counts both: tickets marked "Forgot 1st weigh" at the scale and loading refused by the warehouse')}</p>
+      <div id="mBody"><div class="spinner"></div></div></section>`;
+    $('#mGo').onclick = () => { MISS.from = $('#mFrom').value; MISS.to = $('#mTo').value; loadMiss(); };
+    loadMiss();
+  }
+  async function loadMiss() {
+    try { MISS.rows = (await api('scMissed', { from: MISS.from, to: MISS.to })).rows || []; }
+    catch (e) { $('#mBody').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; return; }
+    paintMiss();
+  }
+  function paintMiss() {
+    const box = $('#mBody'); if (!box) return;
+    const rows = (MISS.rows || []).slice().sort((a, b) => String(b.t).localeCompare(String(a.t)));
+    if (!rows.length) { box.innerHTML = `<div class="empty">✅ ${t('គ្មានទេ ក្នុងចន្លោះថ្ងៃនេះ', 'None in these dates')}</div>`; return; }
+    const g = {};
+    rows.forEach(r => { const k = r.driver || ('🚚 ' + r.plate); const o = g[k] || (g[k] = { who: k, co: r.company || '', n: 0, sc: 0, wh: 0, plates: {} }); o.n++; if (r.where === 'wh') o.wh++; else o.sc++; o.plates[r.plate] = 1; if (!o.co && r.company) o.co = r.company; });
+    const list = Object.keys(g).map(k => g[k]).sort((a, b) => b.n - a.n || a.who.localeCompare(b.who)), mx = list[0].n;
+    box.innerHTML = `<div class="tgrid"><div class="tbox"><h3>🏆 ${t('អ្នកភ្លេចច្រើនបំផុត', 'Who forgets most')}</h3><div class="tbl"><table class="tmx">
+      <tr><th>${t('អ្នកបើកបរ', 'Driver')}</th><th>${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</th><th>${t('ឡាន', 'Truck')}</th><th class="r">⚖️</th><th class="r">🏭</th><th class="r">${t('សរុប', 'Total')}</th><th></th></tr>
+      ${list.map(o => `<tr><td>${esc(o.who)}</td><td>${esc(o.co)}</td><td class="mono">${esc(Object.keys(o.plates).join(', '))}</td><td class="r">${o.sc || ''}</td><td class="r">${o.wh || ''}</td><td class="r"><b>${o.n}</b></td><td style="min-width:120px"><div style="height:12px;border-radius:4px;background:#d9534f;width:${Math.round(o.n / mx * 100)}%"></div></td></tr>`).join('')}</table></div>
+      <p class="hint">⚖️ ${t('ជញ្ជីង (ភ្លេចថ្លឹងលើកទី១)', 'Scale (forgot 1st weigh)')} · 🏭 ${t('ឃ្លាំងបដិសេធ', 'Warehouse refused loading')}</p></div>
+      <div class="tbox"><h3>📋 ${t('បញ្ជី', 'List')} (${rows.length})</h3><div class="tbl"><table>
+      <tr><th>${t('ថ្ងៃ', 'Date')}</th><th>${t('ឡាន', 'Truck')}</th><th>${t('អ្នកបើកបរ', 'Driver')}</th><th>${t('កន្លែង', 'Where')}</th><th>${t('ស្ថានភាព', 'Status')}</th></tr>
+      ${rows.map(r => `<tr${r.no ? ` data-tk="${esc(r.no)}" class="click"` : ''}><td>${dmy(r.t)} ${hm(r.t)}</td><td class="mono">${esc(r.plate)}</td><td>${esc(r.driver || '')}</td><td>${r.where === 'wh' ? '🏭 ' + esc(r.wh || t('ឃ្លាំង', 'Warehouse')) : '⚖️ ' + esc(r.no)}</td><td>${r.where === 'wh' ? t('បដិសេធមិនឲ្យឡើងទំនិញ', 'Loading refused') + (r.by ? ' · ' + esc(r.by) : '') : esc(apprTxt(r))}</td></tr>`).join('')}</table></div></div></div>`;
+    $$('#mBody [data-tk]').forEach(r => { r.onclick = () => { location.hash = '#/t/' + encodeURIComponent(r.dataset.tk); }; });
+  }
   function renderTat() {
     screen = renderTat;
     document.body.classList.add('wide');
     const chip = (k, v, label, on) => `<button type="button" class="chip${on ? ' on' : ''}" data-${k}="${v}">${label}</button>`;
     $('#view').innerHTML = `<section class="card"><div class="fwrap">
-      ${fHead('tat', `⏱️ ${t('ផ្ទាំងរយៈពេលឡាននៅក្នុងរោងចក្រ', 'Turnaround dashboard')}`, `<button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
+      ${fHead('tat', `⏱️ ${t('ផ្ទាំងរយៈពេលឡាននៅក្នុងរោងចក្រ', 'Turnaround dashboard')}`, `<a class="btn" href="#/miss">⚠️ ${t('ភ្លេចថ្លឹងលើកទី១', 'Forgot 1st weigh')}</a><button type="button" class="btn" id="tXls"><span class="xl">X</span> Excel</button>`)}
       ${fPanel('tat', `${fRange('tFrom', 'tTo', TAT.from, TAT.to)}${fShow('tGo')}
         <label>${t('ឡាន', 'Fleet')}<span class="qchips">${chip('tfl', '', t('ទាំងអស់', 'All'), !TAT.fl)}${FLEETS.map(f => chip('tfl', f[0], f[1] + ' ' + t(f[2], f[3]), TAT.fl === f[0])).join('')}</span></label>
         <label>${t('ការងារ', 'Job')}<span class="qchips">${chip('tjb', '', t('ទាំងអស់', 'All'), !TAT.jb)}${JOBS.map(j => chip('tjb', j[0], j[1] + ' ' + t(j[2], j[3]), TAT.jb === j[0])).join('')}</span></label>
@@ -2340,6 +2413,8 @@
       ${dnCheck(x) ? (c => `<div class="alert ${c.ok ? 'ok' : 'warn'} mt">${c.ok ? '✅' : '❌'} ${t('សរុប DN', 'DN total')} <b>${kg(c.sum)} kg</b> · ${t('សុទ្ធ', 'Net')} <b>${kg(cargoNet(x))} kg</b> · ${t('ខុសគ្នា', 'Difference')} <b>${sgn(c.d)} kg</b> · ${c.ok ? t('ត្រូវគ្នា', 'Match') : t('ខុសគ្នា', 'Variance')} (±${kg(dnTol())})</div>`)(dnCheck(x)) : ''}
       ${phSrc(x, 1) || phSrc(x, 2) ? `<div class="camths mt">${camThumb(phSrc(x, 1), '📷 ' + t('លើកទី១', '1st weigh') + ' · ' + hm(x.t1), t('គ្មានរូប', 'No photo'))}${camThumb(phSrc(x, 2), '📷 ' + t('លើកទី២', '2nd weigh') + (x.t2 ? ' · ' + hm(x.t2) : ''), t('គ្មានរូប', 'No photo'))}</div>` : ''}
       ${x.again && x.again.length ? `<h3 class="mt">🔁 ${t('ថ្លឹងម្តងទៀត', 'Scale again')}</h3><div class="tbl"><table><tr><th>#</th><th>${t('ម៉ោង', 'Time')}</th><th>${t('ឡានទទេ', 'Empty Truck')}</th><th class="r">kg</th><th class="r">${t('ខុសពីមុន', 'Change')}</th><th>${t('អ្នកថ្លឹង', 'Weigher')}</th></tr>${x.again.map((c, i) => `<tr><td>${i + 1}</td><td>${dmy(c.t)} ${hm(c.t)}</td><td>${emptyTxt(c.e)}</td><td class="r mono">${kg(c.kg)}</td><td class="r mono">${sgn(Number(c.diff) || 0)}</td><td>${esc(c.by || '')}${c.src && c.src !== 'Scale' ? ' · ' + esc(c.src) : ''}</td></tr>`).join('')}</table></div>` : ''}
+      ${x.missed1 === 'Yes' ? `<div class="alert ${x.appr === 'Approved' ? 'ok' : x.appr === 'Rejected' ? 'bad' : 'warn'} mt">⚠️ <b>${t('ភ្លេចថ្លឹងលើកទី១', 'Forgot 1st weigh')}</b> · ${t('ទម្ងន់លើកទី១', '1st weight')} ${x.s1 === 'Master' ? t('ពីការថ្លឹងឡានទទេចុងក្រោយ', 'from the last empty weigh') : t('ប៉ាន់ស្មាន', 'estimated')} · ${esc(apprTxt(x))}
+        ${isAdmin() && x.status === 'Done' && x.appr !== 'Approved' ? ` <button type="button" class="btn ok" id="tAppr">✅ ${t('អនុម័ត', 'Approve')}</button>` : ''}${isAdmin() && x.status === 'Done' && x.appr !== 'Rejected' ? ` <button type="button" class="btn danger" id="tRej">❌ ${t('បដិសេធ', 'Reject')}</button>` : ''}</div>` : ''}
       ${x.warn ? `<div class="alert warn">⚠️ ${esc(warnTxt(x.warn))}</div>` : ''}
       ${x.err ? `<div class="alert bad">❗ ${esc(x.err)}</div>` : ''}
       <div class="hint">${t('អ្នកថ្លឹង', 'Weigher')}: ${esc(x.op || '')}${x.pdf ? ` · <a href="${esc(x.pdf)}" target="_blank" rel="noopener">PDF Drive</a>` : ''}</div>
@@ -2347,6 +2422,8 @@
     bindDone();
     if ($('#tPrev')) ticketPreview(x, $('#tPrev'));
     if ($('#tRetry')) $('#tRetry').onclick = () => { putTicket(LOC[x.cid]); renderTicket(key); };
+    if ($('#tAppr')) $('#tAppr').onclick = () => decide(x, 'ok');
+    if ($('#tRej')) $('#tRej').onclick = () => decide(x, 'no');
     if ($('#tVoid')) $('#tVoid').onclick = () => {
       $('#tMore').innerHTML = `<div class="alert bad"><b>${t('លុបប័ណ្ណនេះ?', 'Cancel this ticket?')}</b><input class="in mt" id="vWhy" placeholder="${t('មូលហេតុ (ចាំបាច់)', 'Reason (required)')}"><div class="btns mt"><button type="button" class="btn danger" id="vGo">${t('លុប', 'Cancel ticket')}</button></div></div>`;
       $('#vGo').onclick = () => { const why = $('#vWhy').value.trim(); if (!why) { $('#vWhy').classList.add('need'); return; } putTicket(Object.assign({}, x, { status: 'Void', reason: why })); toast(t('បានលុប', 'Cancelled')); renderTicket(key); };
@@ -3134,6 +3211,9 @@
       keep();
       return { saved: out };
     }
+    if (action === 'scMissed') return { rows: db.tickets.filter(x => x.missed1 === 'Yes' && String(x.t1).slice(0, 10) >= p.from && String(x.t1).slice(0, 10) <= p.to).map(x => ({ t: x.t2 || x.t1, no: x.no, plate: x.plate, company: x.company || '', driver: x.driver || '', where: 'scale', appr: x.appr || 'Pending' }))
+      .concat([{ t: today() + 'T09:20:00', plate: '3A-2669', company: 'SRONG SAL', driver: '', where: 'wh', wh: 'PNP1', by: 'Dara' }]) };
+    if (action === 'scApprove') { const x = db.tickets.find(y => y.no === p.no); if (x) { x.appr = p.a === 'ok' ? 'Approved' : 'Rejected'; x.apprBy = 'Kim (demo)'; keep(); } return { no: p.no, appr: p.a === 'ok' ? 'Approved' : 'Rejected', by: 'Kim (demo)' }; }
     if (action === 'scList') return { tickets: db.tickets.filter(x => String(x.t1).slice(0, 10) >= p.from && String(x.t1).slice(0, 10) <= p.to) };
     if (action === 'scMaster') {
       let added = 0, changed = 0;

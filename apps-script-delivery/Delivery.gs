@@ -102,6 +102,7 @@ function route_(action, p, user) {
     case 'gps': return userGps_(p, user);
     case 'gpsReport': return gpsReport_(p, user);
     case 'joinLinks': return joinLinks_(user);
+    case 'whReject': return withLock_(() => whReject_(p, user));
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -566,6 +567,30 @@ function findZeroPlates() {
   const msg = 'Rows with plate 0: ' + out.length + ' (see the Plate check tab). Nothing was changed.';
   console.log(msg);
   return msg;
+}
+
+/**
+ * Warehouse refuses to load a truck that was not weighed in at the scale (Kim, 28 Nov 2026). Saved in the tab
+ * "Loading Rejected"; the Truck Scale report counts it under "who forgets the 1st weigh". A truck with an open trip
+ * (weighed in) is not refused.
+ */
+const REJECT_COLS = ['Time', 'Truck No.', 'Truck Company', "Driver's Name", 'Warehouse', 'User'];
+function whReject_(p, user) {
+  const plate = normPlate(p.plate);
+  if (!/^[A-Z0-9ក-៿.-]{3,15}$/.test(plate)) fail_('BAD', 'Type the truck plate (example 3A-1234).', 'សូមវាយផ្លាកលេខឡាន (ឧ. 3A-1234)។');
+  const idx = tripsSheetIndex_();
+  const done = { [STAGES.completed.kh]: 1, [STAGES.canceled.kh]: 1 };
+  const inside = Object.keys(idx).filter(id => idx[id].plate === plate && idx[id].gateIn && !idx[id].gateOut && !done[idx[id].status] && Date.now() - idx[id].gateIn < 3 * 86400000);
+  if (inside.length) return { inside: true, tripId: inside[0] };
+  const m = master_();
+  const isi = m.plates.some(x => x.plate === plate);
+  const drv = (m.drivers || []).find(d => normPlate(d.plate) === plate);
+  let sh = ss_().getSheetByName('Loading Rejected');
+  if (!sh) { sh = ss_().insertSheet('Loading Rejected'); sh.getRange(1, 1, 1, REJECT_COLS.length).setValues([REJECT_COLS]).setFontWeight('bold').setBackground('#011e41').setFontColor('#ffffff'); sh.setFrozenRows(1); }
+  const row = [new Date(), plate, isi ? 'ISI' : String(p.company || '').slice(0, 80), drv ? drv.name : '', String(p.wh || '').slice(0, 40), user.name || user.email];
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(plate);
+  return { saved: true, plate: plate, driver: row[3] };
 }
 
 /** Customer of a DN from Delivery Plan, for DNs that came only from the Scale (no customer typed). */

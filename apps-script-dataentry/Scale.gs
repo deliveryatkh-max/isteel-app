@@ -18,7 +18,8 @@ const SC = { TK: 'Scale Tickets', ITEM: 'Item List', LOG: 'Scale Log' };
 const SC_TK_COLS = ['Ticket No', 'Status', 'Truck No', 'Company', 'Customer', 'Item', 'Type', 'DN No', 'DN Count', 'Driver', 'Destination', 'Note',
   '1st Weight (kg)', '1st Time', '1st Source', '2nd Weight (kg)', '2nd Time', '2nd Source', 'Gross (kg)', 'Tare (kg)', 'Net (kg)',
   'Warnings', 'PDF', 'Operator', 'Created At', 'Updated By', 'Updated At', 'Client ID', 'Loading Place', 'Tarpaulin', 'Scale Again', 'DN Kg', 'DN Total (kg)', 'DN Variance (kg)', 'Photo 1st', 'Photo 2nd', 'Empty Truck',
-  'Billing Status', 'Billing By', 'Billing At', "Customer's DN #", 'Billing Unit Price', 'Billing UoM'];   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
+  'Billing Status', 'Billing By', 'Billing At', "Customer's DN #", 'Billing Unit Price', 'Billing UoM',
+  'Missed 1st Weigh', 'Approval', 'Approved By', 'Approved At'];   // forgot the 1st weigh: tare from the last empty weigh, Admin OK (Kim, 28 Nov 2026)   // Debit Note check: Confirm = the truck company's bill is right (Kim, 13 Nov 2026)
 const SC_ITEM_COLS = ['Item', 'Unit', 'Active'];
 const SC_LOG_COLS = ['Time', 'User', 'Ticket / Row', 'Action', 'Field', 'Before', 'After', 'Reason'];
 // Columns of the Fuel "Truck" tab (Kim, 11 Nov 2026): "Actual Vehicle Weight (kg)" is the empty truck as weighed on the
@@ -44,13 +45,14 @@ const SC_SETTINGS = [
   ['SCALE_AGAIN_KG', '20', '"Scale again": a change up to this many kg counts as the same weight'],
   ['SCALE_TEMPLATE_A5_LINK', '', 'Drive link to the A5 ticket template (for PCs set to A5 paper). Empty = the A4 template shrunk to A5.'],
   ['SCALE_EDIT24_USERS', 'លាន រដ្ឋា', 'Names or emails (comma separated) that may edit a finished ticket for 24 h after the 2nd weigh: Truck No, company, customer, item, DN, driver, loading place, destination, note. Not the weights.'],
+  ['SCALE_APPROVE_TG', '', 'Telegram approvers for a missed 1st weigh, as Name:ChatID (comma separated), e.g. Kim:272158803. The bot token is the Script property SCALE_TG_TOKEN.'],
   ['SCALE_MANUAL_ALL', 'No', 'Yes = every weigher can type a weight by hand (with a reason). No = Admins only.'],
   ['SCALE_DN_VAR_KG', '120', 'DN kg check: allowed difference between the DN total and the scale net (kg)'],
   ['SCALE_REPORT_COLS', '', 'Report columns and their order (set by an Admin on the Report screen). Empty = default.'],
   ['SCALE_TABLE_COLS', '', 'Column layout of the other tables (set by an Admin on screen). Empty = default.'],
   ['SCALE_DEBIT_NOTE_LINK', 'https://drive.google.com/drive/folders/1mFZFVYJGyijsnhFVjTviDluICME9e9tn', 'Drive link to the Debit Note Excel template (Report › Debit Note), or a folder (newest file with "Debit" in its name). Kept in G:\\My Drive\\SSK-STEEL\\SSK-WEIGHT.'],
 ];
-const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator'];
+const SC_WEIGHT_SRC = ['Scale', 'Manual', 'Simulator', 'Master', 'Estimate'];   // Master / Estimate: 1st weight of a missed 1st weigh only
 
 function scaleRoute_(action, p, user) {
   switch (action) {
@@ -66,6 +68,8 @@ function scaleRoute_(action, p, user) {
     case 'scDnNo': return withLock_(() => scDnNo_(p, user));
     case 'scTruckPhoto': return withLock_(() => scTruckPhoto_(p, user));
     case 'scBill': return withLock_(() => scBill_(p, user));
+    case 'scApprove': return withLock_(() => scApprove_(p, user));
+    case 'scMissed': return scMissed_(p);
     default: fail_('BAD', 'Unknown action');
   }
 }
@@ -235,7 +239,7 @@ function scRows_() {
 function scObj_(r) {
   const o = {};
   ['no', 'status', 'plate', 'company', 'customer', 'item', 'type', 'dn', 'dnCount', 'driver', 'dest', 'note',
-    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2', 'empty1', 'bill', 'billBy', 'billAt', 'billDn', 'billPrice', 'billUom']
+    'w1', 't1', 's1', 'w2', 't2', 's2', 'gross', 'tare', 'net', 'warn', 'pdf', 'op', 'created', 'updBy', 'upd', 'cid', 'load', 'tarp', 'again', 'dnkgTxt', 'dnTot', 'dnVar', 'ph1', 'ph2', 'empty1', 'bill', 'billBy', 'billAt', 'billDn', 'billPrice', 'billUom', 'missed1', 'appr', 'apprBy', 'apprAt']
     .forEach((k, i) => { o[k] = r[i] instanceof Date ? scTime_(r[i]) : r[i]; });
   o.dns = String(o.dn || '').split(/[,\s]+/).filter(Boolean);
   o.again = scAgain_(o.again);
@@ -449,6 +453,7 @@ function scSave_(ops, user) {
   const custs = scCustomers_().map(c => c[1].toLowerCase()), items = scItems_().map(i => i[0].toLowerCase());
   const out = [];
   let dnIdx = null;
+  const tgMissed_ = [];
   ops.forEach(p => {
     const cid = clip_(p.cid, 40);
     if (!cid) fail_('BAD', 'Missing client id.');
@@ -469,6 +474,8 @@ function scSave_(ops, user) {
         if (Number(before) !== w(x[0])) fail_('DENIED', may ? 'A typed weight needs a reason.' : 'Only an Admin can type a weight, with a reason.', may ? 'ទម្ងន់វាយដោយដៃ ត្រូវមានមូលហេតុ។' : 'មានតែ Admin ទេដែលអាចវាយទម្ងន់ ដោយមានមូលហេតុ។');
       }
     });
+    const missed1 = p.missed1 === undefined && old ? String(old[43] || '') : (p.missed1 === 'Yes' ? 'Yes' : '');
+    if (!missed1 && ['Master', 'Estimate'].indexOf(src('s1')) >= 0 && !(old && old[14] === src('s1'))) fail_('BAD', 'Only a missed 1st weigh takes its 1st weight from the truck list.', 'មានតែការភ្លេចថ្លឹងលើកទី១ ទេដែលយកទម្ងន់ពីបញ្ជីឡាន។');
     if (old) {
       // A finished ticket can be changed by a Reviewer or Admin only; Void needs an Admin.
       if (old[1] !== 'Open' && !(user.admin || user.reviewer) && !(old[1] === 'Done' && status === 'Done' && scEdit24_(user) && scWithin24_(old[16]))) fail_('DENIED', 'Ticket ' + old[0] + ' is finished. Only a Reviewer or Admin can change it.',
@@ -518,7 +525,9 @@ function scSave_(ops, user) {
       p.tarp === undefined && old ? old[29] : (['Yes', 'No'].indexOf(p.tarp) >= 0 ? p.tarp : ''),
       scAgainText_(old ? old[30] : '', p.again, user), dkText, dkTot, dkVar,
       p.ph1img ? scPhoto_(p.ph1img, no, plate, 1) || (old ? old[34] : '') : (old ? old[34] : ''), p.ph2img ? scPhoto_(p.ph2img, no, plate, 2) || (old ? old[35] : '') : (old ? old[35] : ''),
-      p.empty1 === undefined && old ? old[36] : (['Yes', 'No', 'Pallet'].indexOf(p.empty1) >= 0 ? p.empty1 : '')];   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
+      p.empty1 === undefined && old ? old[36] : (['Yes', 'No', 'Pallet'].indexOf(p.empty1) >= 0 ? p.empty1 : ''),   // Empty truck tick at the 1st weigh (Kim, 12 Nov 2026)
+      old ? old[37] : '', old ? old[38] : '', old ? old[39] : '', old ? old[40] : '', old ? old[41] : '', old ? old[42] : '',   // billing: set by scBill_ only
+      missed1, old ? (old[44] || (missed1 ? 'Pending' : '')) : (missed1 ? 'Pending' : ''), old ? old[45] : '', old ? old[46] : ''];
     let row;
     if (old) {
       row = idx + 2;
@@ -530,6 +539,7 @@ function scSave_(ops, user) {
         if (a !== b) log.push([h, a, b]);
       });
       if (log.length) log.forEach(x => scLog_(user, no, status === 'Void' && old[1] !== 'Void' ? 'Cancel' : 'Change', x[0], x[1], x[2], reason));
+      if (missed1 && old[1] === 'Open' && status === 'Done') tgMissed_.push(vals);   // finished: ask the approvers on Telegram
       sh.getRange(row, 1, 1, vals.length).setValues([vals]);
       rows[idx] = vals;
     } else {
@@ -538,6 +548,7 @@ function scSave_(ops, user) {
       rows.push(vals); byCid[cid] = rows.length - 1; byNo[no] = rows.length - 1;
       scLog_(user, no, 'New', '', '', status + ' ' + plate + (w1 !== '' ? ' 1st ' + w1 : ''), reason);
       if ([vals[14], vals[17]].indexOf('Manual') >= 0) scLog_(user, no, 'Manual weight', '', '', w1 + ' / ' + w2, reason);
+      if (missed1) { scLog_(user, no, 'Missed 1st weigh', '1st Source', '', vals[14] + ' ' + w1, reason); if (status === 'Done') tgMissed_.push(vals); }
     }
     sh.getRange(row, 1, 1, 12).setNumberFormat('@').setValues([vals.slice(0, 12)]);   // plate and DN stay text
     // A plate the Fuel list doesn't have yet is added there (one truck list); its first empty weight fills Actual Vehicle Weight.
@@ -547,9 +558,97 @@ function scSave_(ops, user) {
     // A new customer or item typed on the scale joins its one list too (Customer tab of SSK-DELIVERY-DATA, Item List).
     if (vals[4] && custs.indexOf(vals[4].toLowerCase()) < 0) { scMasterAdd_('customer', { id: '', name: vals[4] }, user); custs.push(vals[4].toLowerCase()); }
     if (vals[5] && items.indexOf(vals[5].toLowerCase()) < 0) { scMasterAdd_('item', { name: vals[5], unit: 'kg', active: 'Yes' }, user); items.push(vals[5].toLowerCase()); }
-    out.push({ cid: cid, no: no, row: row, pdf: pdf, ph1: vals[34], ph2: vals[35] });
+    out.push({ cid: cid, no: no, row: row, pdf: pdf, ph1: vals[34], ph2: vals[35], appr: vals[44] });
   });
+  tgMissed_.forEach(v => { try { scTgAsk_(v); } catch (e) { console.error('Telegram missed 1st weigh: ' + e); } });
   return { saved: out };
+}
+
+// ---------------------------------------------------------------- missed 1st weigh (Kim, 28 Nov 2026)
+/** Approvers from SCALE_APPROVE_TG: "Name:ChatID, Name:ChatID". */
+function scTgApprovers_() {
+  return String(setting_('SCALE_APPROVE_TG') || '').split(',').map(x => x.trim()).filter(Boolean).map(x => {
+    const i = x.lastIndexOf(':'); return i > 0 ? { name: x.slice(0, i).trim(), chat: x.slice(i + 1).trim() } : { name: '', chat: x };
+  }).filter(a => /^-?\d{5,}$/.test(a.chat));
+}
+function scTgSecret_() {
+  const pr = PropertiesService.getScriptProperties();
+  let s = pr.getProperty('SCALE_TG_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); pr.setProperty('SCALE_TG_SECRET', s); }
+  return s;
+}
+const scTgSig_ = (no, a, chat) => b64url_(Utilities.computeHmacSha256Signature(no + '|' + a + '|' + chat, scTgSecret_())).slice(0, 22);
+function scTg_(method, body) {
+  const tok = prop_('SCALE_TG_TOKEN');
+  if (!tok) return null;
+  const r = UrlFetchApp.fetch('https://api.telegram.org/bot' + tok + '/' + method, { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
+  return JSON.parse(r.getContentText() || '{}');
+}
+const scKg_ = n => (n === '' || n == null ? '–' : Math.round(Number(n)).toLocaleString('en-US'));
+/** Telegram to each approver with ✅ Approve / ❌ Reject buttons (signed links to /scale/ok.html). */
+function scTgAsk_(v) {
+  const o = scObj_(v);
+  const srcTxt = o.s1 === 'Master' ? 'ទម្ងន់ឡានទទេចុងក្រោយ · last empty weigh' : 'ប៉ាន់ស្មាន · estimate';
+  const text = ['⚠️ ភ្លេចថ្លឹងលើកទី១ · Forgot 1st weigh', '🧾 ' + o.no + ' · 🚚 ' + o.plate + (o.company ? ' (' + o.company + ')' : ''),
+    '👷 ' + (o.driver || '–') + ' · ' + ({ Out: 'Load', In: 'Unload', Scrap: 'Scrap' }[o.type] || ''),
+    '⚖️ Gross ' + scKg_(o.gross) + ' · Tare ' + scKg_(o.tare) + ' · Net ' + scKg_(o.net) + ' kg',
+    '1st weight: ' + scKg_(o.w1) + ' kg (' + srcTxt + ')', '✍ ' + (o.updBy || o.op || '')].join('\n');
+  const base = 'https://isteel-app.pages.dev/scale/ok.html?no=' + encodeURIComponent(o.no);
+  scTgApprovers_().forEach(a => {
+    const link = x => base + '&a=' + x + '&c=' + a.chat + '&k=' + scTgSig_(o.no, x, a.chat);
+    scTg_('sendMessage', { chat_id: a.chat, text: text, reply_markup: { inline_keyboard: [[{ text: '✅ Approve', url: link('ok') }, { text: '❌ Reject', url: link('no') }]] } });
+  });
+}
+function scDecide_(no, a, by) {
+  const { sh, rows } = scRows_();
+  const i = rows.findIndex(r => String(r[0]) === String(no));
+  if (i < 0) fail_('NOTFOUND', 'Ticket ' + no + ' was not found.', 'រកមិនឃើញប័ណ្ណ ' + no + '។');
+  const r = rows[i];
+  if (r[43] !== 'Yes') fail_('BAD', 'Ticket ' + no + ' needs no approval.', 'ប័ណ្ណ ' + no + ' មិនត្រូវការអនុម័តទេ។');
+  const val = a === 'ok' ? 'Approved' : 'Rejected';
+  if (r[44] === val) return { no: no, appr: val, by: r[45], same: true };
+  sh.getRange(i + 2, 45, 1, 3).setValues([[val, by, new Date()]]);
+  scLog_({ name: by }, no, val, 'Approval', String(r[44] || ''), val, 'Missed 1st weigh');
+  return { no: no, appr: val, by: by, plate: r[2] };
+}
+/** In the app: Admin approves or rejects. */
+function scApprove_(p, user) {
+  if (!user.admin) fail_('DENIED', 'Only an Admin can approve.', 'មានតែ Admin ទេដែលអាចអនុម័ត។');
+  return scDecide_(clip_(p.no, 40), p.a === 'ok' ? 'ok' : 'no', user.name);
+}
+/** From the Telegram button: the link is signed for this ticket, answer and approver chat. */
+function scTgDecide_(p) {
+  const no = clip_(p.no, 40), a = p.a === 'ok' ? 'ok' : 'no', chat = String(p.c || '');
+  const ap = scTgApprovers_().find(x => x.chat === chat);
+  if (!ap || String(p.k || '') !== scTgSig_(no, a, chat)) fail_('DENIED', 'This link is not valid.', 'តំណនេះមិនត្រឹមត្រូវ។');
+  const r = scDecide_(no, a, (ap.name || 'Telegram') + ' (Telegram)');
+  if (!r.same) try { scTg_('sendMessage', { chat_id: chat, text: (a === 'ok' ? '✅ Approved · អនុម័ត ' : '❌ Rejected · បដិសេធ ') + no + (r.plate ? ' · ' + r.plate : '') }); } catch (e) { /* the sheet is saved */ }
+  return r;
+}
+/**
+ * Who forgets the 1st weigh most (Kim, 28 Nov 2026): missed tickets in the dates, plus loading the warehouse refused
+ * in the Delivery app (tab "Loading Rejected") because the truck was not weighed in.
+ */
+function scMissed_(p) {
+  const from = date_(p.from), to = date_(p.to);
+  if (!from || !to) fail_('BAD', 'Pick the dates.');
+  to.setHours(23, 59, 59);
+  const out = [];
+  scRows_().rows.forEach(r => {
+    if (!r[0] || r[43] !== 'Yes' || r[1] === 'Void') return;
+    const d = [r[16], r[13], r[24]].find(x => x instanceof Date);
+    if (!d || d < from || d > to) return;
+    out.push({ t: scTime_(d), no: String(r[0]), plate: String(r[2]), company: String(r[3] || ''), driver: String(r[9] || ''), where: 'scale', appr: String(r[44] || '') });
+  });
+  try {
+    const sh = scDelivery_().getSheetByName('Loading Rejected');
+    if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().forEach(r => {
+      const d = r[0] instanceof Date ? r[0] : null;
+      if (!d || d < from || d > to) return;
+      out.push({ t: scTime_(d), no: '', plate: String(r[1] || ''), company: String(r[2] || ''), driver: String(r[3] || ''), where: 'wh', wh: String(r[4] || ''), by: String(r[5] || '') });
+    });
+  } catch (e) { console.error('Loading Rejected: ' + e); }
+  return { rows: out };
 }
 
 function scPdfFolder_() {

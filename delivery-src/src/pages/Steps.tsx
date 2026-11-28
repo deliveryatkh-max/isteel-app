@@ -115,7 +115,49 @@ function WarehouseList() {
           </button>
         );
       })}
+      <NotWeighed list={list} />
     </>
+  );
+}
+
+/**
+ * Truck not in the list = not weighed in at the scale: do not load (Kim, 28 Nov 2026). The warehouse types the plate;
+ * Reject saves it so the Truck Scale report shows which drivers forget the 1st weigh.
+ */
+function NotWeighed(p: { list: TripSummary[] }) {
+  const [plate, setPlate] = useState('');
+  const [state, setState] = useState<'' | 'out' | 'busy' | 'saved'>('');
+  const norm = (v: string) => v.toUpperCase().replace(/\s+/g, '');
+  const check = () => {
+    const v = norm(plate);
+    if (!v) return;
+    const hit = p.list.find(x => norm(x.plate) === v);
+    if (hit) { go('/steps/' + encodeURIComponent(hit.id)); return; }
+    setState('out');
+  };
+  const reject = async () => {
+    setState('busy');
+    try {
+      const r: any = await api('whReject', { plate: norm(plate) });
+      if (r && r.tripId) { go('/steps/' + encodeURIComponent(r.tripId)); return; }
+      setState('saved'); toast('🚫 ' + t('បានកត់ត្រាការបដិសេធ', 'Refusal saved') + ' · ' + norm(plate));
+    } catch (e: any) { setState('out'); toast(errText(e.message || String(e))); }
+  };
+  return (
+    <section className="card">
+      <b className="block mb-1">🔎 {t('ឡានមិនមានក្នុងបញ្ជី?', 'Truck not in the list?')}</b>
+      <div className="flex gap-2">
+        <input className="in flex-1 min-w-0 font-bold tracking-wide" autoCapitalize="characters" autoComplete="off" placeholder={t('វាយលេខឡាន', 'Type the plate')} value={plate}
+          onChange={e => { setPlate(e.target.value); setState(''); }} onKeyDown={e => { if (e.key === 'Enter') check(); }} />
+        <button type="button" className="btn btn-primary" onClick={check} disabled={!plate.trim()}>{t('ពិនិត្យ', 'Check')}</button>
+      </div>
+      {state === 'out' || state === 'busy' ? (
+        <div className="mt-2">
+          <Alert tone="bad"><b className="block text-[16px]">❌ {t('មិនទាន់ថ្លឹងលើកទី១', 'Not weighed in')}</b>{norm(plate)} {t('មិនទាន់ថ្លឹងលើកទី១ទេ។ កុំឡើងទំនិញ។ ឲ្យឡានទៅថ្លឹងសិន។', 'has no 1st weigh. Do not load. Send the truck to the scale first.')}</Alert>
+          <button type="button" className="btn w-full mt-2 !border-bad !text-bad font-bold" onClick={reject} disabled={state === 'busy'}>🚫 {t('បដិសេធមិនឲ្យឡើងទំនិញ', 'Reject loading')}</button>
+        </div>
+      ) : state === 'saved' ? <div className="mt-2"><Alert tone="info">🚫 {t('បានបដិសេធ', 'Refused')} · {norm(plate)}</Alert></div> : null}
+    </section>
   );
 }
 

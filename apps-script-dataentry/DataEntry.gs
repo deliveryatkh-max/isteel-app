@@ -36,6 +36,8 @@ function doPost(e) {
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
+    // Telegram Approve / Reject link for a missed 1st weigh (Kim, 28 Nov 2026): signed link, no sign-in.
+    if (body.action === 'scTgDecide') return json_({ ok: true, data: withLock_(() => scTgDecide_(body.payload || {})) });
     const user = authenticate_(body.token, /^sc[A-Z]/.test(String(body.action || '')) ? 'scale' : 'dataentry');
     const out = { ok: true, data: route_(body.action, body.payload || {}, user) };
     if (user.session) out.session = user.session;
