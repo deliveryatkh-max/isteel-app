@@ -9,7 +9,6 @@
     { key: 'fuel', kh: 'ចាក់សាំង', en: 'Fuel Refill', url: 'fuel/' },
     { key: 'transport', kh: 'ដឹកជញ្ជូន', en: 'Transport', url: 'delivery/' },
     { key: 'overtime', kh: 'ថែមម៉ោង', en: 'Overtime', url: 'overtime/' },
-    { key: 'location', kh: 'ទីតាំងថ្មី', en: 'New Location', url: '' },
     { key: 'meeting', kh: 'ប្រជុំ', en: 'Meetings', url: 'minutes/' },
     { key: 'incident', kh: 'គ្រោះថ្នាក់', en: 'Incident Report', url: 'incident/' },
     { key: 'inbound', kh: 'ទទួលទំនិញ', en: 'Inbound', url: 'inbound/' },
