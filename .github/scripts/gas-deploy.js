@@ -8,7 +8,9 @@ const fs = require('fs'), path = require('path'), os = require('os');
 const { execSync } = require('child_process');
 const root = path.resolve(__dirname, '..', '..');
 const map = JSON.parse(fs.readFileSync(path.join(root, '.github', 'apps-script-map.json'), 'utf8'));
-const [since = 'all', only = ''] = process.argv.slice(2);
+const [since = 'all', only0 = ''] = process.argv.slice(2);
+// "dry:<folder>" pulls the project and shows what would be pushed, but pushes and deploys nothing.
+const dry = /^dry:/.test(only0), only = only0.replace(/^dry:/, '');
 const sha = (process.env.GITHUB_SHA || 'local').slice(0, 7);
 const sh = (cmd, cwd) => execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
 
@@ -28,8 +30,11 @@ for (const dir of folders) {
   try {
     fs.writeFileSync(path.join(tmp, '.clasp.json'), JSON.stringify({ scriptId: m.scriptId, rootDir: '.', fileExtension: 'gs' }));
     sh('clasp pull', tmp);
-    const src = path.join(root, dir);
-    fs.readdirSync(src).filter(f => /\.gs$/.test(f) || f === 'appsscript.json').forEach(f => fs.copyFileSync(path.join(src, f), path.join(tmp, f)));
+    const src = path.join(root, dir), names = m.files || {};   // names: repo file -> the file's name inside the project (e.g. Code.gs -> Master.gs)
+    const before = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
+    fs.readdirSync(src).filter(f => /\.gs$/.test(f) || f === 'appsscript.json').forEach(f => fs.copyFileSync(path.join(src, f), path.join(tmp, names[f] || f)));
+    const after = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
+    if (dry) { console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
     sh('clasp push --force', tmp);
     const out = sh('clasp deploy --deploymentId ' + m.deploymentId + ' --description "auto ' + sha + '"', tmp);
     console.log('✅ ' + dir + ' (' + m.name + '): ' + out.trim().split('\n').pop());
