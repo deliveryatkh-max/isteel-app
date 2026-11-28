@@ -51,6 +51,7 @@ function doPost(e) {
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ ok: false, error: 'BAD: Bad request' }); }
   try {
     if (body.action === 'pmSync') return json_({ ok: true, data: pmSync_(body) });   // Kim's PC pushes the Excel Product Master (key, no sign-in)
+    if (body.action === 'mdBackup') return json_({ ok: true, data: mdBackup_(body) });   // Kim's PC pulls a nightly Excel copy of the master sheet
     const user = authenticate_(body.token);
     const out = { ok: true, data: route_(body.action, body.payload || {}, user) };
     if (user.session) out.session = user.session;
@@ -313,6 +314,20 @@ function pmList_() {
   try { cache.put('pml', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
   return out;
 }
+// Nightly OneDrive copy (Kim, 28 Nov 2026): the Google Sheet "Master Data - All - For Apps" stays the one place to edit;
+// a task on Kim's PC (tools/product-master-sync/backup-master-data.ps1) fetches it as .xlsx with the same PM_SYNC_KEY
+// and saves a read-only copy in OneDrive ...\Master Data (All).
+function mdBackup_(body) {
+  const key = prop_('PM_SYNC_KEY');
+  if (!key || String(body.key || '') !== key) fail_('AUTH', 'Wrong sync key.');
+  const id = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID') || MD_SHEET_DEFAULT;
+  const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + id + '/export?format=xlsx',
+    { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) fail_('BAD', 'Export failed (' + res.getResponseCode() + ').');
+  const bytes = res.getBlob().getBytes();
+  return { name: 'Master Data - All - For Apps (app copy).xlsx', size: bytes.length, at: new Date().toISOString(), b64: Utilities.base64Encode(bytes) };
+}
+
 // Product Master from Kim's Excel (Kim, 20 Nov 2026): OneDrive ...\Product Master (in use), sheet "Product Master".
 // A task on Kim's PC (tools/product-master-sync) posts the rows here with the PM_SYNC_KEY script property.
 // The tab is replaced by the Excel rows. Kg/PC and UoM are not in the Excel yet, so the values already typed in the
