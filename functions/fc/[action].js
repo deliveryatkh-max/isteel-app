@@ -2,6 +2,7 @@
 // Used by the Fuel Apps Script when Kim's Google account could not use Gemini (19 Oct 2026):
 //   /fc/read        reads the number on one odometer, hour meter or fuel pump photo, and says if it is the wrong photo
 //   /fc/transcribe  turns a short Khmer voice note into text
+//   /fc/dn          reads the Kg of each row and the written total on a photo of a delivery note (Inbound app, 28 Nov 2026)
 // Only the Fuel Apps Script calls it, with the shared password in the X-FC-Key header.
 //
 // Cloudflare Pages > isteel-app > Settings:
@@ -27,6 +28,7 @@ export async function onRequest({ request, env, params }) {
     const body = await request.json();
     if (action === 'read') return json(await readPhoto(env, body));
     if (action === 'transcribe') return json(await transcribe(env, body));
+    if (action === 'dn') return json(await readDn(env, body));
     return json({ ok: false, error: 'BAD: Unknown action' }, 404);
   } catch (e) {
     return json({ ok: false, error: 'AI: ' + String(e && e.message || e).slice(0, 400) }, 502);
@@ -67,6 +69,36 @@ export function parseAnswer(text) {
 const textOf = r => typeof r === 'string' ? r : r && (typeof r.response === 'string' ? r.response : r.response ? JSON.stringify(r.response)
   : r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : '');
 
+export const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils at a steel company in Cambodia. A table lists the coils with a Quantity (Kg) column, and the total in Kg is written by hand below that column. ' +
+  'A dark blue strip at the bottom with an ID and a date is a watermark: ignore it. ' +
+  'Answer with JSON only, no other text: {"lines": [the Kg of each table row as numbers], "total": the total in Kg written below the table, or null if you cannot read one}. ' +
+  'Read the digits exactly as written. Do not add the rows up yourself for "total". Use null when the total is blurred, cut off or missing.';
+
+/** {lines:[numbers], total:number|null} from a model answer, or null when there is no JSON. */
+export function parseDn(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let o; try { o = JSON.parse(m[0]); } catch (e) { return null; }
+  const n = v => { const x = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return x > 0 && isFinite(x) ? x : 0; };
+  return { lines: (Array.isArray(o.lines) ? o.lines : []).map(n).filter(Boolean).slice(0, 40), total: n(o.total) || null };
+}
+
+async function readDn(env, p) {
+  const image = String(p.image || '');
+  if (!/^data:image\/(jpeg|png);base64,/.test(image)) return { ok: false, error: 'BAD: image must be a data URL' };
+  const models = [env.FC_MODEL, lastGood].concat(VISION_MODELS).filter((m, i, a) => m && a.indexOf(m) === i);
+  const tried = [];
+  for (const model of models) {
+    try {
+      const out = await runVision(env, model, DN_PROMPT, image, 500);
+      const got = parseDn(textOf(out));
+      if (got && (got.total || got.lines.length)) { lastGood = model; return { ok: true, model, lines: got.lines, total: got.total }; }
+      tried.push(model + ': no numbers in answer: ' + String(textOf(out)).slice(0, 120));
+    } catch (e) { tried.push(model + ': ' + String(e && e.message || e).slice(0, 160)); }
+  }
+  return { ok: false, error: 'AI: no model could read the photo. ' + tried.join(' | ') };
+}
+
 async function readPhoto(env, p) {
   const kind = WHAT[p.kind] ? p.kind : 'km';
   const image = String(p.image || '');
@@ -88,11 +120,11 @@ async function readPhoto(env, p) {
 }
 
 /** Vision models on Workers AI take the photo either inside the message (image_url) or as a separate image field. */
-async function runVision(env, model, prompt, dataUrl) {
-  const asMessage = { messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }], max_tokens: 200, temperature: 0 };
+async function runVision(env, model, prompt, dataUrl, max) {
+  const asMessage = { messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }], max_tokens: max || 200, temperature: 0 };
   if (model.indexOf('llama-3.2-11b-vision') < 0) return env.AI.run(model, asMessage);
   const bytes = Uint8Array.from(atob(dataUrl.split(',')[1]), c => c.charCodeAt(0));
-  const asField = { messages: [{ role: 'user', content: prompt }], image: Array.from(bytes), max_tokens: 200, temperature: 0 };
+  const asField = { messages: [{ role: 'user', content: prompt }], image: Array.from(bytes), max_tokens: max || 200, temperature: 0 };
   try { return await env.AI.run(model, asField); }
   catch (e) {
     // Meta's licence for this model has to be accepted once per account by sending "agree".

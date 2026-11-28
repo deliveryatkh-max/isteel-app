@@ -446,54 +446,32 @@ function receipts_() {
   return recRows_().map(r => { try { return siteFix_(JSON.parse(r[5]), ents); } catch (e) { return null; } }).filter(Boolean);
 }
 // ---------------------------------------------------------------- paper DN check
-// Kim, 28 Nov 2026: after a truck is finished, the DN photo is read by a free Groq vision model and the total written on
-// the paper is shown next to the total typed in the app. Needs the script property GROQ_API_KEY (free, console.groq.com);
-// GROQ_VISION_MODEL is optional (otherwise the first vision model Groq lists). Nothing is blocked; the answer is only a warning.
-const GROQ_API = 'https://api.groq.com/openai/v1';
-function groqVisionModel_(key) {
-  if (prop_('GROQ_VISION_MODEL')) return prop_('GROQ_VISION_MODEL');
-  const r = UrlFetchApp.fetch(GROQ_API + '/models', { headers: { Authorization: 'Bearer ' + key }, muteHttpExceptions: true });
-  let ids = []; try { ids = (JSON.parse(r.getContentText() || '{}').data || []).map(m => String(m.id)); } catch (e) { /* none */ }
-  const v = ids.filter(id => /llama-4|vision|-vl\b|scout|maverick|gemma-3|pixtral/i.test(id) && !/guard|whisper|tts/i.test(id));
-  return v[0] || '';
-}
-const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils. A table lists the coils with a Quantity (Kg) column, and the total in Kg is written by hand below that column. '
-  + 'Reply with JSON only, no other words: {"lines":[the Kg of each table row, numbers only],"total":the total in Kg that is written below the table, or null if you cannot read one}. '
-  + 'Read the digits exactly as written. Do not add the numbers yourself for "total".';
-/** Pulls {lines, total} out of the model's answer; null when there is no JSON. */
-function dnParse_(text) {
-  const m = String(text || '').match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  let o; try { o = JSON.parse(m[0]); } catch (e) { return null; }
-  const n = v => { const x = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return x > 0 && isFinite(x) ? x : 0; };
-  const lines = (Array.isArray(o.lines) ? o.lines : []).map(n).filter(Boolean).slice(0, 40);
-  return { lines: lines, total: n(o.total) };
-}
+// Kim, 28 Nov 2026: after a truck is finished, the DN photo is read by Cloudflare's free Workers AI (the same relay the Fuel app
+// uses for odometer photos, /fc/dn) and the total written on the paper is shown next to the total typed in the app.
+// Needs the script property FC_SECRET = the same password as in the Fuel script (and Cloudflare). Groq has no photo model now.
+// Nothing is blocked; the answer is only a warning.
 function dnCheck_(p, user) {
   const f = find_(p.id), rec = f.rec;
   if (!siteOk_(user, rec.site)) fail_('DENIED', 'This truck belongs to ' + rec.site + '.', 'ឡាននេះជារបស់ ' + rec.site + '។');
   if (rec.dnPaper && !p.force) return rec;
-  const key = prop_('GROQ_API_KEY');
-  if (!key) fail_('SETUP', 'Add GROQ_API_KEY in the Inbound Script properties.', 'សូមដាក់ GROQ_API_KEY ក្នុង Script properties។');
+  const key = prop_('FC_SECRET');
+  if (!key) fail_('SETUP', 'Add FC_SECRET in the Inbound Script properties (copy it from the Fuel script).', 'សូមដាក់ FC_SECRET ក្នុង Script properties (ចម្លងពីស្គ្រីប Fuel)។');
   const docId = rec.ph && rec.ph.doc;
   if (!docId) fail_('BAD', 'This receipt has no DN photo.', 'ការទទួលនេះគ្មានរូប DN ទេ។');
   let blob; try { blob = DriveApp.getFileById(docId).getBlob(); } catch (e) { fail_('BAD', 'The DN photo is not in Drive any more.', 'រកមិនឃើញរូប DN ក្នុង Drive ទេ។'); }
-  const model = groqVisionModel_(key);
-  if (!model) fail_('BAD', 'Groq has no free vision model right now. Set GROQ_VISION_MODEL.', 'Groq មិនមាន model អានរូបឥតគិតថ្លៃទេ។');
-  const body = JSON.stringify({ model: model, temperature: 0, max_tokens: 500, messages: [{ role: 'user', content: [{ type: 'text', text: DN_PROMPT },
-    { type: 'image_url', image_url: { url: 'data:' + (blob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(blob.getBytes()) } }] }] });
-  let res;
-  for (let i = 0; i < 2; i++) {   // the free plan answers 429 when too many calls come in one minute: wait once
-    res = UrlFetchApp.fetch(GROQ_API + '/chat/completions', { method: 'post', contentType: 'application/json', headers: { Authorization: 'Bearer ' + key }, payload: body, muteHttpExceptions: true });
-    if (res.getResponseCode() !== 429) break;
-    Utilities.sleep(8000);
+  const origin = (String(setting_('APP_URL') || '').match(/^https?:\/\/[^\/]+/) || ['https://isteel-app.pages.dev'])[0];
+  const mime = /png/i.test(blob.getContentType() || '') ? 'image/png' : 'image/jpeg';
+  const res = UrlFetchApp.fetch(origin + '/fc/dn', { method: 'post', contentType: 'application/json', headers: { 'X-FC-Key': key }, muteHttpExceptions: true,
+    payload: JSON.stringify({ image: 'data:' + mime + ';base64,' + Utilities.base64Encode(blob.getBytes()) }) });
+  let d = null; try { d = JSON.parse(res.getContentText()); } catch (e) { /* below */ }
+  if (!d || !d.ok) {
+    const why = String((d && d.error) || ('HTTP ' + res.getResponseCode())).replace(/^[A-Z]+:\s*/, '').slice(0, 160);
+    fail_('BAD', 'Could not read the DN photo: ' + why, 'មិនអាចអានរូប DN បានទេ៖ ' + why);
   }
-  if (res.getResponseCode() !== 200) fail_('BAD', 'The reader is busy or refused (' + res.getResponseCode() + '). Try again in a minute.', 'កម្មវិធីអានរវល់។ សូមព្យាយាមម្តងទៀតក្នុងមួយនាទី។');
-  let txt = ''; try { txt = JSON.parse(res.getContentText()).choices[0].message.content; } catch (e) { /* below */ }
-  const d = dnParse_(txt);
-  if (!d || (!d.total && !d.lines.length)) fail_('BAD', 'Could not read the numbers on the DN photo.', 'មិនអាចអានលេខលើរូប DN បានទេ។');
-  const sum = d.lines.reduce((s, x) => s + x, 0);
-  rec.dnPaper = { total: d.total || sum, written: d.total || 0, sum: sum, lines: d.lines, at: now_(), model: model };
+  const lines = (d.lines || []).map(Number).filter(x => x > 0), total = Number(d.total) > 0 ? Number(d.total) : 0;
+  const sum = lines.reduce((s, x) => s + x, 0);
+  if (!total && !sum) fail_('BAD', 'Could not read the numbers on the DN photo.', 'មិនអាចអានលេខលើរូប DN បានទេ។');
+  rec.dnPaper = { total: total || sum, written: total, sum: sum, lines: lines, at: now_(), model: String(d.model || '') };
   rec.updated = now_();
   store_(rec, f.row);
   return rec;
