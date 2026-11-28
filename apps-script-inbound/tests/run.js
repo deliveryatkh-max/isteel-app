@@ -342,6 +342,19 @@ ok(/not a Google Drive link/.test(set.rows.find(x => x && x[0] === 'PDF_TEMPLATE
   e2 = must(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: ed } }));
   eq([e2.items.map(i => i.material), e2.po], [['1300000003'], '5100088888'], 'admin deletes a row');
   ok(/^BAD/.test(call('kim@x.com', 'save', { receipt: { id: r.id, itemsEdit: true, items: [] } }).error), 'keeps one row'); }
+{ // paper DN check (Kim, 28 Nov 2026): the doc photo goes to Groq's vision model, the written total is saved
+  ok(/GROQ_API_KEY/.test(call('kim@x.com', 'dnCheck', { id: r.id }).error), 'dnCheck needs the Groq key');
+  env.props.GROQ_API_KEY = 'gsk_test';
+  env.groqAnswer = 'Here: {"lines":[4480,4535,4430,4490,4255],"total":"22,190"}';
+  const c = must(call('kim@x.com', 'dnCheck', { id: r.id }));
+  eq([c.dnPaper.total, c.dnPaper.written, c.dnPaper.sum, c.dnPaper.lines.length], [22190, 22190, 22190, 5], 'paper total read');
+  eq([env.groqCalls.length, env.groqCalls[0].model, /image_url/.test(JSON.stringify(env.groqCalls[0]))], [1, 'meta-llama/llama-4-vision-x', true], 'vision model picked, photo sent');
+  must(call('kim@x.com', 'dnCheck', { id: r.id }));
+  eq(env.groqCalls.length, 1, 'second check reuses the saved reading');
+  ok(log().find(x => x[0] === r.id)[36] === '22190', 'paper qty in GR Log');
+  env.groqAnswer = 'sorry'; ok(/Could not read/.test(call('kim@x.com', 'dnCheck', { id: r.id, force: true }).error), 'unreadable photo reported');
+  env.groqAnswer = '{"lines":[100,250],"total":null}';
+  eq(must(call('kim@x.com', 'dnCheck', { id: r.id, force: true })).dnPaper.total, 350, 'no written total: lines added up'); }
 { const g = must(call('kim@x.com', 'gsList', { from: '2000-01-01', to: '2999-12-31' })); ok(g.receipts.length > 0 && !g.receipts[0].ph && g.receipts[0].items[0].arrQty !== undefined, 'gsList slim receipts');
   ok(/Pick the dates/.test(call('kim@x.com', 'gsList', {}).error), 'gsList needs dates'); }
 // Qty + UoM headings (Kim, 26 Nov 2026): Kg -> Qty, PCS -> UoM; blank or KG = Kg, PCS = PC

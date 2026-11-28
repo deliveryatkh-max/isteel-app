@@ -721,6 +721,33 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const tag = g === 0 ? `<span class="dnok">✓ ${t('ត្រូវគ្នា', 'Matches')}</span>` : `<span class="dnbad">${g > 0 ? '+' : ''}${fmt(g)} ${esc(r.uom)}</span>`;
     return short ? tag : `<p class="hint">${t('ចំនួនមកដល់សរុប', 'Total arrival qty')}: <b>${fmt(a)} ${esc(r.uom)}</b> · DN <b>${fmt(d)}</b> ${tag}</p>`;
   }
+  // Paper DN check (Kim, 28 Nov 2026): the DN photo is read by a free vision model on the server; the written total is
+  // shown next to the total typed here. Only a warning, nothing is blocked.
+  const DNB = {}, DNERR = {}, DNRUN = {};
+  function dnPaperHtml(r) {
+    const p = r.dnPaper, d = +r.dnQty;
+    if (p) {
+      const g = Math.round((p.total - d) * 1000) / 1000;
+      const tag = g === 0 ? `<span class="dnok">✓ ${t('ដូចអ្វីដែលបានវាយ', 'Same as typed')}</span>`
+        : `<span class="dnbad">⚠️ ${t('បានវាយ ', 'Typed ')}${fmt(d)} · ${t('ខុសគ្នា ', 'differs ')}${g > 0 ? '−' : '+'}${fmt(Math.abs(g))}</span>`;
+      const note = !p.written ? t('(បូកពីជួរ)', '(added up from the lines)') : p.sum && p.sum !== p.total ? t('(ជួរបូកបាន ', '(lines add up to ') + fmt(p.sum) + ')' : '';
+      return `<b>${fmt(p.total)} ${esc(r.uom)}</b> ${tag} <small class="il">${note} ${t('អានដោយ AI · សូមមើលរូប', 'read by AI · check the photo')}</small>`;
+    }
+    if (DNB[r.id]) return `<span class="spinner"></span> ${t('កំពុងអានរូប DN…', 'Reading the DN photo…')}`;
+    return (DNERR[r.id] ? `<small class="dnbad">${esc(DNERR[r.id])}</small> ` : '') + `<button type="button" class="btn sm" id="dnChk">🔍 ${t('ពិនិត្យរូប DN', 'Check the DN photo')}</button>`;
+  }
+  async function dnCheck(id) {
+    const r = byId(id); if (!r || DNB[id] || DEMO) return;
+    DNB[id] = 1; DNERR[id] = ''; paintDn(id);
+    try { const rec = await api('dnCheck', { id: id }); const i = DATA.findIndex(x => x.id === id); if (i >= 0) DATA[i] = Object.assign({}, DATA[i], { dnPaper: rec.dnPaper }); save(); }
+    catch (e) { DNERR[id] = /Unknown action/i.test(e.message) ? t('សូម paste Inbound.gs ថ្មី', 'Re-paste Inbound.gs first') : e.message; }
+    DNB[id] = 0; paintDn(id);
+  }
+  function paintDn(id) {
+    const r = byId(id), el = $('#dnPaper'); if (!r || !el || !/^#\/r\//.test(location.hash) || location.hash.slice(4) !== id) return;
+    el.innerHTML = dnPaperHtml(r);
+    const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id);
+  }
   function renderForm(id) {
     paintTabs('');
     if (!F || F.id !== (id || '')) {
@@ -1001,7 +1028,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const en = $('#endBtn');
     if (en) en.onclick = async () => {
       collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
-      if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); location.hash = '#/r/' + rec.id; } return; }
+      if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); DNRUN[rec.id] = 1; location.hash = '#/r/' + rec.id; } return; }
       F.end = nowHM(); F = await stamped(F, F.id); TAKEN.clear(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
@@ -1212,7 +1239,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <section class="card"><div class="kvs">
         ${kv(t('លេខ PO', 'PO Number'), esc(posOf(r).join(", ")))}${kv(t('លេខ Inbound', 'Inbound Number'), esc(r.inbound))}
         ${kv('Ref. No.', esc(r.ref || '–'))}${kv(t('អ្នកផ្គត់ផ្គង់', 'Supplier'), esc(r.supplier || '–'))}
-        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl && r.dn3pl !== '-' ? r.dn3pl : '–'))}${r.dnQty ? kv(t('បរិមាណសរុបលើ DN', 'Total Qty on the DN'), fmt(r.dnQty) + ' ' + esc(r.uom) + ' ' + dnCmp(r, 1)) : ''}
+        ${kv('ETA', showEta(r.eta) || '–')}${kv(t('លេខ DN របស់ 3PL', '3PL DN Number'), esc(r.dn3pl && r.dn3pl !== '-' ? r.dn3pl : '–'))}${r.dnQty ? kv(t('បរិមាណសរុបលើ DN', 'Total Qty on the DN'), fmt(r.dnQty) + ' ' + esc(r.uom) + ' ' + dnCmp(r, 1)) : ''}${r.dnQty && r.ph && r.ph.doc && !isLive(r) && !DEMO ? kv(t('DN លើក្រដាស', 'DN total on paper'), '<span id="dnPaper">' + dnPaperHtml(r) + '</span>') : ''}
         ${kv(t('ផ្លាកលេខឡាន / រ៉ឺម៉ក', 'Truck / trailer'), esc(r.truck))}${kv(t('ម្ចាស់ឡាន', 'Truck owner'), r.owner ? esc(ownerTxt(r)) : '–')}
         ${r.site ? kv(t('ឃ្លាំង', 'Warehouse'), '🏭 ' + esc(r.site)) : ''}${r.warehouse ? kv(t('ច្រកចូល', 'Entrance'), esc(whName(r.warehouse))) : ''}
       </div></section>
@@ -1233,6 +1260,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
     if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
     paintScale(r);
+    if ($('#dnPaper')) { const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id); if (DNRUN[id] && !r.dnPaper && !DNB[id]) { DNRUN[id] = 0; dnCheck(id); } }
     // Admin removes a pending unloading record, e.g. a truck started twice (Kim, 3 Nov 2026); a copy stays in the IB Deleted tab
     if ($('#delBtn')) $('#delBtn').onclick = () => {
       $('#delBtn').hidden = true;
