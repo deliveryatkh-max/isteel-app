@@ -81,6 +81,7 @@
       '.idlp .idl{max-width:none;margin:0}.idlp .idl-or{color:rgba(255,255,255,.85)}.idlp .idl-or:before,.idlp .idl-or:after{background:rgba(255,255,255,.45)}' +
       '.idlp .idl label{color:#fff}.idlp .idl input{border-color:transparent}.idlp .idl .note{color:rgba(255,255,255,.85)}' +
       '.idlp .idl .go{background:#fff;color:#011e41}:root[data-theme="dark"] .idlp .idl .go{background:#fff}' +
+      '@media (max-width:699px){.idlp .idl label{margin-bottom:8px}.idlp .idl input{padding:10px 12px;margin-top:4px}.idlp .idl .go{padding:11px}.idlp .idl-or{margin-bottom:8px}.idlp-g{margin-bottom:10px}.idlp .idl .note{margin-top:8px}}' +
       '.idlp .idl .err{background:#fff}.idlp-g{min-height:44px;display:flex;justify-content:center;margin-bottom:14px}.idlp-x .alert{margin:0 0 10px}';
     document.head.appendChild(st);
   }
@@ -93,22 +94,40 @@
     const W = o.clientWidth, H = o.clientHeight, ar = c.w / c.h, phone = W < 700;
     o.style.background = c.fill;
     box.style.backgroundImage = 'url("' + c.src + '")';
-    let bw, bh, left;
-    if (c.pos === 'center') { bw = Math.max(W, H * ar); bh = bw / ar; left = (W - bw) / 2; }
-    else if (phone) { bw = Math.max(H * ar, W / c.panel * 0.86); bh = bw / ar; left = c.pos === 'right' ? W - bw : 0; }
-    else { bh = Math.max(H, 700); bw = bh * ar; if (bw > W) { bw = W; bh = bw / ar; } left = (W - bw) / 2; }
-    Object.assign(box.style, { width: bw + 'px', height: bh + 'px', left: left + 'px' });
     f.className = 'idlp-f';
-    let fw, fx, fy;
     if (c.pos === 'center') {
-      fw = Math.min(360, W - 32); fx = (bw - fw) / 2; fy = Math.max(16, (Math.min(H, bh) - 430) / 2); f.classList.add('card');
-    } else {
-      const px = c.pos === 'right' ? 1 - c.panel : 0;
-      fw = Math.max(Math.min(280, W - 32), (c.panel - 0.066) * bw); fx = (px + 0.044) * bw;
-      if (phone) fx = Math.min(Math.max(fx, -left + 16), -left + W - 16 - fw);
-      if (c.top >= 0) fy = c.top * bh; else { fy = Math.min(H, bh) / 2; f.classList.add('mid', 'card'); }
+      const bw = Math.max(W, H * ar), bh = bw / ar, fw = Math.min(360, W - 32);
+      Object.assign(box.style, { width: bw + 'px', height: bh + 'px', left: (W - bw) / 2 + 'px', top: '0px' });
+      f.classList.add('card');
+      Object.assign(f.style, { width: fw + 'px', left: (bw - fw) / 2 + 'px', top: Math.max(16, (Math.min(H, bh) - f.offsetHeight) / 2) + 'px' });
+      return;
     }
-    Object.assign(f.style, { width: fw + 'px', left: fx + 'px', top: fy + 'px' });
+    // Left / right: the boxes sit on the picture's empty panel. Phone (Kim, 28 Nov 2026): the panel fills the screen and
+    // the picture grows until the boxes fit under the title, bottom of the picture on the bottom of the screen: no scrolling.
+    const px = c.pos === 'right' ? 1 - c.panel : 0, top = c.top >= 0 ? c.top : 0.5;
+    const lay = bh => {
+      let bw = bh * ar;
+      if (!phone && bw > W) { bw = W; bh = bw / ar; }
+      const left = phone ? (c.pos === 'right' ? W - bw : 0) : (W - bw) / 2;
+      const fw = Math.min(W - 32, Math.max(Math.min(280, W - 32), (c.panel - 0.066) * bw));
+      let fx = (px + 0.044) * bw;
+      fx = Math.min(Math.max(fx, -left + 16), -left + W - 16 - fw);
+      f.style.width = fw + 'px';
+      return { bw, bh, left, fw, fx };
+    };
+    let L = lay(phone ? Math.max(H, W / c.panel * 0.94 / ar) : Math.max(H, 640));
+    if (c.top < 0) f.classList.add('mid', 'card');
+    const fh = f.offsetHeight + 12, need = c.top >= 0 ? fh / (1 - top) : fh;
+    if (need > L.bh) L = lay(need);
+    // taller than the screen: keep the bottom on the screen's bottom, but never cut the title (from 27% down)
+    const y = L.bh > H ? Math.max(H - L.bh, c.top >= 0 ? -(top - 0.24) * L.bh : H - L.bh) : 0;
+    Object.assign(box.style, { width: L.bw + 'px', height: L.bh + 'px', left: L.left + 'px', top: y + 'px' });
+    Object.assign(f.style, { left: L.fx + 'px', top: (c.top >= 0 ? top * L.bh : Math.min(H, L.bh) / 2 - y) + 'px' });
+    if (!fit.ro && window.ResizeObserver) {
+      let last = 0;
+      fit.ro = new ResizeObserver(es => { const h = Math.round(es[0].contentRect.height); if (Math.abs(h - last) > 4) { last = h; fit(); } });
+    }
+    if (fit.ro && fit.ro.el !== f) { fit.ro.disconnect(); fit.ro.observe(f); fit.ro.el = f; }
   }
   /** The poster sign-in screen inside `host`. opt: { url, done, html (extra lines above the buttons) }. Google goes in #gsiButton. */
   function poster(host, opt) {
