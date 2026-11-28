@@ -3452,8 +3452,9 @@ function umList_(p, user) {
 /** Material Group L4 names from the master Product tab (📦 Stock access columns), kept 10 minutes. */
 // Stock access groups = Material Group L2 (Kim, 28 Nov 2026: "lookup from Material Group L2"), grouped under L1.
 // Older entries saved as L4 names still work in Stock Count (it matches L2 or L4) and show here as their L2.
+// A group is one L1 + L2 pair (the same L2 name, e.g. Roofing, sits under several L1): saved as "L1 > L2", shown as L2 under its L1.
 function stockGroups_() {
-  const cache = CacheService.getScriptCache(), hit = cache.get('stock_groups2');
+  const cache = CacheService.getScriptCache(), hit = cache.get('stock_groups3');
   if (hit) return JSON.parse(hit);
   const sh = mdTab_('Product');
   if (!sh || sh.getLastRow() < 2) return [];
@@ -3461,30 +3462,39 @@ function stockGroups_() {
   const c2 = head.indexOf('materialgroupl2'), c1 = head.indexOf('materialgroupl1');
   if (c2 < 0) return [];
   const v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues(), seen = {};
-  const out = [];   // [{ n: L2, p: L1 }]
-  v.forEach(r => { const n = String(r[c2]).trim(); if (n && !seen[n]) { seen[n] = 1; out.push({ n: n, p: c1 >= 0 ? String(r[c1]).trim() : '' }); } });
-  out.sort((x, y) => x.p.localeCompare(y.p) || x.n.localeCompare(y.n));
-  cache.put('stock_groups2', JSON.stringify(out), 600);
+  const out = [];   // [{ n: "L1 > L2" (saved name), p: L1, l: L2 }]
+  v.forEach(r => {
+    const l2 = String(r[c2]).trim(), l1 = c1 >= 0 ? String(r[c1]).trim() : '', n = l1 ? l1 + ' > ' + l2 : l2;
+    if (l2 && !seen[n]) { seen[n] = 1; out.push({ n: n, p: l1, l: l2 }); }
+  });
+  out.sort((x, y) => x.p.localeCompare(y.p) || x.l.localeCompare(y.l));
+  cache.put('stock_groups3', JSON.stringify(out), 600);
   return out;
 }
-/** L4 name (lower case) → its L2, so a person saved with L4 names shows the right L2 ticks. */
+/** L4 name (lower case) → the "L1 > L2" groups it sits in, so a person saved with L4 names shows the right ticks. */
 function stockL4toL2_() {
-  const cache = CacheService.getScriptCache(), hit = cache.get('stock_l4l2');
+  const cache = CacheService.getScriptCache(), hit = cache.get('stock_l4tok');
   if (hit) return JSON.parse(hit);
   const sh = mdTab_('Product');
   if (!sh || sh.getLastRow() < 2) return {};
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-  const c4 = head.indexOf('materialgroupl4'), c2 = head.indexOf('materialgroupl2');
+  const c4 = head.indexOf('materialgroupl4'), c2 = head.indexOf('materialgroupl2'), c1 = head.indexOf('materialgroupl1');
   const map = {};
-  if (c4 >= 0 && c2 >= 0) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues().forEach(r => { const a = String(r[c4]).trim(), b = String(r[c2]).trim(); if (a && b) map[a.toLowerCase()] = b; });
-  cache.put('stock_l4l2', JSON.stringify(map), 600);
+  if (c4 >= 0 && c2 >= 0) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues().forEach(r => {
+    const a = String(r[c4]).trim().toLowerCase(), b = String(r[c2]).trim(), l1 = c1 >= 0 ? String(r[c1]).trim() : '';
+    if (!a || !b) return;
+    const tok = l1 ? l1 + ' > ' + b : b, list = map[a] || (map[a] = []);
+    if (list.indexOf(tok) < 0) list.push(tok);
+  });
+  cache.put('stock_l4tok', JSON.stringify(map), 600);
   return map;
 }
 function stockCatsShown_(cats) {
   if (!cats || !cats.length) return cats || [];
-  const l2 = {}, map = stockL4toL2_();
-  stockGroups_().forEach(g => { l2[g.n.toLowerCase()] = g.n; });
-  return catList_(cats.map(x => l2[String(x).toLowerCase()] || map[String(x).toLowerCase()] || x).join(','));
+  const tok = {}, byL2 = {}, map = stockL4toL2_();
+  stockGroups_().forEach(g => { tok[g.n.toLowerCase()] = g.n; (byL2[g.l.toLowerCase()] = byL2[g.l.toLowerCase()] || []).push(g.n); });
+  // a saved "L1 > L2" stays; an old plain L2 or L4 name shows as every L1 > L2 group it covers
+  return catList_([].concat.apply([], cats.map(x => { const k = String(x).toLowerCase(); return tok[k] ? [tok[k]] : byL2[k] || map[k] || [x]; })).join(','));
 }
 
 /** Count for the red badge on the 👥 tile: people waiting for an answer. */

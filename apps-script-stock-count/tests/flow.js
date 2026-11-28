@@ -205,4 +205,8 @@ if (g231) eq([bc.stock.every(l => l.material === '1100000231' || vm.runInContext
 vm.runInContext("pm_ = () => ({ M1: { group: 'Deformed Bar', group2: 'Bars' }, M2: { group: 'Wire Rod', group2: 'Bars' }, M3: { group: 'GI Pipe', group2: 'Pipes' } })", ctx);
 const seeL2 = vm.runInContext("seeFn_({ cats: ['bars'] })", ctx), seeL4 = vm.runInContext("seeFn_({ cats: ['GI Pipe'] })", ctx), seeAll = vm.runInContext("seeFn_({ cats: [] })", ctx);
 eq([seeL2('M1'), seeL2('M2'), seeL2('M3'), seeL4('M3'), seeL4('M1'), seeAll], [true, true, false, true, false, null], 'stock access by Material Group L2 (and old L4 names)');
+// L1 + L2 (28 Nov): the same L2 under two L1 is told apart; a plain L2 still covers both
+vm.runInContext("pm_ = () => ({ F1: { group: 'x', group1: 'Finished Goods', group2: 'Roofing' }, R1: { group: 'y', group1: 'Raw Material', group2: 'Roofing' } })", ctx);
+const seeFG = vm.runInContext("seeFn_({ cats: ['Finished Goods > Roofing'] })", ctx), seePlain = vm.runInContext("seeFn_({ cats: ['Roofing'] })", ctx);
+eq([seeFG('F1'), seeFG('R1'), seePlain('F1'), seePlain('R1')], [true, false, true, true], 'stock access by L1 > L2 pair; plain L2 still covers both');
 console.log('Stock Count flow tests: ' + pass + ' passed');

@@ -239,7 +239,7 @@
     const sees = u => { const c = sCats(u); return c.length ? `<span class="sx-chip">${c.length} ${t('ក្រុម', c.length === 1 ? 'group' : 'groups')}</span>` : `<span class="sx-chip all">${t('ទាំងអស់', 'All')}</span>`; };
     box.innerHTML = `<div class="tbl-wrap mx-wrap"><table class="tbl mx" data-nosort data-nocols><thead>
       <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th><th rowspan="2" class="mx-sees">${t('ឃើញ', 'Sees')}</th>${parts.map((x, i) => `<th colspan="${x.n}" class="mx-app${i % 2 ? ' alt' : ''}" data-l2col="${esc(x.p)}" title="${esc(t('ធីក / ដកធីក ទាំងក្រុម', 'Tick / untick the whole group'))}" style="cursor:pointer">${esc(x.p || '—')}</th>`).join('')}</tr>
-      <tr>${gs.map((g, j) => `<th class="mx-m${pIdx[g.p] % 2 ? ' alt' : ''}${j === 0 || gs[j - 1].p !== g.p ? ' first' : ''}" data-col="${esc(g.n)}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(g.n)}</th>`).join('')}</tr></thead>
+      <tr>${gs.map((g, j) => `<th class="mx-m${pIdx[g.p] % 2 ? ' alt' : ''}${j === 0 || gs[j - 1].p !== g.p ? ' first' : ''}" data-col="${esc(g.n)}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(g.l || g.n)}</th>`).join('')}</tr></thead>
       <tbody>${list.map(u => `<tr><td class="mx-name"><b>${esc(u.name)}</b><small>${esc([u.deptName || u.dept, u.whGroup, u.region].filter(Boolean).join(' · ') || u.email)}</small></td><td class="mx-sees" data-sees="${esc(u.email)}">${sees(u)}</td>
         ${gs.map(g => { const c = sCats(u).indexOf(g.n) >= 0, was = (u.stockCats || []).indexOf(g.n) >= 0;
           return `<td class="mx-c${c !== was ? ' chg' : ''}"><input type="checkbox" data-u="${esc(u.email)}" data-g="${esc(g.n)}"${c ? ' checked' : ''} aria-label="${esc(u.name + ' · ' + g.n)}"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -270,6 +270,7 @@
   // people and set their groups in one go (replace / add / remove), copy another person's groups, tick a whole L1 at once.
   const SEL = new Set();
   const allGroups = () => (D.stockGroups || []).map(g => (typeof g === 'string' ? { n: g, p: '' } : g));
+  const gLabel = n => { const g = allGroups().find(x => x.n === n); return g && g.l ? g.l : n; };
   function drawStockList() {
     const box = $('#sres'); if (!box) return;
     const list = sPeople();
@@ -277,7 +278,7 @@
     if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawStockSave(); return; }
     const chips = u => { const c = sCats(u), was = u.stockCats || [];
       if (!c.length) return `<span class="sx-chip all${was.length ? ' chg' : ''}">${t('ឃើញទាំងអស់', 'Sees everything')}</span>`;
-      return c.slice(0, 8).map(x => `<span class="sx-chip${was.indexOf(x) < 0 ? ' chg' : ''}">${esc(x)}</span>`).join('') + (c.length > 8 ? `<span class="sx-chip more">+${c.length - 8}</span>` : ''); };
+      return c.slice(0, 8).map(x => `<span class="sx-chip${was.indexOf(x) < 0 ? ' chg' : ''}" title="${esc(x)}">${esc(x)}</span>`).join('') + (c.length > 8 ? `<span class="sx-chip more">+${c.length - 8}</span>` : ''); };
     const allOn = list.every(u => SEL.has(u.email));
     box.innerHTML = `${SEL.size ? `<div class="sx-bulk"><b>☑ ${SEL.size} ${t('នាក់បានជ្រើស', SEL.size === 1 ? 'person selected' : 'people selected')}</b>
         <button type="button" class="btn ok sm" id="sxBulk">✏️ ${t('កំណត់ក្រុមឲ្យអ្នកដែលបានជ្រើស', 'Set groups for selected')}</button>
@@ -322,7 +323,7 @@
       body.innerHTML = parts.map((x, i) => { const vis = x.list.filter(hit); if (!vis.length) return '';
         const n = vis.filter(g => pick.has(g)).length;
         return `<section class="sx-sec"><label class="sx-l2"><input type="checkbox" data-l2="${i}"${n === vis.length ? ' checked' : ''}${n && n < vis.length ? ' data-mid="1"' : ''}> <b>${esc(x.p || '—')}</b> <small>${n}/${vis.length}</small></label>
-          <div class="sx-grid">${vis.map(g => `<label class="sx-g${pick.has(g) ? ' on' : ''}"><input type="checkbox" data-g="${esc(g)}"${pick.has(g) ? ' checked' : ''}> ${esc(g)}</label>`).join('')}</div></section>`; }).join('') || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`;
+          <div class="sx-grid">${vis.map(g => `<label class="sx-g${pick.has(g) ? ' on' : ''}"><input type="checkbox" data-g="${esc(g)}"${pick.has(g) ? ' checked' : ''}> ${esc(gLabel(g))}</label>`).join('')}</div></section>`; }).join('') || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`;
       $$('[data-mid]', body).forEach(cb => { cb.indeterminate = true; });
       $('#sxSum', back).textContent = pick.size ? t(`បានធីក ${pick.size} ក្រុម`, `${pick.size} ${pick.size === 1 ? 'group' : 'groups'} ticked`) : (many && mode !== 'replace' ? '' : t('មិនធីក = ឃើញទាំងអស់', 'Nothing ticked = sees everything'));
     };

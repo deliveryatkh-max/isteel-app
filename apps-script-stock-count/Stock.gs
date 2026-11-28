@@ -246,12 +246,16 @@ function counterLookup_(user) {
   const cats = cat >= 0 ? String(row[cat] || '').split(',').map(x => x.trim()).filter(Boolean) : [];
   return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin, role: role, supervisor: /supervisor/i.test(role), cats: cats };
 }
-// null = sees everything; else material → true when its Product Master group (L2 or L4) is one of the person's categories.
+// null = sees everything; else material → true when its Product Master group is one of the person's categories:
+// "L1 > L2" (what the Users screen saves since 28 Nov), a plain L2, or an old L4 name.
 function seeFn_(who) {
   if (!who || !who.cats || !who.cats.length) return null;
   const set = {}, pm = pm_();
   who.cats.forEach(x => { set[String(x).trim().toLowerCase()] = 1; });
-  return mat => { const m = pm[String(mat || '').trim().toUpperCase()] || {}; return !!(set[String(m.group2 || '').trim().toLowerCase()] || set[String(m.group || '').trim().toLowerCase()]); };
+  return mat => {
+    const m = pm[String(mat || '').trim().toUpperCase()] || {}, l1 = String(m.group1 || '').trim(), l2 = String(m.group2 || '').trim();
+    return !!((l2 && set[(l1 ? l1 + ' > ' + l2 : l2).toLowerCase()]) || set[l2.toLowerCase()] || set[String(m.group || '').trim().toLowerCase()]);
+  };
 }
 
 // ---------------------------------------------------------------- data
@@ -309,7 +313,7 @@ function pmList_() {
   const get = (r, names) => { for (const k in r) if (names.indexOf(norm(k)) >= 0 && r[k] !== '') return r[k]; return ''; };
   const out = objs_(SH.PM, PM_COLS).filter(r => get(r, ['material', 'materialcode', 'sku'])).map(r => ({
     material: get(r, ['material', 'materialcode', 'sku']), desc: get(r, ['description', 'materialdescription']),
-    group: get(r, ['materialgroupl4', 'group']), group2: get(r, ['materialgroupl2']), size: get(r, ['size', 'pipesize']),
+    group: get(r, ['materialgroupl4', 'group']), group2: get(r, ['materialgroupl2']), group1: get(r, ['materialgroupl1']), size: get(r, ['size', 'pipesize']),
     ppb: num_(get(r, ['pcbundle', 'pcsbundle', 'pcsperbundle', 'pcperbundle'])), kg: num_(get(r, ['kgpc', 'kgperpc', 'kgpcs', 'kgperpcs'])),
     uom: String(get(r, ['uom', 'sapuom', 'baseuom', 'unit'])).toUpperCase() }));
   try { cache.put('pml', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
