@@ -735,15 +735,15 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       const tag = g === 0 ? `<span class="dnok">✓ ${t('ដូចអ្វីដែលបានវាយ', 'Same as typed')}</span>`
         : `<span class="dnbad">⚠️ ${t('បានវាយ ', 'Typed ')}${fmt(d)} · ${t('ខុសគ្នា ', 'differs ')}${g > 0 ? '−' : '+'}${fmt(Math.abs(g))}</span>`;
       const note = !p.written ? t('(បូកពីជួរ)', '(added up from the lines)') : p.sum && p.sum !== p.total ? t('(ជួរបូកបាន ', '(lines add up to ') + fmt(p.sum) + ')' : '';
-      return `<b>${fmt(p.total)} ${esc(r.uom)}</b> ${tag} <small class="il">${note} ${t('អានដោយ AI · សូមមើលរូប', 'read by AI · check the photo')}</small>`;
+      return `<b>${fmt(p.total)} ${esc(r.uom)}</b> ${tag} <small class="il">${note} ${t('អានដោយ AI · សូមមើលរូប', 'read by AI · check the photo')}</small> <button type="button" class="btn sm" id="dnChk">↻ ${t('អានម្តងទៀត', 'Re-read')}</button>`;
     }
     if (DNB[r.id]) return `<span class="spinner"></span> ${t('កំពុងអានរូប DN…', 'Reading the DN photo…')}`;
     return (DNERR[r.id] ? `<small class="dnbad">${esc(DNERR[r.id])}</small> ` : '') + `<button type="button" class="btn sm" id="dnChk">🔍 ${t('ពិនិត្យរូប DN', 'Check the DN photo')}</button>`;
   }
-  async function dnCheck(id) {
+  async function dnCheck(id, force) {
     const r = byId(id); if (!r || DNB[id] || DEMO) return;
-    DNB[id] = 1; DNERR[id] = ''; paintDn(id);
-    try { const rec = await api('dnCheck', { id: id }); const i = DATA.findIndex(x => x.id === id); if (i >= 0) DATA[i] = Object.assign({}, DATA[i], { dnPaper: rec.dnPaper }); save(); }
+    DNB[id] = 1; DNERR[id] = ''; if (force) r.dnPaper = null; paintDn(id);
+    try { const rec = await api('dnCheck', { id: id, force: !!force }); const i = DATA.findIndex(x => x.id === id); if (i >= 0) DATA[i] = Object.assign({}, DATA[i], { dnPaper: rec.dnPaper }); save(); }
     catch (e) { DNERR[id] = /Unknown action/i.test(e.message) ? t('សូម paste Inbound.gs ថ្មី', 'Re-paste Inbound.gs first') : e.message; }
     DNB[id] = 0; paintDn(id);
     if (location.hash === '#/log') renderLog();
@@ -751,7 +751,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   function paintDn(id) {
     const r = byId(id), el = $('#dnPaper'); if (!r || !el || !/^#\/r\//.test(location.hash) || location.hash.slice(4) !== id) return;
     el.innerHTML = dnPaperHtml(r);
-    const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id);
+    const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id, true);
   }
   function renderForm(id) {
     paintTabs('');
@@ -1265,7 +1265,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
       <button class="btn" id="edit">✏️ ${t('កែប្រែ', 'Edit')}</button>`}`);
     if ($('#vPlay')) $('#vPlay').onclick = () => playVoice(r, $('#vPlay'));
     paintScale(r);
-    if ($('#dnPaper')) { const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id); if (DNRUN[id] && !r.dnPaper && !DNB[id]) { DNRUN[id] = 0; dnCheck(id); } }
+    if ($('#dnPaper')) { const b = $('#dnChk'); if (b) b.onclick = () => dnCheck(id, true); if (DNRUN[id] && !r.dnPaper && !DNB[id]) { DNRUN[id] = 0; dnCheck(id); } }
     // Admin removes a pending unloading record, e.g. a truck started twice (Kim, 3 Nov 2026); a copy stays in the IB Deleted tab
     if ($('#delBtn')) $('#delBtn').onclick = () => {
       $('#delBtn').hidden = true;
