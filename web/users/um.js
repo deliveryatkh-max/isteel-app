@@ -501,7 +501,7 @@
       box.innerHTML = `<div class="tbl-wrap ulist"><table class="tbl"><thead><tr>
         <th class="c-ck"><input type="checkbox" id="selAll" aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}></th>
         <th class="c-nm">${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th>
-        ${D.apps.map(a => `<th class="tk" title="${esc(appName(a))}">${appIcon(a.key, 22)}<small>${esc(appName(a))}</small></th>`).join('')}
+        ${D.apps.map(a => { const n = list.filter(u => u.apps[a.key]).length; return `<th class="tk" title="${esc(appName(a))}">${appIcon(a.key, 22)}<small>${esc(appName(a))}</small><input type="checkbox" class="tkall" data-all="${a.key}" data-n="${n}" ${n === list.length ? 'checked' : ''} aria-label="${esc(t('ធីកទាំងអស់', 'Tick all') + ' · ' + appName(a))}" title="${esc(t('ធីក/ដកទាំងអស់ ដែលបង្ហាញ', 'Tick / untick for everyone shown'))}"></th>`; }).join('')}
         <th>${t('សកម្ម', 'Active')}</th><th></th></tr></thead><tbody>${list.map(u => `
         <tr class="${u.active ? '' : 'off'}${sel.has(u.email) ? ' pick' : ''}" data-row="${esc(u.email)}">
           <td class="c-ck"><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
@@ -514,6 +514,11 @@
       $('#selAll').onchange = e => { list.forEach(u => e.target.checked ? sel.add(u.email) : sel.delete(u.email)); drawResults(); };
       $$('[data-sel]').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); c.closest('tr').classList.toggle('pick', c.checked); drawBulk(); });
       $$('[data-tick]').forEach(b => b.onclick = () => quickApp(b.dataset.tick, b.dataset.app));
+      $$('.tkall').forEach(c => {
+        c.indeterminate = +c.dataset.n > 0 && +c.dataset.n < list.length;
+        c.onclick = e => e.stopPropagation();   // not a sort click
+        c.onchange = () => { const k = c.dataset.all, on = c.checked, a = D.apps.find(x => x.key === k); c.checked = !on; bulk({ apps: { [k]: on } }, (on ? '✓ ' : '✗ ') + appName(a), list.map(u => u.email)); };
+      });
     } else {
       box.innerHTML = (PICK ? `<label class="pkall"><input type="checkbox" id="selAll" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}> ${t('ជ្រើសទាំងអស់ដែលបង្ហាញ', 'Select all shown')} (${list.length})</label>` : '') + `<div class="card ulist${PICK ? ' picking' : ''}">${list.map(u => `
         <div class="urow${u.active ? '' : ' off'}${PICK && sel.has(u.email) ? ' pick' : ''}">${PICK ? `<input type="checkbox" class="pkc" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}">` : ''}<a class="um" href="#/u/${encodeURIComponent(u.email)}"${PICK ? ` data-pk="${esc(u.email)}"` : ''}>${avatar(u)}
@@ -589,8 +594,8 @@
     $('#bOff').onclick = () => bulk({ active: false }, t('បិទ', 'Switch off'));
     $('#bClear').onclick = () => { sel.clear(); drawResults(); };
   }
-  async function bulk(patch, what) {
-    const emails = Array.from(sel).filter(byEmail);
+  async function bulk(patch, what, only) {
+    const emails = only || Array.from(sel).filter(byEmail);
     if (!confirm(`${what} → ${emails.length} ${t('នាក់', 'people')}?`)) { drawBulk(); return; }
     $('#bulk').innerHTML = `<div class="bulk"><span class="sp"></span> ${t('កំពុងរក្សាទុក…', 'Saving…')}</div>`;
     try {

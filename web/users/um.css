@@ -327,3 +327,5 @@ small.inl { display: inline; }
 .hmenu a, .hmenu button { display: block; text-align: left; padding: 10px 12px; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text); border-radius: 6px; text-decoration: none; cursor: pointer; }
 .hmenu a:hover, .hmenu button:hover { background: rgba(1, 30, 65, .07); }
 @media (max-width: 600px) { .um-head .hlab { display: none; } .um-head .add { padding: 0 14px; } .um-head h1 { font-size: 18px; } }
+/* tick-all box under each app icon (Kim, 28 Nov 2026) */
+.tbl th.tk .tkall { display: block; margin: 3px auto 0; width: 15px; height: 15px; cursor: pointer; accent-color: #1e7b46; }
