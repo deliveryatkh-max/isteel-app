@@ -188,7 +188,7 @@
   // ------------------------------------------------------------------ stock access (Kim, 27 Nov 2026, option A)
   // People down, product groups (Material Group L4, grouped under L2) across. Ticked = the person sees that group in
   // Stock Count. Nothing ticked = sees everything. Saved in the master Employee List column "Stock Categories".
-  const SF = { q: '', dept: '', whg: '', region: '', role: '', grp: '', only: true };
+  const SF = { q: '', dept: '', whg: '', region: '', role: '', grp: '', only: true, view: 'list' };
   let SP = {};   // changes not saved yet: email → groups
   const sCats = u => SP[u.email] || u.stockCats || [];
   const sChanged = () => D.users.filter(u => SP[u.email] && !sameList(SP[u.email], u.stockCats || []));
@@ -211,7 +211,7 @@
     const l2 = Array.from(new Set((D.stockGroups || []).map(g => g.p || '').filter(Boolean))).sort();
     view(`<div class="um-head"><h1>📦 ${t('សិទ្ធិមើលស្តុក', 'Stock access')}</h1></div>
       <p class="mx-hint">${t('ធីក = អ្នកនោះឃើញក្រុមផលិតផលនោះក្នុង ការរាប់ស្តុក។ មិនធីកសោះ = ឃើញទាំងអស់។ ចុចឈ្មោះក្រុម ដើម្បីធីកទាំងជួរ។', 'Ticked = the person sees that product group in Stock Count. Nothing ticked = sees everything. Tap a group name to tick the whole column.')}</p>
-      <div class="fb-wrap">${FB.head('stock', '', '', () => { Object.assign(SF, { q: '', dept: '', whg: '', region: '', role: '', grp: '' }); renderStock(); })}
+      <div class="fb-wrap">${FB.head('stock', '', `<span class="sx-view">${[['list', '☰ ' + t('បញ្ជី', 'List')], ['table', '▦ ' + t('តារាង', 'Table')]].map(v => `<button type="button" data-sv="${v[0]}" class="${SF.view === v[0] ? 'on' : ''}">${v[1]}</button>`).join('')}</span>`, () => { Object.assign(SF, { q: '', dept: '', whg: '', region: '', role: '', grp: '' }); renderStock(); })}
       ${FB.panel('stock', FB.field(t('ផ្នែក', 'Department'), `<select id="sDept"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.deptName || String(u.dept || '').split(' · ')[0]), SF.dept)}</select>`) +
         FB.field('WH Group', `<select id="sWhg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.whGroup), SF.whg, true)}</select>`) +
         FB.field(t('តំបន់', 'Region'), `<select id="sReg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.region), SF.region, true)}</select>`) +
@@ -223,9 +223,11 @@
     const on = (id, k, f) => { $(id).onchange = e => { SF[k] = f ? f(e.target) : e.target.value; drawStock(); }; };
     on('#sDept', 'dept'); on('#sWhg', 'whg'); on('#sReg', 'region'); on('#sRole', 'role'); on('#sGrp', 'grp'); on('#sOnly', 'only', el => el.checked);
     $('#sQ').oninput = e => { SF.q = e.target.value; clearTimeout(renderStock.h); renderStock.h = setTimeout(drawStock, 120); };
+    $$('[data-sv]').forEach(b => b.onclick = () => { SF.view = b.dataset.sv; $$('[data-sv]').forEach(x => x.classList.toggle('on', x === b)); drawStock(); });
     drawStock();
   }
   function drawStock() {
+    if (SF.view !== 'table') return drawStockList();
     const box = $('#sres'); if (!box) return;
     const gs = sGroups(), list = sPeople();
     if (!gs.length) { box.innerHTML = `<div class="empty">${t('មិនមានក្រុមផលិតផល (Product Master L4)', 'No product groups (Product Master L4)')}</div>`; return; }
@@ -234,7 +236,7 @@
     const pIdx = {}; parts.forEach((x, i) => { pIdx[x.p] = i; });
     const sees = u => { const c = sCats(u); return c.length ? `<span class="sx-chip">${c.length} ${t('ក្រុម', c.length === 1 ? 'group' : 'groups')}</span>` : `<span class="sx-chip all">${t('ទាំងអស់', 'All')}</span>`; };
     box.innerHTML = `<div class="tbl-wrap mx-wrap"><table class="tbl mx" data-nosort data-nocols><thead>
-      <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th><th rowspan="2" class="mx-sees">${t('ឃើញ', 'Sees')}</th>${parts.map((x, i) => `<th colspan="${x.n}" class="mx-app${i % 2 ? ' alt' : ''}">${esc(x.p || '—')}</th>`).join('')}</tr>
+      <tr><th rowspan="2" class="mx-name">${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th><th rowspan="2" class="mx-sees">${t('ឃើញ', 'Sees')}</th>${parts.map((x, i) => `<th colspan="${x.n}" class="mx-app${i % 2 ? ' alt' : ''}" data-l2col="${esc(x.p)}" title="${esc(t('ធីក / ដកធីក ទាំងក្រុម', 'Tick / untick the whole group'))}" style="cursor:pointer">${esc(x.p || '—')}</th>`).join('')}</tr>
       <tr>${gs.map((g, j) => `<th class="mx-m${pIdx[g.p] % 2 ? ' alt' : ''}${j === 0 || gs[j - 1].p !== g.p ? ' first' : ''}" data-col="${esc(g.n)}" title="${esc(t('ធីក / ដកធីក ទាំងជួរ', 'Tick / untick the whole column'))}">${esc(g.n)}</th>`).join('')}</tr></thead>
       <tbody>${list.map(u => `<tr><td class="mx-name"><b>${esc(u.name)}</b><small>${esc([u.deptName || u.dept, u.whGroup, u.region].filter(Boolean).join(' · ') || u.email)}</small></td><td class="mx-sees" data-sees="${esc(u.email)}">${sees(u)}</td>
         ${gs.map(g => { const c = sCats(u).indexOf(g.n) >= 0, was = (u.stockCats || []).indexOf(g.n) >= 0;
@@ -249,6 +251,12 @@
       const cell = box.querySelector(`[data-sees="${CSS.escape(u.email)}"]`); if (cell) cell.innerHTML = sees(u);
       drawStockSave();
     };
+    $$('th[data-l2col]', box).forEach(th => th.onclick = () => {
+      const names = gs.filter(g => g.p === th.dataset.l2col).map(g => g.n);
+      const tick = list.some(u => names.some(n => sCats(u).indexOf(n) < 0));
+      list.forEach(u => { const c = sCats(u).filter(x => names.indexOf(x) < 0); SP[u.email] = tick ? c.concat(names) : c; });
+      drawStock();
+    });
     $$('th[data-col]', box).forEach(th => th.onclick = () => {
       const g = th.dataset.col, tick = list.some(u => sCats(u).indexOf(g) < 0);   // any unticked → tick all, else untick all
       list.forEach(u => { const c = sCats(u).filter(x => x !== g); if (tick) c.push(g); SP[u.email] = c; });
@@ -256,6 +264,91 @@
     });
     drawStockSave();
   }
+  // Faster ticking (Kim, 28 Nov: "too much to tick one by one"): list view with a group picker per person, tick several
+  // people and set their groups in one go (replace / add / remove), copy another person's groups, tick a whole L2 at once.
+  const SEL = new Set();
+  const allGroups = () => (D.stockGroups || []).map(g => (typeof g === 'string' ? { n: g, p: '' } : g));
+  function drawStockList() {
+    const box = $('#sres'); if (!box) return;
+    const list = sPeople();
+    Array.from(SEL).forEach(e => { if (!list.some(u => u.email === e)) SEL.delete(e); });
+    if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawStockSave(); return; }
+    const chips = u => { const c = sCats(u), was = u.stockCats || [];
+      if (!c.length) return `<span class="sx-chip all${was.length ? ' chg' : ''}">${t('ឃើញទាំងអស់', 'Sees everything')}</span>`;
+      return c.slice(0, 8).map(x => `<span class="sx-chip${was.indexOf(x) < 0 ? ' chg' : ''}">${esc(x)}</span>`).join('') + (c.length > 8 ? `<span class="sx-chip more">+${c.length - 8}</span>` : ''); };
+    const allOn = list.every(u => SEL.has(u.email));
+    box.innerHTML = `${SEL.size ? `<div class="sx-bulk"><b>☑ ${SEL.size} ${t('នាក់បានជ្រើស', SEL.size === 1 ? 'person selected' : 'people selected')}</b>
+        <button type="button" class="btn ok sm" id="sxBulk">✏️ ${t('កំណត់ក្រុមឲ្យអ្នកដែលបានជ្រើស', 'Set groups for selected')}</button>
+        <button type="button" class="btn sm" id="sxAll0">🌐 ${t('ឲ្យឃើញទាំងអស់', 'Sees everything')}</button>
+        <button type="button" class="btn sm" id="sxNone">✕ ${t('ដកការជ្រើស', 'Clear selection')}</button></div>` : `<p class="mx-hint">☑ ${t('ធីកមនុស្សច្រើននាក់ ដើម្បីកំណត់ក្រុមម្តងតែមួយ។ ចុច ✏️ ដើម្បីជ្រើសក្រុមឲ្យម្នាក់។', 'Tick several people to set their groups in one go, or tap ✏️ to pick groups for one person.')}</p>`}
+      <div class="tbl-wrap"><table class="tbl sx-list" data-nosort data-nocols><thead><tr><th class="sx-ck"><input type="checkbox" id="sxAll"${allOn ? ' checked' : ''} aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}"></th>
+        <th>${t('ឈ្មោះ', 'Name')} <small>${list.length}</small></th><th>${t('ឃើញក្រុម', 'Sees')}</th><th></th></tr></thead>
+      <tbody>${list.map(u => `<tr class="${SEL.has(u.email) ? 'sel' : ''}"><td class="sx-ck"><input type="checkbox" data-sel="${esc(u.email)}"${SEL.has(u.email) ? ' checked' : ''} aria-label="${esc(u.name)}"></td>
+        <td class="sx-who"><b>${esc(u.name)}</b><small>${esc([u.deptName || u.dept, u.whGroup, u.region].filter(Boolean).join(' · ') || u.email)}</small></td>
+        <td class="sx-chips">${chips(u)}</td><td class="sx-ed"><button type="button" class="btn sm" data-edit="${esc(u.email)}">✏️ ${t('កែ', 'Edit')}</button></td></tr>`).join('')}</tbody></table></div>`;
+    $('#sxAll').onchange = e => { list.forEach(u => (e.target.checked ? SEL.add(u.email) : SEL.delete(u.email))); drawStockList(); };
+    $$('[data-sel]', box).forEach(cb => cb.onchange = () => { (cb.checked ? SEL.add(cb.dataset.sel) : SEL.delete(cb.dataset.sel)); drawStockList(); });
+    $$('[data-edit]', box).forEach(b => b.onclick = () => picker([byEmail(b.dataset.edit)]));
+    $$('.sx-who', box).forEach((td, i) => td.onclick = () => picker([list[i]]));
+    if ($('#sxBulk')) $('#sxBulk').onclick = () => picker(list.filter(u => SEL.has(u.email)));
+    if ($('#sxAll0')) $('#sxAll0').onclick = () => { list.filter(u => SEL.has(u.email)).forEach(u => { SP[u.email] = []; }); drawStockList(); };
+    if ($('#sxNone')) $('#sxNone').onclick = () => { SEL.clear(); drawStockList(); };
+    drawStockSave();
+  }
+
+  // The picker: groups by L2 with a tick for the whole L2, search, copy from someone, and for several people Replace / Add / Remove.
+  function picker(people) {
+    people = people.filter(Boolean); if (!people.length) return;
+    const many = people.length > 1, gs = allGroups();
+    let pick = new Set(many ? [] : sCats(people[0])), mode = 'replace', q = '';
+    const parts = []; gs.forEach(g => { const l = parts[parts.length - 1]; if (l && l.p === g.p) l.list.push(g.n); else parts.push({ p: g.p, list: [g.n] }); });
+    const donors = D.users.filter(u => u.active && sCats(u).length && people.indexOf(u) < 0).sort((a, b) => a.name.localeCompare(b.name));
+    const back = document.createElement('div'); back.className = 'sx-back';
+    back.innerHTML = `<div class="sx-pick" role="dialog" aria-modal="true">
+      <div class="sx-ph"><b>📦 ${many ? t(`${people.length} នាក់`, `${people.length} people`) : esc(people[0].name)}</b><button type="button" class="btn sm" data-x>✕</button></div>
+      ${many ? `<div class="sx-mode">${[['replace', t('ជំនួស', 'Replace')], ['add', t('បន្ថែម', 'Add')], ['remove', t('ដកចេញ', 'Remove')]].map(m => `<button type="button" data-mode="${m[0]}" class="${m[0] === mode ? 'on' : ''}">${m[1]}</button>`).join('')}</div>` : ''}
+      <div class="sx-tools"><input type="search" id="sxQ" placeholder="🔍 ${t('ស្វែងរកក្រុម…', 'Search group…')}">
+        ${donors.length ? `<select id="sxCopy"><option value="">📋 ${t('ចម្លងពី…', 'Copy from…')}</option>${donors.map(u => `<option value="${esc(u.email)}">${esc(u.name)} (${sCats(u).length})</option>`).join('')}</select>` : ''}
+        <button type="button" class="btn sm" id="sxClr">${t('ដកធីកទាំងអស់', 'Untick all')}</button></div>
+      <div class="sx-body" id="sxBody"></div>
+      <div class="sx-pf"><span id="sxSum"></span><button type="button" class="btn" data-x>${t('បោះបង់', 'Cancel')}</button><button type="button" class="btn ok" id="sxOk">✓ ${t('យក', 'Apply')}</button></div></div>`;
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    const body = $('#sxBody', back);
+    const draw = () => {
+      const hit = n => !q || n.toLowerCase().indexOf(q) >= 0;
+      body.innerHTML = parts.map((x, i) => { const vis = x.list.filter(hit); if (!vis.length) return '';
+        const n = vis.filter(g => pick.has(g)).length;
+        return `<section class="sx-sec"><label class="sx-l2"><input type="checkbox" data-l2="${i}"${n === vis.length ? ' checked' : ''}${n && n < vis.length ? ' data-mid="1"' : ''}> <b>${esc(x.p || '—')}</b> <small>${n}/${vis.length}</small></label>
+          <div class="sx-grid">${vis.map(g => `<label class="sx-g${pick.has(g) ? ' on' : ''}"><input type="checkbox" data-g="${esc(g)}"${pick.has(g) ? ' checked' : ''}> ${esc(g)}</label>`).join('')}</div></section>`; }).join('') || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`;
+      $$('[data-mid]', body).forEach(cb => { cb.indeterminate = true; });
+      $('#sxSum', back).textContent = pick.size ? t(`បានធីក ${pick.size} ក្រុម`, `${pick.size} ${pick.size === 1 ? 'group' : 'groups'} ticked`) : (many && mode !== 'replace' ? '' : t('មិនធីក = ឃើញទាំងអស់', 'Nothing ticked = sees everything'));
+    };
+    body.onchange = e => {
+      const cb = e.target;
+      if (cb.dataset.g) { cb.checked ? pick.add(cb.dataset.g) : pick.delete(cb.dataset.g); }
+      else if (cb.dataset.l2 != null) { parts[+cb.dataset.l2].list.filter(n => !q || n.toLowerCase().indexOf(q) >= 0).forEach(n => (cb.checked ? pick.add(n) : pick.delete(n))); }
+      draw();
+    };
+    $('#sxQ', back).oninput = e => { q = e.target.value.trim().toLowerCase(); draw(); };
+    if ($('#sxCopy', back)) $('#sxCopy', back).onchange = e => { const u = byEmail(e.target.value); if (u) { pick = new Set(sCats(u)); draw(); } };
+    $('#sxClr', back).onclick = () => { pick.clear(); draw(); };
+    $$('[data-mode]', back).forEach(b => b.onclick = () => { mode = b.dataset.mode; $$('[data-mode]', back).forEach(x => x.classList.toggle('on', x === b)); draw(); });
+    $$('[data-x]', back).forEach(b => b.onclick = close);
+    back.onclick = e => { if (e.target === back) close(); };
+    $('#sxOk', back).onclick = () => {
+      const order = gs.map(g => g.n);
+      people.forEach(u => {
+        const cur = new Set(sCats(u));
+        const next = mode === 'add' ? new Set([...cur, ...pick]) : mode === 'remove' ? new Set([...cur].filter(x => !pick.has(x))) : new Set(pick);
+        SP[u.email] = order.filter(n => next.has(n)).concat([...next].filter(n => order.indexOf(n) < 0));
+      });
+      close(); drawStock();
+    };
+    draw();
+    setTimeout(() => $('#sxQ', back).focus(), 50);
+  }
+
   function drawStockSave() {
     const bar = $('#ssave'); if (!bar) return;
     const n = sChanged().length;
