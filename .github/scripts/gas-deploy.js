@@ -43,7 +43,9 @@ for (const dir of folders) {
     const after = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
     if (dry) { try { console.log('   deployments: ' + sh('clasp deployments', tmp).trim().replace(/\n/g, ' | ')); } catch (e) { console.log('   deployments error: ' + String((e.stderr || '') + (e.stdout || '')).trim()); } console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
     sh('clasp push --force', tmp);
-    const out = sh('clasp deploy --deploymentId ' + m.deploymentId + ' --description "auto ' + sha + '"', tmp);
+    let ver;
+    try { ver = (sh('clasp version "auto ' + sha + '"', tmp).match(/version (\d+)/i) || [])[1]; } catch (e) { throw Object.assign(new Error('version step: ' + e.message), { stderr: 'version step: ' + (e.stderr || '') + (e.stdout || '') }); }
+    const out = sh('clasp deploy --deploymentId ' + m.deploymentId + (ver ? ' --versionNumber ' + ver : '') + ' --description "auto ' + sha + '"', tmp);
     console.log('✅ ' + dir + ' (' + m.name + '): ' + out.trim().split('\n').pop());
   } catch (e) {
     failed++;
