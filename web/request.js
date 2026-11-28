@@ -14,7 +14,7 @@
     fuel: ['ចាក់សាំង', 'Fuel'], transport: ['ដឹកជញ្ជូន', 'Delivery'], overtime: ['ថែមម៉ោង', 'Overtime'], location: ['ទីតាំងថ្មី', 'Location'],
     meeting: ['ប្រជុំ', 'Meetings'], incident: ['គ្រោះថ្នាក់', 'Incident'], inbound: ['ទទួលទំនិញ', 'Inbound'], dashboard: ['Dashboard', 'Dashboard'],
   };
-  const appsHTML = keys => `<div class="arq-apps">${(keys || []).map(k => `<div><img src="${BASE}icons/${esc(k)}.svg" alt="" width="30" height="30">${esc(t((APP_NAMES[k] || [k, k])[0], (APP_NAMES[k] || [k, k])[1]))}</div>`).join('')}</div>`;
+  const appsHTML = keys => `<div class="arq-apps">${(keys || []).filter(k => k !== 'location').map(k => `<div><img src="${BASE}icons/${esc(k)}.svg" alt="" width="30" height="30">${esc(t((APP_NAMES[k] || [k, k])[0], (APP_NAMES[k] || [k, k])[1]))}</div>`).join('')}</div>`;
   const digits = v => String(v || '').replace(/[០-៩]/g, x => String('០១២៣៤៥៦៧៨៩'.indexOf(x))).replace(/\D/g, '');
   // The card photo is made smaller on the phone (longest side 1280 px) so it sends fast.
   function shrink(file) {

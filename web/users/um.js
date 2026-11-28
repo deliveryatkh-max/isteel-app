@@ -45,6 +45,8 @@
 
   // ------------------------------------------------------------------ data
   let D = null;        // { me, users, apps, depts, log }
+  // New Location removed (Kim, 28 Nov 2026): no tick column even before Code.gs is re-pasted.
+  const noLoc = d => { if (d && d.apps) d.apps = d.apps.filter(a => a.key !== 'location'); return d; };
   let OT = null;       // OT line managers, loaded when an edit screen needs them
   let otBusy = null;
   const sel = new Set();   // selected people (computer table, or phone "Select" mode)
@@ -559,7 +561,7 @@
       const u = isNew ? null : byEmail(email);
       if (!isNew && !u) { view(`<div class="empty">${t('រកមិនឃើញ', 'Not found')}</div>`); return; }
       const blank = { email: '', name: '', empId: '', dept: '', role: 'user', active: true, apps: {}, offNote: '', ibWh: [] };
-      if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'location', 'incident'].indexOf(a.key) >= 0; });
+      if (isNew) D.apps.forEach(a => { blank.apps[a.key] = ['fuel', 'transport', 'overtime', 'incident'].indexOf(a.key) >= 0; });
       const orig = JSON.parse(JSON.stringify(u || blank));
       if (!orig.ibWh) orig.ibWh = [];
       E = { key, isNew, orig, f: JSON.parse(JSON.stringify(orig)), ot: null, otOrig: null, tried: false };
@@ -909,7 +911,7 @@
     try {
       const d = await api('umList');
       if (quiet && JSON.stringify(d) === JSON.stringify(D)) return;
-      D = d; save();
+      D = noLoc(d); save();
       if (E) paintTabs('list'); else if (quiet) LIVE.keep(screen); else screen();
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS' || e.code === 'OLD') { set(bootKey(), null); D = null; blocked(e); return; }
@@ -920,7 +922,7 @@
   }
   function start() {
     if (!DEMO && !signedIn()) { blocked({ code: 'AUTH' }); return; }
-    try { D = JSON.parse(get(bootKey()) || 'null'); } catch (e) { D = null; }
+    try { D = noLoc(JSON.parse(get(bootKey()) || 'null')); } catch (e) { D = null; }
     if (D) screen();   // opens at once from the saved copy, then checks with the server
     $('#bar').classList.add('busy');
     refresh().finally(() => $('#bar').classList.remove('busy'));

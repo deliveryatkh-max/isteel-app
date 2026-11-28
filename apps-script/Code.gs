@@ -145,7 +145,7 @@ const HOME_APPS = [
   { key: 'fuel', col: 'ចាក់សាំង' },
   { key: 'transport', col: 'ដឹកជញ្ជូន' },
   { key: 'overtime', col: 'ថែមម៉ោង' },
-  { key: 'location', col: 'ទីតាំងថ្មី' },
+  // New Location removed (Kim, 28 Nov 2026): its sheet column is no longer read.
   { key: 'dashboard', col: 'Dashboard' },
   { key: 'meeting', col: 'ប្រជុំ' },
   { key: 'incident', col: 'គ្រោះថ្នាក់' },
@@ -161,7 +161,7 @@ const HOME_APPS = [
 // Agent Data Entry (weighing tickets to Excel, 31 Oct 2026) is not a default either: tick បញ្ចូលទិន្នន័យ.
 // Safety Walk & 5S (4 Nov 2026) is not a default: tick សុវត្ថិភាព for walkers, area leaders and the safety officer.
 // Truck Scale (6 Nov 2026) is not a default: tick ជញ្ជីង for the weighbridge operators.
-const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'location', 'incident'];
+const DEFAULT_APPS = ['fuel', 'transport', 'overtime', 'incident'];
 const ACTION_APP = {
   config: 'fuel', submit: 'fuel', update: 'fuel', mine: 'fuel', all: 'fuel', review: 'fuel', saver: 'fuel', sapPost: 'fuel', reportCols: 'fuel',
   // Ads (ads, adMedia, adSeen) show in every app, so they need no app tick box; the manager actions are admin only.
