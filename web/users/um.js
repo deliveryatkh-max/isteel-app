@@ -521,24 +521,36 @@
   }
 
   // ---- quick changes (no form): saved at once, put back if the server says no
+  // Redraws keep the table where it is (Kim, 28 Nov 2026: ticking a box must not jump to the top row).
+  function keepPlace(fn) {
+    const w = document.querySelector('.ulist'), top = w ? w.scrollTop : 0, left = w ? w.scrollLeft : 0, y = window.scrollY;
+    fn();
+    const n = document.querySelector('.ulist');
+    if (n) { n.scrollTop = top; n.scrollLeft = left; }
+    window.scrollTo(0, y);
+  }
+  function paintTick(email, key) {
+    const u = byEmail(email), on = !!(u && u.apps[key]);
+    $$('[data-tick]').forEach(b => { if (b.dataset.tick === email && b.dataset.app === key) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '✓' : ''; } });
+  }
   async function quickApp(email, key) {
     const u = byEmail(email); if (!u) return;
     const on = !u.apps[key];
     const old = JSON.parse(JSON.stringify(u));
-    u.apps[key] = on; drawResults();
+    u.apps[key] = on; paintTick(email, key);
     try { const r = await api('umSave', { email, apps: { [key]: on } }); mergeSave(r); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
     catch (e) { merge([old]); toast(e.message); }
-    drawResults();
+    paintTick(email, key);
   }
   async function quickActive(email) {
     const u = byEmail(email); if (!u) return;
     const on = !u.active;
-    if (!on && !confirm(t(`បិទ ${u.name || u.email}? គាត់នឹងចូលកម្មវិធីណាមួយមិនបាន (ប្រវត្តិនៅដដែល)។`, `Switch off ${u.name || u.email}? They can't open any app (their history stays).`))) { drawResults(); return; }
+    if (!on && !confirm(t(`បិទ ${u.name || u.email}? គាត់នឹងចូលកម្មវិធីណាមួយមិនបាន (ប្រវត្តិនៅដដែល)។`, `Switch off ${u.name || u.email}? They can't open any app (their history stays).`))) { keepPlace(drawResults); return; }
     const old = JSON.parse(JSON.stringify(u));
-    u.active = on; if (!on) u.offAt = Date.now(); drawResults();
+    u.active = on; if (!on) u.offAt = Date.now(); keepPlace(drawResults);
     try { const r = await api('umSave', { email, active: on }); mergeSave(r); addLog(r.log); save(); toast(on ? t('បានបើក', 'Switched on') : t('បានបិទ', 'Switched off')); }
     catch (e) { merge([old]); toast(e.message); }
-    if (/^#\/?$|^$/.test(location.hash)) drawResults(); else screen();
+    if (/^#\/?$|^$/.test(location.hash)) keepPlace(drawResults); else screen();
   }
 
   // ---- computer table: one change for everyone selected
@@ -573,7 +585,7 @@
       merge(r.users); addLog(r.log); save();
       toast(`✓ ${what} · ${r.users.length} ${t('នាក់', 'people')}`);
     } catch (e) { toast(e.message); }
-    drawResults();
+    keepPlace(drawResults);
   }
 
   // ------------------------------------------------------------------ edit / add
@@ -984,7 +996,7 @@
       const d = await api('umList');
       if (quiet && JSON.stringify(d) === JSON.stringify(D)) return;
       D = noLoc(d); save();
-      if (E) paintTabs('list'); else if (quiet) LIVE.keep(screen); else screen();
+      if (E) paintTabs('list'); else if (quiet) LIVE.keep(() => keepPlace(screen)); else screen();
     } catch (e) {
       if (e.code === 'AUTH' || e.code === 'NOACCESS' || e.code === 'OLD') { set(bootKey(), null); D = null; blocked(e); return; }
       if (quiet) throw e;
