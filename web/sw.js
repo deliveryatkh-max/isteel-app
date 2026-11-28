@@ -3,7 +3,7 @@
 // when the network is slow (over 3 s) or offline. Other files open at once from the phone's cache, and the
 // latest copy is fetched in the background for next time ("stale-while-revalidate"). Data (the Apps Script API) is never cached here: it is a POST
 // to another site, and each app keeps its own data cache. Bump VERSION only to drop every cached file.
-const VERSION = 'steel-v1';
+const VERSION = 'steel-v2';
 const FONTS = 'steel-fonts-v1';
 const SHELL = [
   './', 'home.css', 'home.js', 'id-login.js', 'icons/login-bg.jpg', 'live.js', 'sidenav.css', 'lang.js', 'request.js', 'config.js', 'manifest.webmanifest',
