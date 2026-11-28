@@ -623,6 +623,19 @@ test('old Scale Gate Out rows with DNs only in the remark still put the DNs on t
   assert.strictEqual(st.stage, 'on_delivery');
 });
 
+test('warehouse refuses a truck that was not weighed in; a truck inside is not refused', () => {
+  const e = env(); e.run('setup()');
+  const r = ok(e.call('whReject', { plate: '3F-2414', wh: 'PNP1' }, WH));
+  assert.ok(r.saved);
+  const rows = e.ss.getSheetByName('Loading Rejected').rows;
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[1][1], '3F-2414');
+  const g = ok(e.call('scaleGate', { kind: 'in', plate: 'TEST-0001', ticket: 'T8', kg: 9000 }, GUARD));
+  const r2 = ok(e.call('whReject', { plate: 'TEST-0001' }, WH));
+  assert.strictEqual(r2.tripId, g.tripId);
+  assert.strictEqual(e.ss.getSheetByName('Loading Rejected').rows.length, 2);
+});
+
 test('Scale Gate In needs a signed-in active user; old trips are untouched', () => {
   const e = env(); e.run('setup()');
   const r = e.call('scaleGate', { kind: 'in', plate: 'TEST-0002' }, 'google:nobody@test.kh');

@@ -26,6 +26,8 @@ class Range {
   }
   setValue(x) { this.sh.set(this.r, this.c, x); return this; }
   setFontWeight() { return this; }
+  setBackground() { return this; }
+  setFontColor() { return this; }
   setNumberFormat(f) { for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) this.sh.fmt[(this.r + i) + ':' + (this.c + j)] = f; return this; }
 }
 class Sheet {
