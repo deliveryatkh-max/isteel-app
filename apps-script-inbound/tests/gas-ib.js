@@ -186,6 +186,8 @@ function makeEnv(opts) {
         if (/export\?format=docx/.test(url)) return { getResponseCode: () => 200, getBlob: () => blob('PK-docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'x.docx') };
         if (/ib-template\.docx$/.test(url)) return { getBlob: () => blob('PK-docx', 'application/octet-stream', 't.docx') };
         if (/upload\/drive\/v3\/files/.test(url)) { const id = 'f' + (++nid); files[id] = { id, name: 'Inbound Report Template', data: Buffer.from(''), parent: 'root', trashed: false, tpl: true }; env.templateUploads = (env.templateUploads || 0) + 1; return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) }; }
+        if (/api\.groq\.com\/openai\/v1\/models/.test(url)) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ data: [{ id: 'whisper-large-v3' }, { id: 'llama-3.3-70b-versatile' }, { id: 'meta-llama/llama-4-vision-x' }] }) };
+        if (/api\.groq\.com\/openai\/v1\/chat\/completions/.test(url)) { (env.groqCalls = env.groqCalls || []).push(JSON.parse(o.payload)); return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ choices: [{ message: { content: env.groqAnswer || '{}' } }] }) }; }
         if (/tokeninfo/.test(url)) return { getResponseCode: () => 400, getContentText: () => '{}' };
         throw new Error('unexpected fetch ' + url);
       },

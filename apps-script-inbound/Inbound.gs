@@ -29,7 +29,7 @@ const PLAN_COLS = ['No', 'Material', 'Description', 'Plant', 'SLOC', 'Qty', 't',
 const LOG_COLS = ['Receipt ID', 'Status', 'PO Number', 'Inbound Number', 'Ref. No.', 'Supplier', 'ETA', '3PL DN Number', 'Material', 'Material Description',
   'Truck Number/Trailer', 'PO Qty', 'Arrival Qty', 'Actual GR Qty', 'Damaged Qty', 'Damage Type', 'Received Less', 'UoM', 'Receipt Date', 'Start Time',
   'End Time', 'Time Spent (min)', 'Productivity (t/person/h)', 'Manpower used to Unload/Receive', 'Truck Owner', '3PL Company', 'Remark',
-  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse', '3PL DN Qty'];
+  'Recorded By', 'Finished By', 'Photos Folder', 'Updated', 'Entrance', 'Voice Note', 'Damage UoM', 'Warehouse', '3PL DN Qty', 'DN Qty on Paper (AI)'];
 const REC_COLS = ['Receipt ID', 'Status', 'Receipt Date', 'PO Number', 'Truck', 'Data', 'Updated'];
 const SET_COLS = ['Setting', 'Value', 'Note'];
 const APP_COL = 'ទទួលទំនិញ';        // tick box column in the Fuel Refill Users tab (added by the Fuel script)
@@ -105,6 +105,7 @@ function route_(action, p, user) {
       return { cols: cols };
     }
     case 'vessels': return vessels_();
+    case 'dnCheck': return dnCheck_(p, user);   // total written on the paper DN, read from its photo (Kim, 28 Nov 2026)
     case 'gsList': return gsList_(p, user);   // Gate vs Scale page: only the days asked, only the fields it uses (Kim, 20 Nov 2026)
     case 'scaleArrive': return withLock_(() => scaleArrive_(p, user));
     case 'planSave': return withLock_(() => planSave_(p.lines, user));
@@ -444,6 +445,60 @@ function receipts_() {
   const ents = warehouses_();
   return recRows_().map(r => { try { return siteFix_(JSON.parse(r[5]), ents); } catch (e) { return null; } }).filter(Boolean);
 }
+// ---------------------------------------------------------------- paper DN check
+// Kim, 28 Nov 2026: after a truck is finished, the DN photo is read by a free Groq vision model and the total written on
+// the paper is shown next to the total typed in the app. Needs the script property GROQ_API_KEY (free, console.groq.com);
+// GROQ_VISION_MODEL is optional (otherwise the first vision model Groq lists). Nothing is blocked; the answer is only a warning.
+const GROQ_API = 'https://api.groq.com/openai/v1';
+function groqVisionModel_(key) {
+  if (prop_('GROQ_VISION_MODEL')) return prop_('GROQ_VISION_MODEL');
+  const r = UrlFetchApp.fetch(GROQ_API + '/models', { headers: { Authorization: 'Bearer ' + key }, muteHttpExceptions: true });
+  let ids = []; try { ids = (JSON.parse(r.getContentText() || '{}').data || []).map(m => String(m.id)); } catch (e) { /* none */ }
+  const v = ids.filter(id => /llama-4|vision|-vl\b|scout|maverick|gemma-3|pixtral/i.test(id) && !/guard|whisper|tts/i.test(id));
+  return v[0] || '';
+}
+const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils. A table lists the coils with a Quantity (Kg) column, and the total in Kg is written by hand below that column. '
+  + 'Reply with JSON only, no other words: {"lines":[the Kg of each table row, numbers only],"total":the total in Kg that is written below the table, or null if you cannot read one}. '
+  + 'Read the digits exactly as written. Do not add the numbers yourself for "total".';
+/** Pulls {lines, total} out of the model's answer; null when there is no JSON. */
+function dnParse_(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let o; try { o = JSON.parse(m[0]); } catch (e) { return null; }
+  const n = v => { const x = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return x > 0 && isFinite(x) ? x : 0; };
+  const lines = (Array.isArray(o.lines) ? o.lines : []).map(n).filter(Boolean).slice(0, 40);
+  return { lines: lines, total: n(o.total) };
+}
+function dnCheck_(p, user) {
+  const f = find_(p.id), rec = f.rec;
+  if (!siteOk_(user, rec.site)) fail_('DENIED', 'This truck belongs to ' + rec.site + '.', 'ឡាននេះជារបស់ ' + rec.site + '។');
+  if (rec.dnPaper && !p.force) return rec;
+  const key = prop_('GROQ_API_KEY');
+  if (!key) fail_('SETUP', 'Add GROQ_API_KEY in the Inbound Script properties.', 'សូមដាក់ GROQ_API_KEY ក្នុង Script properties។');
+  const docId = rec.ph && rec.ph.doc;
+  if (!docId) fail_('BAD', 'This receipt has no DN photo.', 'ការទទួលនេះគ្មានរូប DN ទេ។');
+  let blob; try { blob = DriveApp.getFileById(docId).getBlob(); } catch (e) { fail_('BAD', 'The DN photo is not in Drive any more.', 'រកមិនឃើញរូប DN ក្នុង Drive ទេ។'); }
+  const model = groqVisionModel_(key);
+  if (!model) fail_('BAD', 'Groq has no free vision model right now. Set GROQ_VISION_MODEL.', 'Groq មិនមាន model អានរូបឥតគិតថ្លៃទេ។');
+  const body = JSON.stringify({ model: model, temperature: 0, max_tokens: 500, messages: [{ role: 'user', content: [{ type: 'text', text: DN_PROMPT },
+    { type: 'image_url', image_url: { url: 'data:' + (blob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(blob.getBytes()) } }] }] });
+  let res;
+  for (let i = 0; i < 2; i++) {   // the free plan answers 429 when too many calls come in one minute: wait once
+    res = UrlFetchApp.fetch(GROQ_API + '/chat/completions', { method: 'post', contentType: 'application/json', headers: { Authorization: 'Bearer ' + key }, payload: body, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 429) break;
+    Utilities.sleep(8000);
+  }
+  if (res.getResponseCode() !== 200) fail_('BAD', 'The reader is busy or refused (' + res.getResponseCode() + '). Try again in a minute.', 'កម្មវិធីអានរវល់។ សូមព្យាយាមម្តងទៀតក្នុងមួយនាទី។');
+  let txt = ''; try { txt = JSON.parse(res.getContentText()).choices[0].message.content; } catch (e) { /* below */ }
+  const d = dnParse_(txt);
+  if (!d || (!d.total && !d.lines.length)) fail_('BAD', 'Could not read the numbers on the DN photo.', 'មិនអាចអានលេខលើរូប DN បានទេ។');
+  const sum = d.lines.reduce((s, x) => s + x, 0);
+  rec.dnPaper = { total: d.total || sum, written: d.total || 0, sum: sum, lines: d.lines, at: now_(), model: model };
+  rec.updated = now_();
+  store_(rec, f.row);
+  return rec;
+}
+
 /** Receipts dated from..to (yyyy-MM-dd), slim, for the Gate vs Scale page; boot reads the plan, plates and scale too and is slow. */
 function gsList_(p, user) {
   const from = String(p.from || ''), to = String(p.to || '');
@@ -808,7 +863,7 @@ function writeLog_(rec) {
   const rows = rec.items.map(i => [rec.id, rec.status, itemPo_(i, rec), i.inbound || rec.inbound, rec.ref, rec.supplier, showDate_(rec.eta), rec.dn3pl, i.material, i.desc,
     rec.truck, i.poQty, i.arrQty, i.grQty, i.dmgQty, i.dmgType ? DMG[i.dmgType] || i.dmgType : '', isLess_(i) ? 'Yes' : '', rec.uom, showDate_(rec.date),
     rec.start, rec.end, spent_(rec), prod_(rec), rec.manpower, rec.owner === 'ISI' ? 'ISI Truck' : rec.owner === '3PL' ? '3PL Truck' : '', rec.carrier, rec.remark,
-    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || '', rec.dnQty || ''].map(x => (x == null ? '' : String(x))));
+    rec.by, rec.finishedBy, rec.folder, rec.updated, rec.warehouse || '', rec.voice ? 'https://drive.google.com/file/d/' + rec.voice : '', Number(i.dmgQty) > 0 ? dmgUom_(i, rec) : '', rec.site || '', rec.dnQty || '', rec.dnPaper ? rec.dnPaper.total || '' : ''].map(x => (x == null ? '' : String(x))));
   const last = sh.getLastRow();
   const ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(r => r[0]) : [];
   const at = [];
