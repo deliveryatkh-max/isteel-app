@@ -461,7 +461,8 @@
   // ------------------------------------------------------------------ SAP import and reconciliation
   const FIELDS = [['material', 'Material', /material$|^material|product$|^sku|item code/i, true], ['bin', 'Bin', /\bbin\b/i], ['batch', 'Batch', /batch/i], ['sloc', 'SLoc', /sloc|storage loc|^s\.?loc/i],
     ['qty', 'Quantity', /unrestricted|quantity|qty|on hand/i, true], ['uom', 'UoM', /uom|unit/i]];
-  const R = { name: '', at: '', headers: [], rows: [], map: {}, error: '' };
+  const R = { name: '', at: '', headers: [], rows: [], map: {}, error: '', by: (() => { try { return localStorage.getItem('sc_sap_by') || 'all'; } catch (e) { return 'all'; } })() };
+  const SBY = { all: null, mat: ['material'], matb: ['material', 'batch'], binm: ['bin', 'material'] };
   function parseCsv(text) {
     const first = text.split(/\r?\n/)[0] || '';
     const sep = (first.match(/\t/g) || []).length ? '\t' : (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
@@ -488,7 +489,8 @@
   }
   const numSap = v => { const s = String(v == null ? '' : v).trim().replace(/,/g, ''); return s === '' || !isFinite(Number(s)) ? NaN : Number(s); };
   function reconcile() {
-    const m = R.map, level = ['bin', 'material', 'batch', 'sloc'].filter(k => m[k] >= 0);
+    // Compare by (Kim, 28 Nov): every column found (default), or Material only / Material + Batch / Bin + Material.
+    const m = R.map, pick = SBY[R.by] || null, level = ['bin', 'material', 'batch', 'sloc'].filter(k => m[k] >= 0 && (!pick || pick.indexOf(k) >= 0));
     const keyOf = o => level.map(k => String(o[k] == null ? '' : o[k]).trim().toUpperCase()).join('|');
     const all = {}; let bad = 0;
     const slot = (k, o) => all[k] || (all[k] = { key: k, o: o, digital: null, sap: null, desc: '', uom: '' });
@@ -592,9 +594,10 @@
         <button type="button" class="mbchip out${F.onlyVar ? ' on' : ''}" data-sc="var"><b>${vars.length}</b> ${T('ខុសគ្នា', 'variances')}</button>
         <button type="button" class="mbchip warn${SR === '-' ? ' on' : ''}" data-sc="rsn"><b>${vars.filter(x => rsnOf(x)).length} / ${vars.length}</b> ${T('មានមូលហេតុ', 'reason')}</button>
         <button type="button" class="mbchip" disabled><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b> ${T('អត្រាត្រូវគ្នា', 'match rate')}</button>
-        <span class="muted sapby">${T('តាម', 'by')} <b>${esc(lvName)}</b></span>${actChips}</div>
-      ${FB.panel('sapf', (res ? msel('sfBin', T('ទីតាំង', 'Bin'), Array.from(new Set(res.list.map(x => String(x.o.bin || '')).filter(Boolean))).sort().map(v => [v, v]), SBIN)
-          + msel('sfMat', T('សម្ភារៈ', 'Material'), (() => { const m = {}; res.list.forEach(x => { const k = String(x.o.material || ''); if (k && !m[k]) m[k] = x.desc || ''; }); return Object.keys(m).sort().map(k => [k, k + (m[k] ? ' · ' + m[k] : '')]); })(), SMAT) : '')
+        <label class="muted sapby">${T('ប្រៀបធៀបតាម', 'Compare by')} <select id="sapBy">${[['all', T('ទាំងអស់', 'All') + ' (' + ['bin', 'material', 'batch', 'sloc'].filter(k => R.map[k] >= 0).map(k => FIELDS.find(f => f[0] === k)[1]).join(' + ') + ')'], ['mat', 'Material'], ['matb', 'Material + Batch'], ['binm', 'Bin + Material']]
+          .filter(o => o[0] === 'all' || SBY[o[0]].every(k => R.map[k] >= 0)).map(o => `<option value="${o[0]}"${o[0] === R.by ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>${actChips}</div>
+      ${FB.panel('sapf', (res && res.level.indexOf('bin') >= 0 ? msel('sfBin', T('ទីតាំង', 'Bin'), Array.from(new Set(res.list.map(x => String(x.o.bin || '')).filter(Boolean))).sort().map(v => [v, v]), SBIN)
+          : '') + (res ? msel('sfMat', T('សម្ភារៈ', 'Material'), (() => { const m = {}; res.list.forEach(x => { const k = String(x.o.material || ''); if (k && !m[k]) m[k] = x.desc || ''; }); return Object.keys(m).sort().map(k => [k, k + (m[k] ? ' · ' + m[k] : '')]); })(), SMAT) : '')
         + (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
         : `<p class="muted">${PT.err ? T('តម្រងផលិតផល សម្រាប់អ្នកគ្រប់គ្រង និងប្រធានក្រុម', 'Product filters are for admins and supervisors') : T('កំពុងផ្ទុក…', 'Loading…')}</p>`)
         + FB.field(T('មូលហេតុ', 'Reason'), `<select id="sfr"><option value="">${T('ទាំងអស់', 'All')}</option><option value="-"${SR === '-' ? ' selected' : ''}>${T('មិនទាន់មានមូលហេតុ', 'No reason yet')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === SR ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select>`)
@@ -626,6 +629,7 @@
     if (res) setTimeout(fitRep, 0);
     if ($('#sfr')) $('#sfr').onchange = e => { SR = e.target.value; sap(); };
     if ($('#sfBin')) mselWire('sfBin', v => { SBIN = v; sap(); });
+    if ($('#sapBy')) $('#sapBy').onchange = e => { R.by = e.target.value; try { localStorage.setItem('sc_sap_by', R.by); } catch (x) { /* private window */ } SBIN = []; sap(); };
     if ($('#sfMat')) mselWire('sfMat', v => { SMAT = v; sap(); });
     $$('[data-rsn]').forEach(el => { el.onchange = () => { (RS[el.dataset.rsn] = RS[el.dataset.rsn] || {}).reason = el.value; el.classList.toggle('need', !el.value); }; });
     $$('[data-rmk]').forEach(el => { el.onchange = () => { (RS[el.dataset.rmk] = RS[el.dataset.rmk] || {}).remark = el.value; }; });
