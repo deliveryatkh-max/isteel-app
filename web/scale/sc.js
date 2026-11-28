@@ -832,7 +832,7 @@
           ${tr ? ''
             : F.plate ? `<div class="hint">🆕 ${t('ឡានថ្មី នឹងបន្ថែមក្នុងបញ្ជីឡាន', 'New truck: it will be added to the truck list')}</div>` : ''}</div>
         <div class="field"><label class="f lc-purple">🏢 ${t('ក្រុមហ៊ុនឡាន', 'Truck company')}</label><div><input class="in" id="fCompany" autocomplete="off" autocapitalize="characters" value="${esc(F.company)}"></div></div></div>
-        ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')}</label><div><input class="in" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
+        ${!sel ? `<div class="field"><label class="f lc-teal">👷 ${t('អ្នកបើកបរ', 'Driver')}${F.missed1 ? ' ' + req : ''}</label><div><input class="in${F.missed1 && !F.driver ? ' need' : ''}" id="fDriver" autocomplete="off" value="${esc(F.driver)}" placeholder="${t('រើស ឬវាយឈ្មោះ', 'Pick or type the name')}"></div></div>` : ''}
         ${sel && !isRet() ? `<div class="field"><label class="f lc-orange">📦 ${t('ទំនិញ', 'Item')}</label><div><input class="in" id="fItem" autocomplete="off" value="${esc(F.item)}"></div></div>` : ''}
         ${sel && !isRet() ? `<div class="field"><label class="f lc-green">📍 ${t('គោលដៅ', 'Destination')} ${req}</label>
           <div class="dnbox destbox" id="destTags"${destsOf(F.dest).length ? '' : ' hidden'}></div>
@@ -1017,6 +1017,7 @@
     if (!F.plate) miss.push('#fPlate');
     if (!ticketBy(F.cid) && !F.empty1 && !F.missed1) miss.push('#emptyBox');
     if (!ticketBy(F.cid) && F.missed1 && F.type === 'In' && !(Number(F.goodsKg) > 0)) miss.push('#fGoods');
+    if (!ticketBy(F.cid) && F.missed1 && !String(F.driver || '').trim()) miss.push('#fDriver');   // driver required when the 1st weigh was missed (Kim, 28 Nov 2026)
     // Driver optional again at the 1st weigh (Kim, 26 Nov 2026)
     // Vessel No. removed from the 1st weigh, Note box back (Kim, 19 Nov 2026)   // only on the 1st weigh form; a truck already on site never asks again   // Empty truck? Yes / No required at the 1st weigh (Kim, 12 Nov 2026)
     // Item is optional (Kim, 12 Nov 2026)
