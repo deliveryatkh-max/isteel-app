@@ -330,6 +330,7 @@
       <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
+      ${r.end && r.dnPaper ? `<div class="meta">📄 ${t('DN លើក្រដាស', 'Paper DN')} <b>${fmt(r.dnPaper.total)}</b> ${r.dnPaper.total === +r.dnQty ? `<span class="dnok">✓</span>` : `<span class="dnbad">⚠️ ${t('បានវាយ ', 'typed ')}${fmt(r.dnQty)}</span>`}</div>` : ''}
       <div class="scline" data-sc="${esc(r.id)}"></div>
     </a>`;
   }
@@ -743,6 +744,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     try { const rec = await api('dnCheck', { id: id }); const i = DATA.findIndex(x => x.id === id); if (i >= 0) DATA[i] = Object.assign({}, DATA[i], { dnPaper: rec.dnPaper }); save(); }
     catch (e) { DNERR[id] = /Unknown action/i.test(e.message) ? t('សូម paste Inbound.gs ថ្មី', 'Re-paste Inbound.gs first') : e.message; }
     DNB[id] = 0; paintDn(id);
+    if (location.hash === '#/log') renderLog();
   }
   function paintDn(id) {
     const r = byId(id), el = $('#dnPaper'); if (!r || !el || !/^#\/r\//.test(location.hash) || location.hash.slice(4) !== id) return;
@@ -1029,7 +1031,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const en = $('#endBtn');
     if (en) en.onclick = async () => {
       collect(); const miss = needFin(); if (miss.length) return toast('⚠️ ' + miss.join(', '));
-      if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); DNRUN[rec.id] = 1; location.hash = '#/r/' + rec.id; } return; }
+      if (!DEMO) { const rec = await send('finish', en); if (rec) { toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(rec))); dnCheck(rec.id); location.hash = '#/r/' + rec.id; } return; }
       F.end = nowHM(); F = await stamped(F, F.id); TAKEN.clear(); store(); toast('✅ ' + t('បានរក្សាទុក ', 'Saved ') + showSpent(spentMin(F))); const id = F.id; F = null; location.hash = '#/r/' + id;
     };
     const sv = $('#saveBtn');
