@@ -8,3 +8,7 @@ so it no longer has to be typed into the Google Sheet.
 - The Apps Script replaces the **Product Master** tab. Kg/PC and UoM are not in the Excel yet, so the values already in the tab are kept for each material. A `Kg/PC` or `UoM` column in the Excel wins once it is added.
 - `install.cmd` copies the files to `%LOCALAPPDATA%\iSteel\Product Master Sync` and creates the hourly Windows task "iSteel Product Master Sync" there (the OneDrive folder name has "&", which broke the task), then sends once.
 - `sync-key.txt` (not in git) holds the key. The same value goes in the Apps Script **Script properties** as `PM_SYNC_KEY`.
+
+## Nightly master data copy (28 Nov 2026)
+
+install.cmd also adds the task "iSteel Master Data Backup" (every night 23:00). It saves a read-only Excel copy of the Google Sheet "Master Data - All - For Apps" as `Master Data (All)\Master Data - All - For Apps (app copy).xlsx`. Edit only the Google Sheet; the copy is overwritten every night.

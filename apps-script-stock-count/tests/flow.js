@@ -52,7 +52,7 @@ const ctx = {
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'rules.gs'), 'utf8'), ctx);
 vm.runInContext(fs.readFileSync(path.join(DIR, 'ProductMaster.gs'), 'utf8'), ctx);
-vm.runInContext(fs.readFileSync(path.join(DIR, 'Code.gs'), 'utf8') + '\nthis.route_ = route_; this.doPost = doPost;', ctx);
+vm.runInContext(fs.readFileSync(path.join(DIR, 'Stock.gs'), 'utf8') + '\nthis.route_ = route_; this.doPost = doPost;', ctx);
 const op = { email: 'op@isi' }, admin = { email: 'admin@isi' };
 const call = (action, p, user) => JSON.parse(JSON.stringify(ctx.route_(action, p, user || op)));
 const book = (bin, material) => { const r = sheets['Stock On Hand'].grid.find(x => x[0] === bin && x[1] === material); return r ? Number(String(r[7]).replace(/,/g, '')) : null; };

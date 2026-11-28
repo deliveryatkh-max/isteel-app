@@ -76,7 +76,7 @@ new vm.Script(fs.readFileSync(path.join(DIR, 'ProductMaster.gs'), 'utf8'), { fil
 pass++;
 
 // Code.gs must at least compile as JavaScript (it uses Apps Script globals only at run time)
-new vm.Script(fs.readFileSync(path.join(DIR, 'Code.gs'), 'utf8'), { filename: 'Code.gs' });
+new vm.Script(fs.readFileSync(path.join(DIR, 'Stock.gs'), 'utf8'), { filename: 'Stock.gs' });
 pass++;
 
 console.log('Stock Count tests: ' + pass + ' passed');
