@@ -399,6 +399,7 @@
     if (h === 'menus') return renderMenus();
     if (h === 'stock') return renderStock();
     if (h === 'bg') return renderBg();
+    if (h === 'usage') return renderUsage();
     if (h === 'new') return renderEdit(null);
     if (h.indexOf('u/') === 0) return renderEdit(h.slice(2));
     return renderList();
@@ -438,7 +439,7 @@
     const us = D.users, waiting = us.filter(isWaiting).length;
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
         <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
-        <a class="btn add" href="#/bg" title="${t('រូបផ្ទាំងចូល', 'Sign-in picture')}">🖼</a><a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
+        <a class="btn add" href="#/usage" title="${t('ការប្រើប្រាស់', 'Usage')}">📈</a><a class="btn add" href="#/bg" title="${t('រូបផ្ទាំងចូល', 'Sign-in picture')}">🖼</a><a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
       <div class="stats"><span><b>${us.filter(u => u.active).length}</b> ${t('សកម្ម', 'Active')}</span>
         <span><b>${us.filter(u => !u.active && u.offAt).length}</b> ${t('បិទ', 'Off')}</span>
         ${waiting ? `<a href="#/req" class="warn">📨 <b>${waiting}</b> ${t('សំណើថ្មី', 'New requests')} ›</a>` : `<a href="#/req">📨 <b>0</b> ${t('សំណើ', 'Requests')}</a>`}</div>
@@ -901,6 +902,53 @@
     };
   }
 
+  // ------------------------------------------------------------------ 📈 usage (Kim, 28 Nov 2026)
+  // Daily active people and opens per day / per app / per person, from the "Usage Log" tab (every app sends one tiny ping).
+  let U = null, usageDays = 30, usageErr = '';
+  const APP_NAMES2 = { home: ['ទំព័រដើម', 'Home'], fuel: ['ចាក់សាំង', 'Fuel Refill'], delivery: ['ដឹកជញ្ជូន', 'Delivery'], 'stock-count': ['ការរាប់ស្តុក', 'Stock Count'], users: ['អ្នកប្រើប្រាស់', 'Users'], dashboards: ['Dashboard', 'Dashboards'], minutes: ['ប្រជុំ', 'Meetings'], scale: ['ជញ្ជីងឡាន', 'Truck Scale'], dataentry: ['បញ្ចូលទិន្នន័យ', 'Data Entry'], safety: ['សុវត្ថិភាព', 'Safety & 5S'], overtime: ['ថែមម៉ោង', 'Overtime'], inbound: ['ទទួលទំនិញ', 'Inbound'], incident: ['គ្រោះថ្នាក់', 'Incident'], gallery: ['វិចិត្រសាល', 'Gallery'], 'gate-scale': ['Gate vs Scale', 'Gate vs Scale'] };
+  const APP_LABEL = k => { const n = APP_NAMES2[k]; return n ? t(n[0], n[1]) : k; };
+  const lastFmt = s => (s ? s.slice(8, 10) + '/' + s.slice(5, 7) + ' ' + s.slice(11) : '');
+  const dShort = d => { const m = d.split('-'); return Number(m[2]) + '/' + Number(m[1]); };
+  async function renderUsage(fresh) {
+    paintTabs('list');
+    view(`<div class="um-head"><h1>📈 ${t('ការប្រើប្រាស់', 'Usage')}</h1><a class="btn add" href="#/">‹ ${t('ត្រឡប់', 'Back')}</a></div>
+      <div class="chips" id="uChips">${[7, 30, 90].map(n => `<button type="button" class="chip${usageDays === n ? ' on' : ''}" data-ud="${n}">${n} ${t('ថ្ងៃ', 'days')}</button>`).join('')}<button type="button" class="chip" id="uRef">↻ ${t('ធ្វើបច្ចុប្បន្នភាព', 'Refresh')}</button></div>
+      <div id="uBody">${U && U.days === usageDays ? '' : '<div class="spinner"></div>'}</div>`);
+    $$('[data-ud]').forEach(b => b.onclick = () => { usageDays = Number(b.dataset.ud); U = null; renderUsage(); });
+    $('#uRef').onclick = () => { U = null; renderUsage(true); };
+    if (!U || U.days !== usageDays) {
+      try { U = await api('usageData', { days: usageDays, fresh: !!fresh }); usageErr = ''; }
+      catch (e) { usageErr = e.code === 'OLD' ? e.message : e.message; }
+      if (location.hash !== '#/usage') return;
+    }
+    const box = $('#uBody');
+    if (!box) return;
+    if (usageErr || !U) { box.innerHTML = `<div class="alert bad">${esc(usageErr || 'No data')}</div>`; return; }
+    const days = U.perDay, max = Math.max(1, ...days.map(d => d.users));
+    const step = window.innerWidth < 700 ? Math.ceil(days.length / 6) : Math.ceil(days.length / 30);   // fewer date labels when bars are narrow
+    const todayRow = days[days.length - 1] || { users: 0, opens: 0 };
+    const active = days.filter(d => d.users > 0), avg = active.length ? Math.round(days.reduce((a, d) => a + d.users, 0) / days.length * 10) / 10 : 0;
+    const people = D.users.filter(u => u.active && !isWaiting(u));
+    const usedKeys = {};
+    U.people.forEach(q => { usedKeys[q.key] = q; });
+    const rows = people.map(u => {
+      const keys = [u.empId].concat([u.email], u.others || []).filter(Boolean);
+      const q = keys.map(k => usedKeys[k] || usedKeys[String(k).toLowerCase()]).find(Boolean);
+      return { name: u.name || u.email, id: u.empId || '', dept: u.dept || '', opens: q ? q.opens : 0, days: q ? q.days : 0, last: q ? q.last : '', top: q ? q.top : '', phone: q ? q.phone : 0 };
+    });
+    const idle = rows.filter(r => !r.opens).length;
+    box.innerHTML = `<div class="stats usage-k"><span><b>${todayRow.users}</b> ${t('សកម្មថ្ងៃនេះ', 'active today')}</span><span><b>${todayRow.opens}</b> ${t('ការបើកថ្ងៃនេះ', 'opens today')}</span>
+        <span><b>${avg}</b> ${t('មធ្យម/ថ្ងៃ', 'avg users/day')}</span><span><b>${U.people.length}</b> ${t('នាក់បានប្រើ', 'people used')}</span><span class="${idle ? 'warn' : ''}"><b>${idle}</b> ${t('មិនទាន់ប្រើ', 'never opened')}</span></div>
+      <div class="card ubars"><div class="ubar-h">${t('អ្នកសកម្មក្នុងមួយថ្ងៃ', 'Active people per day')} <small>${t('ចុច/ដាក់លើរបារ ដើម្បីមើលលេខ', 'hover a bar for the numbers')}</small></div>
+        <div class="ubar-w">${days.map((d, i) => `<div class="ubar" title="${esc(d.d)} · ${d.users} ${t('នាក់', 'people')} · ${d.opens} ${t('បើក', 'opens')}"><i style="height:${Math.round(d.users / max * 100)}%">${d.users && days.length <= 31 ? `<b>${d.users}</b>` : ''}</i><small>${i % step === 0 ? dShort(d.d) : ''}</small></div>`).join('')}</div></div>
+      <div class="um-sub">${t('តាមកម្មវិធី', 'By app')}</div>
+      <div class="tbl-wrap"><table class="tbl" data-nocols><thead><tr><th>${t('កម្មវិធី', 'App')}</th><th>${t('ការបើក', 'Opens')}</th><th>${t('អ្នកប្រើ', 'People')}</th></tr></thead><tbody>${U.perApp.map(a => `<tr><td>${esc(APP_LABEL(a.app))}</td><td>${a.opens}</td><td>${a.users}</td></tr>`).join('') || `<tr><td colspan="3" class="empty">${t('មិនទាន់មានទិន្នន័យ', 'No data yet')}</td></tr>`}</tbody></table></div>
+      <div class="um-sub">${t('តាមបុគ្គល', 'By person')}</div>
+      <div class="tbl-wrap ulist nock"><table class="tbl" data-nocols><thead><tr><th class="c-nm">${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('ការបើក', 'Opens')}</th><th>${t('ថ្ងៃសកម្ម', 'Days active')}</th><th>${t('ចុងក្រោយ', 'Last seen')}</th><th>${t('កម្មវិធីចម្បង', 'Top app')}</th></tr></thead><tbody>${rows.map(r => `<tr class="${r.opens ? '' : 'off'}"><td class="c-nm">${esc(r.name)}</td><td>${esc(r.id || '–')}</td><td>${esc(r.dept || '–')}</td><td>${r.opens}</td><td>${r.days}</td><td>${esc(r.last ? lastFmt(r.last) : t('មិនទាន់', 'never'))}</td><td>${esc(r.top ? APP_LABEL(r.top) : '–')}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint">${t('រាប់ម្តងក្នុង ៣០ នាទី ក្នុងមួយកម្មវិធី មួយឧបករណ៍។ រក្សា ៩០ ថ្ងៃ។', 'Counted once per app per device every 30 minutes. Kept for 90 days.')} · ${esc(U.asOf)}</p>`;
+    fitList();
+  }
+
   function renderLog() {
     paintTabs('log');
     view(`<div class="um-head"><h1>🕘 ${t('ប្រវត្តិការផ្លាស់ប្តូរ', 'Change log')}</h1></div>
@@ -990,6 +1038,14 @@
           const out = [], logs = [];
           p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.stockCats = c.stockCats.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Stock access: ' + (c.stockCats.join(', ') || 'All'))); });
           return resolve({ users: out, log: logs });
+        }
+        if (action === 'usageData') {
+          const n = p.days || 30, td = new Date(), pad = x => String(x).padStart(2, '0'), ds = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+          const perDay = Array.from({ length: n }, (_, i) => { const d = new Date(td.getTime() - (n - 1 - i) * 86400000), u = d.getDay() === 0 ? 1 : 6 + ((i * 7) % 9); return { d: ds(d), users: u, opens: u * 3 + (i % 5) }; });
+          const emps = S.users.filter(u => u.empId);
+          return resolve({ days: n, today: ds(td), asOf: pad(td.getDate()) + '-Nov ' + pad(td.getHours()) + ':' + pad(td.getMinutes()), perDay,
+            perApp: [{ app: 'fuel', opens: 220, users: 12 }, { app: 'home', opens: 180, users: 14 }, { app: 'stock-count', opens: 95, users: 6 }, { app: 'scale', opens: 40, users: 3 }],
+            people: emps.slice(0, Math.max(1, emps.length - 1)).map((u, i) => ({ key: u.empId, id: u.empId, email: u.email, name: u.name, opens: 40 - i * 9, days: 12 - i, last: ds(td) + ' ' + pad(8 + i) + ':15', top: i % 2 ? 'fuel' : 'home', phone: 20 })) });
         }
         if (action === 'loginBg') return resolve(S.bg && S.bg.v !== p.v ? S.bg : (S.bg ? { v: S.bg.v, pos: S.bg.pos } : { v: '' }));
         if (action === 'loginBgSave') { S.bg = p.reset ? null : Object.assign(S.bg || {}, p.dataUrl ? { dataUrl: p.dataUrl, w: p.w, h: p.h } : {}, { v: String(Date.now()), pos: p.pos }); return resolve(S.bg ? { v: S.bg.v, pos: S.bg.pos } : { v: '' }); }

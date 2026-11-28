@@ -336,5 +336,29 @@
   try { const me = JSON.parse(localStorage.getItem('steel_me') || 'null'); if (me && me.role === 'admin') {
     const s = document.createElement('script'); s.src = new URL('feedback.js?v=20261127a', document.currentScript ? document.currentScript.src : location.href).href; s.defer = true; document.head.appendChild(s); } } catch (e) { /* private window */ }
   window.addEventListener('load', () => { if (document.getElementById('vmSw')) unfreeze(); });
+  // ---------- Usage ping (Kim, 28 Nov 2026) ----------
+  // One tiny "opened" note to the main API, a few seconds after the page has loaded and at most once per app per 30 minutes
+  // on this device, so nothing waits for it and the app is never slowed down. 👥 Users › 📈 adds them up.
+  function usagePing() {
+    try {
+      if (/[?&]demo\b/.test(location.search) || (window !== window.top && !inFrame)) return;
+      const tok = localStorage.getItem('fr_id_token');
+      if (!tok) return;
+      const app = (location.pathname.replace(/^\/+|\/+$/g, '').split('/')[0] || 'home').toLowerCase();
+      const key = 'isteel_ping_' + app, last = Number(localStorage.getItem(key) || 0);
+      if (Date.now() - last < 30 * 60 * 1000) return;
+      const send = () => {
+        const url = (window.APP_CONFIG || {}).API_URL;
+        if (!url) return;
+        localStorage.setItem(key, String(Date.now()));
+        fetch(url, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'usagePing', token: tok, payload: { app: app, device: phoneDevice ? 'phone' : 'computer' } }) }).catch(() => {});
+      };
+      if (window.APP_CONFIG) return send();
+      const s = document.createElement('script');   // apps that keep their own config: read the main one
+      s.src = ROOT + 'config.js'; s.onload = send; document.head.appendChild(s);
+    } catch (e) { /* never in the way */ }
+  }
+  window.addEventListener('load', () => setTimeout(usagePing, 3500));
   window.VIEW_MODE = { get, pick, who, logOut, sideMe };
 })();

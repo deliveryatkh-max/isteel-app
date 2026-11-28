@@ -123,6 +123,8 @@ const ACTIONS = {
   umStock: umStock_,
   umPassword: umPassword_,
   loginBgSave: loginBgSave_,
+  usagePing: usagePing_,
+  usageData: usageData_,
   teamInit: teamInit_,
   teamFind: teamFind_,
   teamResign: teamResign_,
@@ -434,6 +436,79 @@ function pwLogin_(p) {
 }
 
 /** 👥 Users: set, change ({ id, pw }) or remove ({ id, off: true }) the password of an employee. */
+// ---------- Usage log (Kim, 28 Nov 2026) ----------
+// Every app sends one tiny "opened" ping (web/view-mode.js, at most once per app per 30 minutes per device) after it has loaded,
+// so nobody waits for it. One row per ping in the "Usage Log" tab (new tab, nothing existing is touched); rows older than
+// 90 days are dropped when an admin opens 👥 Users › 📈. usageData_ adds the rows up for the admin page.
+const USAGE_SHEET = 'Usage Log', USAGE_KEEP_DAYS = 90, USAGE_TZ = 'Asia/Phnom_Penh';
+const USAGE_HEAD = ['Date', 'Time', 'Email', 'Name', 'Employee ID', 'App', 'Device'];
+function usageSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(USAGE_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(USAGE_SHEET);
+  sh.getRange(1, 1, 1, USAGE_HEAD.length).setValues([USAGE_HEAD]).setFontWeight('bold');
+  sh.getRange(1, 1, sh.getMaxRows(), 2).setNumberFormat('@');   // dates and times stay text
+  sh.getRange(1, 5, sh.getMaxRows(), 1).setNumberFormat('@');
+  sh.setFrozenRows(1);
+  return sh;
+}
+function usagePing_(p, user) {
+  const app = String(p.app || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 30) || 'home';
+  const now = new Date();
+  usageSheet_().appendRow([Utilities.formatDate(now, USAGE_TZ, 'yyyy-MM-dd'), Utilities.formatDate(now, USAGE_TZ, 'HH:mm:ss'),
+    user.email, user.name || '', user.employeeId || '', app, p.device === 'phone' ? 'phone' : 'computer']);
+  return { ok: true };
+}
+function usageData_(p, user) {
+  needAdmin_(user);
+  const days = [7, 30, 90].indexOf(Number(p.days)) >= 0 ? Number(p.days) : 30;
+  const cache = CacheService.getScriptCache(), ck = 'usage_' + days;
+  const hit = cache.get(ck);
+  if (hit && !p.fresh) return JSON.parse(hit);
+  const sh = usageSheet_();
+  const day = d => Utilities.formatDate(d, USAGE_TZ, 'yyyy-MM-dd');
+  const today = new Date(), todayS = day(today);
+  const fromS = day(new Date(today.getTime() - (days - 1) * 86400000));
+  const keepS = day(new Date(today.getTime() - USAGE_KEEP_DAYS * 86400000));
+  let values = sh.getLastRow() < 2 ? [] : sh.getRange(2, 1, sh.getLastRow() - 1, USAGE_HEAD.length).getValues();
+  const dateOf = v => (v instanceof Date ? day(v) : String(v).slice(0, 10));
+  // Old rows leave once in a while (rows are in time order, so they are at the top).
+  let old = 0;
+  while (old < values.length && dateOf(values[old][0]) < keepS) old++;
+  if (old > 200) { sh.deleteRows(2, old); values = values.slice(old); }
+  const perDay = {}, perApp = {}, perPerson = {};
+  for (let i = 0; i < days; i++) perDay[day(new Date(today.getTime() - (days - 1 - i) * 86400000))] = { d: null, opens: 0, who: {} };
+  values.forEach(r => {
+    const d = dateOf(r[0]);
+    if (d < fromS || d > todayS || !perDay[d]) return;
+    const email = String(r[2]).toLowerCase(), id = String(r[4] || '').trim(), key = id || email, app = String(r[5] || 'home');
+    const pd = perDay[d];
+    pd.opens++; pd.who[key] = 1;
+    const a = perApp[app] || (perApp[app] = { opens: 0, who: {} });
+    a.opens++; a.who[key] = 1;
+    const q = perPerson[key] || (perPerson[key] = { key: key, id: id, email: email, name: '', opens: 0, days: {}, last: '', apps: {}, phone: 0 });
+    q.opens++; q.days[d] = 1; q.name = String(r[3] || q.name); q.email = email;
+    const t = d + ' ' + String(r[1]).slice(0, 5);
+    if (t > q.last) q.last = t;
+    q.apps[app] = (q.apps[app] || 0) + 1;
+    if (r[6] === 'phone') q.phone++;
+  });
+  const out = {
+    days: days, today: todayS, asOf: Utilities.formatDate(today, USAGE_TZ, 'dd-MMM HH:mm'),
+    perDay: Object.keys(perDay).sort().map(d => ({ d: d, opens: perDay[d].opens, users: Object.keys(perDay[d].who).length })),
+    perApp: Object.keys(perApp).map(k => ({ app: k, opens: perApp[k].opens, users: Object.keys(perApp[k].who).length })).sort((a, b) => b.opens - a.opens),
+    people: Object.keys(perPerson).map(k => {
+      const q = perPerson[k];
+      const top = Object.keys(q.apps).sort((a, b) => q.apps[b] - q.apps[a])[0] || '';
+      return { key: q.key, id: q.id, email: q.email, name: q.name, opens: q.opens, days: Object.keys(q.days).length, last: q.last, top: top, phone: q.phone };
+    }),
+  };
+  const json = JSON.stringify(out);
+  if (json.length < 90000) cache.put(ck, json, 120);
+  return out;
+}
+
 // ---------- Sign-in screen picture (Kim, 28 Nov 2026) ----------
 // Default: /icons/login-bg.jpg on the website. An admin can upload another one (👥 Users › 🖼); it is kept in Drive
 // and phones keep a copy, so they download it again only when LOGIN_BG_V changes.
