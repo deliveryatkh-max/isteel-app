@@ -455,20 +455,27 @@
     drawResults();
   }
 
+  // Frozen header (Kim, 28 Nov 2026): on computers the user table scrolls inside a box that ends at the window bottom,
+  // so its header row (and the Name column, sideways) always shows.
+  function fitList() {
+    const w = document.querySelector('.ulist');
+    if (!w) return;
+    w.style.maxHeight = wide() ? Math.max(320, window.innerHeight - (w.getBoundingClientRect().top + window.scrollY) - 52) + 'px' : '';
+  }
   function drawResults() {
     const list = filtered();
     const box = $('#res');
     if (!box) return;
     if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawBulk(); return; }
     if (wide()) {
-      box.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
-        <th><input type="checkbox" id="selAll" aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}></th>
-        <th>${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th>
+      box.innerHTML = `<div class="tbl-wrap ulist"><table class="tbl"><thead><tr>
+        <th class="c-ck"><input type="checkbox" id="selAll" aria-label="${t('ជ្រើសទាំងអស់', 'Select all')}" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}></th>
+        <th class="c-nm">${t('ឈ្មោះ', 'Name')}</th><th>ID</th><th>${t('ផ្នែក', 'Dept')}</th><th>${t('តួនាទី', 'Role')}</th>
         ${D.apps.map(a => `<th class="tk" title="${esc(appName(a))}">${appIcon(a.key, 22)}<small>${esc(appName(a))}</small></th>`).join('')}
         <th>${t('សកម្ម', 'Active')}</th><th></th></tr></thead><tbody>${list.map(u => `
         <tr class="${u.active ? '' : 'off'}${sel.has(u.email) ? ' pick' : ''}" data-row="${esc(u.email)}">
-          <td><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
-          <td><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(shownEmail(u.email))}</small></span></a></td>
+          <td class="c-ck"><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
+          <td class="c-nm"><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(shownEmail(u.email))}</small></span></a></td>
           <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td>
           ${D.apps.map(a => `<td class="tk"><button type="button" class="tick${u.apps[a.key] ? ' on' : ''}" data-tick="${esc(u.email)}" data-app="${a.key}" aria-pressed="${!!u.apps[a.key]}" aria-label="${esc(appName(a))}">${u.apps[a.key] ? '✓' : ''}</button></td>`).join('')}
           <td>${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</td>
@@ -492,6 +499,7 @@
       }
     }
     $$('[data-act]').forEach(b => b.onclick = () => quickActive(b.dataset.act));
+    fitList();
     drawBulk();
   }
 
@@ -939,7 +947,7 @@
   window.ISTEEL_REFRESH = () => { if (E) { toast(t('កំពុងកែ · ចុច រក្សាទុក ឬ ថយក្រោយ', 'Editing · tap Save or Back')); return; } refresh(); };
   window.addEventListener('hashchange', () => { if (!/^#\/(u\/|new)/.test(location.hash)) E = null; screen(); window.scrollTo(0, 0); });
   let wasWide = wide();
-  window.addEventListener('resize', () => { if (wide() !== wasWide) { wasWide = wide(); screen(); } });
+  window.addEventListener('resize', () => { if (wide() !== wasWide) { wasWide = wide(); screen(); } else fitList(); });
 
   // ------------------------------------------------------------------ demo (no API_URL): sample people, nothing saved
   function demoApi(action, p) {

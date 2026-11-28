@@ -283,3 +283,12 @@ small.inl { display: inline; }
 .sx-g { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .sx-g.on { background: #e8f1fb; color: #084f6a; font-weight: 600; }
 .sx-pf { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); } .sx-pf span { margin-right: auto; color: var(--muted); font-size: 13px; }
+/* Frozen header + Name column on the user table (Kim, 28 Nov 2026) */
+@media (min-width: 900px) {
+  .ulist { overflow: auto; }
+  .ulist .tbl th { z-index: 3; }
+  .ulist .tbl .c-ck { position: sticky; left: 0; z-index: 2; width: 44px; min-width: 44px; background: var(--card); }
+  .ulist .tbl .c-nm { position: sticky; left: 44px; z-index: 2; background: var(--card); box-shadow: inset -1.5px 0 0 var(--line); }
+  .ulist .tbl th.c-ck, .ulist .tbl th.c-nm { z-index: 4; }
+  .ulist .tbl tr.pick .c-ck, .ulist .tbl tr.pick .c-nm { background: var(--soft); }
+}
