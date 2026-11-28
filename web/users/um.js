@@ -540,13 +540,31 @@
 
   // ---- quick changes (no form): saved at once, put back if the server says no
   // Redraws keep the table where it is (Kim, 28 Nov 2026: ticking a box must not jump to the top row).
+  // Works for every screen: remembers the page and every scrolled box (by tag + class + position), redraws, puts them back.
+  const sigOf = e => e.tagName + '|' + e.className;
   function keepPlace(fn) {
-    const w = document.querySelector('.ulist'), top = w ? w.scrollTop : 0, left = w ? w.scrollLeft : 0, y = window.scrollY;
+    const y = window.scrollY, seen = {}, saved = [];
+    document.querySelectorAll('body *').forEach(e => {
+      const sg = sigOf(e), k = seen[sg] = (seen[sg] == null ? 0 : seen[sg] + 1);
+      if (e.scrollTop || e.scrollLeft) saved.push([sg, k, e.scrollTop, e.scrollLeft]);
+    });
     fn();
-    const n = document.querySelector('.ulist');
-    if (n) { n.scrollTop = top; n.scrollLeft = left; }
+    if (saved.length) {
+      const seen2 = {};
+      document.querySelectorAll('body *').forEach(e => {
+        const sg = sigOf(e), k = seen2[sg] = (seen2[sg] == null ? 0 : seen2[sg] + 1);
+        const hit = saved.find(x => x[0] === sg && x[1] === k);
+        if (hit) { e.scrollTop = hit[2]; e.scrollLeft = hit[3]; }
+      });
+    }
     window.scrollTo(0, y);
   }
+  // ticks on the Menus and Stock screens redraw their tables too: same rule, nothing moves
+  const _drawMenus = drawMenus, _drawStockList = drawStockList, _drawStock = drawStock;
+  drawMenus = function () { keepPlace(_drawMenus); };
+  drawStockList = function () { keepPlace(_drawStockList); };
+  drawStock = function () { keepPlace(_drawStock); };
+  let quickBusy = 0;   // saves in flight: a late answer never pulls a newer tick back
   function paintTick(email, key) {
     const u = byEmail(email), on = !!(u && u.apps[key]);
     $$('[data-tick]').forEach(b => { if (b.dataset.tick === email && b.dataset.app === key) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '✓' : ''; } });
@@ -554,10 +572,15 @@
   async function quickApp(email, key) {
     const u = byEmail(email); if (!u) return;
     const on = !u.apps[key];
-    const old = JSON.parse(JSON.stringify(u));
     u.apps[key] = on; paintTick(email, key);
-    try { const r = await api('umSave', { email, apps: { [key]: on } }); mergeSave(r); addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`); }
-    catch (e) { merge([old]); toast(e.message); }
+    quickBusy++;
+    try {
+      const r = await api('umSave', { email, apps: { [key]: on } });
+      if (quickBusy === 1) mergeSave(r);   // the last answer in line has everything; earlier ones would undo ticks made since
+      addLog(r.log); save(); toast(`${on ? '✓' : '✗'} ${appName(D.apps.find(a => a.key === key))} · ${u.name}`);
+    }
+    catch (e) { const v = byEmail(email); if (v) v.apps[key] = !on; toast(e.message); }
+    finally { quickBusy--; }
     paintTick(email, key);
   }
   async function quickActive(email) {
@@ -1037,7 +1060,7 @@
   function paintDemo() { if (DEMO) { const d = $('#demo'); d.hidden = false; d.textContent = t('🧪 សាកល្បង — ទិន្នន័យគំរូ មិនរក្សាទុកក្នុង Sheet', '🧪 Demo — sample data, not saved to the Sheet'); } }
   if (window.LANG) { LANG.button($('#langBtn')); LANG.onChange(() => { paintStatic(); paintDemo(); screen(); }); }
   paintDemo(); paintStatic();
-  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D || !!(D && mChanged().length) });
+  if (window.LIVE && !DEMO) LIVE.start({ run: () => refresh(true), busy: () => !!E || !D || quickBusy > 0 || !!(D && mChanged().length) });
   window.ISTEEL_REFRESH = () => { if (E) { toast(t('កំពុងកែ · ចុច រក្សាទុក ឬ ថយក្រោយ', 'Editing · tap Save or Back')); return; } refresh(); };
   window.addEventListener('hashchange', () => { if (!/^#\/(u\/|new)/.test(location.hash)) E = null; screen(); window.scrollTo(0, 0); });
   let wasWide = wide();
