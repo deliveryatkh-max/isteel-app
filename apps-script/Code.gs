@@ -398,17 +398,38 @@ function pwCheck_(id, pw) {
   return pwHash_(pw, v.slice(0, k)) === v.slice(k + 1);
 }
 
+// Password column (Kim, 28 Nov 2026): Kim added "Password" to the master Employee List and wants the app to use it for
+// every employee. A filled cell is that person's password (it wins over a hash set before); a blank cell falls back to
+// the hash. The first good sign-in adds "<ID>@id.isteel" to the Email cell so every app knows the person.
+const PW_COL = 'Password';
+function pwSheet_(id) {
+  const m = master_();
+  const c = m.col(PW_COL), i = rowById_(m, id);
+  if (c < 0 || i < 0) return { m: m, i: i, pw: '' };
+  return { m: m, i: i, pw: String(m.sh.getRange(i + 2, c + 1).getDisplayValue() || '').trim() };
+}
+const pwSame_ = (a, b) => { a = String(a); b = String(b); if (a.length !== b.length) return false; let d = 0; for (let k = 0; k < a.length; k++) d |= a.charCodeAt(k) ^ b.charCodeAt(k); return d === 0; };
+
 /** Sign in with Employee ID + password: returns this app's 30-day session, the same as after a Google sign-in. */
 function pwLogin_(p) {
   const id = idText_(p.id), pw = String(p.pw || '');
   const cache = CacheService.getScriptCache(), key = 'pwfail_' + id;
   const fails = Number(cache.get(key) || 0);
   if (fails >= PW_FAILS) throw new Error('Too many wrong tries. Wait 15 minutes. / ព្យាយាមខុសច្រើនដងពេក។ សូមរង់ចាំ ១៥ នាទី។');
-  if (!/^\d{3,12}$/.test(id) || !pw || pw.length > 64 || !pwCheck_(id, pw)) {
+  const okId = /^\d{3,12}$/.test(id) && pw && pw.length <= 64;
+  const sh = okId ? pwSheet_(id) : { i: -1, pw: '' };
+  const good = okId && (sh.pw ? pwSame_(pw.trim(), sh.pw) : pwCheck_(id, pw));
+  if (!good) {
     cache.put(key, String(fails + 1), PW_LOCK_S);
     throw new Error('Wrong Employee ID or password. / Employee ID ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។');
   }
   cache.remove(key);
+  // Password from the sheet: make sure the ID login is on the person's row (once), so the apps let them in.
+  if (sh.pw && sh.i >= 0 && emailsOf_(sh.m.values[sh.i][sh.m.col('Email')] || '').indexOf(idLogin_(id)) < 0) {
+    try {
+      umRun_(m => { const i = rowById_(m, id); if (i >= 0) { const e = mRow_(m, m.values[i], i); if (e.emails.indexOf(idLogin_(id)) < 0) mEmails_(m, i, e.emails.concat(idLogin_(id))); } return {}; });
+    } catch (e) { console.warn('ID login add: ' + e); }
+  }
   return { session: makeSession_(idLogin_(id)) };
 }
 
@@ -466,12 +487,16 @@ function umPassword_(p, user) {
   return umRun_(m => {
     const i = rowById_(m, id);
     if (i < 0) throw new Error('Employee ID ' + id + ' is not in Employee & Approver.');
-    const e0 = mRow_(m, m.values[i], i), login = idLogin_(id), had = pwHas_(id);
+    const e0 = mRow_(m, m.values[i], i), login = idLogin_(id), col = m.col(PW_COL);
+    const had = pwHas_(id) || (col >= 0 && String(m.values[i][col] || '').trim() !== '');
     if (p.off) {
       PropertiesService.getScriptProperties().deleteProperty('PWH_' + id);
+      if (col >= 0) { m.sh.getRange(i + 2, col + 1).setValue(''); m.values[i][col] = ''; }
       if (e0.emails.indexOf(login) >= 0) mDropEmail_(m, i, login);
     } else {
-      pwSet_(id, pw);
+      // The Password column is the one place for passwords when it exists (Kim, 28 Nov); else the hash as before.
+      if (col >= 0) { m.sh.getRange(i + 2, col + 1).setNumberFormat('@').setValue(pw); m.values[i][col] = pw; PropertiesService.getScriptProperties().deleteProperty('PWH_' + id); }
+      else pwSet_(id, pw);
       if (e0.emails.indexOf(login) < 0) mEmails_(m, i, e0.emails.concat(login));
     }
     const e = mRow_(m, m.values[i], i);
@@ -3542,7 +3567,12 @@ function umSave_(p, user) {
   return umRun_(m => {
     const o = umWrite_(m, email, v, user.email, isNew);
     if (isIdLogin_(email)) {
-      if (isNew) { pwSet_(email.slice(0, -ID_LOGIN.length), p.password); o.log.push('🔑 Password sign-in set'); }
+      if (isNew) {
+        const id = email.slice(0, -ID_LOGIN.length), col = m.col(PW_COL), i = rowById_(m, id);
+        if (col >= 0 && i >= 0) { m.sh.getRange(i + 2, col + 1).setNumberFormat('@').setValue(String(p.password)); m.values[i][col] = String(p.password); }
+        else pwSet_(id, p.password);
+        o.log.push('🔑 Password sign-in set');
+      }
       if (o.gone) PropertiesService.getScriptProperties().deleteProperty('PWH_' + email.slice(0, -ID_LOGIN.length));
     }
     const name = o.e ? displayName_(o.e) : email;
