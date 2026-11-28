@@ -524,7 +524,7 @@
     box.innerHTML = `<div class="bulk"><b>☑ ${t('បានជ្រើស', 'Selected')} ${n}</b>
       <select class="in sm" id="bApp"><option value="">${t('បើក/បិទកម្មវិធី…', 'Tick an app…')}</option>${D.apps.map(a => `<option value="${a.key}:1">✓ ${esc(appName(a))}</option><option value="${a.key}:0">✗ ${esc(appName(a))}</option>`).join('')}</select>
       <select class="in sm" id="bRole"><option value="">${t('ប្តូរតួនាទី…', 'Set role…')}</option>${ROLES.map(r => `<option value="${r[0]}">${esc(t(r[1], r[2]))}</option>`).join('')}</select>
-      <select class="in sm" id="bWh"><option value="">🏭 ${t('ឃ្លាំង Inbound…', 'Inbound warehouse…')}</option>${whs.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="All">🌐 ${t('ទាំងអស់', 'All')}</option><option value="-">${t('គ្មាន (ឃើញទាំងអស់)', 'None (sees all)')}</option></select>
+      <select class="in sm" id="bWh"><option value="">🏭 ${t('WH Group…', 'WH Group…')}</option>${whs.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="All">🌐 ${t('ទាំងអស់', 'All')}</option><option value="-">${t('គ្មាន (ឃើញទាំងអស់)', 'None (sees all)')}</option></select>
       <select class="in sm" id="bDept"><option value="">${t('ប្តូរផ្នែក…', 'Department…')}</option>${D.depts.map(d => `<option>${esc(d.name)}</option>`).join('')}</select>
       <button type="button" class="btn sm" id="bOn">${t('បើក', 'Switch on')}</button>
       <button type="button" class="btn sm bad" id="bOff">${t('បិទ', 'Switch off')}</button>
@@ -677,7 +677,7 @@
     if (!f.apps[key] && !(key === 'inbound' && f.role === 'admin')) return '';
     if (key === 'inbound') {
       const list = (D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).concat('All'), on = f.ibWh || [];
-      return `<div class="sub ibwh"><span>🏭 ${t('ឃ្លាំង', 'Warehouse')}</span>${list.map(w => `<button type="button" class="whc${on.indexOf(w) >= 0 ? ' on' : ''}" data-ibwh="${esc(w)}">${on.indexOf(w) >= 0 ? '☑' : '☐'} ${w === 'All' ? '🌐 ' + t('ទាំងអស់', 'All') : esc(w)}</button>`).join('')}
+      return `<div class="sub ibwh"><span>🏭 WH Group</span>${list.map(w => `<button type="button" class="whc${on.indexOf(w) >= 0 ? ' on' : ''}" data-ibwh="${esc(w)}">${on.indexOf(w) >= 0 ? '☑' : '☐'} ${w === 'All' ? '🌐 ' + t('ទាំងអស់', 'All') : esc(w)}</button>`).join('')}
         ${on.length ? '' : `<div class="hint" style="width:100%">${t('មិនទាន់ជ្រើស = ឃើញគ្រប់ឃ្លាំង', 'None ticked = sees every warehouse')}</div>`}</div>`;
     }
     if (key === 'overtime') {
