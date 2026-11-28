@@ -90,6 +90,28 @@ export function parseDn(text) {
 async function readDn(env, p) {
   const image = String(p.image || '');
   if (!/^data:image\/(jpeg|png);base64,/.test(image)) return { ok: false, error: 'BAD: image must be a data URL' };
+  // Google Gemini (free plan, key GEMINI_API_KEY in Cloudflare) reads handwriting far better than the Workers AI models: it goes first
+  const gerr = [];
+  if (env.GEMINI_API_KEY) {
+    for (const gm of [env.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-flash-latest'].filter((m, i, x) => m && x.indexOf(m) === i)) {
+      try {
+        const mm = image.match(/^data:(image\/(?:jpeg|png));base64,(.*)$/);
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + gm + ':generateContent', {
+          method: 'POST', headers: { 'x-goog-api-key': env.GEMINI_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: DN_PROMPT }, { inline_data: { mime_type: mm[1], data: mm[2] } }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + String((d.error && d.error.message) || '').slice(0, 120));
+        const txt = ((((d.candidates || [])[0] || {}).content || {}).parts || []).map(x => x.text || '').join('');
+        const g = parseDn(txt);
+        if (g && (g.total || g.lines.length)) {
+          const sum = g.lines.reduce((x, y) => x + y, 0);
+          return { ok: true, model: gm, lines: g.lines, total: g.total || sum, sure: !!g.total && g.total === sum };
+        }
+        gerr.push(gm + ': no numbers');
+      } catch (e) { gerr.push(gm + ': ' + String(e && e.message || e).slice(0, 140)); }
+    }
+  }
   const models = [env.FC_MODEL].concat(VISION_MODELS).filter((m, i, x) => m && x.indexOf(m) === i);
   // every free model reads the photo at the same time; the total that most of them agree on (or that equals the sum of its own rows) wins
   const tried = [], got = [];
@@ -101,7 +123,7 @@ async function readDn(env, p) {
       else tried.push(model + ': no numbers in answer: ' + String(textOf(out)).slice(0, 120));
     } catch (e) { tried.push(model + ': ' + String(e && e.message || e).slice(0, 160)); }
   }));
-  if (!got.length) return { ok: false, error: 'AI: no model could read the photo. ' + tried.join(' | ') };
+  if (!got.length) return { ok: false, error: 'AI: no model could read the photo. ' + gerr.concat(tried).join(' | ') };
   const vote = {};
   got.forEach(g => { [g.total, g.sum].filter(Boolean).forEach(v => { vote[v] = (vote[v] || 0) + (v === g.total ? 1 : 0.5); }); });
   const best = Object.keys(vote).sort((x, y) => vote[y] - vote[x])[0];
