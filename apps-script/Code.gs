@@ -627,9 +627,10 @@ function mRow_(m, r, i) {
     emails: emailsOf_(g('Email')), role: String(g('Role') || '').trim(), active: g('Active') === true || isYes_(g('Active')),
     apps: apps, team: String(g('TEAM') || '').trim(), offNote: String(g('Off Note') || '').trim(), offAt: at('Off At'),
     appName: String(g('App Name') || '').trim(), photo: String(g('Card Photo') || '').trim(), reqAt: at('Requested At'),
-    claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(g('Inbound Warehouse')), menusOff: menuList_(g('Hidden Menus')),
+    // WH Group = the person's warehouses for Inbound (Kim, 28 Nov 2026); blank falls back to the older "Inbound Warehouse".
+    claimed: idText_(g('Claimed ID')), ibWh: ibWhList_(String(g('WH Group') || '').trim() ? g('WH Group') : g('Inbound Warehouse')), menusOff: menuList_(g('Hidden Menus')),
     phone: String(g('Phone') == null ? '' : g('Phone')).replace(/\.0+$/, '').trim(),
-    stockCats: catList_(g('Stock Categories')), whGroup: String(g('WH Group') || '').trim(), region: String(g('Region') || '').trim(),
+    stockCats: catList_(g('Stock Categories')), whGroup: ibWhList_(String(g('WH Group') || '').trim() ? g('WH Group') : g('Inbound Warehouse')).join(', '), region: String(g('Region') || '').trim(),
   };
 }
 const displayName_ = e => e.appName || e.kh || e.full;
@@ -3486,8 +3487,9 @@ function umWrite_(m, email, v, by, isNew) {
     log.push(a.col + (on ? ' ✓' : ' ✗'));
   });
   if (v.ibWh !== undefined && v.ibWh.join(', ') !== cur.ibWh.join(', ')) {
-    mPut_(m, i, 'Inbound Warehouse', v.ibWh.join(', '));
-    log.push('Inbound warehouse: ' + (cur.ibWh.join(', ') || '–') + ' → ' + (v.ibWh.join(', ') || '–'));
+    mPut_(m, i, 'WH Group', v.ibWh.join(', '));   // one column (Kim, 28 Nov 2026): WH Group; the old column is emptied
+    if (m.col('Inbound Warehouse') >= 0 && String(m.values[i][m.col('Inbound Warehouse')] || '').trim()) mPut_(m, i, 'Inbound Warehouse', '');
+    log.push('WH Group: ' + (cur.ibWh.join(', ') || '–') + ' → ' + (v.ibWh.join(', ') || '–'));
   }
   if (v.menusOff !== undefined && v.menusOff.slice().sort().join(',') !== cur.menusOff.slice().sort().join(',')) {
     mPut_(m, i, 'Hidden Menus', v.menusOff.join(', '));
