@@ -718,6 +718,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
     const a = tot(r, 'arrQty'), d = +r.dnQty;
     if (!(d > 0)) return '';   // the arrival total is not shown before the DN total is typed, so nobody copies it (Kim, 28 Nov 2026)
     const g = Math.round((a - d) * 1000) / 1000;
+    if (r.dnPaper && r.dnPaper.total && r.dnPaper.total !== d) return short ? `<span class="dnbad">⚠️ ${t('ខុសពី DN ក្រដាស', 'Not the paper DN')}</span>` : '';   // the paper says something else: never show Matches (Kim, 28 Nov 2026)
     const tag = g === 0 ? `<span class="dnok">✓ ${t('ត្រូវគ្នា', 'Matches')}</span>` : `<span class="dnbad">${g > 0 ? '+' : ''}${fmt(g)} ${esc(r.uom)}</span>`;
     return short ? tag : `<p class="hint">${t('ចំនួនមកដល់សរុប', 'Total arrival qty')}: <b>${fmt(a)} ${esc(r.uom)}</b> · DN <b>${fmt(d)}</b> ${tag}</p>`;
   }
