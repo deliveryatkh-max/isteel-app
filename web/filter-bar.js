@@ -26,6 +26,7 @@
       return `<div class="fb-head"><h2>${title}</h2><div class="fb-acts">${onClear ? `<button type="button" class="fb-btn" data-fbclr="${k}">✕ ${t('សម្អាតទាំងអស់', 'Clear all')}</button>` : ''}${acts || ''}` +
         `<button type="button" class="fb-btn fb-tog${open(k) ? ' on' : ''}" data-fbtog="${k}" aria-expanded="${open(k)}">⏷ ${t('តម្រង', 'Filter')} <span class="fb-car">${open(k) ? '▴' : '▾'}</span></button></div></div>`;
     },
+    onClear(k, fn) { CLEAR[k] = fn; },
     panel: (k, inner) => `<div class="fb-panel" data-fbp="${k}"${open(k) ? '' : ' hidden'}>${inner}</div>`,
     field: (label, html, cls) => `<label class="fb-field${cls ? ' ' + cls : ''}">${label}${html}</label>`,
     range: (a, b, va, vb) => `<label class="fb-field fb-range">📅 ${t('ចន្លោះថ្ងៃ', 'Date range')}<span><input type="date" id="${a}" value="${esc(va)}"><i>–</i><input type="date" id="${b}" value="${esc(vb)}"></span></label>`,

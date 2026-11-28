@@ -126,6 +126,16 @@
         save(key, keys);
       });
     });
+    // a page can park the button in its own header: <div data-tc-into="#slot"> around the table
+    const holder = tb.closest('[data-tc-into]'), slot = holder && document.querySelector(holder.getAttribute('data-tc-into'));
+    if (slot) {
+      slot.innerHTML = `<button type="button" class="tc-btn fb-btn" title="${t('ជួរឈរ', 'Columns')}" aria-label="${t('ជួរឈរ', 'Columns')}">⚙️<span class="tc-lab"> ${t('ជួរឈរ', 'Columns')}</span></button>`;
+      slot.firstChild.onclick = () => {
+        const def = [...Array(n).keys()];
+        dialog(def.map(j => ({ k: j, h: name(j) || '#' + (j + 1) })), shown(tb), def, keys => save(key, keys.join(',') === def.join(',') ? null : keys));
+      };
+      return;
+    }
     // ⚙️ Columns sits above the table (above its scroll box when the table has one of its own)
     let box = tb;
     // never climb out of a grid or flex item: a new sibling there becomes its own cell and moves the table (Fuel SAP preview)

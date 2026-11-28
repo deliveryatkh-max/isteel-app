@@ -306,3 +306,24 @@ small.inl { display: inline; }
 @media (min-width: 900px) {
   .ulist.nock .tbl .c-nm { left: 0; }
 }
+/* header: icon tools (Kim, 28 Nov 2026, option C) */
+.um-head { flex-wrap: nowrap; }
+.um-head .hbtns { display: flex; gap: 6px; align-items: center; flex: none; position: relative; }
+.um-head .hb { position: relative; width: 40px; height: 40px; padding: 0; display: inline-grid; place-items: center; font: inherit; font-size: 16px; line-height: 1; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; cursor: pointer; text-decoration: none; }
+.um-head .hb:hover { border-color: #011e41; }
+.um-head .hb.fb-tog.on { background: #e8f1fb; border-color: #9ec3ea; }
+.um-head .hb.warn { background: #fff4e5; border-color: #f0b36a; }
+.um-head .tcslot { display: contents; }
+.um-head .tcslot .tc-btn { width: 40px; height: 40px; padding: 0; font-size: 16px; border-radius: 8px; display: inline-grid; place-items: center; background: var(--card); border: 1px solid var(--line); color: var(--text); }
+.um-head .tc-lab { display: none; }
+.hdot { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #011e41; color: #fff; font: 700 10.5px/17px sans-serif; font-style: normal; text-align: center; }
+.um-head .hb.warn .hdot { background: #d9480f; }
+.um-head .add { min-height: 40px; height: 40px; }
+.qrow { margin: 0 0 8px; } .qrow[hidden] { display: none; }
+.qrow .fb-search { display: block; }
+.hmw { position: relative; display: inline-block; }
+.hmenu { position: absolute; right: 0; top: 46px; z-index: 30; min-width: 200px; background: var(--card, #fff); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 22px rgba(1, 30, 65, .18); padding: 4px; display: grid; }
+.hmenu[hidden] { display: none; }
+.hmenu a, .hmenu button { display: block; text-align: left; padding: 10px 12px; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text); border-radius: 6px; text-decoration: none; cursor: pointer; }
+.hmenu a:hover, .hmenu button:hover { background: rgba(1, 30, 65, .07); }
+@media (max-width: 600px) { .um-head .hlab { display: none; } .um-head .add { padding: 0 14px; } .um-head h1 { font-size: 18px; } }

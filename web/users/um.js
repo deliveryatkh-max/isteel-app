@@ -448,20 +448,32 @@
   function renderList() {
     paintTabs('list');
     const us = D.users, waiting = us.filter(isWaiting).length;
+    const nF = [F.dept, F.role, F.stock, F.ib, F.chip && F.chip !== 'all' ? F.chip : ''].filter(Boolean).length + (F.q ? 1 : 0);
+    const dot = nF ? `<i class="hdot">${nF}</i>` : '';
+    FB.onClear('users', () => { F.q = ''; F.dept = ''; F.chip = 'all'; F.role = ''; F.stock = ''; F.ib = ''; sel.clear(); renderList(); });
+    const isW = wide(), reqLab = t('សំណើថ្មី', 'New requests'), usageLab = t('ការប្រើប្រាស់', 'Usage'), bgLab = t('រូបផ្ទាំងចូល', 'Sign-in picture'), clrLab = t('សម្អាតទាំងអស់', 'Clear all');
+    const pickLab = PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select');
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
-        <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
-        <a class="btn add" href="#/usage" title="${t('ការប្រើប្រាស់', 'Usage')}">📈</a><a class="btn add" href="#/bg" title="${t('រូបផ្ទាំងចូល', 'Sign-in picture')}">🖼</a><a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
-      <div class="stats"><span><b>${us.filter(u => u.active).length}</b> ${t('សកម្ម', 'Active')}</span>
-        <span><b>${us.filter(u => !u.active && u.offAt).length}</b> ${t('បិទ', 'Off')}</span>
-        ${waiting ? `<a href="#/req" class="warn">📨 <b>${waiting}</b> ${t('សំណើថ្មី', 'New requests')} ›</a>` : `<a href="#/req">📨 <b>0</b> ${t('សំណើ', 'Requests')}</a>`}</div>
-      <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; F.role = ''; F.stock = ''; F.ib = ''; sel.clear(); renderList(); })}
-      ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        <span class="hbtns"><button type="button" class="hb" id="qBtn" title="${t('ស្វែងរក', 'Search')}" aria-label="${t('ស្វែងរក', 'Search')}">🔍</button>
+        <button type="button" class="hb fb-tog${FB.open('users') ? ' on' : ''}" data-fbtog="users" title="${t('តម្រង', 'Filter')}" aria-label="${t('តម្រង', 'Filter')}">⏷${dot}</button>
+        <span class="tcslot" id="tcSlot"></span>
+        ${isW ? `<button type="button" class="hb" data-fbclr="users" title="${clrLab}" aria-label="${clrLab}">✕</button>
+        ${waiting ? `<a class="hb warn" href="#/req" title="${reqLab}" aria-label="${reqLab}">📨<i class="hdot">${waiting}</i></a>` : ''}
+        <a class="hb" href="#/usage" title="${usageLab}" aria-label="${usageLab}">📈</a><a class="hb" href="#/bg" title="${bgLab}" aria-label="${bgLab}">🖼</a>` :
+        `<span class="hmw"><button type="button" class="hb" id="moreBtn" aria-label="${t('ផ្សេងៗ', 'More')}">⋯${waiting ? '<i class="hdot">' + waiting + '</i>' : ''}</button>
+          <div class="hmenu" id="hmenu" hidden><button type="button" id="pickBtn">${pickLab}</button><button type="button" data-fbclr="users">✕ ${clrLab}</button>
+          ${waiting ? `<a href="#/req">📨 ${reqLab} (${waiting})</a>` : ''}<a href="#/usage">📈 ${usageLab}</a><a href="#/bg">🖼 ${bgLab}</a></div></span>`}
+        <a class="btn ok add" href="#/new" aria-label="${t('បន្ថែម', 'Add')}">＋<span class="hlab"> ${t('បន្ថែម', 'Add')}</span></a></span></div>
+      <div class="qrow"${F.q ? '' : ' hidden'} id="qrow">${FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q)}</div>
+      <div class="fb-wrap">${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
         FB.field(t('តួនាទី', 'Role'), `<select id="fRoleF"><option value="">${t('គ្រប់តួនាទី', 'All roles')}</option>${ROLES.filter(x => D.users.some(u => u.role === x[0] && !isWaiting(u))).map(x => `<option value="${x[0]}" ${F.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))} (${D.users.filter(u => u.role === x[0] && !isWaiting(u)).length})</option>`).join('')}</select>`) +
         FB.field(t('សិទ្ធិស្តុក', 'Stock access'), `<select id="fStockF"><option value="">${t('ទាំងអស់', 'Any')}</option><option value="none" ${F.stock === 'none' ? 'selected' : ''}>${t('មើលបានទាំងអស់ (គ្មានកំណត់)', 'Sees everything')} (${D.users.filter(u => !isWaiting(u) && !(u.stockCats || []).length).length})</option><option value="some" ${F.stock === 'some' ? 'selected' : ''}>${t('កំណត់ត្រឹមតែខ្លះ', 'Limited to some')} (${D.users.filter(u => (u.stockCats || []).length).length})</option>${(D.stockGroups || []).map(g => (typeof g === 'string' ? g : g.n)).map(n => `<option value="g:${esc(n)}" ${F.stock === 'g:' + n ? 'selected' : ''}>📦 ${esc(n)} (${D.users.filter(u => (u.stockCats || []).indexOf(n) >= 0).length})</option>`).join('')}</select>`) +
         FB.field(t('សិទ្ធិ Inbound', 'Inbound access'), `<select id="fIbF"><option value="">${t('ទាំងអស់', 'Any')}</option><option value="All" ${F.ib === 'All' ? 'selected' : ''}>${t('គ្រប់ឃ្លាំង', 'All warehouses')}</option>${(D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).map(w => `<option value="${esc(w)}" ${F.ib === w ? 'selected' : ''}>🏭 ${esc(w)} (${D.users.filter(u => (u.ibWh || []).indexOf(w) >= 0 || (u.ibWh || []).indexOf('All') >= 0).length})</option>`).join('')}<option value="-" ${F.ib === '-' ? 'selected' : ''}>${t('មិនបានកំណត់', 'Nothing ticked')} (${D.users.filter(u => !(u.ibWh || []).length).length})</option></select>`) +
-        FB.field(t('ការមើល', 'View'), `<select id="fChip">${chipList().map(c => `<option value="${c[0]}" ${F.chip === c[0] ? 'selected' : ''}>${esc(c[1])} (${c[2]})</option>`).join('')}</select>`) +
-        FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q))}</div>
-      <div id="bulk"></div><div id="res"></div>`);
+        FB.field(t('ការមើល', 'View'), `<select id="fChip">${chipList().map(c => `<option value="${c[0]}" ${F.chip === c[0] ? 'selected' : ''}>${esc(c[1])} (${c[2]})</option>`).join('')}</select>`))}</div>
+      <div id="bulk"></div><div id="res" data-tc-into="#tcSlot"></div>`);
+    const qb = $('#qBtn'); if (qb) qb.onclick = () => { const r = $('#qrow'); r.hidden = !r.hidden; if (!r.hidden) $('#q').focus(); };
+    const mb = $('#moreBtn'); if (mb) mb.onclick = () => { const m = $('#hmenu'); m.hidden = !m.hidden; };
+    if (!window.__hmClose) { window.__hmClose = 1; document.addEventListener('click', e => { if (!e.target.closest || e.target.closest('#moreBtn')) return; const m = document.getElementById('hmenu'); if (m && !m.hidden) m.hidden = true; }); }
     const pb = $('#pickBtn'); if (pb) pb.onclick = () => { PICK = !PICK; if (!PICK) sel.clear(); renderList(); };
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
     $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
@@ -483,6 +495,7 @@
     const list = filtered();
     const box = $('#res');
     if (!box) return;
+    const slot = $('#tcSlot'); if (slot) slot.innerHTML = '';
     if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawBulk(); return; }
     if (wide()) {
       box.innerHTML = `<div class="tbl-wrap ulist"><table class="tbl"><thead><tr>
