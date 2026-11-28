@@ -713,6 +713,14 @@
     return { id: id, balance: bal, deleted: !!pl.delete, batch: n.batch, sloc: n.sloc };
   }
 
+  // Small QR of the bin code on the stock card (Kim, 28 Nov); tap it to make it big for scanning.
+  function binQr(bin) {
+    if (!window.qrcode || !bin) return '';
+    try { const q = window.qrcode(0, 'M'); q.addData(String(bin)); q.make();
+      return `<button type="button" class="cqr" aria-label="QR ${esc(bin)}" title="${esc(bin)}">${q.createSvgTag({ cellSize: 4, margin: 1, scalable: true })}</button>`; }
+    catch (e) { return ''; }
+  }
+
   // Stock card of one line: header, balance and every movement (newest first).
   async function openCard(i) {
     const l = S.bin.lines[i];
@@ -749,7 +757,7 @@
       <div class="lqty"><b class="${out ? 'out' : 'in'}">${out ? '-' + fmtQty(cv(out)) : '+' + fmtQty(cv(r.qtyIn))}</b>
         <div>${T('នៅសល់', 'left')} ${fmtQty(cv(r.balance))}</div></div>${fixable(r) ? `<button type="button" class="lfix" data-fix="${ri}" aria-label="${T('កែ', 'Fix')}">⋮</button>` : ''}</div>`; }).join('');
     view(`
-      <section class="card hero">
+      <section class="card hero chero">${binQr(b.bin)}
         <div class="muted">${esc(b.bin)} · ${esc(b.warehouse || '')}</div>
         <div class="cdesc">${esc(l.desc)}</div>
         <div class="ccode">${esc(l.material)} <span class="muted">Batch: ${esc(l.batch)} · SLOC ${esc(l.sloc)}</span></div>
@@ -770,6 +778,7 @@
     document.querySelectorAll('[data-move]').forEach(el => { el.onclick = () => openMove(el.dataset.move, S.lineIdx); });
     document.querySelectorAll('[data-fix]').forEach(el => { el.onclick = () => fixBox(el, c.rows[Number(el.dataset.fix)]); });
     const us = $('#cUom'); if (us) us.onchange = () => { S.cardUom = us.value; route(); };
+    const qr = $('.cqr'); if (qr) qr.onclick = () => qr.classList.toggle('big');
     $('#back').onclick = () => { S.view = 'bin'; route(); };
   }
 
