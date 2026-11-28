@@ -330,7 +330,7 @@
       <div class="meta">${esc(posOf(r).join(", "))} · ${esc(r.supplier)}</div>
       <div class="meta">${esc(ownerTxt(r))} · <b>${esc(fmt(r.end ? tot(r, 'grQty') : tot(r, 'arrQty')))} ${esc(r.uom)}</b> · ${esc(r.start)}${r.end ? '–' + esc(r.end) : ''} · 👷 ${esc(r.manpower)}</div>
       ${isLive(r) ? `<div class="meta">${badges(r)}</div>` : ''}
-      ${r.end && r.dnPaper ? `<div class="meta">📄 ${t('DN លើក្រដាស', 'Paper DN')} <b>${fmt(r.dnPaper.total)}</b> ${r.dnPaper.total === +r.dnQty ? `<span class="dnok">✓</span>` : `<span class="dnbad">⚠️ ${t('បានវាយ ', 'typed ')}${fmt(r.dnQty)}</span>`}</div>` : ''}
+      ${r.end && r.dnPaper ? `<div class="meta">📄 ${t('DN លើក្រដាស', 'Paper DN')} <b>${fmt(r.dnPaper.total)}</b> ${r.dnPaper.total === +r.dnQty ? `<span class="dnok">✓</span>` : `<span class="dnbad">⚠️ ${r.dnQty ? t('បានវាយ ', 'typed ') + fmt(r.dnQty) : t('មិនទាន់វាយ', 'not typed')}</span>`}</div>` : r.end && DNB[r.id] ? `<div class="meta">📄 ${t('កំពុងអានរូប DN…', 'Reading the DN photo…')}</div>` : r.end && DNERR[r.id] ? `<div class="meta dnbad">📄 ${esc(DNERR[r.id])}</div>` : ''}
       <div class="scline" data-sc="${esc(r.id)}"></div>
     </a>`;
   }
@@ -426,7 +426,7 @@
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
 `);
     // trucks finished today that were never read (finished before this feature, or the reading failed once): read them now, one by one
-    rows.filter(r => !DEMO && r.end && r.date === today() && r.dnQty && r.ph && r.ph.doc && !r.dnPaper && !DNB[r.id] && !DNTRY[r.id]).slice(0, 4).forEach(r => { DNTRY[r.id] = 1; dnCheck(r.id); });
+    rows.filter(r => !DEMO && r.end && r.date >= ymd(new Date(Date.now() - 3 * 864e5)) && r.ph && r.ph.doc && !r.dnPaper && !DNB[r.id] && !DNTRY[r.id]).slice(0, 4).forEach(r => { DNTRY[r.id] = 1; dnCheck(r.id); });
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
     $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
