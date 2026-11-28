@@ -39,6 +39,8 @@ for (const dir of folders) {
       manifest += JSON.stringify(live) === JSON.stringify(mine) ? 'same as the project' : (sc(live) === sc(mine) ? 'differs, same scopes' : '⚠ SCOPES DIFFER (project: ' + sc(live) + ' | repo: ' + sc(mine) + ')');
     } catch (e) { manifest += 'not compared'; }
     console.log('   ' + manifest);
+    const same = fs.readdirSync(src).filter(f => /\.gs$/.test(f)).map(f => { try { return f + (fs.readFileSync(path.join(tmp, names[f] || f), 'utf8') === fs.readFileSync(path.join(src, f), 'utf8') ? ' in the project is IDENTICAL to the repo' : ' in the project DIFFERS from the repo'); } catch (e) { return f + ': not compared'; } });
+    if (dry) console.log('   ' + same.join('; '));
     fs.readdirSync(src).filter(f => /\.gs$/.test(f) || f === 'appsscript.json').forEach(f => fs.copyFileSync(path.join(src, f), path.join(tmp, names[f] || f)));
     const after = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
     if (dry) { try { console.log('   deployments: ' + sh('clasp deployments', tmp).trim().replace(/\n/g, ' | ')); } catch (e) { console.log('   deployments error: ' + String((e.stderr || '') + (e.stdout || '')).trim()); } console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
