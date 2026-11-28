@@ -51,7 +51,7 @@
   let otBusy = null;
   const sel = new Set();   // selected people (computer table, or phone "Select" mode)
   let PICK = false;        // phone: tap rows to select several people, then change them together (Kim, 2 Nov 2026)
-  const F = { q: '', chip: 'all', dept: '' };   // dept: '' = every department, '-' = no department
+  const F = { q: '', chip: 'all', dept: '', role: '', stock: '', ib: '' };   // dept: '' = every department, '-' = no department
   const TOKEN_KEY = 'fr_id_token';
   const claims = () => { try { return JSON.parse(decodeURIComponent(escape(atob((get(TOKEN_KEY) || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) { return null; } };
   const signedIn = () => { const c = claims(); return !!(c && c.exp * 1000 > Date.now() + 60000); };
@@ -427,6 +427,17 @@
       if (F.chip === 'reviewer' && !isChecker(u.role)) return false;
       if (F.chip === 'off' && !(!u.active && u.offAt)) return false;
       if (F.chip.indexOf('app:') === 0 && !(u.active && u.apps[F.chip.slice(4)])) return false;
+      if (F.role && u.role !== F.role) return false;
+      // Stock access (blank = sees everything): 'none' = no limit, 'some' = limited, else the group ticked for the person.
+      const sc = u.stockCats || [];
+      if (F.stock === 'none' && sc.length) return false;
+      if (F.stock === 'some' && !sc.length) return false;
+      if (F.stock.indexOf('g:') === 0 && sc.indexOf(F.stock.slice(2)) < 0) return false;
+      // Inbound access: 'All' = All ticked, '-' = nothing ticked, or a warehouse ticked (All counts for every warehouse).
+      const ib = u.ibWh || [];
+      if (F.ib === 'All' && ib.indexOf('All') < 0) return false;
+      if (F.ib === '-' && ib.length) return false;
+      if (F.ib && F.ib !== 'All' && F.ib !== '-' && !(ib.indexOf(F.ib) >= 0 || ib.indexOf('All') >= 0)) return false;
       if (!q) return true;
       return [u.name, u.email, u.empId, u.dept, roleName(u.role)].join(' ').toLowerCase().indexOf(q) >= 0;
     }).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name) || a.email.localeCompare(b.email));
@@ -443,8 +454,11 @@
       <div class="stats"><span><b>${us.filter(u => u.active).length}</b> ${t('សកម្ម', 'Active')}</span>
         <span><b>${us.filter(u => !u.active && u.offAt).length}</b> ${t('បិទ', 'Off')}</span>
         ${waiting ? `<a href="#/req" class="warn">📨 <b>${waiting}</b> ${t('សំណើថ្មី', 'New requests')} ›</a>` : `<a href="#/req">📨 <b>0</b> ${t('សំណើ', 'Requests')}</a>`}</div>
-      <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; sel.clear(); renderList(); })}
+      <div class="fb-wrap">${FB.head('users', '', '', () => { F.q = ''; F.dept = ''; F.chip = 'all'; F.role = ''; F.stock = ''; F.ib = ''; sel.clear(); renderList(); })}
       ${FB.panel('users', FB.field(t('ផ្នែក', 'Department'), `<select id="fDeptF"><option value="">${t('គ្រប់ផ្នែក', 'All departments')}</option>${deptNames().map(d => `<option value="${esc(d)}" ${F.dept === d ? 'selected' : ''}>${esc(d)} (${D.users.filter(u => u.dept === d && !isWaiting(u)).length})</option>`).join('')}${D.users.some(u => !u.dept) ? `<option value="-" ${F.dept === '-' ? 'selected' : ''}>${t('គ្មានផ្នែក', 'No department')}</option>` : ''}</select>`) +
+        FB.field(t('តួនាទី', 'Role'), `<select id="fRoleF"><option value="">${t('គ្រប់តួនាទី', 'All roles')}</option>${ROLES.filter(x => D.users.some(u => u.role === x[0] && !isWaiting(u))).map(x => `<option value="${x[0]}" ${F.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))} (${D.users.filter(u => u.role === x[0] && !isWaiting(u)).length})</option>`).join('')}</select>`) +
+        FB.field(t('សិទ្ធិស្តុក', 'Stock access'), `<select id="fStockF"><option value="">${t('ទាំងអស់', 'Any')}</option><option value="none" ${F.stock === 'none' ? 'selected' : ''}>${t('មើលបានទាំងអស់ (គ្មានកំណត់)', 'Sees everything')} (${D.users.filter(u => !isWaiting(u) && !(u.stockCats || []).length).length})</option><option value="some" ${F.stock === 'some' ? 'selected' : ''}>${t('កំណត់ត្រឹមតែខ្លះ', 'Limited to some')} (${D.users.filter(u => (u.stockCats || []).length).length})</option>${(D.stockGroups || []).map(g => (typeof g === 'string' ? g : g.n)).map(n => `<option value="g:${esc(n)}" ${F.stock === 'g:' + n ? 'selected' : ''}>📦 ${esc(n)} (${D.users.filter(u => (u.stockCats || []).indexOf(n) >= 0).length})</option>`).join('')}</select>`) +
+        FB.field(t('សិទ្ធិ Inbound', 'Inbound access'), `<select id="fIbF"><option value="">${t('ទាំងអស់', 'Any')}</option><option value="All" ${F.ib === 'All' ? 'selected' : ''}>${t('គ្រប់ឃ្លាំង', 'All warehouses')}</option>${(D.ibWarehouses || ['WH IB', 'WH OB', 'WH GVM', 'WH BDM', 'WH METAL']).map(w => `<option value="${esc(w)}" ${F.ib === w ? 'selected' : ''}>🏭 ${esc(w)} (${D.users.filter(u => (u.ibWh || []).indexOf(w) >= 0 || (u.ibWh || []).indexOf('All') >= 0).length})</option>`).join('')}<option value="-" ${F.ib === '-' ? 'selected' : ''}>${t('មិនបានកំណត់', 'Nothing ticked')} (${D.users.filter(u => !(u.ibWh || []).length).length})</option></select>`) +
         FB.search('q', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID ផ្នែក…', 'Search name, email, ID, department…'), F.q) +
         FB.field(t('ការមើល', 'View'), `<select id="fChip">${chipList().map(c => `<option value="${c[0]}" ${F.chip === c[0] ? 'selected' : ''}>${esc(c[1])} (${c[2]})</option>`).join('')}</select>`))}</div>
       <div id="bulk"></div><div id="res"></div>`);
@@ -452,6 +466,9 @@
     $('#q').oninput = e => { F.q = e.target.value; drawResults(); };
     $('#fDeptF').onchange = e => { F.dept = e.target.value; sel.clear(); renderList(); };
     $('#fChip').onchange = e => { F.chip = e.target.value; drawResults(); };
+    $('#fRoleF').onchange = e => { F.role = e.target.value; drawResults(); };
+    $('#fStockF').onchange = e => { F.stock = e.target.value; drawResults(); };
+    $('#fIbF').onchange = e => { F.ib = e.target.value; drawResults(); };
     drawResults();
   }
 
