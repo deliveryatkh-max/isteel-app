@@ -528,7 +528,8 @@
   function sap() {
     wide();
     // Filters start closed here (Option A); after that the Filter button remembers open/closed as everywhere else.
-    try { const fk = 'fb_open_' + location.pathname.replace(/[^a-z0-9]+/gi, '_') + 'sapf'; if (localStorage.getItem(fk) === null) localStorage.setItem(fk, '0'); } catch (e) { /* private window */ }
+    // Closed by default only the first time (a re-render must not fold the panel again while filtering).
+    try { const fk = 'fb_open_' + location.pathname.replace(/[^a-z0-9]+/gi, '_') + 'sapf'; if (localStorage.getItem(fk + '_set') === null) { localStorage.setItem(fk + '_set', '1'); if (localStorage.getItem(fk) === null) localStorage.setItem(fk, '0'); } } catch (e) { /* private window */ }
     const ok = R.rows.length && R.map.material >= 0 && R.map.qty >= 0;
     const res = ok ? reconcile() : null;
     // Product filters like the Product menu (Kim, 20 Nov): L1–L4, Size, Grade, Brand, Class + search; the numbers follow the filters.
@@ -541,7 +542,8 @@
     if (res) loadVar('sap');
     const rsnOf = x => { const r = RS[x.key]; if (r && r.reason != null) return r.reason; const c = openCase(lv, x.key); return c ? c.Reason || '' : ''; };
     const rmkOf = x => { const r = RS[x.key]; if (r && r.remark != null) return r.remark; const c = openCase(lv, x.key); return c ? c.Remark || '' : ''; };
-    const list = res ? res.list.filter(x => pfOk(x) && (!SR || (SR === '-' ? !rsnOf(x) && x.status !== 'match' : rsnOf(x) === SR)) && (!sq || [x.o.bin, x.o.material, x.o.batch, x.o.sloc, x.desc].join(' ').toLowerCase().indexOf(sq.toLowerCase()) >= 0)) : [];
+    const bmOk = x => (!SBIN.length || SBIN.indexOf(String(x.o.bin || '')) >= 0) && (!SMAT.length || SMAT.indexOf(String(x.o.material || '')) >= 0);
+    const list = res ? res.list.filter(x => pfOk(x) && bmOk(x) && (!SR || (SR === '-' ? !rsnOf(x) && x.status !== 'match' : rsnOf(x) === SR)) && (!sq || [x.o.bin, x.o.material, x.o.batch, x.o.sloc, x.desc].join(' ').toLowerCase().indexOf(sq.toLowerCase()) >= 0)) : [];
     const sopts = f => Array.from(new Set(res.list.filter(x => pfOk(x, f)).map(x => pAt(x, f[0])).filter(Boolean))).sort();
     const vars = list.filter(x => x.status !== 'match');
     if (res) lastSap = { at: R.at, variances: res.list.filter(x => x.status !== 'match').length, name: R.name };
@@ -556,6 +558,8 @@
     const mapTxt = FIELDS.filter(f => R.map[f[0]] >= 0).map(f => esc(R.headers[R.map[f[0]]])).join(' · ');
     const mapGrid = () => `<div class="mapgrid">${FIELDS.map(f => `<label>${f[1]}${f[3] ? ' *' : ''}<select data-map="${f[0]}"${f[3] && R.map[f[0]] < 0 ? ' class="need"' : ''}><option value="-1">—</option>${R.headers.map((h, i) => `<option value="${i}"${R.map[f[0]] === i ? ' selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}</div>`;
     const actChips = res ? PF.map((f, k) => (SFV[f[0]] ? `<button type="button" class="mbchip on" data-sfx="${k}">${T(f[1], f[2])}: ${esc(SFV[f[0]])} ✕</button>` : '')).join('')
+      + (SBIN.length ? `<button type="button" class="mbchip on" data-sfx="b">${T('ទីតាំង', 'Bin')}: ${esc(SBIN.length > 2 ? SBIN.length + ' ' + T('ទីតាំង', 'bins') : SBIN.join(', '))} ✕</button>` : '')
+      + (SMAT.length ? `<button type="button" class="mbchip on" data-sfx="m">${T('សម្ភារៈ', 'Material')}: ${esc(SMAT.length > 2 ? SMAT.length + ' ' + T('សម្ភារៈ', 'materials') : SMAT.join(', '))} ✕</button>` : '')
       + (SR && SR !== '-' ? `<button type="button" class="mbchip on" data-sfx="r">${T('មូលហេតុ', 'Reason')}: ${esc(SR)} ✕</button>` : '')
       + (sq ? `<button type="button" class="mbchip on" data-sfx="q">🔍 ${esc(sq)} ✕</button>` : '') : '';
     view(!res ? `
@@ -578,7 +582,7 @@
           <button type="button" class="fb-btn sapmapbtn${R.showMap ? ' on' : ''}" id="mapTog" title="${T('ផ្គូផ្គងជួរឈរ', 'Column mapping')}: ${mapTxt}">⚙ ${FIELDS.filter(f => R.map[f[0]] >= 0).length} ${T('ជួរឈររកឃើញ', 'columns found')} ✓</button></span>`,
         `<button type="button" class="fb-btn fb-pri" id="varSave">💾 ${T('រក្សាទុកខុសគ្នា', 'Save variance')}</button><label class="chk"><input type="checkbox" id="onlyVar"${F.onlyVar ? ' checked' : ''}> ${T('បង្ហាញតែជួរខុសគ្នា', 'Variances only')}</label>`
         + (can('export') ? `<button type="button" class="fb-btn" id="exp">${FB.xl} Excel</button>` : '') + `<button type="button" class="fb-btn" data-tcopen>⚙️ ${T('ជួរឈរ', 'Columns')}</button>`,
-        () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; SR = ''; sap(); })}
+        () => { PF.forEach(f => { SFV[f[0]] = ''; }); sq = ''; SR = ''; SBIN = []; SMAT = []; sap(); })}
       ${R.showMap || R.error ? `<section class="card sapmap">${R.error ? `<p class="bad">⚠️ ${esc(R.error)}</p>` : ''}${mapGrid()}
         <details class="paste"><summary>${T('ឬបិទភ្ជាប់ពី Excel', 'or paste from Excel')}</summary><textarea id="sapPaste" rows="4" placeholder="Material&#9;Batch&#9;Storage Location&#9;Unrestricted"></textarea>
           <button type="button" class="btn ghost sm" id="usePaste">${T('ប្រើទិន្នន័យនេះ', 'Use this data')}</button></details></section>` : ''}
@@ -589,7 +593,9 @@
         <button type="button" class="mbchip warn${SR === '-' ? ' on' : ''}" data-sc="rsn"><b>${vars.filter(x => rsnOf(x)).length} / ${vars.length}</b> ${T('មានមូលហេតុ', 'reason')}</button>
         <button type="button" class="mbchip" disabled><b>${list.length ? Math.round((list.length - vars.length) / list.length * 100) : 0}%</b> ${T('អត្រាត្រូវគ្នា', 'match rate')}</button>
         <span class="muted sapby">${T('តាម', 'by')} <b>${esc(lvName)}</b></span>${actChips}</div>
-      ${FB.panel('sapf', (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
+      ${FB.panel('sapf', (res ? msel('sfBin', T('ទីតាំង', 'Bin'), Array.from(new Set(res.list.map(x => String(x.o.bin || '')).filter(Boolean))).sort().map(v => [v, v]), SBIN)
+          + msel('sfMat', T('សម្ភារៈ', 'Material'), (() => { const m = {}; res.list.forEach(x => { const k = String(x.o.material || ''); if (k && !m[k]) m[k] = x.desc || ''; }); return Object.keys(m).sort().map(k => [k, k + (m[k] ? ' · ' + m[k] : '')]); })(), SMAT) : '')
+        + (PT.head ? PF.map((f, k) => FB.field(T(f[1], f[2]), `<select id="sf${k}"><option value="">${T('ទាំងអស់', 'All')}</option>${sopts(f).map(v => `<option value="${esc(v)}"${v === SFV[f[0]] ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`)).join('')
         : `<p class="muted">${PT.err ? T('តម្រងផលិតផល សម្រាប់អ្នកគ្រប់គ្រង និងប្រធានក្រុម', 'Product filters are for admins and supervisors') : T('កំពុងផ្ទុក…', 'Loading…')}</p>`)
         + FB.field(T('មូលហេតុ', 'Reason'), `<select id="sfr"><option value="">${T('ទាំងអស់', 'All')}</option><option value="-"${SR === '-' ? ' selected' : ''}>${T('មិនទាន់មានមូលហេតុ', 'No reason yet')}</option>${RSN.map(r => `<option value="${esc(r[0])}"${r[0] === SR ? ' selected' : ''}>${esc(T(r[1], r[0]))}</option>`).join('')}</select>`)
         + FB.search('sq', T('ស្វែងរក ទីតាំង សម្ភារៈ Batch', 'Search bin, material, batch'), sq))}</div>
@@ -611,7 +617,7 @@
     $$('[data-sample]').forEach(b => { b.onclick = () => loadSap(b.dataset.sample === 'mb52' ? 'MB52_sample.csv' : 'EWM_stock_sample.csv', toCsv(SAMPLE[b.dataset.sample]())); });
     if ($('#mapTog')) $('#mapTog').onclick = () => { R.showMap = !R.showMap; sap(); };
     $$('[data-sc]').forEach(b => { b.onclick = () => { if (b.dataset.sc === 'var') F.onlyVar = !F.onlyVar; else SR = SR === '-' ? '' : '-'; sap(); }; });
-    $$('[data-sfx]').forEach(b => { b.onclick = () => { const k = b.dataset.sfx; if (k === 'r') SR = ''; else if (k === 'q') sq = ''; else SFV[PF[k][0]] = ''; sap(); }; });
+    $$('[data-sfx]').forEach(b => { b.onclick = () => { const k = b.dataset.sfx; if (k === 'r') SR = ''; else if (k === 'q') sq = ''; else if (k === 'b') SBIN = []; else if (k === 'm') SMAT = []; else SFV[PF[k][0]] = ''; sap(); }; });
     if ($('#usePaste')) $('#usePaste').onclick = () => { const t = $('#sapPaste').value; if (t.trim()) loadSap(T('ទិន្នន័យបិទភ្ជាប់', 'Pasted data'), t); };
     $$('[data-map]').forEach(s => { s.onchange = () => { R.map[s.dataset.map] = Number(s.value); sap(); }; });
     if ($('#onlyVar')) $('#onlyVar').onchange = e => { F.onlyVar = e.target.checked; sap(); };
@@ -619,6 +625,8 @@
     if ($('#sq')) keep('#sq', v => { sq = v; sap(); });
     if (res) setTimeout(fitRep, 0);
     if ($('#sfr')) $('#sfr').onchange = e => { SR = e.target.value; sap(); };
+    if ($('#sfBin')) mselWire('sfBin', v => { SBIN = v; sap(); });
+    if ($('#sfMat')) mselWire('sfMat', v => { SMAT = v; sap(); });
     $$('[data-rsn]').forEach(el => { el.onchange = () => { (RS[el.dataset.rsn] = RS[el.dataset.rsn] || {}).reason = el.value; el.classList.toggle('need', !el.value); }; });
     $$('[data-rmk]').forEach(el => { el.onchange = () => { (RS[el.dataset.rmk] = RS[el.dataset.rmk] || {}).remark = el.value; }; });
     if ($('#varSave')) $('#varSave').onclick = () => saveVariance(res, lv);
@@ -641,7 +649,7 @@
   const PT = { head: null, rows: [], at: 0, busy: false, err: '' };
   const PF = [['Material Group L1', 'ក្រុម L1', 'Material Group L1'], ['Material Group L2', 'ក្រុម L2', 'Material Group L2'], ['Material Group L3', 'ក្រុម L3', 'Material Group L3'],
     ['Material Group L4', 'ក្រុម L4', 'Material Group L4'], ['Size', 'ទំហំ', 'Size'], ['Grade', 'Grade', 'Grade'], ['Brand', 'ម៉ាក', 'Brand'], ['ABC Class', 'ថ្នាក់', 'Class']];
-  const SFV = {}; let sq = '', SR = '';
+  const SFV = {}; let sq = '', SR = '', SBIN = [], SMAT = [];   // Bin + Material multi-pick (Kim, 28 Nov)
   function loadProducts() {
     if (PT.busy || (PT.head && Date.now() - PT.at < 600000)) return;
     if (DEMO) {
