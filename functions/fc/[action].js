@@ -86,17 +86,24 @@ export function parseDn(text) {
 async function readDn(env, p) {
   const image = String(p.image || '');
   if (!/^data:image\/(jpeg|png);base64,/.test(image)) return { ok: false, error: 'BAD: image must be a data URL' };
-  const models = [env.FC_MODEL, lastGood].concat(VISION_MODELS).filter((m, i, a) => m && a.indexOf(m) === i);
-  const tried = [];
-  for (const model of models) {
+  const models = [env.FC_MODEL].concat(VISION_MODELS).filter((m, i, x) => m && x.indexOf(m) === i);
+  // every free model reads the photo at the same time; the total that most of them agree on (or that equals the sum of its own rows) wins
+  const tried = [], got = [];
+  await Promise.all(models.map(async model => {
     try {
       const out = await runVision(env, model, DN_PROMPT, image, 500);
-      const got = parseDn(textOf(out));
-      if (got && (got.total || got.lines.length)) { lastGood = model; return { ok: true, model, lines: got.lines, total: got.total }; }
-      tried.push(model + ': no numbers in answer: ' + String(textOf(out)).slice(0, 120));
+      const r = parseDn(textOf(out));
+      if (r && (r.total || r.lines.length)) got.push({ model, lines: r.lines, total: r.total, sum: r.lines.reduce((x, y) => x + y, 0) });
+      else tried.push(model + ': no numbers in answer: ' + String(textOf(out)).slice(0, 120));
     } catch (e) { tried.push(model + ': ' + String(e && e.message || e).slice(0, 160)); }
-  }
-  return { ok: false, error: 'AI: no model could read the photo. ' + tried.join(' | ') };
+  }));
+  if (!got.length) return { ok: false, error: 'AI: no model could read the photo. ' + tried.join(' | ') };
+  const vote = {};
+  got.forEach(g => { [g.total, g.sum].filter(Boolean).forEach(v => { vote[v] = (vote[v] || 0) + (v === g.total ? 1 : 0.5); }); });
+  const best = Object.keys(vote).sort((x, y) => vote[y] - vote[x])[0];
+  const pick = got.find(g => String(g.total) === best) || got.find(g => String(g.sum) === best) || got[0];
+  const sure = !!best && vote[best] >= 2 && got.length > 1;
+  return { ok: true, model: pick.model, lines: pick.lines, total: +best || pick.total, sure, votes: got.map(g => g.total) };
 }
 
 async function readPhoto(env, p) {

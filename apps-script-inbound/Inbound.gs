@@ -471,7 +471,7 @@ function dnCheck_(p, user) {
   const lines = (d.lines || []).map(Number).filter(x => x > 0), total = Number(d.total) > 0 ? Number(d.total) : 0;
   const sum = lines.reduce((s, x) => s + x, 0);
   if (!total && !sum) fail_('BAD', 'Could not read the numbers on the DN photo.', 'មិនអាចអានលេខលើរូប DN បានទេ។');
-  rec.dnPaper = { total: total || sum, written: total, sum: sum, lines: lines, at: now_(), model: String(d.model || '') };
+  rec.dnPaper = { total: total || sum, written: total, sum: sum, lines: lines, at: now_(), model: String(d.model || ''), sure: d.sure !== false };
   rec.updated = now_();
   store_(rec, f.row);
   return rec;
