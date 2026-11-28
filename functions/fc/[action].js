@@ -69,7 +69,7 @@ export function parseAnswer(text) {
 const textOf = r => typeof r === 'string' ? r : r && (typeof r.response === 'string' ? r.response : r.response ? JSON.stringify(r.response)
   : r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : '');
 
-export const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils at a steel company in Cambodia. A table lists the coils with a Quantity (Kg) column, and the total in Kg is written by hand below that column. ' +
+export const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils at a steel company in Cambodia. A table lists the coils with a Quantity (Kg) column, and the total in Kg is the LAST number in that same Quantity (Kg) column, written by hand under the last row. The Quantity column is headed with the Khmer word បរិមាណ and is the FIRST column of numbers, right of the product description column. A SECOND column of numbers sits to its right (headed ឯកតា): IGNORE that second column completely. Rows end with a T mark; read digits only. Take every number and the total from the បរិមាណ column only. ' +
   'A dark blue strip at the bottom with an ID and a date is a watermark: ignore it. ' +
   'Answer with JSON only, no other text: {"lines": [the Kg of each table row as numbers], "total": the total in Kg written below the table, or null if you cannot read one}. ' +
   'Read the digits exactly as written. Do not add the rows up yourself for "total". Use null when the total is blurred, cut off or missing.';
