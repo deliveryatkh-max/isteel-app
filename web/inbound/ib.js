@@ -425,6 +425,8 @@
       ${FB.panel('log', FB.range('lFrom', 'lTo', LFROM, LTO) + FB.show('lGo') + FB.seg(chips, LF, 'f', true) + FB.search('q', t('ស្វែងរក៖ PO, សម្ភារៈ, ផ្លាកលេខ, DN', 'Search: PO, material, plate, DN'), LQ))}</div>
       <div class="list">${html || `<div class="empty">${t('រកមិនឃើញ', 'Nothing found')}</div>`}</div>
 `);
+    // trucks finished today that were never read (finished before this feature, or the reading failed once): read them now, one by one
+    rows.filter(r => !DEMO && r.end && r.date === today() && r.dnQty && r.ph && r.ph.doc && !r.dnPaper && !DNB[r.id] && !DNTRY[r.id]).slice(0, 4).forEach(r => { DNTRY[r.id] = 1; dnCheck(r.id); });
     const qi = $('#q'); qi.oninput = () => { LQ = qi.value; const pos = qi.selectionStart; renderLog(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
     $$('[data-f]').forEach(b => { b.onclick = () => { LF = b.dataset.f; renderLog(); }; });
     $('#lFrom').onchange = e => { LFROM = e.target.value; if (LTO && LFROM > LTO) LTO = LFROM; renderLog(); };
@@ -725,7 +727,7 @@ ${dmgItems.map(x => `<tr><td>${esc(x.r.id)}</td><td>${showDate(x.r.date)}</td><t
   }
   // Paper DN check (Kim, 28 Nov 2026): the DN photo is read by a free vision model on the server; the written total is
   // shown next to the total typed here. Only a warning, nothing is blocked.
-  const DNB = {}, DNERR = {}, DNRUN = {};
+  const DNB = {}, DNERR = {}, DNRUN = {}, DNTRY = {};
   function dnPaperHtml(r) {
     const p = r.dnPaper, d = +r.dnQty;
     if (p) {
