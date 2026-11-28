@@ -41,7 +41,7 @@ for (const dir of folders) {
     console.log('   ' + manifest);
     fs.readdirSync(src).filter(f => /\.gs$/.test(f) || f === 'appsscript.json').forEach(f => fs.copyFileSync(path.join(src, f), path.join(tmp, names[f] || f)));
     const after = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
-    if (dry) { console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
+    if (dry) { try { console.log('   deployments: ' + sh('clasp deployments', tmp).trim().replace(/\n/g, ' | ')); } catch (e) { console.log('   deployments error: ' + String((e.stderr || '') + (e.stdout || '')).trim()); } console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
     sh('clasp push --force', tmp);
     const out = sh('clasp deploy --deploymentId ' + m.deploymentId + ' --description "auto ' + sha + '"', tmp);
     console.log('✅ ' + dir + ' (' + m.name + '): ' + out.trim().split('\n').pop());
