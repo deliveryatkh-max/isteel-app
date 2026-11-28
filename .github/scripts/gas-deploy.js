@@ -32,6 +32,13 @@ for (const dir of folders) {
     sh('clasp pull', tmp);
     const src = path.join(root, dir), names = m.files || {};   // names: repo file -> the file's name inside the project (e.g. Code.gs -> Master.gs)
     const before = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
+    let manifest = 'appsscript.json: ';
+    try {
+      const live = JSON.parse(fs.readFileSync(path.join(tmp, 'appsscript.json'), 'utf8')), mine = JSON.parse(fs.readFileSync(path.join(src, 'appsscript.json'), 'utf8'));
+      const sc = o => (o.oauthScopes || []).slice().sort().join(' ');
+      manifest += JSON.stringify(live) === JSON.stringify(mine) ? 'same as the project' : (sc(live) === sc(mine) ? 'differs, same scopes' : '⚠ SCOPES DIFFER (project: ' + sc(live) + ' | repo: ' + sc(mine) + ')');
+    } catch (e) { manifest += 'not compared'; }
+    console.log('   ' + manifest);
     fs.readdirSync(src).filter(f => /\.gs$/.test(f) || f === 'appsscript.json').forEach(f => fs.copyFileSync(path.join(src, f), path.join(tmp, names[f] || f)));
     const after = fs.readdirSync(tmp).filter(f => f !== '.clasp.json').sort();
     if (dry) { console.log('🔍 ' + dir + ' (' + m.name + '): project has [' + before.join(', ') + '] → would push [' + after.join(', ') + ']' + (after.length > before.length ? '  ⚠ new file(s): ' + after.filter(f => before.indexOf(f) < 0).join(', ') : '')); continue; }
