@@ -901,6 +901,7 @@ function deptApps_(dept, fn) {
 /** What the request screen needs: this Gmail's state and the Department · Function choices. */
 function requestForm_(token) {
   const info = identity_(token);
+  if (isIdLogin_(info.email)) return idLoginAccess_(info.email);   // Employee ID + password: active, or a clear message (no form)
   const row = readTable_(SHEETS.USERS).find(u => String(u['Email'] || '').trim().toLowerCase() === info.email);
   return {
     v: 2,
@@ -993,6 +994,7 @@ function requestAccess_(token, p) {
   const info = identity_(token);
   const email = info.email;
   p = p || {};
+  if (isIdLogin_(email)) return idLoginAccess_(email);   // Employee ID + password: never a request (Kim, 28 Nov 2026)
   const mode = p.mode || (p.fullName !== undefined ? 'old' : 'id');
   const id = idText_(p.employeeId);
   const pick = String(p.fn || p.department || '').trim().slice(0, 150);
@@ -3393,17 +3395,45 @@ function umUserOf_(e, email) {
     role: UM_ROLES.indexOf(role) >= 0 ? role : 'user', active: e.active, empId: e.id,
     dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
     photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
-    ibWh: e.ibWh, menusOff: e.menusOff, stockCats: e.stockCats, whGroup: e.whGroup, region: e.region, fn: e.fn, deptName: e.dept,
+    ibWh: e.ibWh, menusOff: e.menusOff, stockCats: stockCatsShown_(e.stockCats), whGroup: e.whGroup, region: e.region, fn: e.fn, deptName: e.dept,
     idLogin: !!e.id && e.emails.indexOf(idLogin_(e.id)) >= 0,   // 🔑 can sign in with Employee ID + password
   };
 }
 const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
 
 /** Everything the screen needs in one call. */
+/** Someone signed in with Employee ID + password but has no access yet (the list copy was behind): make sure the login is on
+ *  their row, then let them in if the row is active. Switched off or not approved = a clear message, never a request. */
+function idLoginAccess_(email) {
+  const id = email.slice(0, -ID_LOGIN.length);
+  let status = '';
+  umRun_(m => {
+    const i = rowById_(m, id);
+    if (i < 0) return {};
+    const e = mRow_(m, m.values[i], i);
+    if (e.emails.indexOf(email) < 0) mEmails_(m, i, e.emails.concat(email));
+    status = e.active ? 'active' : 'off';
+    return {};
+  });
+  if (status === 'active') return { status: 'active' };
+  throw new Error('This Employee ID is not switched on. Ask the admin. / លេខ ID នេះមិនទាន់បើកទេ។ សូមសួរ Admin។');
+}
+/** Requests made by an ID login (sign-in or password) while the same login is on an active row are leftovers: remove them. */
+function dropStaleIdRequests_(m) {
+  const rows = rowsOf_(m);
+  const live = {};
+  rows.forEach(e => { if (e.active) e.emails.forEach(x => { live[x] = 1; }); });
+  const stale = rows.filter(e => !e.active && !e.id && e.emails.length && e.emails.every(isIdLogin_) && e.emails.some(x => live[x]));
+  stale.sort((a, b) => b.i - a.i).forEach(e => mDeleteRow_(m, e.i));
+  return stale.length;
+}
 function umList_(p, user) {
   needAdmin_(user);
-  const m = master_();
-  const rows = rowsOf_(m);
+  let m = master_();
+  let rows = rowsOf_(m);
+  if (rows.some(e => !e.active && !e.id && e.emails.length && e.emails.every(isIdLogin_))) {
+    try { if (umRun_(mm => ({ n: dropStaleIdRequests_(mm) })).n) { m = master_(); rows = rowsOf_(m); } } catch (e) { console.warn('stale ID requests: ' + e); }
+  }
   const users = [];
   rows.forEach(e => Array.prototype.push.apply(users, umUsersOfRow_(e)));
   return {
@@ -3420,20 +3450,41 @@ function umList_(p, user) {
 }
 
 /** Material Group L4 names from the master Product tab (📦 Stock access columns), kept 10 minutes. */
+// Stock access groups = Material Group L2 (Kim, 28 Nov 2026: "lookup from Material Group L2"), grouped under L1.
+// Older entries saved as L4 names still work in Stock Count (it matches L2 or L4) and show here as their L2.
 function stockGroups_() {
-  const cache = CacheService.getScriptCache(), hit = cache.get('stock_groups');
+  const cache = CacheService.getScriptCache(), hit = cache.get('stock_groups2');
   if (hit) return JSON.parse(hit);
   const sh = mdTab_('Product');
   if (!sh || sh.getLastRow() < 2) return [];
   const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
-  const c = head.indexOf('materialgroupl4'), c2 = head.indexOf('materialgroupl2');
-  if (c < 0) return [];
+  const c2 = head.indexOf('materialgroupl2'), c1 = head.indexOf('materialgroupl1');
+  if (c2 < 0) return [];
   const v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues(), seen = {};
-  const out = [];   // [{ n: L4, p: L2 }], by L2 then L4 (the L2 is the column group on the screen)
-  v.forEach(r => { const n = String(r[c]).trim(); if (n && !seen[n]) { seen[n] = 1; out.push({ n: n, p: c2 >= 0 ? String(r[c2]).trim() : '' }); } });
+  const out = [];   // [{ n: L2, p: L1 }]
+  v.forEach(r => { const n = String(r[c2]).trim(); if (n && !seen[n]) { seen[n] = 1; out.push({ n: n, p: c1 >= 0 ? String(r[c1]).trim() : '' }); } });
   out.sort((x, y) => x.p.localeCompare(y.p) || x.n.localeCompare(y.n));
-  cache.put('stock_groups', JSON.stringify(out), 600);
+  cache.put('stock_groups2', JSON.stringify(out), 600);
   return out;
+}
+/** L4 name (lower case) → its L2, so a person saved with L4 names shows the right L2 ticks. */
+function stockL4toL2_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('stock_l4l2');
+  if (hit) return JSON.parse(hit);
+  const sh = mdTab_('Product');
+  if (!sh || sh.getLastRow() < 2) return {};
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const c4 = head.indexOf('materialgroupl4'), c2 = head.indexOf('materialgroupl2');
+  const map = {};
+  if (c4 >= 0 && c2 >= 0) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getDisplayValues().forEach(r => { const a = String(r[c4]).trim(), b = String(r[c2]).trim(); if (a && b) map[a.toLowerCase()] = b; });
+  cache.put('stock_l4l2', JSON.stringify(map), 600);
+  return map;
+}
+function stockCatsShown_(cats) {
+  if (!cats || !cats.length) return cats || [];
+  const l2 = {}, map = stockL4toL2_();
+  stockGroups_().forEach(g => { l2[g.n.toLowerCase()] = g.n; });
+  return catList_(cats.map(x => l2[String(x).toLowerCase()] || map[String(x).toLowerCase()] || x).join(','));
 }
 
 /** Count for the red badge on the 👥 tile: people waiting for an answer. */

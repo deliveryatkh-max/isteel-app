@@ -188,7 +188,7 @@
   }
 
   // ------------------------------------------------------------------ stock access (Kim, 27 Nov 2026, option A)
-  // People down, product groups (Material Group L4, grouped under L2) across. Ticked = the person sees that group in
+  // People down, product groups (Material Group L2, grouped under L1) across. Ticked = the person sees that group in
   // Stock Count. Nothing ticked = sees everything. Saved in the master Employee List column "Stock Categories".
   const SF = { q: '', dept: '', whg: '', region: '', role: '', grp: '', only: true, view: 'list' };
   let SP = {};   // changes not saved yet: email → groups
@@ -218,7 +218,7 @@
         FB.field('WH Group', `<select id="sWhg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.whGroup), SF.whg, true)}</select>`) +
         FB.field(t('តំបន់', 'Region'), `<select id="sReg"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(uniqOf(u => u.region), SF.region, true)}</select>`) +
         FB.field(t('តួនាទី', 'Role'), `<select id="sRole"><option value="">${t('ទាំងអស់', 'All')}</option>${ROLES.filter(x => D.users.some(u => u.active && u.role === x[0])).map(x => `<option value="${x[0]}" ${SF.role === x[0] ? 'selected' : ''}>${esc(t(x[1], x[2]))}</option>`).join('')}</select>`) +
-        FB.field(t('ក្រុមផលិតផល (L2)', 'Product group (L2)'), `<select id="sGrp"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(l2, SF.grp)}</select>`) +
+        FB.field(t('ក្រុមផលិតផល (L1)', 'Product group (L1)'), `<select id="sGrp"><option value="">${t('ទាំងអស់', 'All')}</option>${opt(l2, SF.grp)}</select>`) +
         FB.field(' ', `<label class="chk"><input type="checkbox" id="sOnly"${SF.only ? ' checked' : ''}> ${t('តែអ្នកមានសិទ្ធិ ការរាប់ស្តុក', 'Only people with Stock Count')}</label>`) +
         FB.search('sQ', t('ស្វែងរក ឈ្មោះ អ៊ីមែល ID…', 'Search name, email, ID…'), SF.q))}</div>
       <div id="sres"></div><div id="ssave"></div>`);
@@ -232,7 +232,7 @@
     if (SF.view !== 'table') return drawStockList();
     const box = $('#sres'); if (!box) return;
     const gs = sGroups(), list = sPeople();
-    if (!gs.length) { box.innerHTML = `<div class="empty">${t('មិនមានក្រុមផលិតផល (Product Master L4)', 'No product groups (Product Master L4)')}</div>`; return; }
+    if (!gs.length) { box.innerHTML = `<div class="empty">${t('មិនមានក្រុមផលិតផល (Product Master L2)', 'No product groups (Product Master L2)')}</div>`; return; }
     if (!list.length) { box.innerHTML = `<div class="empty">${t('រកមិនឃើញ', 'Nobody found')}</div>`; drawStockSave(); return; }
     const parts = []; gs.forEach(g => { const l = parts[parts.length - 1]; if (l && l.p === g.p) l.n++; else parts.push({ p: g.p, n: 1 }); });
     const pIdx = {}; parts.forEach((x, i) => { pIdx[x.p] = i; });
@@ -267,7 +267,7 @@
     drawStockSave();
   }
   // Faster ticking (Kim, 28 Nov: "too much to tick one by one"): list view with a group picker per person, tick several
-  // people and set their groups in one go (replace / add / remove), copy another person's groups, tick a whole L2 at once.
+  // people and set their groups in one go (replace / add / remove), copy another person's groups, tick a whole L1 at once.
   const SEL = new Set();
   const allGroups = () => (D.stockGroups || []).map(g => (typeof g === 'string' ? { n: g, p: '' } : g));
   function drawStockList() {
@@ -298,7 +298,7 @@
     drawStockSave();
   }
 
-  // The picker: groups by L2 with a tick for the whole L2, search, copy from someone, and for several people Replace / Add / Remove.
+  // The picker: groups by L1 with a tick for the whole L1, search, copy from someone, and for several people Replace / Add / Remove.
   function picker(people) {
     people = people.filter(Boolean); if (!people.length) return;
     const many = people.length > 1, gs = allGroups();

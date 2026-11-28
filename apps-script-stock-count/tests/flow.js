@@ -201,4 +201,8 @@ const bc = call('boot', {}, { email: 'cat@isi' }), bn = call('boot', {}, { email
 eq([bn.stock.length, call('ledger', {}, { email: 'none@isi' }).rows.length, call('bin', { bin: 'BIN-A' }, { email: 'none@isi' }).lines.length, ba.stock.length > 0],
   [0, 0, 0, true], 'no matching category: nothing shown; blank = everything');
 if (g231) eq([bc.stock.every(l => l.material === '1100000231' || vm.runInContext('(pm_()[' + JSON.stringify(l.material.toUpperCase()) + '] || {}).group', ctx) === g231), bc.stock.length > 0, bc.user.cats[0]], [true, true, g231], 'only own category lines');
+// L2 (28 Nov): a person saved with a Material Group L2 sees every L4 under it; old L4 names still work
+vm.runInContext("pm_ = () => ({ M1: { group: 'Deformed Bar', group2: 'Bars' }, M2: { group: 'Wire Rod', group2: 'Bars' }, M3: { group: 'GI Pipe', group2: 'Pipes' } })", ctx);
+const seeL2 = vm.runInContext("seeFn_({ cats: ['bars'] })", ctx), seeL4 = vm.runInContext("seeFn_({ cats: ['GI Pipe'] })", ctx), seeAll = vm.runInContext("seeFn_({ cats: [] })", ctx);
+eq([seeL2('M1'), seeL2('M2'), seeL2('M3'), seeL4('M3'), seeL4('M1'), seeAll], [true, true, false, true, false, null], 'stock access by Material Group L2 (and old L4 names)');
 console.log('Stock Count flow tests: ' + pass + ' passed');

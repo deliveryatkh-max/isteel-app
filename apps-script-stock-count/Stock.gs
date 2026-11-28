@@ -241,16 +241,17 @@ function counterLookup_(user) {
   if (!ok) fail_('NOACCESS', 'Your account is not allowed to count yet. Ask Kim to tick ' + APP_COL + ' in Users.',
     'គណនីរបស់អ្នកមិនទាន់មានសិទ្ធិរាប់ស្តុកទេ។ សូមស្នើអ្នកគ្រប់គ្រងធីក ' + APP_COL + ' ក្នុង Users។');
   const role = r >= 0 ? String(row[r]).trim() : '';
-  // Stock access (Kim, 27 Nov 2026): "Stock Categories" = Material Group L4 names this person may see; blank = all.
+  // Stock access (Kim, 27 Nov 2026): "Stock Categories" = Material Group names this person may see; blank = all.
+  // Since 28 Nov 2026 the Users screen saves Material Group L2 names; older L4 names still work.
   const cats = cat >= 0 ? String(row[cat] || '').split(',').map(x => x.trim()).filter(Boolean) : [];
   return { Name: n >= 0 ? String(row[n]).trim() : user.email, admin: admin, role: role, supervisor: /supervisor/i.test(role), cats: cats };
 }
-// null = sees everything; else material → true when its Product Master group (L4) is one of the person's categories.
+// null = sees everything; else material → true when its Product Master group (L2 or L4) is one of the person's categories.
 function seeFn_(who) {
   if (!who || !who.cats || !who.cats.length) return null;
   const set = {}, pm = pm_();
   who.cats.forEach(x => { set[String(x).trim().toLowerCase()] = 1; });
-  return mat => !!set[String((pm[String(mat || '').trim().toUpperCase()] || {}).group || '').trim().toLowerCase()];
+  return mat => { const m = pm[String(mat || '').trim().toUpperCase()] || {}; return !!(set[String(m.group2 || '').trim().toLowerCase()] || set[String(m.group || '').trim().toLowerCase()]); };
 }
 
 // ---------------------------------------------------------------- data
@@ -308,7 +309,7 @@ function pmList_() {
   const get = (r, names) => { for (const k in r) if (names.indexOf(norm(k)) >= 0 && r[k] !== '') return r[k]; return ''; };
   const out = objs_(SH.PM, PM_COLS).filter(r => get(r, ['material', 'materialcode', 'sku'])).map(r => ({
     material: get(r, ['material', 'materialcode', 'sku']), desc: get(r, ['description', 'materialdescription']),
-    group: get(r, ['materialgroupl4', 'group']), size: get(r, ['size', 'pipesize']),
+    group: get(r, ['materialgroupl4', 'group']), group2: get(r, ['materialgroupl2']), size: get(r, ['size', 'pipesize']),
     ppb: num_(get(r, ['pcbundle', 'pcsbundle', 'pcsperbundle', 'pcperbundle'])), kg: num_(get(r, ['kgpc', 'kgperpc', 'kgpcs', 'kgperpcs'])),
     uom: String(get(r, ['uom', 'sapuom', 'baseuom', 'unit'])).toUpperCase() }));
   try { cache.put('pml', JSON.stringify(out), 600); } catch (e) { /* too big for the cache: read each time */ }
