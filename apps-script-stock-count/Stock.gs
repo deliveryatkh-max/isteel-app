@@ -73,6 +73,7 @@ function route_(action, p, user) {
     case 'move': return withLock_(() => move_(user, p));
     case 'transfer': return withLock_(() => transfer_(user, p));
     case 'card': return card_(user, p);
+    case 'binCards': return binCards_(user, p);
     case 'editLine': return withLock_(() => editLine_(user, p));
     case 'products': return productTable_(user);
     case 'varSave': return withLock_(() => varSave_(user, p));
@@ -724,6 +725,15 @@ function card_(user, p) {
   const key = lineKey_(s);
   const rows = objs_(SH.LED, LED_COLS).filter(r => lineKey_({ bin: r.Bin, material: r.Material, batch: r.Batch, sloc: r.SLOC }) === key);
   return { line: s, rows: rows.slice(-200).reverse().map(ledRow_) };
+}
+
+// History of every line in one bin in one call (Kim, 28 Nov: "history takes much time"). The phone asks for it as soon as
+// the bin opens and keeps it, so a stock card shows its history at once and only refreshes in the background.
+function binCards_(user, p) {
+  const see = seeFn_(counter_(user));
+  const b = activeBin_(p.bin), key = String(b.bin).toUpperCase();
+  const rows = objs_(SH.LED, LED_COLS).filter(r => String(r.Bin).toUpperCase() === key && (!see || see(r.Material)));
+  return { bin: b.bin, rows: rows.slice(-400).reverse().map(ledRow_) };
 }
 
 // Admin fix of one stock line (Kim, 19 Nov, option 2): change batch / SLOC / balance, or delete the line.

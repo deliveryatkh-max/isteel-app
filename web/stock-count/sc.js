@@ -445,6 +445,20 @@
     stopScan();
     S.bin = b; S.view = 'bin'; S.photo = '';
     route();
+    loadBinHist(b.bin);
+  }
+
+  // Stock card history kept per bin (Kim, 28 Nov: "history takes much time to display"): fetched once when the bin opens,
+  // saved on the phone, so the card shows it at once; the card still refreshes itself in the background.
+  const HIST_KEY = b => 'sc_hist_' + String(b).toUpperCase();
+  const binHist = bin => { const h = S.hist && S.hist[String(bin).toUpperCase()]; return h || jget(HIST_KEY(bin), null); };
+  function saveBinHist(bin, rows) {
+    S.hist = S.hist || {}; S.hist[String(bin).toUpperCase()] = rows;
+    put(HIST_KEY(bin), JSON.stringify(rows.slice(0, 200)));
+  }
+  async function loadBinHist(bin) {
+    if (DEMO || !bin) return;
+    try { const r = await api('binCards', { bin: bin }); saveBinHist(bin, r.rows || []); } catch (e) { /* the card asks again */ }
   }
 
   // Bin screen: the three choices, and the bin's SKU lines.
@@ -702,13 +716,16 @@
   // Stock card of one line: header, balance and every movement (newest first).
   async function openCard(i) {
     const l = S.bin.lines[i];
-    S.lineIdx = i; S.cardUom = ''; S.card = { line: l, rows: null, error: '' }; S.view = 'card'; route();
+    const kept = DEMO ? null : binHist(S.bin.bin);
+    S.lineIdx = i; S.cardUom = ''; S.card = { line: l, rows: kept ? kept.filter(r => sameLine(r, l)) : null, error: '' }; S.view = 'card'; route();
     try {
       const c = DEMO ? { line: l, rows: DEMO_LEDGER.filter(r => r.bin === S.bin.bin && sameLine(r, l)).slice().reverse() }
         : await api('card', { bin: S.bin.bin, material: l.material, batch: l.batch, sloc: l.sloc });
       l.book = c.line.book;
+      if (S.card.line !== l) return;   // another card was opened meanwhile
       S.card = { line: l, rows: c.rows, error: '' };
-    } catch (e) { if (e.code === 'AUTH') S.signedOut = true; S.card.rows = []; S.card.error = e.message; }
+      if (!DEMO) { const all = (binHist(S.bin.bin) || []).filter(r => !sameLine(r, l)).concat(c.rows); all.sort((a, b) => (b.date + b.time + b.id).localeCompare(a.date + a.time + a.id)); saveBinHist(S.bin.bin, all); }
+    } catch (e) { if (e.code === 'AUTH') S.signedOut = true; if (S.card.line !== l) return; if (!S.card.rows) S.card.rows = []; S.card.error = kept ? '' : e.message; }
     if (S.view === 'card') route();
   }
   function cardScreen() {

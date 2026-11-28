@@ -93,6 +93,8 @@ eq(r.balance, 5, 'admin can bring in a new material');
 // Stock card: balance and movements of one line, newest first
 r = call('card', pipe);
 eq([r.line.book, r.rows.map(x => x.type), r.rows[0].balance], [90, ['TRANSFER OUT', 'OUT'], 90], 'card lists the line movements, newest first');
+r = call('binCards', { bin: pipe.bin });
+eq(r.rows.filter(x => x.material === pipe.material && x.batch === pipe.batch).map(x => x.type), ['TRANSFER OUT', 'OUT'], 'bin history has the same rows as the card');
 // Home numbers
 r = call('boot', {});
 eq([r.dash.inToday, r.dash.outToday, r.dash.transferToday, r.dash.recent.length], [3, 1, 1, 6], 'dashboard numbers for today');
