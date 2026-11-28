@@ -69,17 +69,21 @@ export function parseAnswer(text) {
 const textOf = r => typeof r === 'string' ? r : r && (typeof r.response === 'string' ? r.response : r.response ? JSON.stringify(r.response)
   : r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : '');
 
-export const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils at a steel company in Cambodia. A table lists the coils with a Quantity (Kg) column, and the total in Kg is the LAST number in that same Quantity (Kg) column, written by hand under the last row. The Quantity column is headed with the Khmer word បរិមាណ and is the FIRST column of numbers, right of the product description column. A SECOND column of numbers sits to its right (headed ឯកតា): IGNORE that second column completely. Rows end with a T mark; read digits only. Take every number and the total from the បរិមាណ column only. ' +
+export const DN_PROMPT = 'This is a photo of a delivery note (DN) for steel coils at a steel company in Cambodia. The table has TWO columns of handwritten numbers side by side: the LEFT one is headed បរិមាណ (this is the one we want, the quantity in Kg) and the RIGHT one is headed ឯកតា (a different weight, not wanted). Each number ends with a small T mark. The last row of the table holds the two handwritten totals, one under each column. ' +
   'A dark blue strip at the bottom with an ID and a date is a watermark: ignore it. ' +
-  'Answer with JSON only, no other text: {"lines": [the Kg of each table row as numbers], "total": the total in Kg written below the table, or null if you cannot read one}. ' +
-  'Read the digits exactly as written. Do not add the rows up yourself for "total". Use null when the total is blurred, cut off or missing.';
+  'Copy the table row by row. Answer with JSON only, no other text: {"rows": [[left number, right number], one pair per coil row], "total": [left total, right total]}. ' +
+  'Use null for a number you cannot read. Read the digits exactly as written. Do not add anything up yourself.';
 
-/** {lines:[numbers], total:number|null} from a model answer, or null when there is no JSON. */
+/** {lines:[left-column numbers], total:number|null} from a model answer, or null when there is no JSON. Only the LEFT column counts. */
 export function parseDn(text) {
   const m = String(text || '').match(/\{[\s\S]*\}/);
   if (!m) return null;
   let o; try { o = JSON.parse(m[0]); } catch (e) { return null; }
   const n = v => { const x = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return x > 0 && isFinite(x) ? x : 0; };
+  if (Array.isArray(o.rows)) {
+    const first = r => (Array.isArray(r) ? r[0] : r);
+    return { lines: o.rows.map(first).map(n).filter(Boolean).slice(0, 40), total: n(Array.isArray(o.total) ? o.total[0] : o.total) || null };
+  }
   return { lines: (Array.isArray(o.lines) ? o.lines : []).map(n).filter(Boolean).slice(0, 40), total: n(o.total) || null };
 }
 
