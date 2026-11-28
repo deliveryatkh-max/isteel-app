@@ -168,10 +168,10 @@
     screen = renderLogin;
     $('#outBtn').hidden = true;
     $('#who').textContent = '';
-    $('#view').innerHTML = `<div class="card"><div class="big">👋</div>
-      <h2>${t('សូមស្វាគមន៍', 'Welcome')}</h2>
-      <p>${t('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
-      <div id="gsiButton"><div class="spinner" style="margin:4px auto"></div></div></div>`;
+    // Kim, 28 Nov 2026: poster sign-in screen (picture set in 👥 Users › 🖼) with Google + Employee ID / password.
+    $('#view').innerHTML = '';
+    ID_LOGIN.poster($('#view'), { url: CFG.API_URL, done: tok => { set(TOKEN_KEY, tok); load(); } });
+    $('#gsiButton').innerHTML = '<div class="spinner" style="margin:4px auto"></div>';
     if (!CFG.GOOGLE_CLIENT_ID) { $('#gsiButton').innerHTML = '<div class="alert bad">GOOGLE_CLIENT_ID is missing in config.js</div>'; return; }
     loadGsi().then(() => {
       google.accounts.id.initialize({
@@ -179,7 +179,7 @@
         callback: resp => { set(TOKEN_KEY, resp.credential); load(); },
       });
       $('#gsiButton').innerHTML = '';
-      google.accounts.id.renderButton($('#gsiButton'), { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: t('km', 'en') });
+      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', width: ID_LOGIN.width(), locale: t('km', 'en') });
       google.accounts.id.prompt();
     }).catch(e => { $('#gsiButton').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; });
   }

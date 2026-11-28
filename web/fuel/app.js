@@ -473,7 +473,13 @@
     $('#homeOnly').hidden = false;
     $('#navbar').hidden = true;
     $('#who').innerHTML = '';
-    $('#view').innerHTML = `
+    if (!DEMO) {
+      // Kim, 28 Nov 2026: poster sign-in screen (picture set in 👥 Users › 🖼) with Google + Employee ID / password.
+      $('#view').innerHTML = '';
+      ID_LOGIN.poster($('#view'), { url: CFG.API_URL, done: tok => { state.token = tok; storeSet(TOKEN_KEY, tok); start(); },
+        html: (expired ? `<div class="alert warn">${L('សូមចូលម្តងទៀត។ ទិន្នន័យដែលបានបំពេញនៅរក្សាទុក។', 'Please sign in again. Your form is kept.')}</div>` : '') + '<div id="loginErr"></div>' });
+      $('#gsiButton').innerHTML = '<div class="spinner"></div>';
+    } else $('#view').innerHTML = `
       <div class="login splash">
         <div class="splash-mark"><img src="../icons/isi-white.png" alt="ISI" width="84" height="84"><b>STEEL</b></div>
         <div class="splash-line"></div>
@@ -485,10 +491,7 @@
             <button class="btn" data-demo="user">🚚 ${L('អ្នកបើកបរ', 'Driver')}</button>
             <button class="btn" data-demo="reviewer">✅ ${L('អ្នកពិនិត្យ', 'Reviewer')}</button>
             <button class="btn" data-demo="admin">📣 Admin</button>
-          </div>` : `
-          <p class="hint">${L('ចូលដោយគណនី Google របស់អ្នក', 'Sign in with your Google account')}</p>
-          <div id="gsiButton"><div class="spinner"></div></div>
-          <div id="loginErr"></div>`}
+          </div>` : ''}
         <div class="splash-foot">ISI STEEL · ${L('ចាក់សាំង', 'Fuel Refill')}</div>
       </div>`;
     if (DEMO) {
@@ -516,7 +519,7 @@
         },
       });
       $('#gsiButton').innerHTML = '';
-      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', locale: L('km', 'en') });
+      google.accounts.id.renderButton($('#gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', width: ID_LOGIN.width(), locale: L('km', 'en') });
       google.accounts.id.prompt();
     }).catch(e => { $('#gsiButton').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; });
   }

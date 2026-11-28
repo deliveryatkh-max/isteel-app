@@ -63,6 +63,10 @@
   // A person with two Gmails is two lines on one row: a save sends back every line of that row.
   const mergeSave = r => merge(r.users && r.users.length ? r.users : [r.user], r.gone);
   const empOf = id => (D.emps || []).find(e => e.id === String(id || '').trim());
+  // Employee ID + password sign-in (Kim, 28 Nov 2026): kept as "<ID>@id.isteel" next to the person's Gmails.
+  const ID_LOGIN = '@id.isteel';
+  const isIdLogin = e => String(e || '').slice(-ID_LOGIN.length) === ID_LOGIN;
+  const shownEmail = e => (isIdLogin(e) ? '🔑 ID ' + e.slice(0, -ID_LOGIN.length) + ' + ' + t('ពាក្យសម្ងាត់', 'password') : e);
   let photos = {};   // card photos already loaded (email → data URL)
   function addLog(log) { if (log && log.length) D.log = log.concat(D.log).slice(0, 100); }
 
@@ -299,6 +303,7 @@
     if (h === 'log') return renderLog();
     if (h === 'menus') return renderMenus();
     if (h === 'stock') return renderStock();
+    if (h === 'bg') return renderBg();
     if (h === 'new') return renderEdit(null);
     if (h.indexOf('u/') === 0) return renderEdit(h.slice(2));
     return renderList();
@@ -338,7 +343,7 @@
     const us = D.users, waiting = us.filter(isWaiting).length;
     view(`<div class="um-head"><h1>👥 ${t('គ្រប់គ្រងអ្នកប្រើ', 'User Management')}</h1>
         <span class="hbtns">${wide() ? '' : `<button type="button" class="btn add pk${PICK ? ' on' : ''}" id="pickBtn">${PICK ? '✕ ' + t('បោះបង់', 'Cancel') : '☑ ' + t('ជ្រើសច្រើន', 'Select')}</button>`}
-        <a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
+        <a class="btn add" href="#/bg" title="${t('រូបផ្ទាំងចូល', 'Sign-in picture')}">🖼</a><a class="btn ok add" href="#/new">＋ ${t('បន្ថែម', 'Add')}</a></span></div>
       <div class="stats"><div><b>${us.filter(u => u.active).length}</b><small>${t('សកម្ម', 'Active')}</small></div>
         <div><b>${us.filter(u => !u.active && u.offAt).length}</b><small>${t('បិទ', 'Off')}</small></div>
         <a href="#/req" class="${waiting ? 'warn' : ''}"><b>${waiting}</b><small>${t('សំណើរង់ចាំ', 'Requests')}</small></a></div>
@@ -368,7 +373,7 @@
         <th>${t('សកម្ម', 'Active')}</th><th></th></tr></thead><tbody>${list.map(u => `
         <tr class="${u.active ? '' : 'off'}${sel.has(u.email) ? ' pick' : ''}" data-row="${esc(u.email)}">
           <td><input type="checkbox" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}"></td>
-          <td><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(u.email)}</small></span></a></td>
+          <td><a class="nm" href="#/u/${encodeURIComponent(u.email)}">${avatar(u, 'sm')}<span><b>${esc(u.name || '–')}</b><small>${esc(shownEmail(u.email))}</small></span></a></td>
           <td>${esc(u.empId || '–')}</td><td>${esc(u.dept || '–')}</td><td>${pill(u)}</td>
           ${D.apps.map(a => `<td class="tk"><button type="button" class="tick${u.apps[a.key] ? ' on' : ''}" data-tick="${esc(u.email)}" data-app="${a.key}" aria-pressed="${!!u.apps[a.key]}" aria-label="${esc(appName(a))}">${u.apps[a.key] ? '✓' : ''}</button></td>`).join('')}
           <td>${sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</td>
@@ -381,7 +386,7 @@
       box.innerHTML = (PICK ? `<label class="pkall"><input type="checkbox" id="selAll" ${list.every(u => sel.has(u.email)) ? 'checked' : ''}> ${t('ជ្រើសទាំងអស់ដែលបង្ហាញ', 'Select all shown')} (${list.length})</label>` : '') + `<div class="card ulist${PICK ? ' picking' : ''}">${list.map(u => `
         <div class="urow${u.active ? '' : ' off'}${PICK && sel.has(u.email) ? ' pick' : ''}">${PICK ? `<input type="checkbox" class="pkc" data-sel="${esc(u.email)}" ${sel.has(u.email) ? 'checked' : ''} aria-label="${esc(u.name)}">` : ''}<a class="um" href="#/u/${encodeURIComponent(u.email)}"${PICK ? ` data-pk="${esc(u.email)}"` : ''}>${avatar(u)}
           <span class="ut"><span class="l1"><b>${esc(u.name || u.email)}</b>${pill(u)}</span>
-          <small>${esc([u.dept, u.empId && 'ID ' + u.empId].filter(Boolean).join(' · ') || u.email)}</small>
+          <small>${esc([isIdLogin(u.email) && '🔑', u.dept, u.empId && 'ID ' + u.empId].filter(Boolean).join(' · ') || u.email)}</small>
           <span class="apps">${D.apps.map(a => `<span class="ai${u.apps[a.key] ? '' : ' no'}" title="${esc(appName(a))}">${appIcon(a.key, 20)}</span>`).join('')}</span></span></a>
           ${PICK ? '' : sw(u.active, `data-act="${esc(u.email)}"`, t('សកម្ម', 'Active'))}</div>`).join('')}</div>`;
       if (PICK) {
@@ -473,14 +478,18 @@
     const deptApps = (D.depts.find(d => d.name === f.dept) || {}).apps;
     view(`<div class="prof">${avatar(Object.assign({}, f, { email: f.email || f.name || '?' }), 'big')}<div>
         <h1>${esc(f.name || (isNew ? t('អ្នកប្រើថ្មី', 'New user') : f.email))}</h1>
-        ${isNew ? '' : `<small>${esc(f.email)}${(E.orig.others || []).length ? ' · ' + t('Gmail ផ្សេង', 'also') + ' ' + esc(E.orig.others.join(', ')) : ''}</small>`}
+        ${isNew ? '' : `<small>${esc(shownEmail(f.email))}${(E.orig.others || []).length ? ' · ' + t('Gmail ផ្សេង', 'also') + ' ' + esc(E.orig.others.map(shownEmail).join(', ')) : ''}</small>`}
         ${!isNew && (E.orig.fullName || E.orig.kh) ? `<small>${esc([E.orig.fullName, E.orig.kh].filter(Boolean).join(' · '))}${E.orig.manager ? ' · ' + t('ប្រធាន', 'Manager') + ' ' + esc(E.orig.manager) : ''}</small>` : ''}${!isNew ? `<small>${pill(E.orig)}${E.orig.offAt ? ` · ${t('បិទនៅ', 'Off since')} ${when(E.orig.offAt)}` : ''}</small>` : ''}</div></div>
       <div class="card">
-        ${isNew ? `<div class="field"><label class="f" for="fEmail">${t('អ៊ីមែល Google', 'Google email')} <span class="req">*</span></label>
-          <input class="in${need(f.email)}" id="fEmail" type="email" inputmode="email" autocomplete="off" placeholder="name@gmail.com" value="${esc(f.email)}"></div>` : ''}
+        ${isNew ? `<div class="field"><label class="f">${t('ចូលដោយ', 'Signs in with')}</label>
+          <div class="seg">${[['google', 'Google (Gmail)'], ['id', '🔑 ' + t('Employee ID + ពាក្យសម្ងាត់', 'Employee ID + password')]].map(o => `<button type="button" class="${(f.how || 'google') === o[0] ? 'on' : ''}" data-how="${o[0]}">${esc(o[1])}</button>`).join('')}</div></div>
+          ${f.how === 'id' ? `<div class="field"><label class="f" for="fPw">${t('ពាក្យសម្ងាត់', 'Password')} <span class="req">*</span> <small class="inl">${t('យ៉ាងតិច ៦ តួ · ប្រាប់អ្នកប្រើផ្ទាល់', 'at least 6 characters · tell the person yourself')}</small></label>
+          <input class="in${need(f.pw, E.tried && String(f.pw || '').length < 6)}" id="fPw" type="text" autocomplete="new-password" spellcheck="false" value="${esc(f.pw || '')}"></div>`
+          : `<div class="field"><label class="f" for="fEmail">${t('អ៊ីមែល Google', 'Google email')} <span class="req">*</span></label>
+          <input class="in${need(f.email)}" id="fEmail" type="email" inputmode="email" autocomplete="off" placeholder="name@gmail.com" value="${esc(f.email)}"></div>`}` : ''}
         <div class="row2"><div class="field"><label class="f" for="fName">${t('ឈ្មោះពេញ', 'Full name')} <span class="req">*</span></label>
             <input class="in${need(f.name)}" id="fName" value="${esc(f.name)}"></div>
-          <div class="field"><label class="f" for="fId">Employee ID</label><input class="in" id="fId" inputmode="numeric" list="empList" placeholder="100000–190000" value="${esc(f.empId)}">
+          <div class="field"><label class="f" for="fId">Employee ID${isNew && f.how === 'id' ? ' <span class="req">*</span>' : ''}</label><input class="in${isNew && f.how === 'id' ? need(f.empId) : ''}" id="fId" inputmode="numeric" list="empList" placeholder="100000–190000" value="${esc(f.empId)}">
             ${D.emps && f.empId !== E.orig.empId && f.empId ? `<div class="hint">${empOf(f.empId) ? '→ ' + esc(empOf(f.empId).name) : '➕ ' + t('លេខថ្មី', 'New number')}</div>` : ''}</div></div>
         ${D.emps ? `<datalist id="empList">${D.emps.map(e => `<option value="${esc(e.id)}">${esc(e.name)}${e.kh ? ' · ' + esc(e.kh) : ''}</option>`).join('')}</datalist>` : ''}
         <div class="field"><label class="f" for="fDept">${t('ផ្នែក', 'Department')}</label>
@@ -494,12 +503,16 @@
       </div>
       <div class="sec">${t('កម្មវិធីដែលអាចប្រើ', 'Apps')}${f.role === 'admin' ? ` <small class="inl">· ${t('Admin ប្រើបានទាំងអស់', 'Admins can open all')}</small>` : ''}</div>
       <div class="card apps2">${D.apps.map(a => `<div class="aline">${appIcon(a.key, 30)}<div class="at"><b>${esc(appName(a))}</b>${appExtra(a.key)}</div>${sw(f.apps[a.key], `data-app="${a.key}"`, appName(a))}</div>`).join('')}</div>
+      ${!isNew && E.orig.empId ? pwCard() : ''}
       ${!isNew && (E.orig.others || []).length && !me ? `<button type="button" class="link bad" id="fDrop">✕ ${t('ដក Gmail នេះចេញ', 'Remove this Gmail')} (${esc(f.email)})</button>` : ''}
       <div id="eErr"></div>
       <div class="savebar"><button type="button" class="btn ok big" id="fSave">💾 ${isNew ? t('បន្ថែម', 'Add') : t('រក្សាទុក', 'Save')}</button></div>`);
     const bind = (id, k, cb) => { const el = $(id); if (el) el.oninput = el.onchange = e => { f[k] = e.target.value; if (cb) cb(); }; };
     bind('#fEmail', 'email', () => $('#fEmail').classList.toggle('need', E.tried && !f.email.trim()));
     bind('#fName', 'name', () => $('#fName').classList.toggle('need', E.tried && !f.name.trim()));
+    bind('#fPw', 'pw');
+    $$('[data-how]').forEach(b => b.onclick = () => { f.how = b.dataset.how; renderEdit(email); });
+    bindPw(email);
     bind('#fId', 'empId');
     if ($('#fId') && D.emps) $('#fId').onchange = e => { f.empId = e.target.value.trim(); renderEdit(email); };
     if ($('#fDrop')) $('#fDrop').onclick = async () => {
@@ -527,6 +540,41 @@
     const om = $('#fOt'); if (om) om.onchange = e => { E.ot = e.target.value ? JSON.parse(e.target.value) : null; };
     $('#fSave').onclick = () => saveEdit(email);
     if (f.apps.overtime && !OT) loadOt().then(() => { if (E && E.key === key) renderEdit(email); });
+  }
+
+  /** 🔑 Employee ID + password for this person: set, change or remove (saved at once, not with 💾). */
+  function pwCard() {
+    const id = E.orig.empId, on = !!E.orig.idLogin || isIdLogin(E.orig.email) || (E.orig.others || []).some(isIdLogin);
+    return `<div class="sec">🔑 ${t('ចូលដោយ Employee ID + ពាក្យសម្ងាត់', 'Employee ID + password sign-in')}</div>
+      <div class="card pwc"><div class="hint" style="margin-top:0">${on
+        ? `✅ ${t('បើក · ចូលដោយ ID', 'On · signs in with ID')} <b>${esc(id)}</b>`
+        : t('បិទ · កំណត់ពាក្យសម្ងាត់ ដើម្បីឲ្យគាត់ចូលបានដោយគ្មាន Gmail', 'Off · set a password so they can sign in without Gmail')}</div>
+        <div class="pwrow"><input class="in" id="fNewPw" type="text" autocomplete="new-password" spellcheck="false" placeholder="${t('ពាក្យសម្ងាត់ថ្មី (យ៉ាងតិច ៦ តួ)', 'New password (6+ characters)')}">
+        <button type="button" class="btn ok" id="fSetPw">${on ? t('ប្តូរ', 'Change') : t('កំណត់', 'Set')}</button></div>
+        ${on ? `<button type="button" class="link bad" id="fOffPw">✕ ${t('បិទការចូលដោយ ID', 'Turn off ID sign-in')}</button>` : ''}
+        <div class="hint">${t('ប្រាប់ពាក្យសម្ងាត់ទៅគាត់ផ្ទាល់។ ពាក្យសម្ងាត់ត្រូវបានរក្សាទុកជាកូដ ហើយមើលវិញមិនបាន។', 'Tell them the password yourself. It is stored scrambled and can\'t be seen again.')}</div></div>`;
+  }
+  function bindPw(email) {
+    const set = $('#fSetPw'), off = $('#fOffPw');
+    const run = async (payload, done) => {
+      try {
+        const r = await api('umPassword', payload);
+        merge(r.users, r.gone); addLog(r.log); save(); toast(done);
+        const keep = (r.users || []).find(u => u.email === email) ? email : ((r.users || []).find(u => !isIdLogin(u.email)) || (r.users || [])[0] || {}).email;
+        E = null;
+        if (keep) { if (keep === email) renderEdit(keep); else go('#/u/' + encodeURIComponent(keep)); } else go('#/');
+      } catch (e) { $('#eErr').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; if (set) set.disabled = false; }
+    };
+    if (set) set.onclick = () => {
+      const pw = $('#fNewPw').value;
+      if (pw.length < 6) { $('#fNewPw').classList.add('need'); $('#eErr').innerHTML = `<div class="alert bad">${t('ពាក្យសម្ងាត់យ៉ាងតិច ៦ តួ', 'Password: at least 6 characters')}</div>`; return; }
+      set.disabled = true;
+      run({ id: E.orig.empId, pw }, '🔑 ' + t('បានកំណត់ពាក្យសម្ងាត់', 'Password set'));
+    };
+    if (off) off.onclick = () => {
+      if (!confirm(t('បិទការចូលដោយ Employee ID + ពាក្យសម្ងាត់?', 'Turn off Employee ID + password sign-in?'))) return;
+      run({ id: E.orig.empId, off: true }, t('បានបិទ', 'Turned off'));
+    };
   }
 
   // Extra choice under an app: the line manager for Overtime (Delivery steps come from Role),
@@ -559,10 +607,14 @@
   async function saveEdit(email) {
     const f = E.f, o = E.orig, isNew = E.isNew;
     E.tried = true;
-    const missing = (isNew && !f.email.trim()) || !f.name.trim();
-    if (missing) { renderEdit(email); $('#eErr').innerHTML = `<div class="alert bad">${t('សូមបំពេញប្រអប់ក្រហម', 'Please fill in the red boxes')}</div>`; return; }
-    const p = isNew ? { isNew: true, email: f.email.trim() } : { email: o.email };
+    const byId = isNew && f.how === 'id';
+    const missing = byId ? (!String(f.empId || '').trim() || String(f.pw || '').length < 6 || (!f.name.trim() && !empOf(f.empId)))
+      : ((isNew && !f.email.trim()) || !f.name.trim());
+    if (missing) { renderEdit(email); $('#eErr').innerHTML = `<div class="alert bad">${t('សូមបំពេញប្រអប់ក្រហម', 'Please fill in the red boxes')}${byId ? ' · ' + t('ពាក្យសម្ងាត់យ៉ាងតិច ៦ តួ', 'password: at least 6 characters') : ''}</div>`; return; }
+    const p = isNew ? { isNew: true, email: byId ? String(f.empId).trim() + ID_LOGIN : f.email.trim() } : { email: o.email };
+    if (byId) p.password = f.pw;
     ['name', 'empId', 'dept', 'role', 'active'].forEach(k => { if (isNew || f[k] !== o[k]) p[k] = f[k]; });
+    if (byId && !String(p.name || '').trim()) delete p.name;   // the name comes from the employee list
     if (!f.active && (f.active !== o.active || f.offNote !== o.offNote)) p.offNote = f.offNote;
     const apps = {};
     D.apps.forEach(a => { if (isNew || !!f.apps[a.key] !== !!o.apps[a.key]) apps[a.key] = !!f.apps[a.key]; });
@@ -689,6 +741,64 @@
     return `<div class="card log">${list.map(l => `<div class="le"><b>${esc(l.by)}</b> → <b>${esc(l.name || l.email)}</b>${l.email && l.name ? ` <small class="inl">${esc(l.email)}</small>` : ''}<div>${esc(l.change)}</div><small>${when(l.time)}</small></div>`).join('')}</div>`;
   }
   let logQ = '';
+  // ------------------------------------------------------------------ 🖼 sign-in picture (Kim, 28 Nov 2026)
+  // The picture behind the sign-in screen (home + Fuel). Default = the ISI poster; an upload replaces it for everyone.
+  const BG_DEF = '../icons/login-bg.jpg';
+  let BG = null;   // { v, pos, src, w, h, file }
+  function renderBg() {
+    paintTabs('list');
+    if (!BG) {
+      BG = { v: '', pos: 'left', src: BG_DEF };
+      api('loginBg', { v: '' }).then(d => { if (d && d.v && d.dataUrl) Object.assign(BG, { v: d.v, pos: d.pos, src: d.dataUrl, w: d.w, h: d.h }); if (location.hash === '#/bg') renderBg(); }).catch(() => {});
+    }
+    const pos = [['left', t('ឆ្វេង', 'Left')], ['center', t('កណ្តាល', 'Middle')], ['right', t('ស្តាំ', 'Right')]];
+    view(`<div class="um-head"><h1>🖼 ${t('រូបផ្ទាំងចូល', 'Sign-in picture')}</h1><a class="btn add" href="#/">‹ ${t('ត្រឡប់', 'Back')}</a></div>
+      <div class="card bgc"><div class="bgprev"><img id="bgImg" src="${esc(BG.src)}" alt=""><i class="bgbox ${esc(BG.pos)}"></i></div>
+        <div class="field"><label class="f">${t('ប្រអប់ចូលនៅ', 'Sign-in boxes on the')}</label>
+          <div class="seg">${pos.map(o => `<button type="button" class="${BG.pos === o[0] ? 'on' : ''}" data-pos="${o[0]}">${esc(o[1])}</button>`).join('')}</div></div>
+        <label class="btn" style="display:block;text-align:center;margin-top:12px">📷 ${t('ជ្រើសរូបថ្មី', 'Choose a new picture')}<input type="file" id="bgFile" accept="image/*" hidden></label>
+        <div id="eErr"></div>
+        <div style="margin-top:12px;display:flex;gap:8px"><button type="button" class="btn ok" id="bgSave" style="flex:1">💾 ${t('រក្សាទុក', 'Save')}</button>
+          ${BG.v || BG.file ? `<button type="button" class="btn" id="bgReset">↺ ${t('រូបដើម', 'Default')}</button>` : ''}</div>
+        <p class="hint">${t('រូបបញ្ឈរល្អបំផុត។ ប្រអប់ពណ៌ខៀវលើរូប = កន្លែងប៊ូតុងចូល។ ប្តូរសម្រាប់គ្រប់គ្នា។', 'A tall picture works best. The blue box shows where the sign-in buttons go. Changes it for everyone.')}</p></div>`);
+    $$('[data-pos]').forEach(b => b.onclick = () => { BG.pos = b.dataset.pos; renderBg(); });
+    $('#bgFile').onchange = e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        Object.assign(BG, { src: c.toDataURL('image/jpeg', 0.85), w: c.width, h: c.height, file: true });
+        renderBg();
+      };
+      img.onerror = () => { $('#eErr').innerHTML = `<div class="alert bad">${t('មិនអាចបើករូបនេះ', 'Could not open this picture')}</div>`; };
+      img.src = url;
+    };
+    const run = async (payload, done) => {
+      const b = $('#bgSave'); b.disabled = true; b.textContent = '⏳';
+      try {
+        const r = await api('loginBgSave', payload);
+        BG = r.v ? Object.assign(BG, { v: r.v, pos: r.pos, file: false }) : { v: '', pos: 'left', src: BG_DEF };
+        try { localStorage.removeItem('idl_bg'); } catch (e) { /* ignore */ }
+        toast(done); renderBg();
+      } catch (e) { $('#eErr').innerHTML = `<div class="alert bad">${esc(e.message)}</div>`; b.disabled = false; b.textContent = '💾 ' + t('រក្សាទុក', 'Save'); }
+    };
+    $('#bgSave').onclick = () => {
+      if (!BG.v && !BG.file) { toast(t('សូមជ្រើសរូបថ្មីសិន', 'Choose a new picture first')); return; }
+      run(BG.file ? { dataUrl: BG.src, w: BG.w, h: BG.h, pos: BG.pos } : { pos: BG.pos }, '🖼 ' + t('បានរក្សាទុក', 'Saved'));
+    };
+    const rs = $('#bgReset');
+    if (rs) rs.onclick = () => {
+      if (!BG.v) { BG = { v: '', pos: 'left', src: BG_DEF }; renderBg(); return; }
+      if (!confirm(t('ប្រើរូបដើមវិញ?', 'Go back to the default picture?'))) return;
+      run({ reset: true }, t('បានប្រើរូបដើមវិញ', 'Default picture back'));
+    };
+  }
+
   function renderLog() {
     paintTabs('log');
     view(`<div class="um-head"><h1>🕘 ${t('ប្រវត្តិការផ្លាស់ប្តូរ', 'Change log')}</h1></div>
@@ -778,6 +888,24 @@
           const out = [], logs = [];
           p.changes.forEach(c => { const u = S.users.find(x => x.email === c.email); if (!u) return; u.stockCats = c.stockCats.slice(); out.push(clone(u)); logs.push(...log(u.email, u.name, 'Stock access: ' + (c.stockCats.join(', ') || 'All'))); });
           return resolve({ users: out, log: logs });
+        }
+        if (action === 'loginBg') return resolve(S.bg && S.bg.v !== p.v ? S.bg : (S.bg ? { v: S.bg.v, pos: S.bg.pos } : { v: '' }));
+        if (action === 'loginBgSave') { S.bg = p.reset ? null : Object.assign(S.bg || {}, p.dataUrl ? { dataUrl: p.dataUrl, w: p.w, h: p.h } : {}, { v: String(Date.now()), pos: p.pos }); return resolve(S.bg ? { v: S.bg.v, pos: S.bg.pos } : { v: '' }); }
+        if (action === 'umPassword') {
+          const id = String(p.id), login = id + ID_LOGIN, base = S.users.find(x => x.empId === id && !isIdLogin(x.email)) || S.users.find(x => x.empId === id);
+          if (!base) throw new Error('Employee ID ' + id + ' is not in the list.');
+          if (!p.off && String(p.pw || '').length < 6) throw new Error('Password needs at least 6 characters. / ពាក្យសម្ងាត់ត្រូវមានយ៉ាងតិច ៦ តួ។');
+          if (p.off) {
+            S.users = S.users.filter(x => x.email !== login);
+            S.users.forEach(x => { if (x.empId === id) { x.idLogin = false; x.others = (x.others || []).filter(o => o !== login); } });
+            return resolve({ users: clone(S.users.filter(x => x.empId === id)), gone: [login], log: log(login, base.name, '🔑 Password sign-in removed') });
+          }
+          if (!S.users.find(x => x.email === login)) {
+            S.users.forEach(x => { if (x.empId === id) x.others = (x.others || []).concat(login); });
+            S.users.push(Object.assign(clone(base), { email: login, others: [base.email] }));
+          }
+          S.users.forEach(x => { if (x.empId === id) x.idLogin = true; });
+          return resolve({ users: clone(S.users.filter(x => x.empId === id)), gone: [], log: log(login, base.name, '🔑 Password set') });
         }
         if (action === 'umPhoto') return resolve({ dataUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" rx="14" fill="#f4f6f9"/><rect x="18" y="30" width="90" height="120" rx="8" fill="#b9c3cf"/><text x="128" y="60" font-family="sans-serif" font-weight="700" font-size="20" fill="#011e41">ISI STEEL</text><text x="128" y="95" font-family="sans-serif" font-size="13" fill="#546274">NAME: SOK DARA</text><text x="128" y="120" font-family="sans-serif" font-size="13" fill="#546274">ID: 108765</text></svg>') });
         if (action === 'umOt') return resolve({ ok: true, byId: { 125771: { manager: 'Sok Dara', tg: '@sokdara' }, 130452: { manager: 'Kim Sopheakdey', tg: '@pheakdey' } }, managers: [{ name: 'Kim Sopheakdey', tg: '@pheakdey' }, { name: 'Sok Dara', tg: '@sokdara' }] });

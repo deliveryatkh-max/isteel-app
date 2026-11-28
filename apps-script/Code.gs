@@ -72,6 +72,8 @@ function doPost(e) {
     if (req.action === 'requestAccess') return json_({ ok: true, data: requestAccess_(req.token, req.payload || {}) });
     if (req.action === 'requestForm') return json_({ ok: true, data: requestForm_(req.token) });
     if (req.action === 'findEmployee') return json_({ ok: true, data: findEmployee_(req.token, req.payload || {}) });
+    if (req.action === 'pwLogin') return json_({ ok: true, data: pwLogin_(req.payload || {}) });   // no sign-in yet: Employee ID + password
+    if (req.action === 'loginBg') return json_({ ok: true, data: loginBg_(req.payload || {}) });   // sign-in screen picture
     if (!action) throw new Error('Unknown action: ' + req.action);
     if (req.action === 'home') ensureAppColumns_();
     const user = authenticate_(req.token);
@@ -119,6 +121,8 @@ const ACTIONS = {
   umPhoto: umPhoto_,
   umMenus: umMenus_,
   umStock: umStock_,
+  umPassword: umPassword_,
+  loginBgSave: loginBgSave_,
   teamInit: teamInit_,
   teamFind: teamFind_,
   teamResign: teamResign_,
@@ -345,6 +349,135 @@ function verifyToken_(token) {
   if (String(info.email_verified) !== 'true') throw new Error('AUTH: Google email is not verified.');
   info.email = String(info.email).toLowerCase();
   return info;
+}
+
+// ---------- Sign in with Employee ID + password (Kim, 28 Nov 2026) ----------
+// For staff without a Gmail. The login is kept as "<Employee ID>@id.isteel" in the person's Email cell, so every app
+// treats it like one more Gmail (Users copy, app ticks, Active, menus) with no change in the other scripts.
+// The password itself is never stored: only a salted hash (HMAC-SHA256, 1000 rounds, with a secret pepper PW_PEPPER made
+// once in Script Properties) in Script Property PWH_<ID>. Deleting PW_PEPPER makes every password invalid.
+// 5 wrong tries on one ID lock it for 15 minutes. Admins set, change or remove passwords in 👥 Users.
+const ID_LOGIN = '@id.isteel';
+const idLogin_ = id => idText_(id) + ID_LOGIN;
+const isIdLogin_ = email => String(email || '').toLowerCase().slice(-ID_LOGIN.length) === ID_LOGIN;
+const PW_FAILS = 5, PW_LOCK_S = 900;
+
+function pwPepper_() {
+  const props = PropertiesService.getScriptProperties();
+  let v = props.getProperty('PW_PEPPER');
+  if (v) return v;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    v = props.getProperty('PW_PEPPER');
+    if (!v) { v = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('PW_PEPPER', v); }
+  } finally { lock.releaseLock(); }
+  return v;
+}
+function pwHash_(pw, salt) {
+  const key = Utilities.newBlob(pwPepper_() + ':' + salt).getBytes();
+  let h = Utilities.computeHmacSha256Signature(Utilities.newBlob(String(pw)).getBytes(), key);
+  for (let k = 0; k < 1000; k++) h = Utilities.computeHmacSha256Signature(h, key);
+  return b64url_(h);
+}
+function pwRule_(pw) {
+  pw = String(pw || '');
+  if (pw.length < 6) throw new Error('Password needs at least 6 characters. / ពាក្យសម្ងាត់ត្រូវមានយ៉ាងតិច ៦ តួ។');
+  if (pw.length > 64) throw new Error('Password is too long (max 64). / ពាក្យសម្ងាត់វែងពេក។');
+  return pw;
+}
+const pwHas_ = id => !!PropertiesService.getScriptProperties().getProperty('PWH_' + id);
+function pwSet_(id, pw) {
+  const salt = Utilities.getUuid();
+  PropertiesService.getScriptProperties().setProperty('PWH_' + id, salt + '$' + pwHash_(pw, salt));
+}
+function pwCheck_(id, pw) {
+  const v = PropertiesService.getScriptProperties().getProperty('PWH_' + id);
+  if (!v) { pwHash_(pw, 'none'); return false; }   // same work either way
+  const k = v.indexOf('$');
+  return pwHash_(pw, v.slice(0, k)) === v.slice(k + 1);
+}
+
+/** Sign in with Employee ID + password: returns this app's 30-day session, the same as after a Google sign-in. */
+function pwLogin_(p) {
+  const id = idText_(p.id), pw = String(p.pw || '');
+  const cache = CacheService.getScriptCache(), key = 'pwfail_' + id;
+  const fails = Number(cache.get(key) || 0);
+  if (fails >= PW_FAILS) throw new Error('Too many wrong tries. Wait 15 minutes. / ព្យាយាមខុសច្រើនដងពេក។ សូមរង់ចាំ ១៥ នាទី។');
+  if (!/^\d{3,12}$/.test(id) || !pw || pw.length > 64 || !pwCheck_(id, pw)) {
+    cache.put(key, String(fails + 1), PW_LOCK_S);
+    throw new Error('Wrong Employee ID or password. / Employee ID ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។');
+  }
+  cache.remove(key);
+  return { session: makeSession_(idLogin_(id)) };
+}
+
+/** 👥 Users: set, change ({ id, pw }) or remove ({ id, off: true }) the password of an employee. */
+// ---------- Sign-in screen picture (Kim, 28 Nov 2026) ----------
+// Default: /icons/login-bg.jpg on the website. An admin can upload another one (👥 Users › 🖼); it is kept in Drive
+// and phones keep a copy, so they download it again only when LOGIN_BG_V changes.
+const LOGIN_BG_POS = ['left', 'center', 'right'];
+function loginBgMeta_() {
+  const sp = PropertiesService.getScriptProperties();
+  const wh = String(sp.getProperty('LOGIN_BG_WH') || '').split('x').map(Number);
+  return { v: sp.getProperty('LOGIN_BG_V') || '', id: sp.getProperty('LOGIN_BG_ID') || '', pos: sp.getProperty('LOGIN_BG_POS') || 'left', w: wh[0] || 0, h: wh[1] || 0 };
+}
+function loginBg_(p) {
+  const m = loginBgMeta_();
+  if (!m.v || !m.id) return { v: '' };
+  const out = { v: m.v, pos: m.pos, w: m.w, h: m.h };
+  if (String(p.v || '') === m.v) return out;   // the phone already has this one
+  try {
+    const blob = DriveApp.getFileById(m.id).getBlob();
+    out.dataUrl = 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
+  } catch (e) { return { v: '' }; }
+  return out;
+}
+function loginBgSave_(p, user) {
+  needAdmin_(user);
+  const sp = PropertiesService.getScriptProperties(), old = loginBgMeta_();
+  const pos = LOGIN_BG_POS.indexOf(p.pos) >= 0 ? p.pos : 'left';
+  let id = old.id, wh = old.w + 'x' + old.h;
+  if (p.reset) {
+    if (old.id) { try { DriveApp.getFileById(old.id).setTrashed(true); } catch (e) { /* already gone */ } }
+    ['LOGIN_BG_V', 'LOGIN_BG_ID', 'LOGIN_BG_POS', 'LOGIN_BG_WH'].forEach(k => sp.deleteProperty(k));
+    return { v: '' };
+  }
+  if (p.dataUrl) {
+    const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(String(p.dataUrl));
+    if (!m) throw new Error('Please choose a JPG or PNG picture. / សូមជ្រើសរូបភាព JPG ឬ PNG។');
+    if (m[3].length > 2800000) throw new Error('The picture is too big. / រូបភាពធំពេក។');
+    const blob = Utilities.newBlob(Utilities.base64Decode(m[3]), m[1], 'iSteel sign-in picture.' + (m[2] === 'jpeg' ? 'jpg' : m[2]));
+    id = photoFolder_().createFile(blob).getId();
+    if (old.id) { try { DriveApp.getFileById(old.id).setTrashed(true); } catch (e) { /* already gone */ } }
+    wh = Math.round(Number(p.w) || 0) + 'x' + Math.round(Number(p.h) || 0);
+  }
+  if (!id) throw new Error('Please choose a picture. / សូមជ្រើសរូបភាព។');
+  const v = String(Date.now());
+  sp.setProperties({ LOGIN_BG_V: v, LOGIN_BG_ID: id, LOGIN_BG_POS: pos, LOGIN_BG_WH: wh });
+  return { v: v, pos: pos };
+}
+
+function umPassword_(p, user) {
+  needAdmin_(user);
+  const id = idText_(p.id);
+  if (!id) throw new Error('Add the Employee ID first. / សូមបញ្ចូល Employee ID ជាមុនសិន។');
+  const pw = p.off ? '' : pwRule_(p.pw);
+  return umRun_(m => {
+    const i = rowById_(m, id);
+    if (i < 0) throw new Error('Employee ID ' + id + ' is not in Employee & Approver.');
+    const e0 = mRow_(m, m.values[i], i), login = idLogin_(id), had = pwHas_(id);
+    if (p.off) {
+      PropertiesService.getScriptProperties().deleteProperty('PWH_' + id);
+      if (e0.emails.indexOf(login) >= 0) mDropEmail_(m, i, login);
+    } else {
+      pwSet_(id, pw);
+      if (e0.emails.indexOf(login) < 0) mEmails_(m, i, e0.emails.concat(login));
+    }
+    const e = mRow_(m, m.values[i], i);
+    const what = p.off ? '🔑 Password sign-in removed' : had ? '🔑 Password changed' : '🔑 Password sign-in set';
+    return { users: umUsersOfRow_(e), gone: p.off ? [login] : [], log: umLog_(user.name || user.email, login, displayName_(e), [what]) };
+  });
 }
 
 // ---------- One user list: "Employee & Approver" (Kim, 31 Oct 2026) ----------
@@ -3160,6 +3293,7 @@ function umUserOf_(e, email) {
     dept: deptKey_(e.dept, e.fn), apps: e.apps, offAt: e.offAt, offNote: e.offNote,
     photo: !!e.photo, claimed: e.claimed, reqAt: e.reqAt, others: e.emails.filter(x => x !== email), manager: e.mgr,
     ibWh: e.ibWh, menusOff: e.menusOff, stockCats: e.stockCats, whGroup: e.whGroup, region: e.region, fn: e.fn, deptName: e.dept,
+    idLogin: !!e.id && e.emails.indexOf(idLogin_(e.id)) >= 0,   // 🔑 can sign in with Employee ID + password
   };
 }
 const umUsersOfRow_ = e => e.emails.map(x => umUserOf_(e, x));
@@ -3395,6 +3529,11 @@ function umSave_(p, user) {
   const isNew = !!p.isNew;
   const v = umCheck_(p, isNew);
   const email = isNew ? v.email : String(p.email || '').trim().toLowerCase();
+  if (isIdLogin_(email)) {
+    if (isNew && (!v.empId || email !== idLogin_(v.empId))) throw new Error('Employee ID sign-in needs the Employee ID. / សូមបញ្ចូល Employee ID។');
+    if (!isNew && v.empId !== undefined && idLogin_(v.empId) !== email) throw new Error('This sign-in belongs to one Employee ID. / មិនអាចប្តូរ Employee ID បានទេ។');
+    if (isNew) pwRule_(p.password);
+  }
   if (isNew) {
     if (v.name === undefined && !v.empId) throw new Error('Full name is required. / សូមបញ្ចូលឈ្មោះពេញ។');
     if (v.role === undefined) v.role = 'user';
@@ -3402,6 +3541,10 @@ function umSave_(p, user) {
   }
   return umRun_(m => {
     const o = umWrite_(m, email, v, user.email, isNew);
+    if (isIdLogin_(email)) {
+      if (isNew) { pwSet_(email.slice(0, -ID_LOGIN.length), p.password); o.log.push('🔑 Password sign-in set'); }
+      if (o.gone) PropertiesService.getScriptProperties().deleteProperty('PWH_' + email.slice(0, -ID_LOGIN.length));
+    }
     const name = o.e ? displayName_(o.e) : email;
     const out = { user: o.e ? umUserOf_(o.e, email) : null, users: o.e ? umUsersOfRow_(o.e) : [], gone: o.gone ? [email] : [] };
     out.log = umLog_(user.name || user.email, email, name, o.log);

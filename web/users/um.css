@@ -1,7 +1,7 @@
 /* 👥 User Management: on top of ../overtime/ot.css (same colours, banner, cards, buttons). */
 main { max-width: 680px; padding-bottom: 32px; }
 .bar.busy { box-shadow: inset 0 -3px 0 #61cbf4; }
-.tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 899px) { .tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }   /* phone: every tab on one row, however many */
 @media (max-width: 420px) { .tabs .tab { font-size: 11px; } .tabs .tab b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
 .tab span { position: relative; }
 .tab .count {
@@ -242,3 +242,14 @@ small.inl { display: inline; }
 .tbl.mx thead th.mx-sees { background: var(--soft); }
 .sx-chip { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 700; background: #e8f1fb; color: #084f6a; white-space: nowrap; }
 .sx-chip.all { background: #dcfce7; color: #16a34a; }
+
+/* 🔑 Employee ID + password (Kim, 28 Nov 2026) */
+.pwc .pwrow { display: flex; gap: 8px; margin-top: 8px; }
+.pwc .pwrow .in { flex: 1; min-width: 0; }
+/* 🖼 Sign-in picture (Kim, 28 Nov 2026) */
+.bgprev { position: relative; width: fit-content; max-width: 100%; margin: 0 auto 12px; }
+.bgprev img { display: block; max-width: 100%; max-height: 380px; border-radius: 12px; }
+.bgbox { position: absolute; border: 2px dashed #61cbf4; background: rgba(97, 203, 244, .25); border-radius: 8px; }
+.bgbox.left { left: 4%; width: 47%; top: 52%; height: 40%; }
+.bgbox.right { right: 4%; width: 47%; top: 52%; height: 40%; }
+.bgbox.center { left: 20%; width: 60%; top: 30%; height: 40%; }
